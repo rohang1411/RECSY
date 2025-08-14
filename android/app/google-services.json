@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "424579899799",
+    "firebase_url": "https://recsy-e2ae5.firebaseio.com",
+    "project_id": "recsy-e2ae5",
+    "storage_bucket": "recsy-e2ae5.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:424579899799:android:d64c52c439468d438964d2",
+        "android_client_info": {
+          "package_name": "com.recsy.mobile_recommender"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "424579899799-j0bhqmtpi8gpu12eme5s68u251j76c3o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.recsy.mobile_recommender",
+            "certificate_hash": "41c7f3c57452ebdd49159111c24a4556b5866c0d"
+          }
+        },
+        {
+          "client_id": "424579899799-5a1ii66trhi28b93c8240i0hl7lerb5n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuzImvD2tMRDIBpmZpFMl8dvKop01qJ74"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "424579899799-5a1ii66trhi28b93c8240i0hl7lerb5n.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
