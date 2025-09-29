@@ -9,7 +9,7 @@ RECSY is a Flutter-based mobile application designed to help users find the best
 - **Compare Phones**: Compare the specifications of multiple phones side-by-side.
 - **Favorites**: Save your favorite phones for quick access later.
 - **User Authentication**: Sign in to sync your favorites and preferences across devices.
-- **Web & Mobile Support**: Built with Flutter, the app was initially built for android and the support for web platforms is in development.
+- **Web & Mobile Support**: Built with Flutter, the app was initially built for android and the support for web platforms is in development. The app was previuosly deployed on the Google Play Store and now it is available on APKPure (Link: https://apkpure.com/recsy-ai-smartphone-recommend/com.recsy.mobile_recommender).
 
 ## 🛠️ Tech Stack & Dependencies
 
