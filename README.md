@@ -3,9 +3,9 @@
 RECSY is a Flutter-based mobile application designed to help users find the best mobile phone based on their preferences. It provides personalized recommendations, detailed specifications, and a comparison feature to assist in making an informed decision.
 
 
-## DEMO Video 
+## 🎥 DEMO Video 
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/hhJCmkwLen8?si=-7wcjBbUngRndcaF" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+[![Watch the demo](https://img.youtube.com/vi/hhJCmkwLen8/maxresdefault.jpg)](https://www.youtube.com/watch?v=hhJCmkwLen8)
 
 ## ✨ Features
 
