@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:mobile_recommender/export.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
-import 'package:mailer2/mailer.dart';
 
 class ContactUs extends StatefulWidget {
   static const Route = '/contactUs';
@@ -17,24 +16,15 @@ class _ContactUsState extends State<ContactUs> {
   final _messageController = TextEditingController();
   final _emailController = TextEditingController();
   void emailsender() async {
-    var options = new GmailSmtpOptions()
-      ..username = 'spiraldev1415@gmail.com'
-      ..password =
-          'Recsy@123'; // Note: if you have Google's "app specific passwords" enabled,
-    // you need to use one of those here.
+    final smtpServer = gmail('spiraldev1415@gmail.com', 'Recsy@123');
 
-    // How you use and store passwords is up to you. Beware of storing passwords in plain.
-
-    // Create our email transport.
-    var emailTransport = new SmtpTransport(options);
-
-    // Create our mail/envelope.
-    var envelope = new Envelope()
-      ..from = 'spiraldev1415@gmail.com'
+    // Create our message.
+    final message = Message()
+      ..from = Address('spiraldev1415@gmail.com', 'Recsy Contact')
       ..recipients.add('spiraldev1415@gmail.com')
       ..ccRecipients.addAll(['milindraj003@gmail.com', 'rohang1411@gmail.com'])
       ..subject = 'Recsy Contact Us Message'
-      ..text = ' This is a cool email message. Whats up?'
+      ..text = 'This is a cool email message. Whats up?'
       ..html = '<h1>' +
           _nameController.text +
           ' sent a Message !</h1><br>' +
@@ -43,12 +33,15 @@ class _ContactUsState extends State<ContactUs> {
           '<br><br>' +
           _messageController.text;
 
-    // Email it.
-    print('hi AU');
-    emailTransport
-        .send(envelope)
-        .then((envelope) => print('Email sent!'))
-        .catchError((e) => print('Error occurred: $e'));
+    try {
+      final sendReport = await send(message, smtpServer);
+      print('Message sent: ' + sendReport.toString());
+    } on MailerException catch (e) {
+      print('Message not sent. $e');
+      for (var p in e.problems) {
+        print('Problem: ${p.code}: ${p.msg}');
+      }
+    }
   }
 
   @override
@@ -105,9 +98,7 @@ class _ContactUsState extends State<ContactUs> {
                               ),
                             ),
                           ),
-                          RaisedButton.icon(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 25, vertical: 10),
+                          ElevatedButton.icon(
                             icon: Icon(Icons.message),
                             onPressed: () {
                               emailsender();
@@ -127,13 +118,13 @@ class _ContactUsState extends State<ContactUs> {
                                 text: 'Thank\nYou!\n',
                                 style: Theme.of(context)
                                     .textTheme
-                                    .headline1
-                                    .copyWith(
+                                    .displayLarge
+                                    ?.copyWith(
                                         fontSize: 70, color: Colors.white),
                               ),
                               TextSpan(
                                   text: '\nWe\'ll Contact you soon!',
-                                  style: Theme.of(context).textTheme.headline4)
+                                  style: Theme.of(context).textTheme.headlineMedium)
                             ],
                           ),
                         ),
@@ -150,7 +141,7 @@ class _ContactUsState extends State<ContactUs> {
                 'Or\nEmail us at',
                 textAlign: TextAlign.center,
               ),
-              FlatButton.icon(
+              TextButton.icon(
                 onPressed: () {},
                 icon: Icon(Icons.email_rounded),
                 label: Text(

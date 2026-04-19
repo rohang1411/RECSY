@@ -47,9 +47,8 @@ class AboutUs extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           InkWell(
-                            onTap: () => launch(
-                                'https://www.linkedin.com/company/spiraldevelopers/'),
-                            // TODO linked in
+                            onTap: () => launchUrl(Uri.parse(
+                                'https://www.linkedin.com/company/spiraldevelopers/')),
                             child: Container(
                               height: 20,
                               width: 20,
@@ -62,8 +61,7 @@ class AboutUs extends StatelessWidget {
                           SizedBox(width: 20),
                           InkWell(
                             onTap: () =>
-                                launch('http://spiraldevelopers.unaux.com/'),
-                            // TODO website
+                                launchUrl(Uri.parse('http://spiraldevelopers.unaux.com/')),
                             child: Container(
                               height: 20,
                               width: 20,
@@ -117,14 +115,14 @@ class AboutUs extends StatelessWidget {
                     children: [
                       Founder(
                         founder: 'Rohan Sharma',
-                        onPressed: () => launch(
-                            'https://www.linkedin.com/in/rohan-sharma-529121198'),
+                        onPressed: () => launchUrl(Uri.parse(
+                            'https://www.linkedin.com/in/rohan-sharma-529121198')),
                         imageUrl: 'assets/rohan.jpg',
                       ),
                       Founder(
                         founder: 'Milind Raj',
-                        onPressed: () => launch(
-                            'https://www.linkedin.com/in/milind-raj-a452991a5'),
+                        onPressed: () => launchUrl(Uri.parse(
+                            'https://www.linkedin.com/in/milind-raj-a452991a5')),
                         imageUrl: 'assets/milind.jpg',
                       )
                     ],
@@ -139,13 +137,13 @@ class AboutUs extends StatelessWidget {
 
 class Founder extends StatelessWidget {
   const Founder({
-    this.founder,
-    this.imageUrl,
-    this.onPressed,
+    required this.founder,
+    required this.imageUrl,
+    required this.onPressed,
   });
   final String imageUrl;
   final String founder;
-  final Function onPressed;
+  final VoidCallback onPressed;
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -160,7 +158,7 @@ class Founder extends StatelessWidget {
         ),
         Text(
           founder,
-          style: Theme.of(context).textTheme.headline6,
+          style: Theme.of(context).textTheme.titleLarge,
         ),
         SizedBox(
           height: 15,

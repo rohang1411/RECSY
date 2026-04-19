@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_recommender/export.dart';
+import 'package:mobile_recommender/models/model.dart';
+import 'package:mobile_recommender/screen/filter.dart';
 import 'package:mobile_recommender/screen/recommendation.dart';
 import 'package:mobile_recommender/services/recommendation_service.dart';
+import 'package:provider/provider.dart';
 
-class SearchPage extends StatefulWidget {
-  static const Route = '/search';
+class FilterLogicScreen extends StatefulWidget {
+  static const Route = '/filterLogic';
 
   @override
-  _SearchPageState createState() => _SearchPageState();
+  _FilterLogicScreenState createState() => _FilterLogicScreenState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _FilterLogicScreenState extends State<FilterLogicScreen> {
   final List<String> labels = [
     'MI',
     'OPPO',
@@ -71,18 +73,22 @@ class _SearchPageState extends State<SearchPage> {
     try {
       final predictedIndex = await createAlbum(input, flagChinese, labels, labelsncp);
       if (predictedIndex != -1) {
-        Navigator.of(context).pushNamed(RecommendationPage.Route, arguments: predictedIndex);
+        List<Mobile> recommendations = await getRecommendations(predictedIndex);
+        if (recommendations.isNotEmpty) {
+          Provider.of<FilterPage>(context, listen: false).recommendations = recommendations;
+          Navigator.of(context).pushNamed(RecommendationPage.Route);
+        } else {
+          dialogue(context, 'Not Found', 'No recommendations found for the selected criteria.');
+        }
       } else {
-        dialogue(context, 'No Recommendation', 'We couldn\'t find a suitable phone with the selected filters.');
+        dialogue(context, 'Error', 'Failed to get recommendation.');
       }
     } catch (e) {
       dialogue(context, 'Error', e.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      setState(() {
+        isLoading = false;
+      });
     }
   }
 
@@ -90,8 +96,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Find Your Next Phone'),
-        elevation: 0,
+        title: const Text('Filter Recommendations'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -99,9 +104,77 @@ class _SearchPageState extends State<SearchPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _buildFilterCard(),
+              Text('Price Range: ₹${_currentRangeValues.start.round()} - ₹${_currentRangeValues.end.round()}',
+                  style: Theme.of(context).textTheme.titleLarge),
+              RangeSlider(
+                values: _currentRangeValues,
+                min: 5000,
+                max: 150000,
+                divisions: 29,
+                labels: RangeLabels(
+                  '₹${_currentRangeValues.start.round()}',
+                  '₹${_currentRangeValues.end.round()}',
+                ),
+                onChanged: (RangeValues values) {
+                  setState(() {
+                    _currentRangeValues = values;
+                  });
+                },
+              ),
               const SizedBox(height: 20),
-              if (isLoading) const Center(child: CircularProgressIndicator()),
+              Text('Features', style: Theme.of(context).textTheme.titleLarge),
+              CheckboxListTile(
+                title: const Text('Camera'),
+                value: flagCamera,
+                onChanged: (bool? value) {
+                  setState(() {
+                    flagCamera = value ?? false;
+                  });
+                },
+              ),
+              CheckboxListTile(
+                title: const Text('Performance'),
+                value: flagPer,
+                onChanged: (bool? value) {
+                  setState(() {
+                    flagPer = value ?? false;
+                  });
+                },
+              ),
+              CheckboxListTile(
+                title: const Text('Battery'),
+                value: flagBattery,
+                onChanged: (bool? value) {
+                  setState(() {
+                    flagBattery = value ?? false;
+                  });
+                },
+              ),
+              const SizedBox(height: 20),
+              Text('Brand Type', style: Theme.of(context).textTheme.titleLarge),
+              RadioListTile<int>(
+                title: const Text('Chinese Brands'),
+                value: 1,
+                groupValue: flagChinese,
+                onChanged: (int? value) {
+                  setState(() {
+                    flagChinese = value ?? 1;
+                  });
+                },
+              ),
+              RadioListTile<int>(
+                title: const Text('Non-Chinese Brands'),
+                value: 0,
+                groupValue: flagChinese,
+                onChanged: (int? value) {
+                  setState(() {
+                    flagChinese = value ?? 0;
+                  });
+                },
+              ),
+              const SizedBox(height: 20),
+              if (isLoading)
+                const Center(child: CircularProgressIndicator()),
             ],
           ),
         ),
@@ -112,110 +185,6 @@ class _SearchPageState extends State<SearchPage> {
         label: const Text('Get Recommendation'),
         backgroundColor: isLoading ? Colors.grey : Theme.of(context).colorScheme.secondary,
       ),
-    );
-  }
-
-  Widget _buildFilterCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Price Range: ₹${_currentRangeValues.start.round()} - ₹${_currentRangeValues.end.round()}',
-                style: Theme.of(context).textTheme.titleLarge),
-            RangeSlider(
-              values: _currentRangeValues,
-              min: 5000,
-              max: 150000,
-              divisions: 29,
-              labels: RangeLabels(
-                '₹${_currentRangeValues.start.round()}',
-                '₹${_currentRangeValues.end.round()}',
-              ),
-              onChanged: (RangeValues values) {
-                setState(() {
-                  _currentRangeValues = values;
-                });
-              },
-            ),
-            const SizedBox(height: 20),
-            Text('I\'m looking for a phone with great...', style: Theme.of(context).textTheme.titleLarge),
-            _buildFeatureChips(),
-            const SizedBox(height: 20),
-            Text('Brand Preference', style: Theme.of(context).textTheme.titleLarge),
-            _buildBrandRadios(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureChips() {
-    return Wrap(
-      spacing: 8.0,
-      children: <Widget>[
-        FilterChip(
-          label: const Text('Camera'),
-          selected: flagCamera,
-          onSelected: (bool value) {
-            setState(() {
-              flagCamera = value;
-            });
-          },
-        ),
-        FilterChip(
-          label: const Text('Performance'),
-          selected: flagPer,
-          onSelected: (bool value) {
-            setState(() {
-              flagPer = value;
-            });
-          },
-        ),
-        FilterChip(
-          label: const Text('Battery'),
-          selected: flagBattery,
-          onSelected: (bool value) {
-            setState(() {
-              flagBattery = value;
-            });
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBrandRadios() {
-    return Row(
-      children: [
-        Expanded(
-          child: RadioListTile<int>(
-            title: const Text('Chinese'),
-            value: 1,
-            groupValue: flagChinese,
-            onChanged: (int? value) {
-              setState(() {
-                flagChinese = value ?? 1;
-              });
-            },
-          ),
-        ),
-        Expanded(
-          child: RadioListTile<int>(
-            title: const Text('Non-Chinese'),
-            value: 0,
-            groupValue: flagChinese,
-            onChanged: (int? value) {
-              setState(() {
-                flagChinese = value ?? 0;
-              });
-            },
-          ),
-        ),
-      ],
     );
   }
 

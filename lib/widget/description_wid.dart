@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 
 class DescriptionButton extends StatefulWidget {
   const DescriptionButton({
-    Key key,
-    @required this.mobile,
+    Key? key,
+    required this.mobile,
   }) : super(key: key);
 
-  final FilterPage mobile;
+  final Mobile mobile;
 
   @override
   _DescriptionButtonState createState() => _DescriptionButtonState();
@@ -18,9 +18,10 @@ class DescriptionButton extends StatefulWidget {
 class _DescriptionButtonState extends State<DescriptionButton> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference dbRef =
-      FirebaseDatabase.instance.reference().child("users");
+      FirebaseDatabase.instance.ref().child("users");
   void writeFav(List<String> favIDlist) async {
-    final User user = await _auth.currentUser;
+    final User? user = _auth.currentUser;
+    if (user == null) return;
     final uid = user.uid;
     dbRef.child(uid).update({'Favourites': favIDlist});
   }
@@ -30,12 +31,12 @@ class _DescriptionButtonState extends State<DescriptionButton> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
-        FlatButton.icon(
+        TextButton.icon(
           onPressed: () {
             setState(() {
               Provider.of<FilterPage>(context, listen: false)
                   .changeFav(widget.mobile.id);
-              List<FilterPage> _fav =
+              List<Mobile> _fav =
                   Provider.of<FilterPage>(context, listen: false).favorites;
               List<String> _favID = [];
 
@@ -58,13 +59,10 @@ class _DescriptionButtonState extends State<DescriptionButton> {
             ),
           ),
         ),
-        FlatButton.icon(
+        TextButton.icon(
           onPressed: () {
-            setState(() {
-              Provider.of<FilterPage>(context, listen: false)
-                  .randomCompare(0, widget.mobile);
-              Navigator.of(context).pushNamed(SearchPage.Route,
-                  arguments: {'compare': true, 'selected': 1});
+            Navigator.of(context).pushNamed(CompareScreen.Route, arguments: {
+              'mobiles': [widget.mobile]
             });
           },
           icon: CircleAvatar(
@@ -81,17 +79,17 @@ class _DescriptionButtonState extends State<DescriptionButton> {
 
 class Descriptions extends StatelessWidget {
   const Descriptions({
-    Key key,
-    @required List keys,
-    @required this.i,
-    @required this.mobile,
-    @required this.size,
+    Key? key,
+    required List keys,
+    required this.i,
+    required this.mobile,
+    required this.size,
   })  : _keys = keys,
         super(key: key);
 
   final List _keys;
   final int i;
-  final FilterPage mobile;
+  final Mobile mobile;
   final Size size;
 
   @override
@@ -104,9 +102,10 @@ class Descriptions extends StatelessWidget {
         children: [
           FittedBox(child: Text(_keys[i])), // Box ki Heading
           if (_keys[i] != 'Performance')
-            Icon(
-              description[_keys[i]],
-              size: 40,
+            Image.asset(
+              description[_keys[i]]!,
+              height: 40,
+              width: 40,
             ),
           if (_keys[i] == 'Performance') // Beech ka icon
             Expanded(
@@ -118,7 +117,7 @@ class Descriptions extends StatelessWidget {
                   )),
             ),
           FittedBox(
-              child: Text(mobile.specs[_keys[i]])), // Box me niche wala text
+              child: Text(mobile.specs[_keys[i]]?.toString() ?? '')), // Box me niche wala text
         ],
       ),
       height: size.height * 0.11,

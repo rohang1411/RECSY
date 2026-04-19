@@ -1,17 +1,19 @@
-import 'dart:collection';
+
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:mobile_recommender/export.dart';
+import 'package:mobile_recommender/screen/auth_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'login_sign.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'landing.dart';
-import 'dart:convert';
 
-class UserProfile extends StatefulWidget with ChangeNotifier {
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:mobile_recommender/utils/logger.dart';
+
+
+
+class UserProfile extends StatefulWidget {
   static const Route = '/user';
 
   @override
@@ -21,7 +23,7 @@ class UserProfile extends StatefulWidget with ChangeNotifier {
 class _UserProfileState extends State<UserProfile> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference dbRef =
-      FirebaseDatabase.instance.reference().child("users");
+      FirebaseDatabase.instance.ref().child("users");
   final FirebaseFirestore firestoreInstance = FirebaseFirestore.instance;
 
   String emailstring = '';
@@ -55,25 +57,22 @@ class _UserProfileState extends State<UserProfile> {
     // getName();
     super.initState();
     getUser().then((user) {
-      print('Hi AU');
       if (user != null) {
-        emailstring = user.email;
-        // print(emailstring);
-      }
-      if (emailstring == '')
-        tempname = '';
-      else {
-        for (int i = 0; i < emailstring.length; i++) {
-          if (emailstring[i] == '@') {
-            tempname = emailstring.substring(0, i);
-          }
+        logger.i('User found: ${user.email}');
+        emailstring = user.email ?? '';
+        if (emailstring.isNotEmpty) {
+          tempname = emailstring.split('@').first;
         }
+      } else {
+        logger.w('No user found.');
+        emailstring = '';
+        tempname = '';
       }
     });
   }
 
-  Future<User> getUser() async {
-    return await _auth.currentUser;
+  Future<User?> getUser() async {
+    return _auth.currentUser;
   }
 
   // String showName() {
@@ -88,18 +87,13 @@ class _UserProfileState extends State<UserProfile> {
   //   }
   // }
 
-  @override
-  void setState(fn) {
-    // TODO: implement setState
-    // showName();
-  }
 
   @override
   Widget build(BuildContext context) {
     // String tempName = Provider.of<FilterPage>(context).nameGetter;
     // print('tempName = ' + tempName);
     // String temp = _LandingPageState.showName;
-    List<FilterPage> _fav = Provider.of<FilterPage>(context).favorites;
+    List<Mobile> _fav = Provider.of<FilterPage>(context).favorites;
 
     @override
     Future<void> resetPassword(String email) async {
@@ -137,7 +131,7 @@ class _UserProfileState extends State<UserProfile> {
                               context,
                               MaterialPageRoute(
                                   builder: (BuildContext context) =>
-                                      LoginPage()));
+                                      const AuthScreen()));
                         } else if (value == 0) {
                           resetPassword(emailstring);
                           Fluttertoast.showToast(
@@ -151,7 +145,6 @@ class _UserProfileState extends State<UserProfile> {
                               fontSize: 16.0);
                         }
                       },
-                      // TODO execute change password
                       icon: Icon(Icons.more_vert),
                       itemBuilder: (context) {
                         return [
@@ -182,7 +175,7 @@ class _UserProfileState extends State<UserProfile> {
                             // showName,
                             // show ? showName : 'User',
                             style:
-                                Theme.of(context).textTheme.headline1.copyWith(
+                                Theme.of(context).textTheme.displayLarge?.copyWith(
                                       fontSize: 30,
                                       color: Colors.white,
                                     ),

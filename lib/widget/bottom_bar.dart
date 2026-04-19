@@ -3,9 +3,9 @@ import 'package:mobile_recommender/export.dart';
 
 class BottomBar extends StatefulWidget {
   const BottomBar({
-    Key key,
-    @required this.current,
-    @required this.routes,
+    Key? key,
+    required this.current,
+    required this.routes,
   }) : super(key: key);
 
   final int current;
@@ -27,7 +27,7 @@ class _BottomBarState extends State<BottomBar> {
           _current = value;
         });
         if (_current != widget.current) {
-          var data = await Navigator.of(context)
+          await Navigator.of(context)
               .pushReplacementNamed(widget.routes[_current]);
           // print(data);
         }

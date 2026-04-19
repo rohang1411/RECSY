@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_recommender/export.dart';
+import 'package:mobile_recommender/widget/app_drawer.dart';
 
 class LandingPage extends StatefulWidget {
   static const LandingRoute = '/landing';
@@ -13,86 +14,78 @@ class LandingPage extends StatefulWidget {
 class _LandingPageState extends State<LandingPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference dbRef =
-      FirebaseDatabase.instance.reference().child("users");
+      FirebaseDatabase.instance.ref().child("users");
 
-  List<String> fav;
-  List<String> favlist;
+  List<String>? fav;
+  List<String>? favlist;
 
   int strToint(String temp) {
     switch (temp[0]) {
       case '0':
         return 0;
-        break;
-
       case '1':
         return 1;
-        break;
-
       case '2':
         return 2;
-        break;
-
       case '3':
         return 3;
-        break;
-
       case '4':
         return 4;
-        break;
-
       case '5':
         return 5;
-        break;
-
       case '6':
         return 6;
-        break;
-
       case '7':
         return 7;
-        break;
-
       case '8':
         return 8;
-        break;
-
       case '9':
         return 9;
-        break;
+      default:
+        return 0;
     }
   }
 
-  Map<dynamic, dynamic> userDataMap;
+  Map<dynamic, dynamic>? userDataMap;
   // String showName;
 
   Future<void> getData() async {
     print('Hi AU');
-    final User user = await _auth.currentUser;
+    final User? user = _auth.currentUser;
+    if (user == null) return;
     final uid = user.uid;
-    dbRef.child(uid).once().then((DataSnapshot snapshot) async {
+    try {
+      final DataSnapshot snapshot = await dbRef.child(uid).get();
       // print('Data : ${snapshot.value}');
-      userDataMap = snapshot.value;
-      // print(snapshot.value);
+      userDataMap = snapshot.value as Map<dynamic, dynamic>?;
+      if (userDataMap == null) return;
+      // print(userDataMap);
       List<String> favIDList = [];
-      // showName = userDataMap['Name'];
-      // print(userDataMap['Favourites']);
-      for (int i = 0; i < userDataMap['Favourites'].length; i++) {
-        // print(userDataMap['Favourites'][i].toString());
-        favIDList.add(userDataMap['Favourites'][i].toString());
-        if (favIDList[i].length == 1)
-          mobiles[strToint(favIDList[i])].isFav = true;
-        else if (favIDList[i].length == 2)
-          mobiles[strToint(favIDList[i][0]) * 10 + strToint(favIDList[i][1])]
-              .isFav = true;
+      // showName = userDataMap!['Name'];
+      // print(userDataMap!['Favourites']);
+      final favourites = userDataMap!['Favourites'];
+      if (favourites != null) {
+        for (int i = 0; i < favourites.length; i++) {
+          // print(userDataMap!['Favourites'][i].toString());
+          favIDList.add(favourites[i].toString());
+          if (favIDList[i].length == 1)
+            mobiles[strToint(favIDList[i])].isFav = true;
+          else if (favIDList[i].length == 2)
+            mobiles[strToint(favIDList[i][0]) * 10 + strToint(favIDList[i][1])]
+                .isFav = true;
+        }
       }
-      // favIDList = userDataMap['Favourites'];
+      // favIDList = userDataMap!['Favourites'];
       // print(favIDList);
       // print('HELLO UPDATED THE FAVOURITES IN MOBILES');
-    });
+    } catch (e) {
+      print('Error getting data: $e');
+    }
   }
 
   @override
   void initState() {
+    super.initState();
     getData();
   }
 
@@ -102,12 +95,11 @@ class _LandingPageState extends State<LandingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final _mob = Provider.of<FilterPage>(context).comparePhone;
 
     // List<FilterPage> bannerList = [];
-    List<FilterPage> topPerforming = [];
-    List<FilterPage> topCamera = [];
-    List<FilterPage> topRated = [];
+    List<Mobile> topPerforming = [];
+    List<Mobile> topCamera = [];
+    List<Mobile> topRated = [];
 
     void randomFunction() {
       List<int> topPerformingIndex = [
@@ -204,125 +196,73 @@ class _LandingPageState extends State<LandingPage> {
         current: current,
         routes: routes,
       ),
-      drawer: Drawer(
-        elevation: 10,
-        child: Container(
-          color: Colors.black,
-          child: Column(
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: kPrimaryColor,
-                ),
-                padding: EdgeInsets.zero,
-                child: Container(
-                  padding: EdgeInsets.all(20),
-                  alignment: Alignment.bottomLeft,
-                  width: double.infinity,
-                  child: Text(
-                    'Recsy',
-                    style: TextStyle(fontSize: 40),
-                  ),
-                  color: kPrimaryColor,
+      drawer: AppDrawer(),
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: <Widget>[
+            SliverAppBar(
+              title: Text(
+                'Recsy',
+                style: TextStyle(
+                  fontFamily: 'Segoe UI',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 25,
                 ),
               ),
-              Container(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: kPrimaryColor,
-                        foregroundColor: Colors.white,
-                        child: Text('V/S'),
+              floating: true,
+              snap: true,
+              elevation: 4.0,
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.all(16.0),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate(
+                  [
+                    BannerList(),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 0.0),
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.of(context).pushNamed(CompareScreen.Route),
+                        icon: const Icon(Icons.compare_arrows),
+                        label: const Text('Compare Phones'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 50), // full width
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
                       ),
-                      title: Text('Compare'),
-                      onTap: () {
-                        Navigator.of(context).pushNamed(
-                          SearchPage.Route,
-                          arguments: {
-                            'mobiles': _mob,
-                            'selected': 0,
-                            'compare': true
-                          },
-                        );
-                      },
                     ),
-                    Divider(
-                      color: Colors.grey,
-                      endIndent: 30,
+                    const SizedBox(height: 16),
+                    SectionItem(
+                      title: 'You May Also Like',
+                      list: topRated,
+                      displayText: true,
                     ),
-                    ListTile(
-                      onTap: () {
-                        Navigator.of(context).pushNamed(AboutUs.Route);
-                      },
-                      leading: Icon(
-                        Icons.supervisor_account_rounded,
-                        size: 40,
-                        color: kPrimaryColor,
-                      ),
-                      title: Text('About Us'),
+                    const SizedBox(height: 16),
+                    SectionItem(
+                      title: 'Top Performing',
+                      list: topPerforming,
+                      displayText: true,
                     ),
-                    Divider(
-                      color: Colors.grey,
-                      endIndent: 30,
+                    const SizedBox(height: 16),
+                    SectionItem(
+                      title: 'Top Camera',
+                      list: topCamera,
+                      displayText: true,
                     ),
-                    ListTile(
-                      onTap: () {
-                        Navigator.of(context).pushNamed(ContactUs.Route);
-                      },
-                      leading: Icon(
-                        Icons.mail,
-                        size: 40,
-                        color: kPrimaryColor,
-                      ),
-                      title: Text('Contact Us'),
+                    const SizedBox(height: 16),
+                    SectionItem(
+                      title: 'Top Rated',
+                      list: topRated,
+                      displayText: true,
                     ),
                   ],
                 ),
-              )
-            ],
-          ),
-        ),
-      ),
-      appBar: AppBar(
-        title: Text(
-          'Recsy',
-          style: TextStyle(
-            fontFamily: 'Segoe UI',
-            fontWeight: FontWeight.w900,
-            fontSize: 25,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(10),
-          child: Column(
-            children: [
-              BannerList(),
-              SectionItem(
-                title: 'You May Also Like',
-                list: topRated,
-                displayText: true,
               ),
-              CompareWidget(),
-              SectionItem(
-                title: 'Top Performing',
-                list: topPerforming,
-                displayText: true,
-              ),
-              SectionItem(
-                title: 'Top Camera',
-                list: topCamera,
-                displayText: true,
-              ),
-              SectionItem(
-                title: 'Top Rated',
-                list: topRated,
-                displayText: true,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

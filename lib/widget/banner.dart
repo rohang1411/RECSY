@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide CarouselController;
+import 'package:mobile_recommender/utils/helpers.dart';
 import 'package:mobile_recommender/export.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:mobile_recommender/screen/mobile_desc.dart';
@@ -11,12 +12,11 @@ class BannerList extends StatefulWidget {
 class _BannerListState extends State<BannerList> {
   int currentPage = 0;
 
-  CarouselController _controller = CarouselController();
-  bool init = true;
+  final CarouselSliderController _controller = CarouselSliderController();
 
   @override
   Widget build(BuildContext context) {
-    List<FilterPage> mobileBanner = Provider.of<FilterPage>(context).banners;
+    List<Mobile> mobileBanner = Provider.of<FilterPage>(context).banners;
     return Container(
       height: 285,
       child: Column(
@@ -27,66 +27,80 @@ class _BannerListState extends State<BannerList> {
             textAlign: TextAlign.left,
             style: Theme.of(context)
                 .textTheme
-                .bodyText1
-                .copyWith(fontSize: 20, fontFamily: 'Segoe UI'),
+                .bodyLarge
+                ?.copyWith(fontSize: 20, fontFamily: 'Segoe UI'),
           ),
           Expanded(
-            child: CarouselSlider(
+            child: CarouselSlider.builder(
               carouselController: _controller,
-              options: CarouselOptions(
-                  enlargeCenterPage: true,
-                  initialPage: 0,
-                  autoPlay: true,
-                  autoPlayCurve: Curves.fastOutSlowIn,
-                  pageSnapping: true,
-                  onPageChanged: (int value, option) {
-                    setState(() {
-                      currentPage = value;
-                    });
-                  }),
-              items: List.generate(
-                mobileBanner.length,
-                (index) => InkWell(
+              itemCount: mobileBanner.length,
+              itemBuilder: (context, index, realIndex) {
+                final mobile = mobileBanner[index];
+                return InkWell(
                   onTap: () {
-                    Navigator.of(context).pushNamed(MobilePage.Route,
-                        arguments: mobileBanner[index]);
+                    Navigator.of(context).pushNamed(MobilePage.Route, arguments: mobile);
                   },
-                  child: Container(
-                    padding: const EdgeInsets.all(10.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Expanded(
-                            // flex: 2,
-                            child: Image.network(mobileBanner[index].imageUrl)),
-                        Expanded(
-                          // flex: 1,
-                          child: RichText(
-                            text: TextSpan(
-                              style: TextStyle(color: Colors.white),
+                  child: Card(
+                    elevation: 4.0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15.0),
+                    ),
+                    color: mobile.color.withAlpha(230),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Image.network(
+                              getFirebaseImageUrl(mobile.imageUrl),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                TextSpan(text: 'Buy The Best\n'),
-                                TextSpan(
-                                  text: mobileBanner[index].name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 25,
-                                  ),
+                                Text(
+                                  'Buy The Best',
+                                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        color: Colors.white70,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  mobile.name,
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: mobileBanner[index].color,
-                    ),
-                    margin: const EdgeInsets.symmetric(vertical: 10),
                   ),
-                ),
+                );
+              },
+              options: CarouselOptions(
+                height: 200,
+                autoPlay: true,
+                enlargeCenterPage: true,
+                aspectRatio: 16 / 9,
+                autoPlayCurve: Curves.fastOutSlowIn,
+                enableInfiniteScroll: true,
+                autoPlayAnimationDuration: const Duration(milliseconds: 800),
+                viewportFraction: 0.8,
+                onPageChanged: (index, reason) {
+                  setState(() {
+                    currentPage = index;
+                  });
+                },
               ),
             ),
           ),
@@ -101,7 +115,7 @@ class _BannerListState extends State<BannerList> {
                       radius: 6,
                       backgroundColor: currentPage == i
                           ? Theme.of(context).primaryColor
-                          : Theme.of(context).accentColor,
+                          : Theme.of(context).colorScheme.secondary,
                     ),
                     SizedBox(
                       width: 5,

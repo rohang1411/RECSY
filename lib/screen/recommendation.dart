@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_recommender/export.dart';
-import 'filter.dart';
-// import _recommend;
+import 'package:mobile_recommender/services/recommendation_service.dart';
+import 'package:mobile_recommender/screen/mobile_desc.dart';
 
-class RecommendationPage extends StatelessWidget {
-  // @required this.myText;
-  // @required this.myText2;
-  // @required this.myText3;
-  // @required this.myText4;
-
+class RecommendationPage extends StatefulWidget {
   static const Route = '/recommendation';
 
   @override
-  Widget build(BuildContext context) {
-    print('Hi AU');
-    // print("RECOMMENDATION PAGE");
-    List<FilterPage> _recommend = Provider.of<FilterPage>(context).rec;
-    // print(_recommend);
-    // List<Mobile> recommendedPhones = [];
+  _RecommendationPageState createState() => _RecommendationPageState();
+}
 
+class _RecommendationPageState extends State<RecommendationPage> {
+  late Future<List<Mobile>> _recommendationsFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final predictedIndex = ModalRoute.of(context)!.settings.arguments as int;
+    _recommendationsFuture = getRecommendations(predictedIndex);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -27,48 +30,64 @@ class RecommendationPage extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: Center(
-          child: Container(
-            child: Column(
-              // crossAxisAlignment: CrossAxisAlignment.center, //,Center,
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                SingleSectionItem(
-                  item: _recommend[0],
-                  displayText: true,
-                  height: 420 * 0.9,
-                  width: 350 * 0.9,
+        child: FutureBuilder<List<Mobile>>(
+          future: _recommendationsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+              return Center(child: Text('Could not find recommendations.'));
+            }
+
+            final _recommend = snapshot.data!;
+
+            return Center(
+              child: Container(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pushNamed(MobilePage.Route, arguments: _recommend[0]),
+                      child: SingleSectionItem(
+                        item: _recommend[0],
+                        displayText: true,
+                        height: 420 * 0.9,
+                        width: 350 * 0.9,
+                      ),
+                    ),
+                    Text(
+                      'Similar Phones',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (var i = 1; i < _recommend.length; i++)
+                            GestureDetector(
+                              onTap: () => Navigator.of(context).pushNamed(MobilePage.Route, arguments: _recommend[i]),
+                              child: SingleSectionItem(
+                                item: _recommend[i],
+                                displayText: true,
+                              ),
+                            )
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      icon: Icon(Icons.filter_alt_outlined),
+                      label: Text('Change Filter'),
+                    )
+                  ],
                 ),
-                Text(
-                  'Similar Phones',
-                  style: Theme.of(context).textTheme.headline4,
-                  textAlign: TextAlign.center,
-                ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < _recommend.length - 1; i++)
-                        // if (_recommend[i].name == 'iPhone 11 Pro Max')
-                        SingleSectionItem(
-                          item: _recommend[i + 1],
-                          displayText: true,
-                        )
-                    ],
-                  ),
-                ),
-                RaisedButton.icon(
-                  onPressed: () {
-                    // print(_recommend[0]);
-                    Navigator.of(context).pushNamed(FilterPage.Route);
-                  },
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  icon: Icon(Icons.mobile_friendly),
-                  label: Text('Change Filter'),
-                )
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

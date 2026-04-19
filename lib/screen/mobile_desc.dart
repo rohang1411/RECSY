@@ -5,109 +5,140 @@ import 'package:url_launcher/url_launcher.dart';
 
 class MobilePage extends StatelessWidget {
   static const Route = '/mobilePage';
+
   @override
   Widget build(BuildContext context) {
-    FilterPage mobile = ModalRoute.of(context).settings.arguments;
-    final size = MediaQuery.of(context).size;
-    List _keys = description.keys.toList();
-    List _keysMobile = mobile.specs.keys.toList();
+    final Mobile mobile = ModalRoute.of(context)?.settings.arguments as Mobile;
+    final List<String> specKeys = mobile.specs.keys.toList();
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(mobile.name, style: bodyText(context)),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => launchUrl(Uri.parse(mobile.buyLink)),
+        icon: const Icon(Icons.shopping_bag_outlined),
+        label: const Text('Buy Now'),
       ),
-      body: Container(
-        // padding: EdgeInsets.all(5),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 6,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  SingleSectionItem(
-                    item: mobile,
-                    displayText: false,
-                    height: size.height * 0.44,
-                    width: size.width * 0.66,
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      for (var i = 0; i < 4; i++)
-                        Descriptions(
-                          keys: _keys,
-                          i: i,
-                          mobile: mobile,
-                          size: size,
-                        ), // Function call for description page boxes, here arguments are passed
-                    ], // See there for execution and any error
-                  ),
-                ],
-              ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      body: CustomScrollView(
+        slivers: [
+          _buildSliverAppBar(mobile),
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.all(16.0),
+              child: DescriptionButton(mobile: mobile),
             ),
-            // SingleChildScrollView(
-            // padding: EdgeInsets.only(left: 10),
-            // child: Column(children: <Widget>[
-            DescriptionButton(mobile: mobile),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 0, 8, 2),
+          ),
+          SliverToBoxAdapter(
+            child: _buildKeySpecHighlights(context, mobile),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
               child: Text(
-                'Description',
-                style: Theme.of(context).textTheme.headline1.copyWith(
-                      fontSize: 30,
-                      color: Colors.white,
+                'Specifications',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
               ),
             ),
-            Expanded(
-              // height: MediaQuery.of(context).size.height * 0.2,
-              // padding: const EdgeInsets.fromLTRB(15, 5, 0, 0),
-              flex: 3,
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(left: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var i = 0; i < _keysMobile.length; i++)
-                      Container(
-                        margin: EdgeInsets.symmetric(vertical: 5),
-                        child: RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: '${_keysMobile[i]} :\n',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 20,
-                                ),
-                              ),
-                              TextSpan(
-                                text: '${mobile.specs[_keysMobile[i]]}',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  // fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              // ]),
-            ),
-            Center(
-              child: RaisedButton.icon(
-                padding: EdgeInsets.symmetric(horizontal: 25, vertical: 10),
-                onPressed: () => launch(mobile.buyLink),
-                icon: Icon(Icons.shopping_bag),
-                label: Text('Buy Now'),
-              ),
-            ),
-          ],
+          ),
+          _buildSpecsList(specKeys, mobile),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 80), // Space for the FAB
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliverAppBar(Mobile mobile) {
+    return SliverAppBar(
+      expandedHeight: 300.0,
+      pinned: true,
+      floating: false,
+      stretch: true,
+      backgroundColor: mobile.color.withAlpha(51),
+      flexibleSpace: FlexibleSpaceBar(
+        centerTitle: true,
+        title: Text(
+          mobile.name,
+          style: const TextStyle(
+            fontSize: 18.0,
+            fontWeight: FontWeight.bold,
+          ),
         ),
+        background: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: SingleSectionItem(
+            item: mobile,
+            displayText: false,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeySpecHighlights(BuildContext context, Mobile mobile) {
+    final List<String> highlightKeys = description.keys.toList().take(4).toList();
+
+    return Container(
+      height: 100,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: highlightKeys.length,
+        itemBuilder: (context, index) {
+          final key = highlightKeys[index];
+          final iconPath = description[key]!;
+          return _buildHighlightChip(key, mobile.specs[key]?.toString() ?? '-', iconPath);
+        },
+        separatorBuilder: (context, index) => const SizedBox(width: 12),
+      ),
+    );
+  }
+
+  Widget _buildHighlightChip(String key, String value, String iconPath) {
+    return Chip(
+      avatar: Image.asset(
+        iconPath,
+        height: 24,
+        width: 24,
+        color: kPrimaryColor,
+      ),
+      label: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(key, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(value),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      backgroundColor: Colors.white.withAlpha(26),
+    );
+  }
+
+  Widget _buildSpecsList(List<String> keys, Mobile mobile) {
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (BuildContext context, int index) {
+          final key = keys[index];
+          final value = mobile.specs[key]?.toString() ?? '-';
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+            child: Card(
+              elevation: 0,
+              color: Colors.white.withAlpha(13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: ListTile(
+                title: Text(key, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(value),
+              ),
+            ),
+          );
+        },
+        childCount: keys.length,
       ),
     );
   }
