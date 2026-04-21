@@ -5,7 +5,7 @@
  * stable natural key (slug for phones, (aspect, version) for aspect
  * definitions). Embeddings are intentionally NOT computed here — they are
  * generated lazily by the ingestion pipeline (Phase 2+) for chunks and on
- * demand for `phones.spec_embedding` (Phase 5).
+ * demand for `phones.spec_embedding` (run `pnpm spec-embed:backfill` after seed).
  */
 import { sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';

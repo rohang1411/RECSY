@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 /**
- * Marketing placeholder for the landing page. The real conversational intake
- * (Phase 5) will replace this hero with a chat-first experience.
+ * Landing hero — primary CTA routes to Phase 5 recommender (`/recommend`).
  *
  * Design notes:
  *   - Uses design tokens only — no hard-coded hex values.
@@ -31,7 +30,7 @@ export default function HomePage() {
           )}
         >
           <Sparkles className="text-primary size-3.5" aria-hidden />
-          Phase 0 scaffold is live
+          Conversational recommender is live
         </span>
 
         <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl md:text-6xl">

@@ -24,6 +24,15 @@ export const ASK_RATE_LIMIT_WINDOW_MS = 60_000;
 /** Max `/api/ask` requests per window per hashed client IP. */
 export const ASK_RATE_LIMIT_MAX = 30;
 
+/** Sliding window for `/api/recommend` rate limiting (ms). */
+export const RECOMMEND_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** Max `/api/recommend` requests per window per hashed client IP. */
+export const RECOMMEND_RATE_LIMIT_MAX = 24;
+
+/** HttpOnly cookie storing `recommendation_sessions.session_cookie`. */
+export const RECOMMEND_SESSION_COOKIE = 'recsy_rec_session';
+
 /** Minimum number of distinct sources that must appear in the final citation set. */
 export const MIN_DISTINCT_SOURCES_IN_CONTEXT = 3;
 

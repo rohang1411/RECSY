@@ -5,7 +5,18 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
+**Status.** Phase 5 (Conversational recommender) **shipped (MVP)** — `/recommend`
+multi-turn intake, `POST /api/recommend` with cookie-backed
+`recommendation_sessions` / `recommendation_turns`, Flash **structured**
+`UserRequirements` extraction + clarify threshold, **aspect-weighted** ranking
+with budget / form-factor / brand filters, optional **cosine bump** vs
+`phones.spec_embedding` after `pnpm spec-embed:backfill`, deal-breaker keyword
+gate, must-have soft scoring, **two-per-brand** diversity in the top three picks,
+relaxation ladder when filters empty, separate **rate limit** from `/api/ask`,
+and `/browse` list. **Living risk register:** §20 (feature & approach). **Still
+deferred:** Gemini **Pro tie-break**, richer NLP on must-haves — see
+[ADR 0007](./adr/0007-recommender-mvp.md) and [`docs/recommender/README.md`](./recommender/README.md).
+Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
 extraction with chunk-id validation + one retry, `pnpm scorecard:run`, neutral
 rows when retrieval is empty, recency as a **confidence** bump only, and
@@ -53,7 +64,7 @@ skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 17. [Testing Strategy](#17-testing-strategy)
 18. [CI/CD & Deployment](#18-cicd--deployment)
 19. [Project Phases & Progress](#19-project-phases--progress)
-20. [Open Questions & Future Work](#20-open-questions--future-work)
+20. [Open Questions & Future Work](#20-open-questions--future-work) — includes [feature & approach risk register](#feature-and-approach-risk-register-living)
 21. [Glossary](#21-glossary)
 22. [Change Log](#22-change-log)
 23. [Issues Log](#23-issues-log)
@@ -67,7 +78,9 @@ experiences on one site:
 
 - **Conversational recommender.** The landing page is a chat intake. A user
   describes what they care about in plain English; an LLM extracts structured
-  requirements; a hybrid retriever picks 3 phones and explains why.
+  requirements; the pipeline ranks active phones (aspects + filters + optional
+  `spec_embedding` cosine) and returns three diverse picks with links to detail
+  pages.
 - **Per-phone consensus engine.** Each phone has a dedicated page with a
   seven-axis aspect scorecard (camera, battery, performance, display, build,
   software, value) aggregated from YouTube, Reddit, and editorial reviews —
@@ -209,7 +222,7 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
 | Feature                               | Status | Phase | Notes                                                     |
 | ------------------------------------- | ------ | ----- | --------------------------------------------------------- |
-| Landing hero placeholder              | ✓      | 0     | Real conversational intake arrives Phase 5                |
+| Landing hero + CTA                    | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                 |
 | Dark/light theme (OKLCH tokens)       | ✓      | 0     | Dark default, `next-themes`, AA contrast                  |
 | `/api/health` liveness probe          | ✓      | 0     |                                                           |
 | Typed env validation                  | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                |
@@ -227,8 +240,9 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | Hybrid retrieval (vector + FTS + RRF) | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)   |
 | Per-phone page & chat Q&A             | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                        |
 | Aspect scorecard agent graph          | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist    |
-| Conversational recommender            | ◯      | 5     | Replaces landing placeholder                              |
-| Browse + filter                       | ◯      | 6     |                                                           |
+| Conversational recommender            | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`             |
+| Browse (phone list)                   | ✓      | 5     | `/browse` → `/p/[slug]`; faceted filter = Phase 6         |
+| Browse + filter                       | ◯      | 6     | Faceted / filter UI beyond list                           |
 | Compare (two phones)                  | ◯      | 7     |                                                           |
 | PWA install + offline shell           | ◯      | 7     |                                                           |
 | LLM evaluation harness in CI          | ◯      | 3+    | Gated by eval set                                         |
@@ -455,7 +469,11 @@ citation validation).
 
 ## 11. Recommender Pipeline
 
-Phase 5 deliverable. Three-stage:
+Phase 5 **MVP (shipped 2026-04-21)** — [ADR 0007](./adr/0007-recommender-mvp.md),
+[`docs/recommender/README.md`](./recommender/README.md). The live path uses
+**Flash** structured extraction, **SQL + spec-json** candidate filtering, and
+**aspect-weighted** scores; `spec_embedding` semantic retrieval and **Pro**
+tie-break are documented below as **full vision** / deferred.
 
 ### Stage A — Preference extraction (`UserRequirements`)
 
@@ -488,29 +506,47 @@ Multi-turn sessions merge requirements across turns. If
 
 ### Stage B — Candidate retrieval
 
-1. **Hard filter** by `spec_json` (budget, foldable, region availability).
-2. **Soft filter** by must-haves / deal-breakers (penalty, not exclusion).
-3. **Aspect score join** — weight aspects by user priorities.
-4. **Semantic retrieval** over `phones.spec_embedding` using the
-   `use_cases` + priorities as query.
-5. **Diversity filter** — at most 2 phones per brand in the candidate pool.
+**MVP (implemented):**
+
+1. **Hard filter** by parsed `spec_json` + `msrp_usd` (budget min/max, foldable,
+   screen-size range, max weight) and **disliked brands**.
+2. **Deal-breakers** — substring match on a compact haystack; **exclude** hits.
+3. **Must-haves** — keyword overlap **soft multiplier** on the composite score
+   (reduces false-empty sets from literal matching).
+4. **Aspect score join** — weighted `aspects.score` with user priorities;
+   missing explicit priorities use **`aspect_definitions.default_weight`**
+   (latest version per axis).
+5. **Optional semantic bump** — when at least one active phone has
+   `spec_embedding`, embed `buildRecommenderQueryText(requirements)` once and
+   add a **bounded additive** term from cosine vs each phone’s stored vector
+   (phones without a vector get **no** bonus for that part). Backfill:
+   `pnpm spec-embed:backfill` (not part of `db:setup`).
+6. **Diversity** — at most **two** phones per **brand** in the top **three**
+   picks.
+
+**Full vision (deferred):**
+
+- **Deeper semantic retrieval** (e.g. re-rank top-K from HNSW on `spec_embedding`
+  alone, or multi-vector fusion) if offline eval shows gain over additive cosine.
+- **Regional** hard filter via `region_availability` once intake captures region.
 
 ### Stage C — Ranking
 
-1. Deterministic weighted score per phone.
-2. If top-3 scores are within 5 points, Gemini Pro tie-breaks with a single
-   structured call returning `RecommendationSet` (headline + reasoning +
-   trade-offs per pick).
-3. Picks saved to `recommendation_turns`; click/dismiss events logged to
-   `recommendation_feedback` for later offline evaluation.
+**MVP:** deterministic composite score only; picks persisted on
+`recommendation_turns` (`intent: recommend`, `picks`, `candidate_phone_ids`).
+
+**Full vision (deferred):** if top candidates are within a narrow band, **Gemini
+Pro** (or equivalent) structured **tie-break** returning richer `RecommendationSet`
+copy; **feedback** rows on `recommendation_feedback` for offline eval.
 
 ### Fallback rules
 
-- If zero candidates survive hard filters, relax soft constraints one at a
-  time and surface this in the UI ("I relaxed your preference for X because
-  no phone in your budget met it.").
-- If _still_ zero, return the single nearest match with a "nothing really
-  fits" explanation rather than pretending.
+**MVP:** widen **budget max** once (fixed factor), then drop **foldable-only**
+if still empty, then rank **all active** phones that survive deal-breakers
+(surfaced as `relaxed` codes to the UI).
+
+**Principle (unchanged):** never pretend a great match exists when the corpus
+cannot support it — honest relaxation beats silent failure.
 
 ---
 
@@ -800,6 +836,11 @@ See [ADR 0002](./adr/0002-design-tokens.md).
 - **Scorecard** — pure helpers (`query-build`, `definitions`, `recency`,
   `extraction-schema`) are covered by Vitest; the full agent path needs DB +
   Gemini (manual / script).
+- **Recommender** — `match.ts`, `vector-utils`, `spec-embedding-text`, and
+  `extract-requirements` (mock `LlmProvider`) have unit tests; full `/api/recommend`
+  path still needs DB + live Gemini for an integration test (manual for now).
+- **`spec-embed:backfill`** — not in CI; run locally/staging when seeds or
+  `buildSpecDocumentForEmbedding` change.
 - Integration tests live under `tests/integration/` and are excluded from the
   default `pnpm test` — run with `pnpm test:integration` (added when first
   DB-touching test lands in Phase 3).
@@ -860,7 +901,7 @@ justifies it.
 | 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                      |
 | 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups |
 | 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                |
-| 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder                                                     |
+| 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                           |
 | 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                                                  |
 | 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                                  |
 
@@ -1023,6 +1064,20 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
 | Q5  | Multi-language support?                                        | Deferred indefinitely — scope creep for a learning project.                                                                          |
 | Q6  | Sponsorship-detection for sources?                             | Schema leaves room (`sources.raw_json` can hold signals). Implemented only if a clear, lightweight signal emerges.                   |
 
+### Feature and approach risk register (living)
+
+Non-exhaustive. **Status** is updated in place when we mitigate or ship a fix —
+rows are not deleted so history stays visible in the “Notes” column.
+
+| Area                  | Issue / limit                                                                  | Status                         | Notes                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query  | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
+| Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only           | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
+| Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack        | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
+| Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`           | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
+| Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs          | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
+| DB / RLS              | Service-role routes bypass RLS; anon read scope must stay aligned with product | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
+
 ---
 
 ## 21. Glossary
@@ -1052,6 +1107,31 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-21 — Recommender: `spec_embedding` backfill + semantic bump
+
+- **`pnpm spec-embed:backfill`** — `scripts/backfill-spec-embeddings.ts`; fills
+  `phones.spec_embedding` from `buildSpecDocumentForEmbedding` + Gemini
+  embeddings (default: null columns only; `--force` re-embeds active phones).
+- **`src/services/recommender/spec-embedding-text.ts`**, **`vector-utils.ts`** —
+  query/spec text for aligned cosine, `parseVectorColumn` + cosine helper.
+- **`match.ts`** — `specSemanticBonus`, `rankCandidates(..., { queryEmbedding })`;
+  catalogue loads `spec_embedding`.
+- **Tests** — `extract-requirements.test.ts` (mock `LlmProvider`), plus unit
+  tests for vector + spec text.
+- **[ADR 0007](./adr/0007-recommender-mvp.md)** + **§20 risk register** updated
+  (mitigated row for spec vectors; entries kept when status changes).
+
+### 2026-04-21 — Phase 5 MVP (conversational recommender)
+
+- **`src/services/recommender/`** — `UserRequirements` Zod schema + merge
+  normalisation, Flash structured extract, phone catalog + aspect join,
+  filters, weighted score, diversity, relaxation ladder.
+- **`POST /api/recommend`** — session cookie, `recommendation_turns` persistence,
+  `consumeRecommendRateLimit`, clarify vs results response shape.
+- **`/recommend`** + **`/browse`** — user-facing intake and active-phone list.
+- **[ADR 0007](./adr/0007-recommender-mvp.md)** — MVP vs §11 full vision.
+- **`docs/recommender/README.md`** — operator / developer map.
 
 ### 2026-04-21 — Phase 4 MVP (aspect scorecard)
 
@@ -1557,4 +1637,6 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
 
 _When updating this document: add a new block to §22, a severity-sorted
 entry to §23 if anything non-trivial broke, bump status markers in §6
-and §19, and keep the ToC in sync._
+and §19, update the living **§20 risk register** (status/notes) when a
+known limitation is mitigated or a new one appears — do not remove rows,
+and keep the ToC in sync._
