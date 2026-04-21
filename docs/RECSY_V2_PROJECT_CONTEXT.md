@@ -5,7 +5,14 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 3 (Retrieval + phone pages) **shipped (MVP)** —
+**Status.** Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
+aspect with a **single combined query** from `query_prompts`, structured Gemini
+extraction with chunk-id validation + one retry, `pnpm scorecard:run`, neutral
+rows when retrieval is empty, recency as a **confidence** bump only, and
+`ScorecardSection` on `/p/[slug]` when aspects exist. **Calibration** (z-score /
+price bracket) and **multi-query fusion** per aspect are explicitly deferred;
+see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md) and [`docs/scorecard/README.md`](./scorecard/README.md).
+Phase 3 (Retrieval + phone pages) **shipped (MVP)** —
 retrieval, IP-hashed `/api/ask` rate limiting, citation-tagged chat
 with validation + retry, `/p/[slug]` UI, `pnpm retrieval:smoke`, **Playwright
 E2E** (SSR phone page + mocked NDJSON ask), **tiered eval** (`docs/eval/README.md`,
@@ -217,9 +224,9 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | `db:setup` orchestrator + `db:smoke`  | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                    |
 | MCP-style ingestion adapters          | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles   |
 | `pnpm ingest` CLI + nightly cron      | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs` |
-| Hybrid retrieval (vector + FTS + RRF) | ▲      | 3     | + MMR + source coverage                                   |
-| Per-phone page & chat Q&A             | ◯      | 3     |                                                           |
-| Aspect scorecard agent graph          | ◯      | 4     |                                                           |
+| Hybrid retrieval (vector + FTS + RRF) | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)   |
+| Per-phone page & chat Q&A             | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                        |
+| Aspect scorecard agent graph          | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist    |
 | Conversational recommender            | ◯      | 5     | Replaces landing placeholder                              |
 | Browse + filter                       | ◯      | 6     |                                                           |
 | Compare (two phones)                  | ◯      | 7     |                                                           |
@@ -509,43 +516,46 @@ Multi-turn sessions merge requirements across turns. If
 
 ## 12. Aspect Scorecard Agent
 
-Phase 4 deliverable. Runs weekly via `pg_cron` per phone, producing the row
-in `aspects`.
+Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md)
+and [`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
+from hybrid retrieval + structured LLM extraction. **`pg_cron` / weekly batch**
+is documented for later; today the operator entrypoint is **`pnpm scorecard:run`**.
 
-### Agent graph (pseudocode)
+### Agent graph (MVP pseudocode)
 
 ```
-for each phone × aspect_definition:
-  chunks = retrieve(
-    phone_id,
-    queries = aspect_definition.query_prompts,
-    k = 30,
-    recency_bias = 0.3
-  )
-  raw = llm.structured(
-    schema = AspectSignal[],
-    messages = [...]
-  )
-  validated = keep(raw, where: supporting_chunk_id ∈ chunks)
-  weighted = weight_by_recency(validated)
-  aggregated = aggregate(weighted)   // mean + dissent ratio
-  calibrated = z_score_within_bracket(aggregated)  // 0..10
-  upsert aspects (phone_id, aspect_definition_id, ...calibrated)
+for each phone × latest aspect_definition (seven axes):
+  query = combine(query_prompts)        // one string, UTF-8 byte cap
+  chunks = hybrid_retrieve(phone_id, query, scorecard_knobs)
+  if chunks empty:
+    upsert neutral aspect (score 5, low confidence, "not enough reviews")
+    continue
+  extraction = llm.structured(AspectScorecard schema, passages = chunks)
+  extraction = validate_chunk_ids(extraction, chunks)  // retry once if needed
+  confidence = extraction.confidence + recency_boost(cited chunks only)
+  upsert aspects (score = raw = overallScore, quotes, n_supporting, n_dissenting, ...)
 ```
 
-### Key properties
+### Full vision (deferred)
+
+- **Multi-query retrieval** — several embeds per aspect (e.g. battery life vs
+  charging) fused before the LLM; MVP uses one combined query to cap cost.
+- **Recency in scoring** — MVP applies recency only as a small **confidence**
+  bump, not 2× evidence weights in the headline 0–10 score.
+- **Z-score calibration within price bracket** — peer-normalised scores using
+  `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
+  identical.
+- **Automation** — `pg_cron` per phone, same operational pattern as ingestion
+  when we schedule it.
+
+### Key properties (unchanged intent)
 
 - **Aspects are data, not code.** To add a new aspect, insert a row in
   `aspect_definitions` with its `query_prompts` and `default_weight`, bump
-  `version`, and the next cron run picks it up.
-- **Recency weighting.** Sources from the last 90 days carry 2× weight vs
-  older; configurable per aspect.
-- **Z-score calibration within price bracket.** A "great camera for $500" ≠
-  "great camera for $1200". Scores normalised within peer group (defined in
-  `aspect_definitions.metadata`, TBD) then re-mapped to 0–10.
-- **Dissent tracking.** We keep `n_dissenting` and quote counter-examples
-  explicitly on the phone page — this is a product feature, not just
-  analytics.
+  `version`, and the next scorecard run picks it up (once `ASPECT_NAMES` and UI
+  lists include the new axis).
+- **Dissent tracking.** We keep `n_dissenting` and quote counter-examples in
+  JSON; the phone page shows summaries and evidence counts once rows exist.
 
 ---
 
@@ -787,6 +797,9 @@ See [ADR 0002](./adr/0002-design-tokens.md).
 ### Conventions
 
 - Tests sit next to the unit under test: `foo.ts` + `foo.test.ts`.
+- **Scorecard** — pure helpers (`query-build`, `definitions`, `recency`,
+  `extraction-schema`) are covered by Vitest; the full agent path needs DB +
+  Gemini (manual / script).
 - Integration tests live under `tests/integration/` and are excluded from the
   default `pnpm test` — run with `pnpm test:integration` (added when first
   DB-touching test lands in Phase 3).
@@ -846,7 +859,7 @@ justifies it.
 | 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                       |
 | 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                      |
 | 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups |
-| 4 — Aspect scorecard        | Agent graph, calibration                                 | ◯              |                                                                                  |
+| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                |
 | 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder                                                     |
 | 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                                                  |
 | 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                                  |
@@ -1039,6 +1052,19 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-21 — Phase 4 MVP (aspect scorecard)
+
+- **`src/services/scorecard/`** — combined-query retrieval per aspect, Zod
+  extraction schema, chunk-id validation with one retry + strip, recency
+  confidence bump, upsert into `aspects`.
+- **`pnpm scorecard:run`** — `scripts/scorecard-run.ts`; `--phone <slug>` or
+  `--all` (active phones only).
+- **`ScorecardSection`** on `/p/[slug]` — renders when at least one aspect row
+  exists; seven-axis list with score, confidence, evidence counts, summary.
+- **[ADR 0006](./adr/0006-aspect-scorecard-mvp.md)** — MVP scope, deferred
+  calibration / multi-query / cron.
+- **`docs/scorecard/README.md`** — operator guide.
 
 ### 2026-04-21 — Phase 3 MVP (phone Q&A + rate limit + smoke)
 

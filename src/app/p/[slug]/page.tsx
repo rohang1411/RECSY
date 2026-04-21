@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 
 import { PhoneHeader } from '@/components/phone/PhoneHeader';
+import { ScorecardSection } from '@/components/phone/ScorecardSection';
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
 
@@ -18,6 +19,7 @@ export default async function PhonePage({ params }: PageProps) {
   const db = getDb();
   const [phone] = await db
     .select({
+      id: phones.id,
       slug: phones.slug,
       brand: phones.brand,
       model: phones.model,
@@ -35,6 +37,7 @@ export default async function PhonePage({ params }: PageProps) {
   return (
     <div className="pb-16">
       <PhoneHeader brand={phone.brand} model={phone.model} tagline={phone.tagline} />
+      <ScorecardSection phoneId={phone.id} />
       <PhoneChat phoneSlug={phone.slug} />
     </div>
   );

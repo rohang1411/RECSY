@@ -41,6 +41,9 @@ export function getDb(): ReturnType<typeof drizzle<typeof schema>> {
   return _db;
 }
 
+/** Drizzle instance type — use in `import type` contexts (avoids value imports only for `typeof`). */
+export type AppDb = ReturnType<typeof getDb>;
+
 /**
  * Raw `postgres` driver handle — needed by retrieval primitives that issue
  * tagged-template SQL outside Drizzle (vector literals, FTS queries).
