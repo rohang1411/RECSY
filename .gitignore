@@ -1,46 +1,53 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# --- Node / Next.js -----------------------------------------------------------
+node_modules
+.pnpm-store
+
+.next/
+out/
+build/
+
+# --- Env ----------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Testing ------------------------------------------------------------------
+coverage/
+
+# --- Misc ---------------------------------------------------------------------
 .DS_Store
-.atom/
-.buildlog/
-.history
-.svn/
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
+# --- Vercel -------------------------------------------------------------------
+.vercel
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# --- TypeScript ---------------------------------------------------------------
+*.tsbuildinfo
+next-env.d.ts
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-/build/
+# --- Drizzle ------------------------------------------------------------------
+drizzle/meta/
 
-# Web related
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Exceptions to above rules.
-!/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
-
-# Helper folder
-helper/
+# --- Legacy (Flutter) build artifacts ----------------------------------------
+# The `legacy/` directory preserves the pre-rewrite Flutter project for
+# reference. We keep the source tracked but ignore generated output to avoid
+# bloating the repo.
+legacy/.dart_tool/
+legacy/build/
+legacy/.flutter-plugins-dependencies
+legacy/**/.last_build_id
+legacy/**/Pods/
+legacy/**/GeneratedPluginRegistrant.*
+legacy/**/.gradle/
+legacy/**/local.properties
+legacy/**/key.properties
+legacy/**/*.iml
+legacy/**/xcuserdata/
+legacy/**/Flutter/Flutter.framework
+legacy/**/Flutter/Flutter.podspec
+legacy/**/DerivedData/
