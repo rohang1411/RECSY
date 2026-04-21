@@ -28,6 +28,7 @@
     "db:reset": "tsx --env-file=.env.local scripts/db-reset.ts",
     "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
     "ingest": "tsx --env-file=.env.local scripts/ingest.ts",
+    "ingest:smoke": "tsx --env-file=.env.local scripts/ingest-smoke.ts",
     "prepare": "node scripts/prepare-husky.mjs"
   },
   "dependencies": {

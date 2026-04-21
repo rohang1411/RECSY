@@ -74,6 +74,30 @@ HTML / transcripts without a network or an LLM.
 - Chunking is **timestamp-aware**: every chunk carries a `startTs` and an
   `anchor` of `?t=<sec>` so retrieval citations deep-link into the video.
 
+**Transcript fallback chain** (tries in order, first non-empty wins):
+
+1. `info.getTranscript()` — the Innertube transcript endpoint. Fastest when
+   it works; YouTube sporadically rotates the endpoint and returns HTTP 400.
+2. Caption tracks already on the `Info` object
+   (`info.captions.caption_tracks`), fetched as `timedtext?fmt=json3`.
+3. Watch-page HTML scrape → `captionTracks` → `timedtext?fmt=json3`. Same
+   mechanism the YouTube web player falls back to.
+
+Within tiers 2/3 we iterate through ranked tracks (manual English → ASR
+English → any English → any) because YouTube sometimes lists a "manual
+English" track that returns an empty response; the real captions are on
+the ASR track one position lower.
+
+> **Known limitation — YouTube datacenter IP throttling.** YouTube's
+> `timedtext` endpoint returns HTTP 200 with **zero bytes** when called
+> from a non-residential IP, even with matching cookies and referer. We
+> see this consistently from datacenter IPs, CI runners (GitHub Actions),
+> and similar environments. In that case every track empties out, the
+> adapter reports `NotFoundError: no transcript available`, and the
+> orchestrator skips the source cleanly. Article and Reddit adapters are
+> unaffected. A residential-IP proxy would fix this but costs money —
+> out of scope for the zero-budget MVP.
+
 ### Article (`adapters/article.ts`)
 
 - Discovery is a no-op on the free tier — supply URLs via `--url`.
@@ -116,7 +140,7 @@ Reads from `src/env.ts`. Relevant knobs:
 | Var                   | Purpose                                           |
 | --------------------- | ------------------------------------------------- |
 | `DATABASE_URL`        | Postgres (service_role permissions).              |
-| `LLM_EMBEDDING_MODEL` | Embedding model (default `text-embedding-004`).   |
+| `LLM_EMBEDDING_MODEL` | Embedding model (default `gemini-embedding-001`). |
 | `LLM_CACHE_ENABLED`   | Caches LLM responses — not applied to embeddings. |
 | `LOG_LEVEL`           | `info` for dev; `debug` for per-segment tracing.  |
 
@@ -152,11 +176,13 @@ Concurrency key is per-phone so manual + nightly never fight.
 
 ## Troubleshooting
 
-| Symptom                                  | Likely cause / fix                                       |
-| ---------------------------------------- | -------------------------------------------------------- |
-| `NotFoundError: no transcript available` | Video has captions disabled — normal, skipped.           |
-| `NotFoundError: Article body too short`  | Paywalled / JS-rendered / bot-blocked — normal, skipped. |
-| `IntegrationError: HTTP 429`             | Source rate-limited us. `p-retry` will back off.         |
-| `embed batch failed, retrying`           | Gemini transient. Retries exhaust → run fails.           |
-| `source upsert returned no row`          | Schema drift — regenerate migrations.                    |
-| `phone not found: <slug>`                | `pnpm db:setup` first (seeds 20 phones).                 |
+| Symptom                                  | Likely cause / fix                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `NotFoundError: no transcript available` | Captions disabled, live stream, or datacenter-IP throttling (see YouTube note). Skipped. |
+| `NotFoundError: Article body too short`  | Paywalled / JS-rendered / bot-blocked — normal, skipped.                                 |
+| `IntegrationError: HTTP 429`             | Source rate-limited us. `p-retry` will back off.                                         |
+| `embed batch failed, retrying`           | Gemini transient. Retries exhaust → run fails.                                           |
+| `source upsert returned no row`          | Schema drift — regenerate migrations.                                                    |
+| `phone not found: <slug>`                | `pnpm db:setup` first (seeds 20 phones).                                                 |
+| Gemini `ByteString`/non-ASCII error      | Env var or User-Agent contains a non-ASCII char. Fix header; Node's `fetch` is strict.   |
+| `outputDimensionality: expected number`  | You changed `LLM_EMBEDDING_DIMS`. Dimension is hardcoded (768) — remove the env var.     |

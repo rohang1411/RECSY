@@ -34,6 +34,13 @@ const config = {
     ],
     'subject-case': [2, 'never', ['upper-case', 'pascal-case', 'start-case']],
     'header-max-length': [2, 'always', 100],
+
+    // `@commitlint/config-conventional` caps body/footer lines at 100 chars,
+    // which is routinely tripped by bullet lists that include package names,
+    // URLs, or file paths. We disable those two rules; `header-max-length`
+    // above still enforces the short, scannable subject line.
+    'body-max-line-length': [0, 'always', Infinity],
+    'footer-max-line-length': [0, 'always', Infinity],
   },
 };
 

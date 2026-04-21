@@ -26,7 +26,12 @@ export const env = createEnv({
     GROQ_API_KEY: z.string().optional(),
     LLM_CHAT_MODEL: z.string().default('gemini-2.5-flash'),
     LLM_REASONING_MODEL: z.string().default('gemini-2.5-pro'),
-    LLM_EMBEDDING_MODEL: z.string().default('text-embedding-004'),
+    // `gemini-embedding-001` is Google's current GA embedding model; the
+    // former `text-embedding-004` was retired on the v1beta endpoint in
+    // early 2026. Truncated to 768 dims via Matryoshka (see
+    // `EMBEDDING_DIMENSIONS` constant in gemini.ts) to match the DB
+    // `vector(768)` column.
+    LLM_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
     LLM_CACHE_ENABLED: z
       .string()
       .default('true')

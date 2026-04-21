@@ -50,6 +50,13 @@ export interface RawSource {
   readonly body: string;
   /** Adapter-specific payload merged into `sources.raw_json` on write. */
   readonly raw: Readonly<Record<string, unknown>>;
+  /**
+   * Non-persisted scratch pad carried from `fetch()` → `chunk()`. The writer
+   * MUST NOT serialise this to the DB. Use for bulky intermediates (e.g.
+   * timestamped caption segments) that the chunker needs but shouldn't bloat
+   * `sources.raw_json`.
+   */
+  readonly transient?: Readonly<Record<string, unknown>>;
 }
 
 /**

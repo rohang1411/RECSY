@@ -72,8 +72,21 @@ export class ChunkEmbedder {
               minTimeout: 1_000,
               maxTimeout: 10_000,
               onFailedAttempt: (ctx) => {
+                // `ctx.error` is the thrown error from the underlying LLM
+                // call; without logging it, retries look opaque and debugging
+                // is painful. `error.cause` surfaces the SDK-level detail
+                // (HTTP status, schema violation, etc.).
+                const err = ctx.error;
+                const cause = (err as { cause?: unknown }).cause;
+                const causeMsg =
+                  cause instanceof Error ? `${cause.name}: ${cause.message}` : undefined;
                 this.log.warn(
-                  { batchIdx, attempt: ctx.attemptNumber },
+                  {
+                    batchIdx,
+                    attempt: ctx.attemptNumber,
+                    err: err.message,
+                    cause: causeMsg,
+                  },
                   'embed batch failed, retrying',
                 );
               },

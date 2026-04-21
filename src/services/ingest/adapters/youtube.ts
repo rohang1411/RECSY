@@ -5,16 +5,23 @@
  * community-maintained reverse of Innertube). We do NOT need a Google API
  * key for this — Innertube is what the YouTube web client uses.
  *
- * Fetch:
- *   - getInfo(videoId) → metadata (title, channel, published_at, view_count)
- *   - getTranscript() → time-stamped segments (auto- or human-captioned)
+ * Fetch strategy (transcript, in order, stop at first success):
+ *   1. `info.getTranscript()` — the Innertube transcript endpoint. Fast when
+ *      it works; sporadically returns HTTP 400 because YouTube rotates the
+ *      endpoint without notice.
+ *   2. Caption tracks exposed on the already-fetched `Info` object
+ *      (`info.captions.caption_tracks`), fetched as `timedtext?fmt=json3`.
+ *   3. Watch-page HTML scrape + `timedtext?fmt=json3`. Last-resort but very
+ *      stable — it's what the YouTube web player itself falls back to.
  *
  * Chunking is timestamp-aware: each chunk preserves the `start_ts` of its
- * first segment, enabling deep-link citations via `?t=<seconds>`.
+ * first segment, enabling deep-link citations via `?t=<seconds>`. Segments
+ * are passed from `fetch()` → `chunk()` via `RawSource.transient`, which is
+ * NOT persisted to the DB (keeps `sources.raw_json` lean).
  *
- * Failures are normal — videos may have transcripts disabled, may be
- * geo-blocked, or may be live. We surface those as `NotFoundError` so the
- * orchestrator skips them.
+ * Failures are normal — videos may have transcripts disabled, be geo-blocked,
+ * or be live streams. We surface those as `NotFoundError` so the orchestrator
+ * skips them and records a clean telemetry row.
  */
 import { Innertube } from 'youtubei.js';
 
@@ -31,6 +38,14 @@ import type {
   SourceAdapter,
   SourceCandidate,
 } from '../types';
+import {
+  fetchCaptionTracksFromWatchPage,
+  fetchTimedTextSegments,
+  normaliseRawTrack,
+  rankCaptionTracks,
+  type CaptionTrack,
+  type TranscriptSegment,
+} from './youtube-transcript';
 
 const TARGET_TOKENS_PER_CHUNK = 400;
 const OVERLAP_TOKENS = 60;
@@ -50,7 +65,9 @@ const ytCache: CachedYt = { client: null, promise: null };
 async function getYt(): Promise<Innertube> {
   if (ytCache.client) return ytCache.client;
   if (!ytCache.promise) {
-    ytCache.promise = Innertube.create({ retrieve_player: false }).then((c) => {
+    // `retrieve_player: true` (the default) is required for caption tracks
+    // to be populated on the `Info` object, which Fallback B below needs.
+    ytCache.promise = Innertube.create().then((c) => {
       ytCache.client = c;
       return c;
     });
@@ -104,7 +121,7 @@ export class YouTubeAdapter implements SourceAdapter {
       throw new IntegrationError('youtube getInfo failed', { videoId }, err);
     }
 
-    const segments = await this.getTranscriptSegments(info, videoId);
+    const segments = await this.loadTranscript(info, videoId);
     if (segments.length === 0) {
       throw new NotFoundError('no transcript available', { videoId });
     }
@@ -136,36 +153,19 @@ export class YouTubeAdapter implements SourceAdapter {
         channelId: basicInfo.channel?.id ?? null,
         segmentCount: segments.length,
       },
+      // Transient scratch — not persisted to `sources.raw_json`. Lets
+      // `chunk()` preserve per-segment timestamps without bloating the DB.
+      transient: { segments },
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async getTranscriptSegments(info: any, videoId: string): Promise<TranscriptSegment[]> {
-    let transcriptInfo;
-    try {
-      transcriptInfo = await info.getTranscript();
-    } catch (err) {
-      this.log.debug(
-        { videoId, err: err instanceof Error ? err.message : err },
-        'getTranscript failed',
-      );
-      return [];
-    }
-    const initial =
-      transcriptInfo?.transcript?.content?.body?.initial_segments ??
-      transcriptInfo?.transcript?.content?.initial_segments ??
-      [];
-    return (initial as unknown[])
-      .map((seg) => normaliseSegment(seg))
-      .filter((s): s is TranscriptSegment => s !== null);
-  }
-
   chunk(raw: RawSource): RawChunk[] {
-    const segments = (raw.raw['segments'] as TranscriptSegment[] | undefined) ?? [];
+    const segments = (raw.transient?.['segments'] as TranscriptSegment[] | undefined) ?? [];
     if (segments.length > 0) {
       return chunkTimedSegments(segments);
     }
-    // Fallback (segments not persisted in raw): chunk by chars only.
+    // Defensive fallback for adapters that re-chunk a persisted `RawSource`
+    // (e.g. after a schema migration). Produces a single untimed chunk.
     return [
       {
         chunkIndex: 0,
@@ -176,16 +176,137 @@ export class YouTubeAdapter implements SourceAdapter {
       },
     ];
   }
+
+  /**
+   * Try each transcript strategy in order; return the first non-empty set.
+   * Each fallback is fully isolated — a thrown exception in one never stops
+   * the others. The caller interprets an empty return as "permanently
+   * unavailable" and skips the video.
+   */
+  private async loadTranscript(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    info: any,
+    videoId: string,
+  ): Promise<TranscriptSegment[]> {
+    // 1. Innertube transcript endpoint (fastest when it works).
+    const primary = await this.tryInnertubeTranscript(info, videoId);
+    if (primary.length > 0) {
+      this.log.debug({ videoId, n: primary.length, via: 'innertube' }, 'transcript loaded');
+      return primary;
+    }
+
+    // 2. Caption tracks already on the Info object → timedtext?fmt=json3.
+    const viaInfo = await this.tryTimedTextFromInfo(info, videoId);
+    if (viaInfo.length > 0) {
+      this.log.debug({ videoId, n: viaInfo.length, via: 'info-captions' }, 'transcript loaded');
+      return viaInfo;
+    }
+
+    // 3. Last resort: scrape the watch page HTML for caption tracks.
+    const viaScrape = await this.tryTimedTextFromWatchPage(videoId);
+    if (viaScrape.length > 0) {
+      this.log.debug({ videoId, n: viaScrape.length, via: 'watch-scrape' }, 'transcript loaded');
+      return viaScrape;
+    }
+
+    this.log.info({ videoId }, 'all transcript strategies returned empty');
+    return [];
+  }
+
+  private async tryInnertubeTranscript(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    info: any,
+    videoId: string,
+  ): Promise<TranscriptSegment[]> {
+    try {
+      const transcriptInfo = await info.getTranscript();
+      const initial =
+        transcriptInfo?.transcript?.content?.body?.initial_segments ??
+        transcriptInfo?.transcript?.content?.initial_segments ??
+        [];
+      return (initial as unknown[])
+        .map((seg) => normaliseInnertubeSegment(seg))
+        .filter((s): s is TranscriptSegment => s !== null);
+    } catch (err) {
+      this.log.debug(
+        { videoId, err: err instanceof Error ? err.message : err },
+        'innertube getTranscript threw; trying fallback',
+      );
+      return [];
+    }
+  }
+
+  private async tryTimedTextFromInfo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    info: any,
+    videoId: string,
+  ): Promise<TranscriptSegment[]> {
+    try {
+      const rawTracks =
+        info?.captions?.caption_tracks ?? info?.captions?.captionTracks ?? info?.captions ?? [];
+      const tracks: CaptionTrack[] = (Array.isArray(rawTracks) ? rawTracks : [])
+        .map((t: unknown) => normaliseRawTrack(t))
+        .filter((t: CaptionTrack | null): t is CaptionTrack => t !== null);
+      return await this.fetchFirstNonEmptyTrack(tracks, videoId, 'info-captions');
+    } catch (err) {
+      this.log.debug(
+        { videoId, err: err instanceof Error ? err.message : err },
+        'info-captions fallback failed',
+      );
+      return [];
+    }
+  }
+
+  private async tryTimedTextFromWatchPage(videoId: string): Promise<TranscriptSegment[]> {
+    try {
+      const tracks = await fetchCaptionTracksFromWatchPage(videoId);
+      return await this.fetchFirstNonEmptyTrack(tracks, videoId, 'watch-scrape');
+    } catch (err) {
+      this.log.debug(
+        { videoId, err: err instanceof Error ? err.message : err },
+        'watch-page fallback failed',
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Walk ranked caption tracks (best → worst) and return the first one that
+   * actually yields segments. YouTube occasionally lists a "manual English"
+   * track whose `timedtext?fmt=json3` endpoint returns HTTP 200 with an empty
+   * body — the real captions are on the ASR track one position lower. We
+   * therefore can't trust the first hit; we probe until something lands.
+   */
+  private async fetchFirstNonEmptyTrack(
+    tracks: readonly CaptionTrack[],
+    videoId: string,
+    via: string,
+  ): Promise<TranscriptSegment[]> {
+    const ranked = rankCaptionTracks(tracks);
+    for (const track of ranked) {
+      const segs = await fetchTimedTextSegments(track.baseUrl);
+      if (segs.length > 0) {
+        this.log.debug(
+          { videoId, via, lang: track.languageCode, kind: track.kind, n: segs.length },
+          'picked caption track',
+        );
+        return segs;
+      }
+      this.log.debug(
+        { videoId, via, lang: track.languageCode, kind: track.kind },
+        'caption track returned empty; trying next',
+      );
+    }
+    return [];
+  }
 }
 
-interface TranscriptSegment {
-  text: string;
-  startMs: number;
-  endMs: number;
-}
-
+/**
+ * Normalise a segment from `youtubei.js`'s `getTranscript()` shape. The JSON
+ * paths differ per video/locale, so we defensively read multiple field names.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normaliseSegment(seg: any): TranscriptSegment | null {
+function normaliseInnertubeSegment(seg: any): TranscriptSegment | null {
   if (!seg) return null;
   const text =
     typeof seg.snippet?.text === 'string'

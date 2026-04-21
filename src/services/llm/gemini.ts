@@ -25,6 +25,14 @@ import type {
   StructuredResult,
 } from './types';
 
+/**
+ * Output dimensionality for `gemini-embedding-001` (Matryoshka truncation).
+ * Locked to 768 to match the `vector(768)` column in `chunks.embedding` —
+ * changing it requires a DB migration + a full re-embed of every chunk,
+ * so we keep it as a compile-time constant rather than an env knob.
+ */
+const EMBEDDING_DIMENSIONS = 768;
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
   private readonly google = createGoogleGenerativeAI({ apiKey: env.GEMINI_API_KEY });
@@ -145,10 +153,19 @@ export class GeminiProvider implements LlmProvider {
 
   async embed(texts: readonly string[], model?: string): Promise<EmbedResult> {
     const embedModel = model ?? env.LLM_EMBEDDING_MODEL;
+    // `RETRIEVAL_DOCUMENT` is the correct task type for indexing passages
+    // (queries will use `RETRIEVAL_QUERY`). Sending a distinct task type
+    // yields embeddings better aligned for retrieval recall than the default
+    // `SEMANTIC_SIMILARITY`, per Google's embedding docs.
+    const googleOptions: { outputDimensionality: number; taskType: string } = {
+      outputDimensionality: EMBEDDING_DIMENSIONS,
+      taskType: 'RETRIEVAL_DOCUMENT',
+    };
     try {
       const result = await embedMany({
-        model: this.google.textEmbedding(embedModel),
+        model: this.google.embedding(embedModel),
         values: [...texts],
+        providerOptions: { google: googleOptions },
       });
       return {
         embeddings: result.embeddings,
@@ -156,7 +173,15 @@ export class GeminiProvider implements LlmProvider {
         usage: { tokensIn: result.usage?.tokens ?? 0 },
       };
     } catch (err) {
-      throw new LlmError('Gemini embedding failed', { model: embedModel }, err);
+      // Preserve the underlying SDK message so callers (and retry logs) see
+      // the actual HTTP / schema problem rather than a generic wrap.
+      const causeMsg =
+        err instanceof Error ? err.message : typeof err === 'string' ? err : 'unknown';
+      throw new LlmError(
+        `Gemini embedding failed: ${causeMsg}`,
+        { model: embedModel, options: googleOptions },
+        err,
+      );
     }
   }
 }

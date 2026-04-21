@@ -38,8 +38,10 @@ import type {
 
 const MIN_BODY_CHARS = 400;
 const FETCH_TIMEOUT_MS = 20_000;
+// HTTP header values must be ASCII (ByteString); no em-dash / unicode here or
+// Node's `fetch` throws `TypeError: Cannot convert argument to a ByteString`.
 const USER_AGENT =
-  'RECSYBot/0.1 (+https://github.com/rohan/recsy; contact: github issues) — extracts public article text for non-commercial review aggregation';
+  'RECSYBot/0.1 (+https://github.com/rohan/recsy; contact: github issues) - extracts public article text for non-commercial review aggregation';
 
 export class ArticleAdapter implements SourceAdapter {
   readonly type = 'article' as const;
@@ -120,7 +122,10 @@ export class ArticleAdapter implements SourceAdapter {
       return text;
     } catch (err) {
       if (err instanceof IntegrationError) throw err;
-      throw new IntegrationError('article fetch failed', { url }, err);
+      const cause = err instanceof Error ? (err.cause ?? err) : err;
+      const causeMsg =
+        cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause ?? 'unknown');
+      throw new IntegrationError(`article fetch failed (${causeMsg})`, { url }, err);
     } finally {
       clearTimeout(timeout);
     }
