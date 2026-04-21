@@ -1,53 +1,168 @@
-# --- Node / Next.js -----------------------------------------------------------
-node_modules
-.pnpm-store
+# =============================================================================
+# .gitignore — RECSY v2
+# -----------------------------------------------------------------------------
+# Grouped by source of the artefact. Anything user-specific or generated must
+# live in one of these sections. Keep the list alphabetised within each group.
+#
+# Override rules (allow-list a specific file under an ignored pattern) live
+# immediately below the rule they override, so diffs stay obvious.
+# =============================================================================
 
+
+# --- Node / package managers --------------------------------------------------
+node_modules/
+.pnpm-store/
+.npmrc.local
+.yarn/
+*.tgz
+*.tar.gz
+
+
+# --- Next.js / build output ---------------------------------------------------
 .next/
 out/
 build/
+dist/
 
-# --- Env ----------------------------------------------------------------------
-.env
-.env.*
-!.env.example
-
-# --- Testing ------------------------------------------------------------------
-coverage/
-
-# --- Misc ---------------------------------------------------------------------
-.DS_Store
-*.pem
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# --- Vercel -------------------------------------------------------------------
-.vercel
 
 # --- TypeScript ---------------------------------------------------------------
 *.tsbuildinfo
 next-env.d.ts
 
-# --- Drizzle ------------------------------------------------------------------
+
+# --- Env & secrets ------------------------------------------------------------
+# Rule of thumb: ignore every `.env*` variant by default; whitelist only the
+# example/template files that document which variables exist.
+.env
+.env.*
+!.env.example
+
+
+# --- Testing ------------------------------------------------------------------
+coverage/
+playwright-report/
+test-results/
+.vitest-cache/
+.vitest/
+
+
+# --- Tool caches --------------------------------------------------------------
+.eslintcache
+.prettiercache
+.turbo/
+.swc/
+.cache/
+
+
+# --- Husky (generated shim) ---------------------------------------------------
+# The committed hook scripts live in `.husky/<name>`; the `_` folder is
+# auto-created by husky install and should never be checked in.
+.husky/_/
+
+
+# --- Drizzle / DB -------------------------------------------------------------
 drizzle/meta/
 
-# --- Legacy (Flutter) build artifacts ----------------------------------------
+
+# --- Supabase CLI (if a dev adopts it locally) --------------------------------
+.supabase/
+
+
+# --- Vercel -------------------------------------------------------------------
+.vercel/
+
+
+# --- IDE / editor -------------------------------------------------------------
+# Rules are anchored to the repo root (leading `/`) so they don't collide with
+# already-tracked artefacts inside `legacy/` (e.g. `legacy/.vscode/settings.json`).
+
+# JetBrains
+/.idea/
+*.iml
+
+# VS Code — ignore by default at the root; re-opt-in to shared settings if the
+# team ever wants to commit conventions.
+/.vscode/
+!/.vscode/extensions.json
+
+# Cursor local project metadata
+/.cursor/
+
+# Sublime, Zed, generic
+*.sublime-workspace
+*.sublime-project
+/.zed/
+
+# "Local History" plugin
+/.history/
+
+
+# --- OS metadata --------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+
+# --- Editor / patch temp files ------------------------------------------------
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+
+
+# --- Logs ---------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+
+# --- Scratch / local temp -----------------------------------------------------
+tmp/
+.tmp/
+temp/
+*.pem
+
+
+# --- Legacy (Flutter) build artefacts -----------------------------------------
 # The `legacy/` directory preserves the pre-rewrite Flutter project for
-# reference. We keep the source tracked but ignore generated output to avoid
-# bloating the repo.
+# historical reference. We keep the source tracked but ignore generated
+# output + local tool state to avoid bloating the repo.
 legacy/.dart_tool/
-legacy/build/
+legacy/.flutter-plugins
 legacy/.flutter-plugins-dependencies
+legacy/.packages
+legacy/build/
 legacy/**/.last_build_id
-legacy/**/Pods/
-legacy/**/GeneratedPluginRegistrant.*
 legacy/**/.gradle/
 legacy/**/local.properties
 legacy/**/key.properties
 legacy/**/*.iml
+legacy/**/Pods/
+legacy/**/GeneratedPluginRegistrant.*
 legacy/**/xcuserdata/
+legacy/**/DerivedData/
 legacy/**/Flutter/Flutter.framework
 legacy/**/Flutter/Flutter.podspec
-legacy/**/DerivedData/
+legacy/**/Flutter/Generated.xcconfig
+legacy/**/Flutter/flutter_export_environment.sh
+legacy/ios/Runner/GeneratedPluginRegistrant.*

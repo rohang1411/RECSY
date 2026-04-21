@@ -5,9 +5,12 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 1 shipped on 2026-04-21 (DB + data model + seed corpus).
-Phase 0 (scaffold + design system + service skeletons) shipped on
-2026-04-19. Phase 2 (Python ingestion adapters) is next.
+**Status.** Phase 2 (Ingestion) — TypeScript `SourceAdapter` module +
+CLI + CI cron — code, tests (23/23), and docs are complete as of
+2026-04-21. Acceptance is gated on a YouTube transcript fallback + a live
+end-to-end run. Phase 1 (DB, data model, seed corpus) and Phase 0
+(scaffold, design system, service skeletons) shipped 2026-04-21 and
+2026-04-19 respectively.
 
 ---
 
@@ -53,7 +56,8 @@ experiences on one site:
   (YouTube deep-links include timestamps).
 
 **Stack summary.** Next.js 16 · Drizzle ORM → Supabase Postgres + pgvector ·
-Gemini 2.5 Flash/Pro via Vercel AI SDK · Python 3.12 ingestion (added Phase 4).
+Gemini 2.5 Flash/Pro via Vercel AI SDK · TypeScript ingestion adapters
+(`youtubei.js` · Reddit public JSON · `@mozilla/readability` + `linkedom`).
 Runs entirely on free tiers.
 
 **This is a portfolio/learning project.** See
@@ -523,39 +527,87 @@ for each phone × aspect_definition:
 
 ## 13. Ingestion Pipeline (MCP-style adapters)
 
-Phase 2. Separate Python package under `ingest/` (added later). Shared
-adapter protocol:
+> **Phase 2 status.** Code complete. One transcript-fetch issue with
+> `youtubei.js` is known and tracked (see "Known issues" below). See
+> [ADR 0003](./adr/0003-ingestion-typescript.md) for the TypeScript pivot
+> rationale and [`docs/ingest/README.md`](./ingest/README.md) for the
+> operator's guide.
 
-```python
-class SourceAdapter(Protocol):
-    type: Literal['youtube', 'reddit', 'article']
+The ingestion layer lives at `src/services/ingest/` and is **TypeScript-
+native**. Earlier drafts of this doc called for a Python sidecar; ADR 0003
+documents why we consolidated on one runtime.
 
-    def discover(self, phone: Phone) -> Iterable[SourceCandidate]: ...
-    def fingerprint(self, candidate: SourceCandidate) -> str: ...
-    def fetch(self, candidate: SourceCandidate) -> RawSource: ...
-    def chunk(self, raw: RawSource) -> list[Chunk]: ...
+### Adapter protocol
+
+```ts
+interface SourceAdapter {
+  readonly type: 'youtube' | 'reddit' | 'article';
+  discover(phone: PhoneRef, opts: DiscoverOpts): Promise<SourceCandidate[]>;
+  fetch(candidate: SourceCandidate): Promise<RawSource>;
+  chunk(raw: RawSource): RawChunk[]; // pure
+}
 ```
+
+Stages are deliberately fine-grained so adapters are unit-testable against
+fixtures without a network or an LLM.
 
 ### Per-adapter specifics
 
-- **YouTube.** `youtube-transcript-api` for transcripts; `yt-dlp` as
-  metadata fallback. Chunk at sentence-aligned 400-token windows with
-  `start_ts` / `end_ts` preserved for deep-linking.
-- **Reddit.** `praw` scoped to r/Android, r/PickAnAndroidForMe, r/iphone,
-  r/GalaxyS\*. Post + top 10 comments, each comment a chunk. Spam / karma
-  floors applied.
-- **Article.** `trafilatura` for extraction, `readability-lxml` fallback.
+- **YouTube** (`adapters/youtube.ts`). Uses `youtubei.js` (Innertube — no
+  API key). Discovery searches `"{brand} {model} review"`, `"camera test"`,
+  `"long term review"`; results deduped by video id. Chunking is
+  **timestamp-aware**: each chunk carries `start_ts` + an `?t=<sec>`
+  anchor so retrieval citations deep-link into the video.
+- **Reddit** (`adapters/reddit.ts`). Reddit's public JSON endpoints — no
+  OAuth required. Discovery searches an allowlist (`r/Android`,
+  `r/GooglePixel`, `r/apple`, `r/iphone`, `r/OnePlus`, `r/nothingtech`, …)
+  for the phone model over the last year. Thread + top-N comments above
+  `MIN_COMMENT_SCORE`. Spam / karma floors applied.
+- **Article** (`adapters/article.ts`). `linkedom` + `@mozilla/readability`
+  (same algorithm as Firefox Reader View). Discovery is a no-op on the
+  free tier; URLs are supplied via the CLI's `--url` flag.
 
 ### Orchestration
 
-- Idempotency via `sources.content_hash` — re-ingest is a no-op unless the
-  content changed.
-- Retries via `tenacity` (exponential backoff).
-- Rate limits per adapter (YouTube's implicit transcript rate limit is
-  ~1 req/s per IP; we stay well under).
-- Telemetry written to `ingest_runs`.
-- Scheduled in GitHub Actions cron (daily for new releases, weekly for
-  catalog refresh) to keep secrets out of the Vercel runtime.
+- `IngestOrchestrator` coordinates `discover → fetch → chunk → embed →
+write` per phone × adapter. Candidates fetched serially per adapter (be
+  a polite bot). Adapters run serially per phone.
+- Idempotency via `sources.content_hash` (sha256 of normalised body):
+  matching hash → skip re-embed and re-insert entirely; record
+  `ingest_runs.status = skipped`.
+- Embedding: `ChunkEmbedder` batches 50 texts/call, concurrency 1,
+  exponential backoff via `p-retry`.
+- Writing: single transaction per source replaces chunks atomically.
+- Telemetry: one `ingest_runs` row per source-write attempt
+  (`status` ∈ `started | success | skipped | failed`).
+- Scheduling:
+  [`.github/workflows/ingest.yml`](../.github/workflows/ingest.yml)
+  provides manual dispatch + nightly cron at 03:17 UTC.
+
+### CLI
+
+```
+pnpm ingest --phone <slug> [--adapter youtube|reddit|article]
+                           [--url <url>] [--limit N] [--dry-run]
+```
+
+`--dry-run` runs discover + fetch + chunk, but skips embedding and DB
+writes — useful for validating a new adapter end-to-end without cost.
+
+### Known issues
+
+- **YouTube transcript endpoint returns HTTP 400** on some videos when
+  called through `youtubei.js@17.0.1`'s `getTranscript()`. The orchestrator
+  correctly downgrades these to `NotFoundError` and skips the source, so
+  ingestion doesn't abort — but the effective YouTube coverage is lower
+  than designed. Two follow-ups tracked:
+  1. Add `youtube-transcript` (npm) as a fallback when `getTranscript()`
+     fails, OR
+  2. Parse `ytInitialPlayerResponse.captions.playerCaptionsTracklistRenderer.captionTracks`
+     from the video page ourselves and fetch the XML track directly.
+- `youtubei.js` prints parser warnings for novel UI nodes
+  (`ShoppingTimelyShelfView`, etc.) — non-fatal; a future PR may silence
+  them by redirecting the library's logger.
 
 ---
 
@@ -734,16 +786,16 @@ justifies it.
 
 ## 19. Project Phases & Progress
 
-| Phase                       | Scope                                                    | Status         | Notes                        |
-| --------------------------- | -------------------------------------------------------- | -------------- | ---------------------------- |
-| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log               |
-| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke   |
-| 2 — Ingestion               | Python adapters, idempotency, content hashing            | ◯              | Next phase                   |
-| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ◯              |                              |
-| 4 — Aspect scorecard        | Agent graph, calibration                                 | ◯              |                              |
-| 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder |
-| 6 — Browse                  | Filter UI, faceted search                                | ◯              |                              |
-| 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                              |
+| Phase                       | Scope                                                    | Status         | Notes                                                             |
+| --------------------------- | -------------------------------------------------------- | -------------- | ----------------------------------------------------------------- |
+| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                                    |
+| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                        |
+| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ◐              | Code + tests + CI done; YT transcript fallback + live e2e pending |
+| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ◯              |                                                                   |
+| 4 — Aspect scorecard        | Agent graph, calibration                                 | ◯              |                                                                   |
+| 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder                                      |
+| 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                                   |
+| 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                   |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
 this document updated.
@@ -756,17 +808,52 @@ this document updated.
 - ✅ `pnpm typecheck` · `lint` · `format:check` · `test` · `build` all green.
 - ✅ This document updated.
 
-### Phase 2 plan (Ingestion)
+### Phase 2 progress (Ingestion)
 
-- Python 3.12 package under `ingest/`, managed with `uv`.
-- Three `SourceAdapter` implementations: YouTube (transcript-first), Reddit
-  (r/Android, r/PickAnAndroidForMe, r/iphone), articles (trafilatura).
-- Embedder using Gemini `text-embedding-004` via REST API, with per-batch
-  rate limiting and the same `llm_cache` table for re-runs.
-- Orchestrator: per-phone discover → fingerprint → fetch → chunk → embed → upsert.
-- GitHub Actions cron with `secrets.SUPABASE_SERVICE_ROLE_KEY` writing via
-  the service role (RLS bypass intentional for ingest).
-- Telemetry rows in `ingest_runs` for every adapter invocation.
+**Pivot.** The original plan called for a Python 3.12 sidecar. At the
+start of Phase 2 we revisited the trade-offs and consolidated on a
+TypeScript-only implementation co-located with the web app. Rationale and
+consequences: [ADR 0003](./adr/0003-ingestion-typescript.md).
+
+**Shipped (code, tests, infra, docs):**
+
+- `src/services/ingest/types.ts` — `SourceAdapter` protocol + Zod-
+  validated DTOs (`SourceCandidate`, `RawSource`, `RawChunk`,
+  `AdapterRunSummary`).
+- `src/services/ingest/chunking.ts` — sentence-aligned token-bounded
+  chunker. 9 unit tests (splitSentences, chunkText, countTokens) passing.
+- `src/services/ingest/hashing.ts` — sha256 helper + 4 unit tests.
+- `src/services/ingest/embedder.ts` — `ChunkEmbedder` batches 50
+  texts/call, `p-limit` concurrency, `p-retry` with exponential backoff.
+- `src/services/ingest/writer.ts` — `IngestionWriter`: transactional,
+  idempotent via `content_hash`; writes `sources` + `chunks` + one
+  `ingest_runs` telemetry row per attempt.
+- `src/services/ingest/adapters/article.ts` — `linkedom` +
+  `@mozilla/readability`; discovery is a no-op (CLI `--url` only).
+- `src/services/ingest/adapters/youtube.ts` — `youtubei.js` Innertube;
+  timestamp-aware chunking with `?t=<sec>` deep-link anchors.
+- `src/services/ingest/adapters/reddit.ts` — Reddit's public JSON API;
+  allowlisted subreddits with score/spam floors.
+- `src/services/ingest/orchestrator.ts` — isolates adapter failures,
+  aggregates telemetry per-phone.
+- `scripts/ingest.ts` + `pnpm ingest` CLI — `--phone`, `--adapter`,
+  `--url`, `--limit`, `--hint`, `--dry-run`.
+- `.github/workflows/ingest.yml` — `workflow_dispatch` + 03:17 UTC cron,
+  per-phone concurrency keys, secrets-aware.
+- `docs/ingest/README.md` — operator's guide.
+
+**Pending for Phase 2 acceptance:**
+
+1. **YouTube transcript reliability.** First smoke run hit `HTTP 400`
+   from Innertube's `get_transcript` endpoint. Plan is to add a fallback
+   via the `youtube-transcript` npm package (or parse
+   `ytInitialPlayerResponse.captions` from the page HTML directly) before
+   declaring the adapter usable in production cadence.
+2. **Live end-to-end.** Ingest at least one phone's worth of articles and
+   one phone's YouTube content; confirm chunks + embeddings land in
+   Supabase and a second run idempotently skips.
+3. **ingest_runs hygiene.** Add a query to `pnpm db:smoke` that asserts
+   non-zero `success` rows after an e2e run.
 
 ---
 
@@ -810,6 +897,34 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-21 — Phase 2 code complete (ingestion)
+
+- **ADR 0003** written: consolidated ingestion onto TypeScript instead of a
+  Python sidecar. Reuses Drizzle schema, `LlmProvider`, `pino`, `@/env`,
+  `vitest`, and the single CI pipeline. See ADR for the trade-off analysis.
+- **`src/services/ingest/`** full module: `types.ts` (protocol + DTOs),
+  `chunking.ts`, `hashing.ts`, `embedder.ts`, `writer.ts`, `orchestrator.ts`,
+  and three adapters (`youtube`, `reddit`, `article`). Barrel export at
+  `index.ts`.
+- **Dependencies added:** `youtubei.js@17.0.1`, `@mozilla/readability@0.6`,
+  `linkedom@0.18`, `gpt-tokenizer@3.4`, `p-retry@8`, `p-limit@7`.
+- **CLI**: `pnpm ingest --phone <slug> [--adapter …] [--url …] [--dry-run]`.
+  Entry point `scripts/ingest.ts` with arg parsing + summary print + non-
+  zero exit on any adapter error.
+- **CI**: `.github/workflows/ingest.yml` — manual dispatch with inputs
+  (`phone`, `adapter`, `limit`) and nightly 03:17 UTC cron over a curated
+  seed roster.
+- **Tests**: 13 new unit tests (chunking × 9, hashing × 4). 23/23 total
+  passing. `tsc --noEmit` and `eslint` clean.
+- **Docs**: `docs/ingest/README.md` written (architecture, per-adapter
+  notes, idempotency, troubleshooting table). §13 of this document
+  rewritten around the TS implementation.
+- **Known blocker to Phase 2 acceptance**: `youtubei.js`'s
+  `getTranscript()` returns HTTP 400 for the discovered Pixel 9 Pro XL
+  review video. Orchestrator correctly degrades these to a skipped
+  source, but we need a fallback transcript path before calling Phase 2
+  done. Options tracked in §13 "Known issues".
 
 ### 2026-04-21 — Phase 1 shipped
 
