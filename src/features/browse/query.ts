@@ -33,5 +33,5 @@ export function browseWhereFromState(state: BrowseFilterState): SQL {
   if (parts.length === 1) {
     return parts[0]!;
   }
-  return and(...(parts as [SQL, SQL, ...SQL[]]));
+  return and(...parts)!;
 }

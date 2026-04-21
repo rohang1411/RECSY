@@ -6,10 +6,10 @@ ranking** → **three diverse picks**. Full pipeline semantics: §11 in
 
 ## User-facing routes
 
-| Route        | Purpose                             |
-| ------------ | ----------------------------------- |
-| `/recommend` | Multi-turn chat intake + pick cards |
-| `/browse`    | Active phones → `/p/[slug]`         |
+| Route        | Purpose                                                                                        |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| `/recommend` | Multi-turn chat intake + pick cards                                                            |
+| `/browse`    | Active phones + URL filters → `/p/[slug]` — see [`docs/browse/README.md`](../browse/README.md) |
 
 ## API
 

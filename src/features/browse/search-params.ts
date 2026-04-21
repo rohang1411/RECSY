@@ -90,8 +90,8 @@ export function browseFiltersToQueryString(state: BrowseFilterState): string {
 export function isDefaultBrowseState(state: BrowseFilterState): boolean {
   return (
     state.brands.length === 0 &&
-    state.minPriceUsd == null &&
-    state.maxPriceUsd == null &&
-    state.foldable === 'any'
+    state.minPriceUsd === DEFAULT_STATE.minPriceUsd &&
+    state.maxPriceUsd === DEFAULT_STATE.maxPriceUsd &&
+    state.foldable === DEFAULT_STATE.foldable
   );
 }

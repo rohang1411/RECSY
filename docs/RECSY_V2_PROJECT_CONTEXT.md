@@ -5,17 +5,21 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 5 (Conversational recommender) **shipped (MVP)** — `/recommend`
-multi-turn intake, `POST /api/recommend` with cookie-backed
-`recommendation_sessions` / `recommendation_turns`, Flash **structured**
-`UserRequirements` extraction + clarify threshold, **aspect-weighted** ranking
-with budget / form-factor / brand filters, optional **cosine bump** vs
-`phones.spec_embedding` after `pnpm spec-embed:backfill`, deal-breaker keyword
-gate, must-have soft scoring, **two-per-brand** diversity in the top three picks,
-relaxation ladder when filters empty, separate **rate limit** from `/api/ask`,
-and `/browse` list. **Living risk register:** §20 (feature & approach). **Still
-deferred:** Gemini **Pro tie-break**, richer NLP on must-haves — see
-[ADR 0007](./adr/0007-recommender-mvp.md) and [`docs/recommender/README.md`](./recommender/README.md).
+**Status.** Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
+`GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
+`spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
+[ADR 0008](./adr/0008-browse-filters-mvp.md) and [`docs/browse/README.md`](./browse/README.md).
+Phase 5 (Conversational recommender) **shipped (MVP)** — `/recommend` multi-turn
+intake, `POST /api/recommend` with cookie-backed `recommendation_sessions` /
+`recommendation_turns`, Flash **structured** `UserRequirements` extraction +
+clarify threshold, **aspect-weighted** ranking with budget / form-factor /
+brand filters, optional **cosine bump** vs `phones.spec_embedding` after
+`pnpm spec-embed:backfill`, deal-breaker keyword gate, must-have soft scoring,
+**two-per-brand** diversity in the top three picks, relaxation ladder when
+filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
+**Living risk register:** §20 (feature & approach). **Still deferred:** Gemini
+**Pro tie-break**, richer NLP on must-haves — see [ADR 0007](./adr/0007-recommender-mvp.md)
+and [`docs/recommender/README.md`](./recommender/README.md).
 Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
 extraction with chunk-id validation + one retry, `pnpm scorecard:run`, neutral
@@ -241,8 +245,8 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | Per-phone page & chat Q&A             | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                        |
 | Aspect scorecard agent graph          | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist    |
 | Conversational recommender            | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`             |
-| Browse (phone list)                   | ✓      | 5     | `/browse` → `/p/[slug]`; faceted filter = Phase 6         |
-| Browse + filter                       | ◯      | 6     | Faceted / filter UI beyond list                           |
+| Browse (phone list)                   | ✓      | 5     | `/browse` → `/p/[slug]`                                   |
+| Browse + filter                       | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                 |
 | Compare (two phones)                  | ◯      | 7     |                                                           |
 | PWA install + offline shell           | ◯      | 7     |                                                           |
 | LLM evaluation harness in CI          | ◯      | 3+    | Gated by eval set                                         |
@@ -902,7 +906,7 @@ justifies it.
 | 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups |
 | 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                |
 | 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                           |
-| 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                                                  |
+| 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                 |
 | 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                                  |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
@@ -1051,6 +1055,28 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
 - ✅ `pnpm lint` clean.
 - ✅ `pnpm db:smoke` 8/8 green (includes rate-limit unique index).
 
+### Phase 6 progress (Browse + filter)
+
+**Locked-in design.** [ADR 0008](./adr/0008-browse-filters-mvp.md) — query string
+is the filter source of truth; `GET` form; parsed `BrowseFilterState` drives
+Drizzle, not ad hoc string SQL for user-supplied values.
+
+**Shipped (code, tests, docs):**
+
+- `src/features/browse/search-params.ts` — `parseBrowseSearchParams`,
+  `browseFiltersToQueryString`, `isDefaultBrowseState`; unit tests
+  `search-params.test.ts`.
+- `src/features/browse/query.ts` — `browseWhereFromState` (active rows, optional
+  brand `inArray`, MSRP bounds with null exclusion, foldable from JSONB
+  `spec_json`).
+- `src/app/browse/` — `page.tsx` (distinct brands for checkboxes, filtered list),
+  `browse-filters-form.tsx`, `search-params-helpers.ts`.
+
+**Phase 6 quality gates as of 2026-04-21:**
+
+- ✅ `pnpm typecheck` · `test` · `lint` · `build` green.
+- ✅ [`docs/browse/README.md`](./browse/README.md) operator note.
+
 ---
 
 ## 20. Open Questions & Future Work
@@ -1069,14 +1095,15 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
 Non-exhaustive. **Status** is updated in place when we mitigate or ship a fix —
 rows are not deleted so history stays visible in the “Notes” column.
 
-| Area                  | Issue / limit                                                                  | Status                         | Notes                                                                                                                                                                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query  | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
-| Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only           | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
-| Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack        | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
-| Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`           | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
-| Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs          | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
-| DB / RLS              | Service-role routes bypass RLS; anon read scope must stay aligned with product | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
+| Area                  | Issue / limit                                                                       | Status                         | Notes                                                                                                                                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query       | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
+| Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only                | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
+| Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
+| Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
+| Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
+| DB / RLS              | Service-role routes bypass RLS; anon read scope must stay aligned with product      | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
+| Browse                | Untrusted query params; risk of log noise or injection if filter values hit raw SQL | **Mitigated (MVP)**            | Parsers map to `BrowseFilterState` (int bounds, brand list); Drizzle parameterises values; foldable filter uses a fixed JSON path expression. See ADR 0008. Do not ship raw full-query logging as analytics without redaction.                          |
 
 ---
 
@@ -1107,6 +1134,15 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-21 — Phase 6 MVP (browse + faceted filters)
+
+- **ADR 0008** — [browse filters: URL contract, server SQL, logging note](./adr/0008-browse-filters-mvp.md).
+- **`src/features/browse/`** — `search-params` + `query` (`browseWhereFromState`).
+- **`src/app/browse/`** — `GET` filter form, list + count, distinct brands.
+- **Tests** — `search-params.test.ts` (parse + query string round-trip).
+- **`docs/browse/README.md`** — operator map; **§20** risk register row for
+  untrusted URL params marked mitigated; §6 and §19 updated.
 
 ### 2026-04-21 — Recommender: `spec_embedding` backfill + semantic bump
 
