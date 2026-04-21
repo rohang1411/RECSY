@@ -1,0 +1,13 @@
+{
+  "fixtures": [
+    {
+      "id": "iphone-16-pro-battery",
+      "phoneSlug": "apple-iphone-16-pro",
+      "query": "battery life and charging",
+      "expect": {
+        "minChunks": 1,
+        "anyChunkTextIncludes": []
+      }
+    }
+  ]
+}

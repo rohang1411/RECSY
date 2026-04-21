@@ -18,6 +18,12 @@ export const RETRIEVAL_TOP_K_PRE_RERANK = 40;
 /** Chunks passed to the LLM as context after reranking. */
 export const RETRIEVAL_TOP_K_POST_RERANK = 8;
 
+/** Sliding window for `/api/ask` rate limiting (ms). */
+export const ASK_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** Max `/api/ask` requests per window per hashed client IP. */
+export const ASK_RATE_LIMIT_MAX = 30;
+
 /** Minimum number of distinct sources that must appear in the final citation set. */
 export const MIN_DISTINCT_SOURCES_IN_CONTEXT = 3;
 

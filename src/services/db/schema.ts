@@ -25,6 +25,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   vector,
 } from 'drizzle-orm/pg-core';
@@ -366,7 +367,7 @@ export const rateLimits = pgTable(
     windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
     count: integer('count').notNull().default(1),
   },
-  (t) => [index('rate_limits_key_window_idx').on(t.key, t.windowStart)],
+  (t) => [uniqueIndex('rate_limits_key_window_uniq').on(t.key, t.windowStart)],
 );
 
 // ---------------------------------------------------------------------------

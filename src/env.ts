@@ -37,6 +37,15 @@ export const env = createEnv({
       .default('true')
       .transform((v) => v.toLowerCase() !== 'false'),
 
+    /**
+     * When true, hybrid retrieval runs the optional Gemini structured rerank
+     * after MMR (extra ~1 Flash call per query). Default off for cost/latency.
+     */
+    RETRIEVAL_LLM_RERANK: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
   },
@@ -68,6 +77,7 @@ export const env = createEnv({
     LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL,
     LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL,
     LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED,
+    RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK,
     LOG_LEVEL: process.env.LOG_LEVEL,
     SENTRY_DSN: process.env.SENTRY_DSN,
 

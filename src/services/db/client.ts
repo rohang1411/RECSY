@@ -41,6 +41,14 @@ export function getDb(): ReturnType<typeof drizzle<typeof schema>> {
   return _db;
 }
 
+/**
+ * Raw `postgres` driver handle — needed by retrieval primitives that issue
+ * tagged-template SQL outside Drizzle (vector literals, FTS queries).
+ */
+export function getPostgres(): ReturnType<typeof postgres> {
+  return getClient();
+}
+
 /** Convenience re-export — equivalent to `getDb()`. */
 export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   get(_target, prop, receiver) {

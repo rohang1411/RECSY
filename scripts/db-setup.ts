@@ -5,8 +5,9 @@
  * Steps (in strict order):
  *   1. Enable extensions (pgvector, pg_trgm, pgcrypto, optionally pg_cron)
  *   2. Apply Drizzle migrations from `drizzle/migrations/`
- *   3. Apply RLS policies from `drizzle/rls.sql`
- *   4. Seed aspect_definitions + 20 starter phones
+ *   3. Apply full-text search indexes from `drizzle/fts.sql` (Phase 3)
+ *   4. Apply RLS policies from `drizzle/rls.sql`
+ *   5. Seed aspect_definitions + 20 starter phones
  *
  * Why one orchestrator instead of `pnpm db:migrate` plus a `psql` script?
  *   - Cross-platform (Windows/macOS/Linux) without requiring `psql`.
@@ -33,10 +34,11 @@ import { runSeeds } from './seed';
 const STEP = (n: number, name: string) =>
   // Setup is a CLI tool; logger is overkill and we want bare-metal output.
 
-  console.log(`\n[db:setup] step ${n}/4 — ${name}`);
+  console.log(`\n[db:setup] step ${n}/5 - ${name}`);
 
 const ROOT = resolve(__dirname, '..');
 const EXTENSIONS_SQL = resolve(ROOT, 'drizzle', 'extensions.sql');
+const FTS_SQL = resolve(ROOT, 'drizzle', 'fts.sql');
 const RLS_SQL = resolve(ROOT, 'drizzle', 'rls.sql');
 const MIGRATIONS_DIR = resolve(ROOT, 'drizzle', 'migrations');
 
@@ -52,6 +54,10 @@ async function main(): Promise<void> {
   const db = drizzle(client);
 
   try {
+    // Vector + trigram types live in `extensions` on Supabase; vanilla Postgres
+    // CI images need this search_path for unqualified `vector` in migrations.
+    await client`select set_config('search_path', 'public, extensions', false)`;
+
     STEP(1, 'enabling extensions');
     const extensionsSQL = await readFile(EXTENSIONS_SQL, 'utf8');
     await runMultiStatementSQL(client, extensionsSQL, { tolerateErrors: true });
@@ -59,17 +65,21 @@ async function main(): Promise<void> {
     STEP(2, 'applying migrations');
     await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
 
-    STEP(3, 'applying RLS policies');
+    STEP(3, 'applying FTS indexes');
+    const ftsSQL = await readFile(FTS_SQL, 'utf8');
+    await runMultiStatementSQL(client, ftsSQL);
+
+    STEP(4, 'applying RLS policies');
     const rlsSQL = await readFile(RLS_SQL, 'utf8');
     await runMultiStatementSQL(client, rlsSQL);
 
-    STEP(4, 'seeding aspect_definitions + phones');
+    STEP(5, 'seeding aspect_definitions + phones');
     const summary = await runSeeds(db);
     log(
       `        aspects upserted: ${summary.aspects.upserted}, phones upserted: ${summary.phones.upserted}`,
     );
 
-    log('\n[db:setup] OK — all four steps completed.');
+    log('\n[db:setup] OK - all five steps completed.');
   } finally {
     await client.end({ timeout: 5 });
   }

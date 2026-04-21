@@ -44,6 +44,13 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ['e2e/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
+      'no-console': 'off',
+    },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', 'test/**/*.{ts,tsx}'],
     rules: {
       'no-console': 'off',

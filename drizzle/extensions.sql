@@ -1,3 +1,7 @@
+-- Ensure target schema exists (vanilla Postgres / CI images; Supabase
+-- pre-provisions it — this line is a no-op there).
+CREATE SCHEMA IF NOT EXISTS extensions;
+
 -- =============================================================================
 -- Postgres extensions required by RECSY v2.
 --

@@ -5,14 +5,23 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 2 (Ingestion) **shipped** 2026-04-21. End-to-end
+**Status.** Phase 3 (Retrieval + phone pages) **shipped (MVP)** —
+retrieval, IP-hashed `/api/ask` rate limiting, citation-tagged chat
+with validation + retry, `/p/[slug]` UI, `pnpm retrieval:smoke`, **Playwright
+E2E** (SSR phone page + mocked NDJSON ask), **tiered eval** (`docs/eval/README.md`,
+`pnpm eval:retrieval`), and **optional LLM rerank** (`RETRIEVAL_LLM_RERANK`,
+ADR [0005](./adr/0005-e2e-and-evaluation.md)) landed 2026-04-21. **`db:smoke`**
+8/8; portability: `CREATE SCHEMA IF NOT EXISTS extensions` + `search_path` during
+`db-setup` for vanilla Postgres CI. **Remaining polish:** token-true streaming
+before citation validation; Tier-3 generative eval (live Gemini) stays manual /
+scheduled. Phase 2 (Ingestion) **shipped** 2026-04-21. End-to-end
 verified against live articles (10/10 smoke checks pass; 23 chunks
-embedded at 768 dims, idempotent re-run confirmed). The YouTube adapter
-has a full three-tier transcript fallback chain and iterates ranked
-caption tracks until one yields segments; failures degrade gracefully
-to a skipped-source telemetry row. Phase 1 (DB, data model, seed
-corpus) and Phase 0 (scaffold, design system, service skeletons)
-shipped 2026-04-21 and 2026-04-19 respectively.
+embedded at 768 dims, idempotent re-run confirmed). The YouTube
+adapter has a full three-tier transcript fallback chain and iterates
+ranked caption tracks until one yields segments; failures degrade
+gracefully to a skipped-source telemetry row. Phase 1 (DB, data
+model, seed corpus) and Phase 0 (scaffold, design system, service
+skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 
 ---
 
@@ -40,6 +49,7 @@ shipped 2026-04-21 and 2026-04-19 respectively.
 20. [Open Questions & Future Work](#20-open-questions--future-work)
 21. [Glossary](#21-glossary)
 22. [Change Log](#22-change-log)
+23. [Issues Log](#23-issues-log)
 
 ---
 
@@ -190,30 +200,31 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
 **Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
 
-| Feature                               | Status | Phase | Notes                                          |
-| ------------------------------------- | ------ | ----- | ---------------------------------------------- |
-| Landing hero placeholder              | ✓      | 0     | Real conversational intake arrives Phase 5     |
-| Dark/light theme (OKLCH tokens)       | ✓      | 0     | Dark default, `next-themes`, AA contrast       |
-| `/api/health` liveness probe          | ✓      | 0     |                                                |
-| Typed env validation                  | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                     |
-| LLM provider abstraction              | ✓      | 0     | Gemini impl + cache decorator                  |
-| Drizzle schema (12 tables, 8 enums)   | ✓      | 0     |                                                |
-| Postgres extensions bootstrapped      | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred) |
-| Initial migration applied             | ✓      | 1     | All tables + HNSW (cosine) indexes             |
-| RLS policies                          | ✓      | 1     | default-deny + anon read on public tables      |
-| `PhoneSpec` Zod schema                | ✓      | 1     | `src/features/phones/schema.ts`                |
-| Aspect definitions seeded             | ✓      | 1     | 7 aspects, weights sum to 1.0                  |
-| Starter phone corpus (20 phones)      | ✓      | 1     | budget→flagship, 6 brands, 1 foldable          |
-| `db:setup` orchestrator + `db:smoke`  | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip         |
-| MCP-style ingestion adapters          | ◯      | 2     | Python; YouTube, Reddit, articles              |
-| Hybrid retrieval (vector + FTS + RRF) | ◯      | 3     | + MMR + source coverage                        |
-| Per-phone page & chat Q&A             | ◯      | 3     |                                                |
-| Aspect scorecard agent graph          | ◯      | 4     |                                                |
-| Conversational recommender            | ◯      | 5     | Replaces landing placeholder                   |
-| Browse + filter                       | ◯      | 6     |                                                |
-| Compare (two phones)                  | ◯      | 7     |                                                |
-| PWA install + offline shell           | ◯      | 7     |                                                |
-| LLM evaluation harness in CI          | ◯      | 3+    | Gated by eval set                              |
+| Feature                               | Status | Phase | Notes                                                     |
+| ------------------------------------- | ------ | ----- | --------------------------------------------------------- |
+| Landing hero placeholder              | ✓      | 0     | Real conversational intake arrives Phase 5                |
+| Dark/light theme (OKLCH tokens)       | ✓      | 0     | Dark default, `next-themes`, AA contrast                  |
+| `/api/health` liveness probe          | ✓      | 0     |                                                           |
+| Typed env validation                  | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                |
+| LLM provider abstraction              | ✓      | 0     | Gemini impl + cache decorator                             |
+| Drizzle schema (12 tables, 8 enums)   | ✓      | 0     |                                                           |
+| Postgres extensions bootstrapped      | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)            |
+| Initial migration applied             | ✓      | 1     | All tables + HNSW (cosine) indexes                        |
+| RLS policies                          | ✓      | 1     | default-deny + anon read on public tables                 |
+| `PhoneSpec` Zod schema                | ✓      | 1     | `src/features/phones/schema.ts`                           |
+| Aspect definitions seeded             | ✓      | 1     | 7 aspects, weights sum to 1.0                             |
+| Starter phone corpus (20 phones)      | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                     |
+| `db:setup` orchestrator + `db:smoke`  | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                    |
+| MCP-style ingestion adapters          | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles   |
+| `pnpm ingest` CLI + nightly cron      | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs` |
+| Hybrid retrieval (vector + FTS + RRF) | ▲      | 3     | + MMR + source coverage                                   |
+| Per-phone page & chat Q&A             | ◯      | 3     |                                                           |
+| Aspect scorecard agent graph          | ◯      | 4     |                                                           |
+| Conversational recommender            | ◯      | 5     | Replaces landing placeholder                              |
+| Browse + filter                       | ◯      | 6     |                                                           |
+| Compare (two phones)                  | ◯      | 7     |                                                           |
+| PWA install + offline shell           | ◯      | 7     |                                                           |
+| LLM evaluation harness in CI          | ◯      | 3+    | Gated by eval set                                         |
 
 ---
 
@@ -227,7 +238,7 @@ flowchart LR
     YT["YouTube adapter<br/>(MCP-style)"] --> Chunker
     RD["Reddit adapter<br/>(MCP-style)"] --> Chunker
     ART["Article adapter<br/>(MCP-style)"] --> Chunker
-    Chunker --> Embedder["Gemini text-embedding-004"]
+    Chunker --> Embedder["Gemini gemini-embedding-001 (768 dim)"]
     Embedder --> PG[("Supabase<br/>Postgres + pgvector + pg_trgm")]
   end
 
@@ -257,11 +268,11 @@ flowchart LR
 
 ### Runtime boundaries
 
-| Layer                                       | Runtime                      | Notes                                             |
-| ------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| Edge (`middleware.ts`, future rate-limiter) | Edge                         | Supabase REST only (cannot use `postgres` driver) |
-| Route handlers & server components          | Node.js                      | Drizzle + `postgres` driver OK                    |
-| Ingestion pipeline                          | Python 3.12 / GitHub Actions | Writes via service role                           |
+| Layer                                       | Runtime                  | Notes                                                                                             |
+| ------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
+| Edge (`middleware.ts`, future rate-limiter) | Edge                     | Supabase REST only (cannot use `postgres` driver)                                                 |
+| Route handlers & server components          | Node.js                  | Drizzle + `postgres` driver OK                                                                    |
+| Ingestion pipeline                          | Node.js / GitHub Actions | TypeScript adapters (see [ADR 0003](./adr/0003-ingestion-typescript.md)); writes via service role |
 
 ### Data flow (simplified, user asks a question on a phone page)
 
@@ -308,19 +319,23 @@ flowchart LR
 
 ### AI
 
-| Concern            | Choice                              | Version | Why                                 |
-| ------------------ | ----------------------------------- | ------- | ----------------------------------- |
-| LLM SDK            | Vercel AI SDK                       | 6.x     | `generateObject`, streaming         |
-| Primary provider   | `@ai-sdk/google` → Gemini 2.5 Flash | 3.x     | Free tier, fast, structured output  |
-| Reasoning model    | Gemini 2.5 Pro                      | —       | Aspect extraction, ranker tie-break |
-| Fallback (planned) | Groq Llama 3.3                      | —       | Provider diversity                  |
-| Embeddings         | `text-embedding-004`                | —       | 768 dim, free tier                  |
-| Schema             | Zod v4                              | 4.x     | Runtime validation of LLM output    |
+| Concern            | Choice                              | Version | Why                                                                 |
+| ------------------ | ----------------------------------- | ------- | ------------------------------------------------------------------- |
+| LLM SDK            | Vercel AI SDK                       | 6.x     | `generateObject`, streaming                                         |
+| Primary provider   | `@ai-sdk/google` → Gemini 2.5 Flash | 3.x     | Free tier, fast, structured output                                  |
+| Reasoning model    | Gemini 2.5 Pro                      | —       | Aspect extraction, ranker tie-break                                 |
+| Fallback (planned) | Groq Llama 3.3                      | —       | Provider diversity                                                  |
+| Embeddings         | `gemini-embedding-001`              | —       | 768 dim (Matryoshka-truncated), free tier, hardcoded in `gemini.ts` |
+| Schema             | Zod v4                              | 4.x     | Runtime validation of LLM output                                    |
 
-### Ingestion (Phase 2)
+### Ingestion (Phase 2 — shipped 2026-04-21)
 
-Python 3.12 · `uv` · `ruff` · `mypy` · `pydantic` v2 · `youtube-transcript-api`
-· `yt-dlp` · `praw` · `tenacity`.
+TypeScript on the same Node.js toolchain as the web app (see
+[ADR 0003](./adr/0003-ingestion-typescript.md) for why we dropped the
+Python sidecar plan). Key libraries: `youtubei.js` (YouTube/Innertube,
+no API key), `@mozilla/readability` + `linkedom` (article extraction),
+`gpt-tokenizer` (token-bounded chunking), `p-retry` + `p-limit`
+(batched embedding with backoff).
 
 ### DevOps
 
@@ -393,34 +408,41 @@ Applied via `drizzle/sql/999_rls.sql` (see Phase 1).
 
 ## 10. Retrieval & Chat Q&A Pipeline
 
-Phase 3 deliverable. High-level steps for an ask-phone-Q&A call:
+Phase 3 deliverable — **MVP shipped 2026-04-21.** Code:
+`src/services/retrieval/`, `src/services/chat/`, `POST /api/ask`,
+`src/app/p/[slug]/`. Design: [ADR 0004](./adr/0004-hybrid-retrieval.md),
+[operator guide](./retrieval/README.md).
 
-1. **Input validation.** Zod parses `{ phoneSlug, query }`; `query` ≤
-   `MAX_CHAT_MESSAGE_BYTES` (4 KB); trace id generated.
-2. **Rate limit.** IP hash keyed, 1-minute + 1-hour windows, checked against
-   `rate_limits`.
-3. **Intent guard.** A cheap Flash call classifies the query as `factual`,
-   `opinion`, `comparison`, or `off-topic`. Off-topic short-circuits to a
-   polite refusal.
-4. **Query decomposition (HyDE).** For semantic queries, generate a
-   hypothetical answer and use its embedding alongside the literal query.
-5. **Hybrid retrieval.**
-   - Top-K vector search (cosine) scoped to the phone.
-   - Top-K FTS search (tsvector + trigram fallback).
-   - Reciprocal Rank Fusion (RRF) merges ranks.
-6. **MMR + source coverage.** `MMR_LAMBDA = 0.6` balances relevance vs
-   diversity; ensure ≥3 distinct sources in the final context.
-7. **LLM rerank.** Gemini Flash re-orders the top 12 → top 8 with a single
-   structured call.
-8. **Answer generation.** Flash streams the answer with **inline claim tags**
-   (`[chunk-id]`). A post-processor validates every tag resolves to a chunk
-   in the retrieved set; unresolved tags trigger a retry with a stricter
-   system prompt.
-9. **Logging.** Query, citations, latency, model, and `retrieved_chunk_ids`
-   written to `chat_queries`.
+High-level steps (implemented):
 
-Caching: Steps 3, 4, 7 are cached via `CachedLlmProvider`. Step 8 streams and
-bypasses the cache by design.
+1. **Input validation.** Zod parses `{ phoneSlug, query }`; `query` byte
+   length ≤ `MAX_CHAT_MESSAGE_BYTES` (4 KB); `X-Trace-Id` on responses.
+2. **Rate limit.** Client IP from `x-forwarded-for` / `x-real-ip`, SHA-256
+   hashed; sliding window `ASK_RATE_LIMIT_WINDOW_MS` with max
+   `ASK_RATE_LIMIT_MAX` requests per window; atomic upsert into
+   `rate_limits` (unique on `key, window_start`).
+3. **Hybrid retrieval** — vector + FTS → RRF → MMR → source-coverage clamp
+   (constants in `src/lib/constants.ts` align pre/post K and λ with the
+   product defaults).
+4. **Answer generation.** Gemini Flash **blocking** `chat()` call with
+   `[c:<chunkUuid>]` inline tags. Post-processor validates every tag ⊆
+   retrieved chunk ids; one retry with a stricter system prompt if the model
+   hallucinates ids.
+5. **Response.** `application/x-ndjson`: `meta`, `delta` (chunked replay of
+   the validated answer), `done` (resolved citations + usage). Not
+   token-true streaming — first byte waits for validation.
+6. **Logging.** Best-effort insert into `chat_queries` (answer text,
+   structured citations JSON, `retrieved_chunk_ids`, latency, tokens,
+   model).
+
+**Optional:** `RETRIEVAL_LLM_RERANK=true` adds a structured Flash rerank after
+MMR (see `src/services/retrieval/llm-rerank.ts`); failures fall back to MMR +
+coverage with `debug.llmRerank.applied = false`.
+
+**Explicitly not in MVP:** intent guard, HyDE, multi-window rate limits.
+`CachedLlmProvider` wraps `chat()` / `structured()` when enabled; streaming
+`chatStream` bypasses cache by design (we use blocking generation for
+citation validation).
 
 ---
 
@@ -654,14 +676,14 @@ LlmProvider
 
 ### Model routing
 
-| Task                       | Model                | Rationale                     |
-| -------------------------- | -------------------- | ----------------------------- |
-| Chat/Q&A answer streaming  | `gemini-2.5-flash`   | Fast, cheap, good enough      |
-| Preference extraction      | `gemini-2.5-flash`   | Structured output             |
-| Aspect signal extraction   | `gemini-2.5-pro`     | Reasoning-heavy, lower volume |
-| Ranker tie-breaker         | `gemini-2.5-pro`     | Only runs on close rankings   |
-| Query decomposition (HyDE) | `gemini-2.5-flash`   | Cheap                         |
-| Embeddings                 | `text-embedding-004` | 768 dim; HNSW index matched   |
+| Task                       | Model                  | Rationale                                |
+| -------------------------- | ---------------------- | ---------------------------------------- |
+| Chat/Q&A answer streaming  | `gemini-2.5-flash`     | Fast, cheap, good enough                 |
+| Preference extraction      | `gemini-2.5-flash`     | Structured output                        |
+| Aspect signal extraction   | `gemini-2.5-pro`       | Reasoning-heavy, lower volume            |
+| Ranker tie-breaker         | `gemini-2.5-pro`       | Only runs on close rankings              |
+| Query decomposition (HyDE) | `gemini-2.5-flash`     | Cheap                                    |
+| Embeddings                 | `gemini-embedding-001` | 768 dim (Matryoshka); HNSW index matched |
 
 ### Cache policy
 
@@ -748,19 +770,19 @@ See [ADR 0002](./adr/0002-design-tokens.md).
 
 ## 17. Testing Strategy
 
-| Layer            | Tool                      | Scope                                         | CI?           |
-| ---------------- | ------------------------- | --------------------------------------------- | ------------- |
-| Unit             | Vitest + `jsdom`          | Pure functions, components without DB         | ✓             |
-| Integration (DB) | Vitest with live Supabase | Migrations, RLS, retrieval helpers            | ✓ (env-gated) |
-| E2E              | Playwright                | Critical flows (landing chat, phone page Q&A) | ✓ Phase 3+    |
-| LLM evaluation   | Custom harness            | Canned queries vs expected citations/intents  | ✓ Phase 3+    |
+| Layer             | Tool                      | Scope                                             | CI?              |
+| ----------------- | ------------------------- | ------------------------------------------------- | ---------------- |
+| Unit              | Vitest + `jsdom`          | Pure functions, components without DB             | ✓                |
+| Integration (DB)  | Vitest with live Supabase | Migrations, RLS, retrieval helpers                | ✓ (env-gated)    |
+| E2E               | Playwright                | Phone SSR + mocked `/api/ask` NDJSON client path  | ✓ CI (`e2e` job) |
+| Retrieval eval    | `pnpm eval:retrieval`     | Fixture JSON vs hybrid search (embed cost)        | Local / staging  |
+| LLM eval (Tier 3) | TBD script                | Live `runPhoneQna` citation overlap vs golden set | Manual / cron    |
 
-### LLM evaluation harness (Phase 3+)
+### Evaluation layout
 
-- Fixture: ~50 curated `(query, phoneSlug, expectedAspects, expectedCitations)`.
-- On CI: run against cached Gemini responses; fail if F1 on cited-chunk
-  overlap < threshold.
-- Manual nightly: re-run against live Gemini to catch drift.
+- **ADR [0005](./adr/0005-e2e-and-evaluation.md)** — why CI mocks Gemini for
+  browser tests, why `eval:retrieval` is tier 2, and how LLM rerank fails open.
+- **`docs/eval/README.md`** — fixture schema, command matrix, Tier-3 notes.
 
 ### Conventions
 
@@ -784,10 +806,14 @@ On every PR and `main` push:
 3. Typecheck (`tsc --noEmit`, strict)
 4. Vitest unit suite
 5. `next build` (verifies production build)
+6. **Playwright** (`e2e` job) — Postgres service container, `scripts/db-setup.ts`,
+   Chromium, `pnpm e2e` (SSR phone page + mocked ask). Uses real env-shaped
+   dummy values (not `SKIP_ENV_VALIDATION`) so `next dev` matches production
+   validation.
 
-`SKIP_ENV_VALIDATION=true` in CI so runs don't require real secrets.
-`NEXT_PUBLIC_COMMIT_SHA` injected from `github.sha` so the `/api/health`
-endpoint reports the commit the build was made from.
+`SKIP_ENV_VALIDATION=true` only on the **`quality`** job so typecheck/tests/build
+don't need secrets. The **`e2e`** job exports a minimal real `.env` superset
+inline. `NEXT_PUBLIC_COMMIT_SHA` is injected from `github.sha` where applicable.
 
 ### Deployment
 
@@ -814,16 +840,16 @@ justifies it.
 
 ## 19. Project Phases & Progress
 
-| Phase                       | Scope                                                    | Status         | Notes                                                       |
-| --------------------------- | -------------------------------------------------------- | -------------- | ----------------------------------------------------------- |
-| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                              |
-| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                  |
-| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev |
-| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ◯              |                                                             |
-| 4 — Aspect scorecard        | Agent graph, calibration                                 | ◯              |                                                             |
-| 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder                                |
-| 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                             |
-| 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                             |
+| Phase                       | Scope                                                    | Status         | Notes                                                                            |
+| --------------------------- | -------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------- |
+| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                                                   |
+| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                       |
+| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                      |
+| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups |
+| 4 — Aspect scorecard        | Agent graph, calibration                                 | ◯              |                                                                                  |
+| 5 — Recommender             | Intake, candidate gen, ranker                            | ◯              | Replaces landing placeholder                                                     |
+| 6 — Browse                  | Filter UI, faceted search                                | ◯              |                                                                                  |
+| 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                                  |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
 this document updated.
@@ -912,18 +938,77 @@ consequences: [ADR 0003](./adr/0003-ingestion-typescript.md).
   actually need higher YouTube coverage — currently articles + Reddit
   cover our corpus needs).
 
+### Phase 3 progress (Retrieval + phone pages)
+
+**Locked-in design.** [ADR 0004](./adr/0004-hybrid-retrieval.md)
+ratifies the hybrid retrieval pipeline: vector (cosine, pgvector
+HNSW) + FTS (tsvector + `pg_trgm` fallback) → RRF fusion → MMR
+rerank → source-coverage clamp. Parameter defaults and non-goals
+(no HyDE, no cross-encoder, no external vector DB) are frozen.
+
+**Shipped (code, tests, migration, docs):**
+
+- Migration `drizzle/fts.sql` adds `chunks.text_tsv` (generated
+  `tsvector`), a GIN index on the tsvector, and a `gin_trgm_ops`
+  GIN index on `chunks.text`. Idempotent (`IF NOT EXISTS`) and
+  wired into step 3/5 of `pnpm db:setup`.
+- `pnpm db:smoke` checks the generated column + both GIN indexes + the
+  `rate_limits_key_window_uniq` index (Phase 3 acceptance). 8/8 green
+  against the live DB after `db:setup`.
+- `src/services/retrieval/` full module:
+  - `types.ts`, `vector.ts`, `fts.ts`, `rrf.ts`, `mmr.ts`,
+    `coverage.ts`, `retriever.ts`, `index.ts` barrel.
+  - 3 pure-function test files: `rrf.test.ts`, `mmr.test.ts`,
+    `coverage.test.ts` — 26 tests, including a bug caught in
+    review (default `maxPerSource` was using `floor`, should be
+    `ceil`, else k=4/min=3 returns 3 chunks instead of 4).
+- `docs/retrieval/README.md` operator guide with call-site
+  example, tuning knobs, observability/debugging playbook, and
+  extension hooks (adding a third retriever, enabling LLM rerank,
+  adding HyDE).
+
+**Also shipped (same Phase 3 tranche):**
+
+- `getPostgres()` + `createHybridRetriever()` factory; `src/services/rate-limit/`
+  (`consumeAskRateLimit`); `src/services/chat/` (`runPhoneQna`,
+  `citations.ts`, `persistChatQuery`); `POST /api/ask`; `/p/[slug]` with
+  `PhoneHeader`, `PhoneChat`, `CitationChip`; `pnpm retrieval:smoke`;
+  `drizzle/fts.sql` adds `rate_limits_key_window_uniq`; Drizzle schema uses
+  matching `uniqueIndex`.
+
+**Phase 3+ polish (shipped in the same phase tranche):**
+
+- Playwright (`pnpm e2e`): seeded phone SSR smoke + client NDJSON parsing with
+  `POST /api/ask` mocked (no Gemini in CI). See [ADR 0005](./adr/0005-e2e-and-evaluation.md).
+- Retrieval fixtures: `eval/retrieval-fixtures.json` + `pnpm eval:retrieval`
+  (DB + embeddings; local/staging — not default `quality` CI).
+- Optional structured LLM rerank after MMR when `RETRIEVAL_LLM_RERANK=true`
+  (extra Flash call; automatic fallback to MMR + coverage on failure).
+
+**Still open:**
+
+- Token-true streaming while preserving citation guarantees.
+- Tier-3 generative citation eval (threshold TBD — see Q4).
+
+**Phase 3 quality gates as of 2026-04-21:**
+
+- ✅ `pnpm typecheck` clean.
+- ✅ `pnpm test` (Vitest) + `pnpm e2e` (Playwright) in CI.
+- ✅ `pnpm lint` clean.
+- ✅ `pnpm db:smoke` 8/8 green (includes rate-limit unique index).
+
 ---
 
 ## 20. Open Questions & Future Work
 
-| #   | Question                                                       | Resolution path                                                                                                    |
-| --- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Q1  | Which regions do we seed phones for?                           | Phase 1 pick: global-English flagship-heavy list. Regional expansion driven by ingestion coverage.                 |
-| Q2  | Do we need auth for feedback signals?                          | Deferred. Cookie-based anonymous sessions suffice until feedback volume demands dedup.                             |
-| Q3  | How do we keep the corpus fresh without blowing the free tier? | GitHub Actions cron writing via service-role; 50-100 new chunks / day cap.                                         |
-| Q4  | What's the LLM eval harness's "fail" threshold?                | TBD in Phase 3 when we have baseline numbers.                                                                      |
-| Q5  | Multi-language support?                                        | Deferred indefinitely — scope creep for a learning project.                                                        |
-| Q6  | Sponsorship-detection for sources?                             | Schema leaves room (`sources.raw_json` can hold signals). Implemented only if a clear, lightweight signal emerges. |
+| #   | Question                                                       | Resolution path                                                                                                                      |
+| --- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Q1  | Which regions do we seed phones for?                           | Phase 1 pick: global-English flagship-heavy list. Regional expansion driven by ingestion coverage.                                   |
+| Q2  | Do we need auth for feedback signals?                          | Deferred. Cookie-based anonymous sessions suffice until feedback volume demands dedup.                                               |
+| Q3  | How do we keep the corpus fresh without blowing the free tier? | GitHub Actions cron writing via service-role; 50-100 new chunks / day cap.                                                           |
+| Q4  | What's the LLM eval harness's "fail" threshold?                | Tier 3 only: define after first `runPhoneQna` golden set exists; start with strict cited-chunk-id overlap before BLEU-style metrics. |
+| Q5  | Multi-language support?                                        | Deferred indefinitely — scope creep for a learning project.                                                                          |
+| Q6  | Sponsorship-detection for sources?                             | Schema leaves room (`sources.raw_json` can hold signals). Implemented only if a clear, lightweight signal emerges.                   |
 
 ---
 
@@ -954,6 +1039,91 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-21 — Phase 3 MVP (phone Q&A + rate limit + smoke)
+
+- **`POST /api/ask`** — Zod body, IP-hashed rate limit, hybrid retrieval,
+  citation validation + single retry, NDJSON response, `chat_queries` log.
+- **`/p/[slug]`** — `PhoneHeader` + ask UI with inline citation chips.
+- **`pnpm retrieval:smoke`** — live DB hybrid retrieval sanity check.
+- **`rate_limits` unique index** — enables atomic upserts (see Issues Log).
+- **`getPostgres()`** — exposes the raw `postgres` driver for retrieval SQL.
+
+### 2026-04-21 — Phase 3+ (Playwright, eval tiers, optional LLM rerank)
+
+- **[ADR 0005](./adr/0005-e2e-and-evaluation.md)** — CI E2E strategy, evaluation
+  tiers, rerank fail-open semantics.
+- **`pnpm e2e` / `playwright.config.ts`** — SSR phone page + mocked `/api/ask`
+  NDJSON; CI job uses `pgvector/pgvector` + `db-setup`.
+- **`docs/eval/README.md` + `pnpm eval:retrieval`** — fixture-driven hybrid
+  retrieval checks (local / staging; embedding cost).
+- **`RETRIEVAL_LLM_RERANK`** env + `src/services/retrieval/llm-rerank.ts` —
+  structured Flash rerank after MMR; telemetry on `RetrievalDebug.llmRerank`.
+- **`drizzle/extensions.sql`** — `CREATE SCHEMA IF NOT EXISTS extensions` for
+  portable extension installs.
+
+### 2026-04-21 — Phase 3 in progress (retrieval layer landed)
+
+- **ADR 0004** written:
+  [`docs/adr/0004-hybrid-retrieval.md`](./adr/0004-hybrid-retrieval.md).
+  Locks in the vector + FTS + RRF + MMR + source-coverage composition,
+  parameter defaults (`kPerRetriever=30`, `rrfK=60`, `mmrLambda=0.6`,
+  `minDistinctSources=3`, `targetResults=8`), the citation-tag
+  contract for the chat layer, and the explicit things we're NOT
+  doing yet (no HyDE, no cross-encoder, no external vector DB, LLM
+  rerank behind a flag).
+- **FTS scaffolding** migrated live: `drizzle/fts.sql` adds a
+  `chunks.text_tsv` generated column (`to_tsvector('english', text)`,
+  `STORED`), a GIN index on it, and a `gin_trgm_ops` GIN index on
+  `chunks.text` for similarity fallback. The `db:setup` orchestrator
+  picked up a new step 3/5; `db:smoke` now asserts 7/7 checks
+  including the generated column + both indexes.
+- **`src/services/retrieval/`** full module landed and wired through
+  the barrel:
+  - `types.ts` — public contracts (`RetrievedChunk`, `Retriever`,
+    `RetrievalOptions`, `RetrievalResult`, telemetry shape).
+  - `vector.ts` — `VectorSearch` retriever: cosine via pgvector HNSW,
+    joined with `sources`, optional embedding passthrough for MMR.
+    Includes a pedantic `toVectorLiteral` helper so the `postgres`
+    driver can't mangle `number[]` into `text[]`.
+  - `fts.ts` — `FtsSearch` retriever: tsvector match via
+    `websearch_to_tsquery` with a trigram similarity fallback when
+    tsvector returns zero matches. Query sanitisation strips control
+    characters and clamps to 2 KB.
+  - `rrf.ts` + `rrf.test.ts` — pure Reciprocal Rank Fusion, 8 unit
+    tests covering empty input, tie-breaking stability,
+    contribution tracking, input immutability, and k behaviour.
+  - `mmr.ts` + `mmr.test.ts` — pure MMR rerank + cosine similarity,
+    12 unit tests including identity at λ=1, diversity at λ=0,
+    missing-embedding penalty path, and the `cosineSimilarity` edge
+    cases (antipodal, zero, dimension mismatch).
+  - `coverage.ts` + `coverage.test.ts` — source-coverage clamp with
+    a displace-and-promote second pass. Bug caught by tests: the
+    default `maxPerSource` uses `ceil(k / minDistinctSources)`, not
+    `floor`, so `k=4 min=3` yields `max=2` and actually fills all 4
+    slots.
+  - `retriever.ts` — `HybridRetriever` orchestrator: embeds the query
+    once via `LlmProvider.embed`, runs vector + FTS in parallel
+    (with per-retriever error containment), fuses with RRF, reranks
+    via MMR, clamps via coverage. Emits rich per-stage telemetry
+    (`vector.ms`, `fts.ms`, `rrf.ms`, `mmr.ms`, `coverage.relaxed`,
+    `totalMs`) at info + debug levels.
+- **`docs/retrieval/README.md`** written — operator/developer guide
+  with a call-site example, tuning knobs table, observability guide,
+  and a debugging playbook ("answer cites the wrong chunk", "MMR
+  dropped chunks I wanted", "I get `relaxed: true` everywhere").
+- **Issues Log (§23) introduced** as a permanent section, ordered by
+  severity, cataloguing every non-trivial issue we've hit so far
+  (Phase 0 through 2) plus the known external limitations that
+  aren't bugs. Maintain going forward: every non-trivial breakage
+  gets a severity-sorted entry with symptom, root cause, fix, and
+  hardening notes.
+- **Doc hygiene**: purged the last remaining stale references to the
+  old Python ingestion plan and `text-embedding-004` from §6, §7,
+  §8, §13, §14 (and the system-architecture diagram). The project
+  context now matches reality everywhere.
+- **Verification**: `pnpm typecheck` clean; `pnpm test` 69/69 green
+  (7 test files); `pnpm lint` clean; `pnpm db:smoke` 7/7 green.
 
 ### 2026-04-21 — Phase 2 shipped (ingestion closed out)
 
@@ -1085,5 +1255,280 @@ dissenting_quotes)`.
 
 ---
 
-_When updating this document: add a new block to §22, bump status markers in
-§6 and §19, and keep the ToC in sync._
+## 23. Issues Log
+
+> **Purpose.** A running log of every non-trivial issue we've hit during
+> development — the symptom, where it happened, what actually caused it,
+> and what we did about it. Ordered by severity within each phase so the
+> nasty ones stay visible. Add new entries as they come up; don't let
+> lessons rot.
+>
+> **Severity rubric:**
+>
+> - **CRITICAL** — blocks deploys, breaks production, or risks data loss.
+> - **HIGH** — blocks a user-facing feature or a full dev pipeline (build,
+>   CI, ingestion end-to-end).
+> - **MEDIUM** — breaks typecheck / tests / lint, or materially slows dev
+>   velocity and observability.
+> - **LOW** — cosmetic, dev-only annoyance, or one-time papercut.
+>
+> **Each entry must answer:** what broke, where, why (root cause), how we
+> fixed it, and — where possible — how we've made it harder to recur.
+
+### Phase 3 — Retrieval + phone Q&A (2026-04-21)
+
+#### MEDIUM
+
+- **`rate_limits` had no composite UNIQUE — `onConflictDoUpdate` unsafe.**
+  The table only carried a non-unique btree on `(key, window_start)`, so
+  Drizzle could not atomically increment per-window counts; duplicate rows
+  were possible under concurrency.
+  - **Fix.** Added `rate_limits_key_window_uniq` via `drizzle/fts.sql`
+    (`CREATE UNIQUE INDEX IF NOT EXISTS`) and `uniqueIndex` in
+    `schema.ts`. `db:smoke` asserts the index exists.
+
+#### LOW
+
+- **Vanilla Postgres CI lacked the `extensions` schema.** GitHub Actions
+  `db-setup` failed on `CREATE EXTENSION ... WITH SCHEMA extensions` because
+  stock images don't pre-create that namespace (Supabase does).
+  - **Fix.** `CREATE SCHEMA IF NOT EXISTS extensions` at the top of
+    `drizzle/extensions.sql`, plus `set_config('search_path', …)` for the
+    `db-setup` session so migrations resolve `vector`.
+
+### Phase 2 — Ingestion (2026-04-21)
+
+#### CRITICAL
+
+- **Gemini `text-embedding-004` returning 404.**
+  `ingest:smoke` failed with `models/text-embedding-004 is not found for
+API version v1beta`. Google retired the model on `v1beta` in early 2026.
+  - **Fix.** Migrated to `gemini-embedding-001` in `src/env.ts` (default)
+    and `src/services/llm/gemini.ts`. Switched to `google.embedding(...)`
+    with `providerOptions.google.outputDimensionality = 768` and
+    `taskType: 'RETRIEVAL_DOCUMENT'` (better retrieval recall than the
+    default `SEMANTIC_SIMILARITY`).
+  - **Hardening.** The 768 dimension is now hardcoded as
+    `EMBEDDING_DIMENSIONS` inside `gemini.ts` rather than an env var —
+    the DB schema is `vector(768)`, so the dimension belongs in code next
+    to the callsite, not in a dotenv where it can drift silently.
+
+#### HIGH
+
+- **`User-Agent` em-dash crashing Node `fetch` in article adapter.**
+  `pnpm ingest:smoke` failed with
+  `TypeError: Cannot convert argument to a ByteString because the character at index 71 has a value of 8212`.
+  Node's `fetch` treats HTTP header values as ByteStrings (ASCII-only);
+  the em-dash (U+2014) triggered a hard throw.
+  - **Fix.** Replaced `—` with `-` in
+    `src/services/ingest/adapters/article.ts` and added an explanatory
+    comment.
+  - **Hardening.** The same bug recurred silently in
+    `src/services/ingest/adapters/youtube-transcript.ts` — we only found
+    it because all three YouTube fallbacks returned 0 tracks despite the
+    JSON being well-formed. Added the same guard + comment there.
+    Consider a lint rule banning non-ASCII bytes in string literals that
+    feed HTTP headers.
+
+- **YouTube "manual English" caption tracks returning HTTP 200 + zero
+  bytes.** First caption track listed in `captionTracks` often returns
+  200 with an empty body while the actual captions live on the ASR track
+  one index later. Our old code picked the first English track and gave
+  up.
+  - **Fix.** Introduced `rankCaptionTracks` in `youtube-transcript.ts`
+    (full ranked list, not just the best) and `fetchFirstNonEmptyTrack`
+    in the adapter, which walks candidates until one yields segments.
+  - **Hardening.** Unit test covers dedup-by-`baseUrl` + bucket ordering
+    so we can't regress without a CI failure.
+
+- **Gemini provider options rejecting `outputDimensionality: "768"`
+  (string).**
+  `ingest:smoke` failed with `invalid google provider options` because
+  `@t3-oss/env-nextjs`'s Zod transform (`z.string().transform(Number)`)
+  wasn't reliably producing a number across `tsx` / `next dev`
+  environments. The env var arrived as a string and the AI SDK refused
+  it.
+  - **Fix.** Deleted the `LLM_EMBEDDING_DIMS` env var altogether and
+    hardcoded `EMBEDDING_DIMENSIONS = 768` in `gemini.ts`.
+  - **Hardening.** Coupling the dimension to the DB schema (which is
+    compile-time fixed at `vector(768)`) eliminates a whole class of
+    drift bugs.
+
+- **`youtubei.js` `getTranscript()` returning HTTP 400.** YouTube
+  rotates the Innertube transcript endpoint occasionally and the library
+  hasn't caught up. Would have made YouTube ingestion a no-op.
+  - **Fix.** Implemented a three-tier transcript fallback chain
+    (Innertube → Info-object captions → watch-page HTML scrape) in
+    `youtube.ts` + `youtube-transcript.ts`. First non-empty wins.
+  - **Hardening.** Graceful `NotFoundError` degradation: when _all_ tiers
+    fail, the orchestrator records a skipped-source row and moves on —
+    ingestion never aborts the whole phone.
+
+- **`next build` failing on CI with `Invalid URL` on `metadataBase`.**
+  `SKIP_ENV_VALIDATION=true` in CI stripped `NEXT_PUBLIC_SITE_URL`,
+  which the App Router's metadata config then blew up on.
+  - **Fix.** Added explicit default fallbacks inside the `runtimeEnv`
+    map in `src/env.ts` so the variable always resolves even when
+    validation is skipped.
+  - **Hardening.** Any env var used in `next.config.ts` / metadata must
+    have a fallback at the `runtimeEnv` level, not just in the schema.
+
+- **`pnpm` not on `PATH` (Windows, fresh install).**
+  Corepack failed with a permissions error, so nothing downstream worked.
+  - **Fix.** Pivoted to the official standalone installer
+    (`iwr https://get.pnpm.io/install.ps1 -useb | iex`) and prepended
+    the install dir to the current-session `PATH`.
+  - **Hardening.** Documented the Windows bootstrap path in the repo
+    README (dev setup) so future contributors don't rediscover it.
+
+#### MEDIUM
+
+- **`.gitignore` shadowing already-tracked files inside `legacy/`.**
+  Adding root-level `.vscode/` and `Icon?` rules silently re-ignored
+  tracked files in the Flutter subtree, which `git status` then reported
+  as staged deletions.
+  - **Fix.** Anchored all IDE/OS rules to the repo root with a leading
+    `/` (`/.vscode/`, `/.idea/`, `/.cursor/`, …) so they don't recurse;
+    dropped the `Icon?` pattern (it was a macOS metadata leftover and
+    conflicts with image assets in `legacy/web/icons/`).
+  - **Hardening.** `.gitignore` is now sectioned, alphabetised, and
+    commented so the next big change is less error-prone.
+
+- **Commitlint `body-max-line-length` rejecting legitimate commit
+  bodies.** The default 100-char cap tripped on bullet lists that
+  included package names, URLs, or file paths.
+  - **Fix.** Set `body-max-line-length` and `footer-max-line-length` to
+    `[0, 'always', Infinity]` in `commitlint.config.mjs`. Kept
+    `header-max-length` at 100 so subject lines stay scannable.
+
+- **`p-retry@8` `onFailedAttempt` API change.** Typecheck broke with
+  `Property 'message' does not exist on type 'RetryContext'`. v8
+  wraps the error in a context object (`ctx.error.message`) instead of
+  passing the error directly.
+  - **Fix.** Updated `src/services/ingest/embedder.ts` to read
+    `ctx.error.message` and `ctx.error.cause`. Now logs both the retry
+    message and the underlying SDK cause.
+  - **Hardening.** The improved logging pays for itself whenever Gemini
+    returns a schema error mid-batch — we see the actual cause instead
+    of a generic retry wrap.
+
+- **`PgTransaction` vs `PostgresJsDatabase` mismatch in ingestion
+  writer.**
+  The private `recordRun` helper was typed for the top-level Drizzle
+  client, but we only ever called it inside a transaction.
+  - **Fix.** Inlined the telemetry write into `writeSource`'s
+    transaction block at both the skipped and success paths. Simpler,
+    correct, and keeps the `ingest_runs` write atomic with the source
+    upsert.
+
+- **Vitest worker timeout when run in parallel with ESLint.** Random
+  flakes locally on Windows under heavy concurrent I/O.
+  - **Fix.** Run lint → vitest sequentially in dev scripts. CI already
+    runs them in separate jobs so no change needed there.
+
+- **Drizzle seed rejecting `weight_g` as integer.** Starter phones have
+  decimal weights (e.g. 222.4 g for the Pixel 9 Pro XL).
+  - **Fix.** Relaxed `PhoneSpecSchema.weight_g` from
+    `z.number().int()` to `z.number().positive()` in
+    `src/features/phones/schema.ts`.
+
+- **Husky `git can't be found` after repo re-root.** `pnpm prepare`
+  failed because the script ran in the new working directory where
+  Husky couldn't see `.git/`.
+  - **Fix.** Added `scripts/prepare-husky.mjs` that no-ops gracefully
+    when `.git/` is absent (e.g. in Docker builds); wired it into
+    `package.json`'s `prepare` script.
+
+- **ESLint scanning `legacy/` Flutter minified JS.** After the re-root,
+  lint blew up on thousands of pre-minified files it had no business
+  inspecting.
+  - **Fix.** Added `legacy/**` to both `eslint.config.mjs` ignore list
+    and `.prettierignore`.
+
+- **`youtubei.js` `logger.child()` returning a wider `Logger` type.**
+  Typecheck broke when passing the child logger to a free function.
+  - **Fix.** Refactored `getTranscriptSegments` into a private method
+    on `YouTubeAdapter` so it uses `this.log` directly. Also cleaner.
+
+#### LOW
+
+- **`db-ping.ts` top-level `await` with `tsx` CommonJS transpile.**
+  Script refused to start.
+  - **Fix.** Wrapped in an `async main()` IIFE.
+
+- **`youtubei.js` missing `basic_info.publish_date` type.** TS error
+  even though the property exists at runtime.
+  - **Fix.** Escape-hatch `any` cast with an explicit
+    `string | undefined` narrowing, commented as a known type gap.
+
+- **ESLint nags on Phase 0 scaffold.** `react/no-unescaped-entities`
+  (apostrophes in hero text), `react-hooks/set-state-in-effect` in
+  `ThemeToggle` (legitimate hydration-safe pattern),
+  `import { z } from 'zod'` when `z` is only used as a type.
+  - **Fix.** Proper HTML entities, `eslint-disable-next-line` with a
+    comment explaining the hydration rationale, and
+    `import type { z }` respectively.
+
+- **`experimental.typedRoutes` deprecation warning.** Next.js moved the
+  flag to the top level.
+  - **Fix.** Moved `typedRoutes: true` out of `experimental` in
+    `next.config.ts`.
+
+- **`ingest` CLI "phone not found" during first YouTube dry run.** Slug
+  was `pixel-9-pro-xl` but the seed uses `google-pixel-9-pro-xl`.
+  - **Fix.** Corrected the slug in the CLI invocation and the
+    `PHONES` array in `.github/workflows/ingest.yml`.
+
+- **`youtubei.js` parser warnings spamming stdout.** The library
+  complains about novel UI nodes (`ShoppingTimelyShelfView`, etc.) it
+  doesn't recognise. Non-fatal but noisy in ingestion logs.
+  - **Status.** Accepted. A future PR may redirect the library's
+    internal logger to `pino` at `debug` level.
+
+### Phase 1 — Database (2026-04-21)
+
+#### MEDIUM
+
+- **Zod `weight_g` integer violation** — covered in the Phase 2 log
+  above because the fix landed alongside Phase 2 seeding churn.
+
+(Phase 1 was otherwise clean — all 6/6 smoke checks green on first run.)
+
+### Phase 0 — Scaffold (2026-04-19)
+
+#### HIGH
+
+- **CI `next build` Invalid URL on `metadataBase`** — covered above.
+- **Fresh-Windows `pnpm` PATH** — covered above.
+
+#### MEDIUM
+
+- **Husky re-root** — covered above.
+- **ESLint over-scanning `legacy/`** — covered above.
+
+#### LOW
+
+- **React scaffold lints** — covered above.
+- **`typedRoutes` deprecation** — covered above.
+- **`db-ping` top-level await** — covered above.
+
+### Known external limitations (not bugs, but living here for visibility)
+
+- **YouTube datacenter-IP throttling.** `timedtext?fmt=json3` returns
+  HTTP 200 + zero bytes from most non-residential IPs — including our
+  dev machine and GitHub Actions runners. All three transcript fallback
+  tiers hit the same ceiling because the signed URLs wrap the same
+  underlying resource. Accepted as out-of-scope for a zero-budget MVP;
+  a residential proxy would fix it at ~$50–100/mo. See §13 "Known
+  issues".
+- **Gemini free-tier quota.** We stay well within limits in dev, but
+  production cadence (nightly ingest of ~20 phones + ongoing chat
+  queries) will nudge against rate limits eventually. Mitigations are
+  in place (`LLM_CACHE_ENABLED`, structured retries) and we'll revisit
+  in Phase 5 when the recommender adds load.
+
+---
+
+_When updating this document: add a new block to §22, a severity-sorted
+entry to §23 if anything non-trivial broke, bump status markers in §6
+and §19, and keep the ToC in sync._

@@ -9,6 +9,8 @@
  *   4. All 20 phones are seeded.
  *   5. HNSW vector search round-trips: insert chunk → cosine query → result.
  *   6. EXPLAIN confirms the HNSW index is used for the cosine query.
+ *   7. Phase 3 FTS scaffolding: `chunks.text_tsv` generated column + the
+ *      tsvector GIN and pg_trgm indexes exist.
  *
  * Cleans up its test rows on exit. Idempotent: safe to re-run.
  *
@@ -60,6 +62,9 @@ async function main(): Promise<void> {
 
     const vectorChecks = await checkVectorRoundtrip(client, db);
     results.push(...vectorChecks);
+
+    results.push(await checkFtsScaffolding(client));
+    results.push(await checkRateLimitsUniqueIndex(client));
 
     print(results);
 
@@ -235,6 +240,62 @@ async function checkVectorRoundtrip(
   });
 
   return out;
+}
+
+/**
+ * Phase 3 acceptance: confirm the FTS scaffolding landed.
+ *
+ * Checks the generated column + both GIN indexes exist. A failure here
+ * means `pnpm db:setup` wasn't re-run after pulling Phase 3 and
+ * `drizzle/fts.sql` never executed.
+ */
+async function checkFtsScaffolding(client: postgres.Sql): Promise<CheckResult> {
+  const cols = await client<{ column_name: string; is_generated: string }[]>`
+    select column_name, is_generated
+      from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'chunks'
+       and column_name = 'text_tsv'
+  `;
+  const hasTsvCol = cols.length === 1 && cols[0]!.is_generated === 'ALWAYS';
+
+  const idx = await client<{ indexname: string }[]>`
+    select indexname
+      from pg_indexes
+     where schemaname = 'public'
+       and tablename = 'chunks'
+       and indexname in ('chunks_text_tsv_idx', 'chunks_text_trgm_idx')
+  `;
+  const present = new Set(idx.map((r) => r.indexname));
+  const hasTsvIdx = present.has('chunks_text_tsv_idx');
+  const hasTrgmIdx = present.has('chunks_text_trgm_idx');
+
+  const ok = hasTsvCol && hasTsvIdx && hasTrgmIdx;
+  const parts: string[] = [];
+  parts.push(hasTsvCol ? 'text_tsv col OK' : 'text_tsv col MISSING');
+  parts.push(hasTsvIdx ? 'tsv GIN OK' : 'tsv GIN MISSING');
+  parts.push(hasTrgmIdx ? 'trgm GIN OK' : 'trgm GIN MISSING');
+  return {
+    name: 'fts scaffolding (Phase 3)',
+    ok,
+    detail: parts.join(', '),
+  };
+}
+
+async function checkRateLimitsUniqueIndex(client: postgres.Sql): Promise<CheckResult> {
+  const rows = await client<{ indexname: string }[]>`
+    select indexname
+      from pg_indexes
+     where schemaname = 'public'
+       and tablename = 'rate_limits'
+       and indexname = 'rate_limits_key_window_uniq'
+  `;
+  const ok = rows.length >= 1;
+  return {
+    name: 'rate_limits unique index',
+    ok,
+    detail: ok ? 'rate_limits_key_window_uniq present' : 'MISSING — re-run pnpm db:setup',
+  };
 }
 
 function unitVector(axis: number, dim: number): number[] {
