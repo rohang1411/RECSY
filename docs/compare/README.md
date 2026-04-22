@@ -1,10 +1,11 @@
 # Compare (Phase 7 MVP slice)
 
-[ADR 0009](../adr/0009-phone-ux-images-compare.md)
+[ADR 0009](../adr/0009-phone-ux-images-compare.md) · [ADR 0010](../adr/0010-pwa-seo-analytics-compare.md) (picker UX)
 
 ## URL
 
-- `/compare` — short help + **GET form** (two slug fields → submit). Works on a
+- `/compare` — short help; **dropdown pickers** of active catalog phones + a
+  second **GET form** (two slug text fields) for direct slug entry. Works on a
   direct visit without hand-editing the query string.
 - `/compare?a=<slug>&b=<slug>` — two **active** phones. Invalid or missing slugs
   show an error message and the form again (no generic 404).

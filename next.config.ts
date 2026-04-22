@@ -26,9 +26,11 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   typedRoutes: true,
   images: {
-    // Phone imagery will come from Supabase storage + official press assets.
-    // Remote patterns will be added as CDNs are onboarded.
-    remotePatterns: [],
+    // Seeded + editorial photos may point at Wikimedia Commons; Supabase
+    // storage and OEM CDNs are added the same way as they are onboarded.
+    remotePatterns: [
+      { protocol: 'https', hostname: 'upload.wikimedia.org', pathname: '/wikipedia/commons/**' },
+    ],
   },
   async headers() {
     return [

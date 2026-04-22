@@ -28,6 +28,7 @@
     "db:reset": "tsx --env-file=.env.local scripts/db-reset.ts",
     "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
     "retrieval:smoke": "tsx --env-file=.env.local scripts/retrieval-smoke.ts",
+    "ci:retrieval-fixture": "tsx scripts/seed-retrieval-eval-fixture.ts",
     "eval:retrieval": "tsx --env-file=.env.local scripts/eval-retrieval.ts",
     "scorecard:run": "tsx --env-file=.env.local scripts/scorecard-run.ts",
     "spec-embed:backfill": "tsx --env-file=.env.local scripts/backfill-spec-embeddings.ts",
@@ -43,6 +44,8 @@
     "@supabase/supabase-js": "^2.103.3",
     "@t3-oss/env-nextjs": "^0.13.11",
     "@tanstack/react-query": "^5.99.2",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "ai": "^6.0.168",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -88,5 +91,11 @@
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "sharp",
+      "unrs-resolver"
+    ]
   }
 }

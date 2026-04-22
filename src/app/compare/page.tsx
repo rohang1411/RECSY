@@ -1,9 +1,10 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 
 import { appSearchParamsToURLSearchParams } from '@/app/browse/search-params-helpers';
+import { ComparePhonePickers } from '@/app/compare/compare-phone-pickers';
 import { CompareSlugForm } from '@/app/compare/compare-slug-form';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
@@ -33,6 +34,20 @@ type PhoneRow = {
   status: 'active' | 'discontinued' | 'upcoming';
 };
 
+async function loadComparePickerOptions() {
+  try {
+    const db = getDb();
+    const rows = await db
+      .select({ slug: phones.slug, brand: phones.brand, model: phones.model })
+      .from(phones)
+      .where(eq(phones.status, 'active'))
+      .orderBy(asc(phones.brand), asc(phones.model));
+    return rows.map((r) => ({ slug: r.slug, label: `${r.brand} ${r.model}` }));
+  } catch {
+    return [];
+  }
+}
+
 function specLine(label: string, left: string, right: string) {
   return (
     <tr className="border-border/60 border-b last:border-0">
@@ -52,33 +67,39 @@ export default async function ComparePage({ searchParams }: PageProps) {
   const b = (sp.get('b') ?? '').trim();
 
   if (!a || !b) {
+    const compareOptions = await loadComparePickerOptions();
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <h1 className="text-foreground text-2xl font-semibold">Compare phones</h1>
         <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-          Add two phone slugs to the URL, for example:
+          Pick two models from the catalog, or add slugs to the URL — for example:
         </p>
         <p className="text-foreground bg-muted/50 mt-3 rounded-md px-3 py-2 font-mono text-sm break-all">
           /compare?a=first-phone-slug&b=second-phone-slug
         </p>
+        {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
         <p className="text-muted-foreground mt-4 text-sm">
-          From the recommender, use <strong>Compare the top 2</strong> after you get results, or
-          pick any two from{' '}
+          <span className="text-foreground font-medium">By slug: </span>
+          from the recommender, use <strong>Compare the top 2</strong> after you get results, or
+          pick from{' '}
           <Link className="text-primary font-medium hover:underline" href="/browse">
             Browse
           </Link>
           .
         </p>
+        <CompareSlugForm />
       </div>
     );
   }
 
   if (a === b) {
+    const compareOptions = await loadComparePickerOptions();
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <h1 className="text-foreground text-2xl font-semibold">Compare</h1>
         <p className="text-muted-foreground mt-2 text-sm">Choose two different phones.</p>
-        <p className="text-muted-foreground mt-2 text-sm">
+        {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
+        <p className="text-muted-foreground mt-4 text-sm">
           <Link className="text-primary" href="/browse">
             Browse
           </Link>
@@ -110,6 +131,7 @@ export default async function ComparePage({ searchParams }: PageProps) {
   if (!left || !right) {
     const foundSlugs = new Set(list.map((r) => r.slug));
     const missing = [a, b].filter((s) => !foundSlugs.has(s));
+    const compareOptions = await loadComparePickerOptions();
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
         <h1 className="text-foreground text-2xl font-semibold">Compare</h1>
@@ -133,6 +155,10 @@ export default async function ComparePage({ searchParams }: PageProps) {
         ) : (
           <p className="text-muted-foreground mt-3 text-sm">Only one of the two slugs matched.</p>
         )}
+        {compareOptions.length > 0 ? (
+          <ComparePhonePickers defaultA={a} defaultB={b} options={compareOptions} />
+        ) : null}
+        <p className="text-muted-foreground mt-2 text-sm">Or re-enter by slug:</p>
         <CompareSlugForm defaultA={a} defaultB={b} />
       </div>
     );

@@ -22,6 +22,8 @@ export interface PhoneSeed {
   msrpUsd: string; // numeric string to preserve precision
   status: 'active' | 'discontinued' | 'upcoming';
   regionAvailability: string[];
+  /** Optional product photo (Wikimedia Commons or other allowlisted CDN). */
+  imageUrl?: string;
   specJson: PhoneSpec;
 }
 
@@ -75,6 +77,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     slug: 'apple-iphone-16-pro',
     brand: 'Apple',
     model: 'iPhone 16 Pro',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Camera_of_iPhone_16_Pro.jpg',
     tagline: 'Flagship iPhone performance in a one-hand-friendly size.',
     launchDate: '2024-09-20',
     msrpUsd: '999.00',
@@ -115,6 +118,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     slug: 'samsung-galaxy-s25-ultra',
     brand: 'Samsung',
     model: 'Galaxy S25 Ultra',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/b0/Samsung_Galaxy_S25_Ultra.jpg',
     tagline: 'Productivity-first Android flagship with S Pen.',
     launchDate: '2025-02-07',
     msrpUsd: '1299.00',
@@ -196,6 +200,8 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     slug: 'google-pixel-9-pro-xl',
     brand: 'Google',
     model: 'Pixel 9 Pro XL',
+    imageUrl:
+      'https://upload.wikimedia.org/wikipedia/commons/e/e5/Google_Pixel_9_Pro_XL_%28back%29.jpg',
     tagline: 'Google\u2019s largest Pro with AI-first software.',
     launchDate: '2024-08-22',
     msrpUsd: '1099.00',
@@ -276,6 +282,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     slug: 'oneplus-13',
     brand: 'OnePlus',
     model: '13',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/13/OnePlus_13_volume_slider.jpg',
     tagline: 'Performance-first flagship with massive battery.',
     launchDate: '2025-01-07',
     msrpUsd: '899.00',

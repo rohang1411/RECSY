@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 
+import { AnalyticsClient } from '@/components/AnalyticsClient';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { env } from '@/env';
@@ -77,6 +78,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </footer>
           </div>
           <Toaster position="top-right" richColors closeButton />
+          <AnalyticsClient />
         </ThemeProvider>
       </body>
     </html>

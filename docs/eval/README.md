@@ -1,47 +1,16 @@
-# Evaluation — retrieval & Q&A
+# Evaluation
 
-**Status:** Phase 3+ (2026-04-21)  
-**ADR:** [0005 — E2E and evaluation tiers](../adr/0005-e2e-and-evaluation.md)
+## Hybrid retrieval — `eval:retrieval`
 
-This folder holds **fixtures** for offline-ish evaluation. It does **not**
-replace product analytics — it gives developers repeatable checks after changing
-retrieval, ingestion, or prompts.
+Script: `scripts/eval-retrieval.ts`  
+Fixtures: `fixtures/eval/retrieval-fixtures.json`
 
-## Commands
+Runs hybrid search (vector + FTS + RRF, etc.) for each fixture’s `phoneSlug` and `query`, and asserts on chunk count (and optional substring matches). The hybrid path **embeds the query** via Gemini, so a valid `GEMINI_API_KEY` and a **bootstrapped** database with matching chunks for the slug are required.
 
-| Command                | What it checks                                     | Typical use              |
-| ---------------------- | -------------------------------------------------- | ------------------------ |
-| `pnpm test`            | Pure unit tests (RRF, MMR, coverage, citations, …) | Every PR / CI            |
-| `pnpm retrieval:smoke` | One hybrid search on a phone that has chunks       | After `db-setup`, ingest |
-| `pnpm eval:retrieval`  | All rows in `eval/retrieval-fixtures.json`         | After corpus updates     |
-| `pnpm e2e`             | Playwright: SSR phone page + mocked `/api/ask` UI  | CI + local               |
+**Local:** `pnpm db:setup` (and real ingestion, or the CI fixture below), then `pnpm eval:retrieval`.
 
-## `eval/retrieval-fixtures.json`
+**CI:** The workflow job `retrieval-eval` in `.github/workflows/ci.yml` runs only when the repo defines `GEMINI_API_KEY` as a secret. It runs `db-setup`, `pnpm ci:retrieval-fixture` (minimal chunk for `apple-iphone-16-pro`), then `eval:retrieval`’s entrypoint without `.env.local`. See [ADR 0010](../adr/0010-pwa-seo-analytics-compare.md).
 
-Each fixture is:
+## Scorecard and other evals
 
-- `phoneSlug` — must exist in `phones` after seed / ingest.
-- `query` — natural language passed to `HybridRetriever.search`.
-- `expect.minChunks` — minimum number of chunks returned (use `1` for a soft
-  smoke; raise when you have a stable corpus).
-- `expect.anyChunkTextIncludes` — optional list of substrings; **each** must
-  appear in **some** retrieved chunk’s `text` (case-insensitive). Leave `[]`
-  when you only care that retrieval is non-empty.
-
-**Note:** If the phone has **zero chunks**, evaluation fails by design — run
-ingestion first.
-
-## Tier 3 (future): generative citation eval
-
-When we add a scripted harness that calls `runPhoneQna` with live Gemini:
-
-- Keep it **out of default CI** unless sponsored API budget exists.
-- Record pass/fail rules in this README and in the Open Questions table
-  (`Q4`) of `RECSY_V2_PROJECT_CONTEXT.md`.
-- Prefer **snapshotting chunk ids** from a golden retrieval run rather than
-  free-form BLEU on answer text.
-
-## Related docs
-
-- Hybrid retrieval design: [ADR 0004](../adr/0004-hybrid-retrieval.md)
-- Operator tuning: [retrieval README](../retrieval/README.md)
+See [ADR 0005](../adr/0005-e2e-and-evaluation.md) for the scorecard and broader evaluation posture.

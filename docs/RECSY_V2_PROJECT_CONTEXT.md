@@ -224,38 +224,43 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
 **Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
 
-| Feature                                  | Status | Phase | Notes                                                               |
-| ---------------------------------------- | ------ | ----- | ------------------------------------------------------------------- |
-| Landing hero + CTA                       | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                           |
-| Dark/light theme (OKLCH tokens)          | ✓      | 0     | Dark default, `next-themes`, AA contrast                            |
-| `/api/health` liveness probe             | ✓      | 0     |                                                                     |
-| Typed env validation                     | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                          |
-| LLM provider abstraction                 | ✓      | 0     | Gemini impl + cache decorator                                       |
-| Drizzle schema (12 tables, 8 enums)      | ✓      | 0     |                                                                     |
-| Postgres extensions bootstrapped         | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                      |
-| Initial migration applied                | ✓      | 1     | All tables + HNSW (cosine) indexes                                  |
-| RLS policies                             | ✓      | 1     | default-deny + anon read on public tables                           |
-| `PhoneSpec` Zod schema                   | ✓      | 1     | `src/features/phones/schema.ts`                                     |
-| Aspect definitions seeded                | ✓      | 1     | 7 aspects, weights sum to 1.0                                       |
-| Starter phone corpus (20 phones)         | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                               |
-| `db:setup` orchestrator + `db:smoke`     | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                              |
-| MCP-style ingestion adapters             | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles             |
-| `pnpm ingest` CLI + nightly cron         | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs`           |
-| Hybrid retrieval (vector + FTS + RRF)    | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)             |
-| Per-phone page & chat Q&A                | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                                  |
-| Aspect scorecard agent graph             | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist              |
-| Conversational recommender               | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                       |
-| Browse (phone list)                      | ✓      | 5     | `/browse` → `/p/[slug]`                                             |
-| Browse + filter                          | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                           |
-| About page                               | ✓      | 7     | `/about` — what RECSY is + links to flows                           |
-| Compare (two phones)                     | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…` |
-| Phone page: spec grid + MSRP + image     | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`    |
-| Browse + rec cards: product imagery      | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder    |
-| Recommender: price + image on pick cards | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                |
-| PWA install + offline shell              | ◯      | 7     |                                                                     |
-| LLM evaluation harness in CI             | ◯      | 3+    | Gated by eval set                                                   |
+| Feature                                  | Status | Phase | Notes                                                                                                                               |
+| ---------------------------------------- | ------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Landing hero + CTA                       | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                           |
+| Dark/light theme (OKLCH tokens)          | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                            |
+| `/api/health` liveness probe             | ✓      | 0     |                                                                                                                                     |
+| Typed env validation                     | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                          |
+| LLM provider abstraction                 | ✓      | 0     | Gemini impl + cache decorator                                                                                                       |
+| Drizzle schema (12 tables, 8 enums)      | ✓      | 0     |                                                                                                                                     |
+| Postgres extensions bootstrapped         | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                      |
+| Initial migration applied                | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                  |
+| RLS policies                             | ✓      | 1     | default-deny + anon read on public tables                                                                                           |
+| `PhoneSpec` Zod schema                   | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                     |
+| Aspect definitions seeded                | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                       |
+| Starter phone corpus (20 phones)         | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                               |
+| `db:setup` orchestrator + `db:smoke`     | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                              |
+| MCP-style ingestion adapters             | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles                                                                             |
+| `pnpm ingest` CLI + nightly cron         | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs`                                                                           |
+| Hybrid retrieval (vector + FTS + RRF)    | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                             |
+| Per-phone page & chat Q&A                | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                                                                                                  |
+| Aspect scorecard agent graph             | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist                                                                              |
+| Conversational recommender               | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                       |
+| Browse (phone list)                      | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                             |
+| Browse + filter                          | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                           |
+| About page                               | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                           |
+| Compare (two phones)                     | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                 |
+| Phone page: spec grid + MSRP + image     | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                    |
+| Browse + rec cards: product imagery      | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                    |
+| Recommender: price + image on pick cards | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                |
+| PWA manifest + icons (installable)       | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                   |
+| SEO + default OG (sitemap, robots)       | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                |
+| Product analytics (Vercel)               | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                       |
+| Compare: catalog pickers + slug form     | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                         |
+| Starter corpus: sample `image_url`       | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                |
+| Hybrid `eval:retrieval` in CI            | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md) |
+| PWA **offline** shell (service worker)   | ◯      | 7+    | Deferred; ADR 0010                                                                                                                  |
 
-> **Backlog check (2026-04-21).** The five product gaps (phone page felt empty, `/about` missing, no compare path, no price/imagery on rec cards, no images) are covered by the feature rows and ADR 0009. Still **planned** for Phase 7 polish: PWA, SEO, OG / social previews, **richer** compare UX (e.g. picker vs URL-only), and populating `image_url` via ingestion/ops for real photos when missing.
+> **Backlog check (2026-04-22).** PWA/SEO/OG, Vercel analytics, compare pickers, sample `image_url` seeds, and a **gated** hybrid retrieval eval job are covered by ADR 0010. Still **planned**: installable **offline** PWA (service worker), per-route OG beyond the default image, and broader `image_url` backfill from ingestion/ops for phones without seed art.
 
 ---
 
@@ -913,16 +918,16 @@ justifies it.
 
 ## 19. Project Phases & Progress
 
-| Phase                       | Scope                                                    | Status         | Notes                                                                            |
-| --------------------------- | -------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------- |
-| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                                                   |
-| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                       |
-| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                      |
-| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups |
-| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                |
-| 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                           |
-| 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                 |
-| 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | Compare + About + spec UI shipped (ADR 0009); PWA/SEO/OG still open              |
+| Phase                       | Scope                                                    | Status         | Notes                                                                                                                    |
+| --------------------------- | -------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                                                                                           |
+| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                                                               |
+| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                                                              |
+| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups                                         |
+| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                                                        |
+| 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                                                                   |
+| 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                                                         |
+| 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | ADR 0009 + 0010: manifest, SEO, OG, analytics, compare pickers, sample images; SW offline + optional eval job follow-ups |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
 this document updated.
@@ -1053,7 +1058,7 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
 
 - Playwright (`pnpm e2e`): seeded phone SSR smoke + client NDJSON parsing with
   `POST /api/ask` mocked (no Gemini in CI). See [ADR 0005](./adr/0005-e2e-and-evaluation.md).
-- Retrieval fixtures: `eval/retrieval-fixtures.json` + `pnpm eval:retrieval`
+- Retrieval fixtures: `fixtures/eval/retrieval-fixtures.json` + `pnpm eval:retrieval`
   (DB + embeddings; local/staging — not default `quality` CI).
 - Optional structured LLM rerank after MMR when `RETRIEVAL_LLM_RERANK=true`
   (extra Flash call; automatic fallback to MMR + coverage on failure).

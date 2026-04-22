@@ -2,7 +2,7 @@
 /**
  * Tier-1 retrieval evaluation: hybrid search only (embed + Postgres), no chat.
  *
- * Loads `eval/retrieval-fixtures.json`, runs {@link createHybridRetriever} per
+ * Loads `fixtures/eval/retrieval-fixtures.json`, runs {@link createHybridRetriever} per
  * fixture, and asserts chunk count + optional substring matches in retrieved
  * passage text.
  *
@@ -37,7 +37,7 @@ interface FixtureFile {
 }
 
 async function main(): Promise<void> {
-  const fixturePath = resolve(process.cwd(), 'eval', 'retrieval-fixtures.json');
+  const fixturePath = resolve(process.cwd(), 'fixtures', 'eval', 'retrieval-fixtures.json');
   const raw = await readFile(fixturePath, 'utf8');
   const { fixtures } = JSON.parse(raw) as FixtureFile;
 

@@ -58,22 +58,34 @@ pnpm format       # Prettier + Tailwind class sort
 
 ## Repo layout
 
+Top-level **config** stays at the repo root on purpose (`package.json`, `tsconfig.json`,
+`next.config.ts`, `eslint.config.mjs`, `prettier.config.mjs`, `drizzle.config.ts`,
+`vitest.config.ts`, `playwright.config.ts`, `postcss.config.mjs`) — that is the usual
+convention for Node/Next apps so tools and IDEs discover settings without extra flags.
+
 ```
 .
-├── src/
-│   ├── app/                 # Next.js App Router routes (page / layout / api / …)
-│   ├── components/          # App-level UI primitives (AppHeader, ThemeToggle, …)
-│   ├── features/            # Feature slices (Phase 1+): chat, recommend, phones …
-│   ├── services/            # Cross-cutting services: llm, db, logger
-│   ├── lib/                 # Framework-agnostic utilities
-│   ├── styles/              # Design tokens (theme.css)
-│   └── env.ts               # Type-safe environment
-├── drizzle/                 # Generated SQL migrations (Phase 1+)
-├── scripts/                 # Node helper scripts (prepare-husky, future seed, …)
-├── test/                    # Unit-test setup
-├── docs/adr/                # Architecture Decision Records
+├── src/                     # Application code (App Router, features, services)
+├── public/                  # Static assets served as-is (favicons, etc.)
+├── fixtures/                # Non-code inputs: eval JSON, future golden files
+├── drizzle/                 # SQL migrations + extension/RLS helpers
+├── scripts/                 # CLI: db-setup, ingest, eval, …
+├── e2e/                     # Playwright specs
+├── test/                    # Vitest global setup (`test/setup.ts`)
+├── docs/                    # ADRs, operator guides, project context
 ├── .github/workflows/       # CI
-└── legacy/                  # Pre-rewrite Flutter project, preserved for reference
+└── legacy/                  # Pre-rewrite Flutter app (reference only)
+```
+
+```
+src/
+├── app/                     # Routes, layouts, API routes
+├── components/              # Shared UI (AppHeader, ThemeProvider, …)
+├── features/                # Feature slices (phones schema, etc.)
+├── services/                # db, llm, retrieval, chat, recommender, …
+├── lib/                     # Small utilities
+├── styles/                  # Design tokens (theme.css)
+└── env.ts                   # Type-safe environment
 ```
 
 ### `legacy/`
