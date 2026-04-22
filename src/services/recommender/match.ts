@@ -17,6 +17,8 @@ export interface ScoredCandidate {
   readonly brand: string;
   readonly model: string;
   readonly tagline: string | null;
+  readonly msrpUsd: string | null;
+  readonly imageUrl: string | null;
   readonly score: number;
   readonly summary: string;
 }
@@ -231,6 +233,8 @@ function scoreEntry(
     brand: entry.brand,
     model: entry.model,
     tagline: entry.tagline,
+    msrpUsd: entry.msrpUsd,
+    imageUrl: entry.imageUrl,
     score,
     summary: pickSummaryLine(entry, weights),
   };

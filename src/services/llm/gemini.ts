@@ -11,6 +11,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { embedMany, generateObject, generateText, streamText, type ModelMessage } from 'ai';
 import type { z } from 'zod';
+import { ZodError } from 'zod';
 
 import { env } from '@/env';
 import { LlmError, LlmSchemaViolation } from '@/lib/errors';
@@ -32,6 +33,22 @@ import type {
  * so we keep it as a compile-time constant rather than an env knob.
  */
 const EMBEDDING_DIMENSIONS = 768;
+
+function briefStructuredFailure(err: unknown, max = 500): string {
+  if (err instanceof ZodError) {
+    return err.issues
+      .map((i) => {
+        const p = i.path.length ? i.path.map(String).join('.') : 'root';
+        return `${p}: ${i.message}`;
+      })
+      .join('; ')
+      .slice(0, max);
+  }
+  if (err instanceof Error) {
+    return err.message.slice(0, max);
+  }
+  return String(err).slice(0, max);
+}
 
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
@@ -125,12 +142,15 @@ export class GeminiProvider implements LlmProvider {
       lastError = err;
       // Retry once with an explicit "your output was malformed" nudge.
       try {
+        // Gemini 2.x allows `system` only as the first message; do not append a
+        // second system turn (API error: "system messages are only supported
+        // at the beginning of the conversation").
         const retryMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
           ...input.messages,
           {
-            role: 'system',
+            role: 'user',
             content:
-              'Your previous response failed schema validation. Emit a JSON object that exactly matches the required schema — no prose, no code fences.',
+              'Schema repair: your previous struct failed validation. Output one JSON object only, matching the required schema, no markdown fences, no extra commentary.',
           },
         ];
         const value = await runOnce(retryMessages);
@@ -144,7 +164,13 @@ export class GeminiProvider implements LlmProvider {
       } catch (retryErr) {
         throw new LlmSchemaViolation(
           'Gemini structured output failed validation twice',
-          { model: input.model, schemaName: input.schemaName, attempts },
+          {
+            model: input.model,
+            schemaName: input.schemaName,
+            attempts,
+            firstAttempt: briefStructuredFailure(lastError),
+            secondAttempt: briefStructuredFailure(retryErr),
+          },
           retryErr ?? lastError,
         );
       }

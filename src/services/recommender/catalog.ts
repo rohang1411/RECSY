@@ -14,6 +14,8 @@ export interface PhoneCatalogEntry {
   readonly model: string;
   readonly tagline: string | null;
   readonly msrpUsd: string | null;
+  /** Press render URL when seeded or ingested. */
+  readonly imageUrl: string | null;
   readonly spec: PhoneSpec | null;
   /** Populated when `phones.spec_embedding` is set (e.g. after `pnpm spec-embed:backfill`). */
   readonly specEmbedding: readonly number[] | null;
@@ -30,6 +32,7 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: phones.model,
       tagline: phones.tagline,
       msrpUsd: phones.msrpUsd,
+      imageUrl: phones.imageUrl,
       specJson: phones.specJson,
       specEmbRaw: phones.specEmbedding,
       aspect: aspectDefinitions.aspect,
@@ -49,6 +52,7 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: string;
       tagline: string | null;
       msrpUsd: string | null;
+      imageUrl: string | null;
       specJson: unknown;
       specEmbedding: readonly number[] | null;
       aspectScores: Map<AspectName, number>;
@@ -65,6 +69,7 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
         model: r.model,
         tagline: r.tagline,
         msrpUsd: r.msrpUsd,
+        imageUrl: r.imageUrl,
         specJson: r.specJson,
         specEmbedding: parseVectorColumn(r.specEmbRaw),
         aspectScores: new Map(),
@@ -88,6 +93,7 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: e.model,
       tagline: e.tagline,
       msrpUsd: e.msrpUsd,
+      imageUrl: e.imageUrl,
       spec: parsed.success ? parsed.data : null,
       specEmbedding: e.specEmbedding,
       aspectScores: e.aspectScores,

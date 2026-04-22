@@ -90,3 +90,21 @@ Gemini Pro tie-break, rich soft-filter NLP) is easy to under-ship or over-build.
   clarify flow mitigates low-confidence states.
 - **Pro tie-break** remains a follow-up; **spec_embedding** backfill is operator-
   driven but no longer an unimplemented gap in code.
+
+## Supplement: Stage A schema vs LLM output (2026-04-21)
+
+`§11` and `UserRequirements` as **product types** remain the same after
+normalisation. The **Zod** surface passed to `generateObject` is deliberately
+**more permissive** than a strict `TypeScript` interface: models may emit
+title-case aspect labels, stringly numbers, whole-object `null` for optionals,
+or relative weights above 1.0. We coerce and normalise in
+`userRequirementsSchema` + `normalizeUserRequirements` so the ranker and
+`match.ts` still see a single consistent shape, and so routine prompts do not
+fail twice with `LLM_SCHEMA_VIOLATION`. See `docs/recommender/README.md` and
+`requirements-schema.test.ts` for the contract.
+
+**Supplement 2026-04-21 (Gemini):** screen-size bounds use two optional number
+fields in the Llm schema, not a 2-tuple, because Gemini’s `responseSchema`
+conversion rejected some `items` / array shapes. The structured-output retry
+must not append a second `system` message (only the first may be `system`); a
+`user` follow-up is used instead.

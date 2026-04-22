@@ -24,15 +24,21 @@ export function AppHeader() {
         <nav aria-label="Primary" className="flex items-center gap-4">
           <Link
             href="/browse"
-            className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline-flex"
+            className="text-muted-foreground hover:text-foreground inline-flex text-sm transition-colors"
           >
             Browse
           </Link>
           <Link
             href="/about"
-            className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline-flex"
+            className="text-muted-foreground hover:text-foreground inline-flex text-sm transition-colors"
           >
             About
+          </Link>
+          <Link
+            href="/compare"
+            className="text-muted-foreground hover:text-foreground inline-flex text-sm transition-colors"
+          >
+            Compare
           </Link>
           <ThemeToggle />
         </nav>

@@ -1,9 +1,11 @@
 'use client';
 
-import { ArrowRight, Loader2, MessageCircle } from 'lucide-react';
+import { ArrowRight, Loader2, MessageCircle, Scale } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
+import { PhoneImage } from '@/components/phone/PhoneImage';
+import { formatUsdFromNumericString } from '@/lib/format-usd';
 import { cn } from '@/lib/utils';
 
 type ApiPick = {
@@ -13,6 +15,8 @@ type ApiPick = {
   readonly model: string;
   readonly score: number;
   readonly summary: string;
+  readonly msrpUsd: string | null;
+  readonly imageUrl: string | null;
 };
 
 interface ChatLine {
@@ -146,33 +150,69 @@ export function RecommendClient() {
         ) : null}
 
         {picks && picks.length > 0 ? (
-          <ul className="mt-6 space-y-3">
-            {picks.map((p) => (
-              <li key={p.phoneId}>
+          <div className="mt-6 space-y-4">
+            {picks.length >= 2 && picks[0] != null && picks[1] != null ? (
+              <p className="text-muted-foreground text-xs">
                 <Link
-                  href={`/p/${p.slug}`}
-                  className="border-border/80 bg-background hover:bg-muted/50 focus-visible:ring-ring block rounded-lg border p-4 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  href={`/compare?a=${encodeURIComponent(picks[0].slug)}&b=${encodeURIComponent(picks[1].slug)}`}
+                  className="text-primary focus-visible:ring-ring inline-flex items-center gap-1.5 font-medium hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                        {p.brand}
-                      </p>
-                      <p className="text-foreground text-base font-semibold">{p.model}</p>
-                      <p className="text-muted-foreground mt-1 text-sm">{p.summary}</p>
-                    </div>
-                    <span className="text-foreground text-sm font-medium tabular-nums">
-                      {p.score.toFixed(2)}
-                    </span>
-                  </div>
-                  <span className="text-primary mt-3 inline-flex items-center gap-1 text-sm font-medium">
-                    Open phone page
-                    <ArrowRight className="size-3.5" aria-hidden />
-                  </span>
+                  <Scale className="size-3.5" aria-hidden />
+                  Compare the top 2
                 </Link>
-              </li>
-            ))}
-          </ul>
+              </p>
+            ) : null}
+            <ul className="space-y-3">
+              {picks.map((p) => {
+                const price = formatUsdFromNumericString(p.msrpUsd);
+                return (
+                  <li key={p.phoneId}>
+                    <Link
+                      href={`/p/${p.slug}`}
+                      className="border-border/80 bg-background hover:bg-muted/50 focus-visible:ring-ring block rounded-lg border p-4 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    >
+                      <div className="flex gap-4">
+                        <div className="shrink-0">
+                          <PhoneImage
+                            src={p.imageUrl}
+                            label={`${p.brand} ${p.model}`}
+                            size={88}
+                            className="shrink-0"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                                {p.brand}
+                              </p>
+                              <p className="text-foreground text-base font-semibold">{p.model}</p>
+                            </div>
+                            <div className="text-right text-sm">
+                              <span className="text-foreground block font-medium tabular-nums">
+                                {p.score.toFixed(2)}
+                              </span>
+                              <span className="text-muted-foreground">score</span>
+                            </div>
+                          </div>
+                          {price ? (
+                            <p className="text-foreground mt-1 text-sm font-medium tabular-nums">
+                              {price}
+                            </p>
+                          ) : null}
+                          <p className="text-muted-foreground mt-1 text-sm">{p.summary}</p>
+                        </div>
+                      </div>
+                      <span className="text-primary mt-3 inline-flex items-center gap-1 text-sm font-medium">
+                        Open phone page
+                        <ArrowRight className="size-3.5" aria-hidden />
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ) : null}
 
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end">

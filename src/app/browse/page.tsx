@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 
+import { PhoneImage } from '@/components/phone/PhoneImage';
 import { parseBrowseSearchParams } from '@/features/browse/search-params';
 import { browseWhereFromState } from '@/features/browse/query';
 import { getDb } from '@/services/db/client';
@@ -30,6 +31,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         model: phones.model,
         tagline: phones.tagline,
         msrpUsd: phones.msrpUsd,
+        imageUrl: phones.imageUrl,
       })
       .from(phones)
       .where(where)
@@ -62,17 +64,25 @@ export default async function BrowsePage({ searchParams }: PageProps) {
           <li key={p.slug}>
             <Link
               href={`/p/${p.slug}`}
-              className="hover:bg-muted/40 focus-visible:ring-ring block px-4 py-4 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="hover:bg-muted/40 focus-visible:ring-ring flex gap-4 px-4 py-4 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                {p.brand}
-              </p>
-              <p className="text-foreground font-medium">{p.model}</p>
-              <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
-                {p.msrpUsd != null ? (
-                  <span>From ${Number.parseFloat(p.msrpUsd).toLocaleString('en-US')}</span>
-                ) : null}
-                {p.tagline ? <span>{p.tagline}</span> : null}
+              <PhoneImage
+                src={p.imageUrl}
+                label={`${p.brand} ${p.model}`}
+                size={72}
+                className="shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  {p.brand}
+                </p>
+                <p className="text-foreground font-medium">{p.model}</p>
+                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                  {p.msrpUsd != null ? (
+                    <span>From ${Number.parseFloat(p.msrpUsd).toLocaleString('en-US')}</span>
+                  ) : null}
+                  {p.tagline ? <span>{p.tagline}</span> : null}
+                </div>
               </div>
             </Link>
           </li>

@@ -25,6 +25,51 @@ ranking** → **three diverse picks**. Full pipeline semantics: §11 in
 - `{ "kind": "clarify", "clarifyingQuestion": string }`
 - `{ "kind": "results", "picks": [...], "relaxed": string[] }`
 
+### Stage A: structured `UserRequirements` (Gemini + Zod)
+
+`generateObject` validates every extraction against
+`userRequirementsSchema` in `src/services/recommender/requirements-schema.ts`. If
+validation fails, the `GeminiProvider.structured` path retries **once** with a
+system nudge; a second failure surfaces as **HTTP 502** with
+`code: LLM_SCHEMA_VIOLATION` and message `Gemini structured output failed validation
+twice`.
+
+**Google Gemini + `responseSchema`:** the Zod object must not use shapes that
+map to a JSON-Schema `items` edge case Gemini’s protobuf API rejects (we avoid
+2-tuple / fixed array for `form_factor` screen size; the model emits
+`screen_size_min_in` / `screen_size_max_in` instead, then we map to
+`screen_size_range_in` for the ranker). The retry nudge is sent as a **`user`**
+turn, not `system` — Gemini only allows `system` as the first message.
+
+**Operational hardening (post–Phase 5):** the schema is intentionally **lenient**
+on common model quirks, then `normalizeUserRequirements` applies stable app
+semantics. Examples: aspect names are normalised to lowercase enum values;
+`priorities[].weight` accepts 0–100-style relative values before renormalising to
+0–1; `budget_usd` accepts a bare number, currency-like strings, or `min`/`max`
+with `$`; `form_factor` / `brand_preference` may be `null` from the model;
+`confidence` is coerced from strings and optional percent-style integers. See
+`requirements-schema.test.ts` for cases.
+
+If a new model version keeps failing validation, inspect `cause` on the error (or
+log the first Zod message before retry) to extend the same pattern — do not
+weaken `match.ts` invariants with unvalidated `any` data.
+
+### How to see why validation failed (local dev)
+
+1. **Terminal** — Run `pnpm dev` and keep that window visible. On failure the
+   API logs `POST /api/recommend failed` with `code`, `context` (includes
+   `firstAttempt` / `secondAttempt` for Zod issues), and `detail` (full
+   `Error`+`cause` chain as text).
+2. **Trace id** — Response headers include `X-Trace-Id`; the same `traceId` is
+   in the log line (pino `traceId` field) so you can match request ↔ log.
+3. **Browser (development only)** — The JSON error body for
+   `LLM_SCHEMA_VIOLATION` may include a `debug` object with the same
+   `context` and `causeChain` (only when `NODE_ENV=development`, never in
+   production). Inspect **Network** → `recommend` → **Response** for that
+   payload.
+4. **Log level** — Default `LOG_LEVEL=info` is enough for these `warn` lines;
+   you do not need `debug` to see the schema details above.
+
 ## `spec_embedding` (optional but recommended)
 
 Seeds do **not** populate `phones.spec_embedding`. After `db:setup` / seed:

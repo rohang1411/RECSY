@@ -34,6 +34,7 @@ function entry(
     model: 'X1',
     tagline: 'A phone',
     msrpUsd: '599.00',
+    imageUrl: null,
     spec: null,
     specEmbedding: null,
     aspectScores: scores,
@@ -142,6 +143,8 @@ describe('match helpers', () => {
       phoneId: 'x',
       model: 'm',
       tagline: null as string | null,
+      msrpUsd: null as string | null,
+      imageUrl: null as string | null,
       summary: '',
     };
     const ranked: ScoredCandidate[] = [

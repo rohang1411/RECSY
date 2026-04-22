@@ -1,7 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 
+import { PhoneSpecSchema } from '@/features/phones/schema';
 import { PhoneHeader } from '@/components/phone/PhoneHeader';
+import { PhoneSpecSummary } from '@/components/phone/PhoneSpecSummary';
 import { ScorecardSection } from '@/components/phone/ScorecardSection';
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
@@ -25,6 +27,9 @@ export default async function PhonePage({ params }: PageProps) {
       model: phones.model,
       tagline: phones.tagline,
       status: phones.status,
+      msrpUsd: phones.msrpUsd,
+      imageUrl: phones.imageUrl,
+      specJson: phones.specJson,
     })
     .from(phones)
     .where(eq(phones.slug, slug))
@@ -34,9 +39,22 @@ export default async function PhonePage({ params }: PageProps) {
     notFound();
   }
 
+  const specParsed = PhoneSpecSchema.safeParse(phone.specJson);
+
   return (
     <div className="pb-16">
-      <PhoneHeader brand={phone.brand} model={phone.model} tagline={phone.tagline} />
+      <PhoneHeader
+        brand={phone.brand}
+        model={phone.model}
+        tagline={phone.tagline}
+        imageUrl={phone.imageUrl}
+        msrpUsd={phone.msrpUsd}
+      />
+      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+        {specParsed.success ? (
+          <PhoneSpecSummary spec={specParsed.data} msrpUsd={phone.msrpUsd} />
+        ) : null}
+      </div>
       <ScorecardSection phoneId={phone.id} />
       <PhoneChat phoneSlug={phone.slug} />
     </div>

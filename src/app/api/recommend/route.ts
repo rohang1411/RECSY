@@ -6,7 +6,8 @@ import { ZodError, z } from 'zod';
 
 import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
 import { env } from '@/env';
-import { toAppError } from '@/lib/errors';
+import { isAppError, toAppError } from '@/lib/errors';
+import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { getDb } from '@/services/db/client';
 import { recommendationTurns } from '@/services/db/schema';
@@ -136,9 +137,26 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
     const app = toAppError(err);
-    log.warn({ err: app.message, code: app.code }, 'POST /api/recommend failed');
+    const detail = summarizeErrorChainForLogs(err);
+    log.warn(
+      {
+        err: app.message,
+        code: app.code,
+        ...(isAppError(err) ? { context: err.context } : {}),
+        detail,
+      },
+      'POST /api/recommend failed',
+    );
+    const devDebug =
+      env.NODE_ENV === 'development' && isAppError(err) && err.code === 'LLM_SCHEMA_VIOLATION'
+        ? { context: err.context, causeChain: detail }
+        : undefined;
     return NextResponse.json(
-      { code: app.code, message: app.message },
+      {
+        code: app.code,
+        message: app.message,
+        ...(devDebug != null ? { debug: devDebug } : {}),
+      },
       { status: app.status, headers: { 'X-Trace-Id': traceId } },
     );
   }

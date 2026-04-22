@@ -224,32 +224,38 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
 **Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
 
-| Feature                               | Status | Phase | Notes                                                     |
-| ------------------------------------- | ------ | ----- | --------------------------------------------------------- |
-| Landing hero + CTA                    | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                 |
-| Dark/light theme (OKLCH tokens)       | ✓      | 0     | Dark default, `next-themes`, AA contrast                  |
-| `/api/health` liveness probe          | ✓      | 0     |                                                           |
-| Typed env validation                  | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                |
-| LLM provider abstraction              | ✓      | 0     | Gemini impl + cache decorator                             |
-| Drizzle schema (12 tables, 8 enums)   | ✓      | 0     |                                                           |
-| Postgres extensions bootstrapped      | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)            |
-| Initial migration applied             | ✓      | 1     | All tables + HNSW (cosine) indexes                        |
-| RLS policies                          | ✓      | 1     | default-deny + anon read on public tables                 |
-| `PhoneSpec` Zod schema                | ✓      | 1     | `src/features/phones/schema.ts`                           |
-| Aspect definitions seeded             | ✓      | 1     | 7 aspects, weights sum to 1.0                             |
-| Starter phone corpus (20 phones)      | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                     |
-| `db:setup` orchestrator + `db:smoke`  | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                    |
-| MCP-style ingestion adapters          | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles   |
-| `pnpm ingest` CLI + nightly cron      | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs` |
-| Hybrid retrieval (vector + FTS + RRF) | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)   |
-| Per-phone page & chat Q&A             | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                        |
-| Aspect scorecard agent graph          | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist    |
-| Conversational recommender            | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`             |
-| Browse (phone list)                   | ✓      | 5     | `/browse` → `/p/[slug]`                                   |
-| Browse + filter                       | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                 |
-| Compare (two phones)                  | ◯      | 7     |                                                           |
-| PWA install + offline shell           | ◯      | 7     |                                                           |
-| LLM evaluation harness in CI          | ◯      | 3+    | Gated by eval set                                         |
+| Feature                                  | Status | Phase | Notes                                                               |
+| ---------------------------------------- | ------ | ----- | ------------------------------------------------------------------- |
+| Landing hero + CTA                       | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                           |
+| Dark/light theme (OKLCH tokens)          | ✓      | 0     | Dark default, `next-themes`, AA contrast                            |
+| `/api/health` liveness probe             | ✓      | 0     |                                                                     |
+| Typed env validation                     | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                          |
+| LLM provider abstraction                 | ✓      | 0     | Gemini impl + cache decorator                                       |
+| Drizzle schema (12 tables, 8 enums)      | ✓      | 0     |                                                                     |
+| Postgres extensions bootstrapped         | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                      |
+| Initial migration applied                | ✓      | 1     | All tables + HNSW (cosine) indexes                                  |
+| RLS policies                             | ✓      | 1     | default-deny + anon read on public tables                           |
+| `PhoneSpec` Zod schema                   | ✓      | 1     | `src/features/phones/schema.ts`                                     |
+| Aspect definitions seeded                | ✓      | 1     | 7 aspects, weights sum to 1.0                                       |
+| Starter phone corpus (20 phones)         | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                               |
+| `db:setup` orchestrator + `db:smoke`     | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                              |
+| MCP-style ingestion adapters             | ✓      | 2     | TypeScript; YouTube (3-tier fallback), Reddit, articles             |
+| `pnpm ingest` CLI + nightly cron         | ✓      | 2     | Idempotent via `content_hash`; telemetry in `ingest_runs`           |
+| Hybrid retrieval (vector + FTS + RRF)    | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)             |
+| Per-phone page & chat Q&A                | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations                                  |
+| Aspect scorecard agent graph             | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist              |
+| Conversational recommender               | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                       |
+| Browse (phone list)                      | ✓      | 5     | `/browse` → `/p/[slug]`                                             |
+| Browse + filter                          | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                           |
+| About page                               | ✓      | 7     | `/about` — what RECSY is + links to flows                           |
+| Compare (two phones)                     | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…` |
+| Phone page: spec grid + MSRP + image     | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`    |
+| Browse + rec cards: product imagery      | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder    |
+| Recommender: price + image on pick cards | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                |
+| PWA install + offline shell              | ◯      | 7     |                                                                     |
+| LLM evaluation harness in CI             | ◯      | 3+    | Gated by eval set                                                   |
+
+> **Backlog check (2026-04-21).** The five product gaps (phone page felt empty, `/about` missing, no compare path, no price/imagery on rec cards, no images) are covered by the feature rows and ADR 0009. Still **planned** for Phase 7 polish: PWA, SEO, OG / social previews, **richer** compare UX (e.g. picker vs URL-only), and populating `image_url` via ingestion/ops for real photos when missing.
 
 ---
 
@@ -488,13 +494,14 @@ interface UserRequirements {
   budget_usd: { min?: number; max: number } | null;
   priorities: Array<{
     aspect: 'camera' | 'battery' | 'performance' | 'display' | 'build' | 'software' | 'value';
-    weight: number; // 0–1, sums to 1
+    weight: number; // after normalise: 0–1, sum 1; prior to that, any nonnegative scale
   }>;
   must_haves: string[];
   deal_breakers: string[];
   use_cases: string[];
   form_factor: {
-    screen_size_range_in?: [number, number];
+    screen_size_range_in?: [number, number]; // after normalise; the LLM schema uses
+    // screen_size_min_in / screen_size_max_in (no tuple) for Gemini `responseSchema`
     weight_max_g?: number;
     foldable?: boolean;
   };
@@ -503,6 +510,14 @@ interface UserRequirements {
   clarifying_question?: string; // present iff confidence < threshold
 }
 ```
+
+The **runtime** shape above is what `normalizeUserRequirements` returns. The
+Zod `userRequirementsSchema` used with `generateObject` is more permissive on
+**LLM output** (e.g. title-case aspect names, `budget_usd` as a single number
+or string currency, `null` for optional objects) so a single model quirk does
+not trip `LLM_SCHEMA_VIOLATION` on every request; see
+[`docs/recommender/README.md`](./recommender/README.md) (“Stage A: structured
+`UserRequirements`”).
 
 Multi-turn sessions merge requirements across turns. If
 `confidence < RECOMMENDER_CLARIFY_THRESHOLD` (0.6), emit
@@ -907,7 +922,7 @@ justifies it.
 | 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                |
 | 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                           |
 | 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                 |
-| 7 — Polish                  | Compare, PWA, SEO, OG images, analytics                  | ◯              |                                                                                  |
+| 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | Compare + About + spec UI shipped (ADR 0009); PWA/SEO/OG still open              |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
 this document updated.
@@ -1099,6 +1114,7 @@ rows are not deleted so history stays visible in the “Notes” column.
 | --------------------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query       | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
 | Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only                | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
+| Recommender — Stage A | Gemini `UserRequirements` JSON often drifts (casing, nulls, string numbers)         | **Mitigated (MVP)**            | Lenient `userRequirementsSchema` + `normalizeUserRequirements` + one retry. See `docs/recommender/README.md` and ADR 0007 supplement. On persistent `LLM_SCHEMA_VIOLATION`, inspect Zod `cause` and extend the schema, not the ranker.                  |
 | Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
 | Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
 | Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
@@ -1134,6 +1150,41 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-04-22 — Compare: direct `/compare` + invalid slugs
+
+- **`/compare`** — GET form to enter two slugs (no empty “dead end” on direct
+  navigation); invalid slugs show a clear message + form instead of `notFound()`.
+
+### 2026-04-21 — Phone UX, About, Compare, images & price (ADR 0009)
+
+- **ADR 0009** — [phone page detail, about, compare, recommender price](./adr/0009-phone-ux-images-compare.md).
+- **`/p/[slug]`** — `PhoneSpecSummary`, header shows `msrp` + `PhoneImage` (placeholder if no `image_url`).
+- **`/about`**, **`/compare?a&b=…`** — static about; server compare table + 404 when a slug is missing.
+- **API** — `RecommendApiPick` + `ScoredCandidate` include `msrpUsd`, `imageUrl` (`src/services/recommender/catalog.ts` loads `image_url`).
+- **UI** — Browse + recommend cards use `PhoneImage`; recommender “Compare the top 2” deep-link; nav shows Browse / About / Compare on mobile.
+- **`docs/compare/README.md`** — operator one-pager.
+
+### 2026-04-21 — Recommender: Gemini `responseSchema` + retry fix
+
+- **Form factor** — Llm Zod no longer uses a 2-tuple for screen size
+  (Gemini/JSON “items” / protobuf limitation); use
+  `screen_size_min_in` / `screen_size_max_in` → `normalize` →
+  `screen_size_range_in` for `match.ts`. Legacy tuple / DB JSON still round-trip
+  via preprocess.
+- **Retry** — second structured attempt appends a **`user`** nudge, not
+  `system` (Gemini: system only at the start of the conversation).
+- **Docs** — `docs/recommender/README.md`, ADR 0007 supplement, §11 comment.
+
+### 2026-04-21 — Recommender: Stage A Zod hardening (structured extraction)
+
+- **`userRequirementsSchema`** — tolerate typical Gemini/JSON output (lowercase
+  aspect names after trim, 0–100 relative weights, currency-shaped `min`/`max`,
+  `null` for optional nested objects, coerced `confidence`) before
+  `normalizeUserRequirements`; `requirements-schema.test.ts` locks examples.
+- **`docs/recommender/README.md`** — documents `LLM_SCHEMA_VIOLATION` (double
+  validation failure) and the lenient-parse pattern.
+- **§11** in this file — “runtime `UserRequirements`” vs Zod+LLM input clarified.
 
 ### 2026-04-21 — Phase 6 MVP (browse + faceted filters)
 

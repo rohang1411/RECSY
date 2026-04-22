@@ -21,6 +21,10 @@ export type RecommendApiPick = {
   readonly model: string;
   readonly score: number;
   readonly summary: string;
+  /** Postgres `msrp_usd` as string, or `null` */
+  readonly msrpUsd: string | null;
+  /** `phones.image_url` */
+  readonly imageUrl: string | null;
 };
 
 export type RecommendPipelineResult =
@@ -60,6 +64,8 @@ function toApiPicks(picks: readonly ScoredCandidate[]): RecommendApiPick[] {
     model: p.model,
     score: Math.round(p.score * 100) / 100,
     summary: p.summary,
+    msrpUsd: p.msrpUsd,
+    imageUrl: p.imageUrl,
   }));
 }
 
