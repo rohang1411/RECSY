@@ -1,11 +1,11 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import { appSearchParamsToURLSearchParams } from '@/app/browse/search-params-helpers';
 import { ComparePhonePickers } from '@/app/compare/compare-phone-pickers';
 import { CompareSlugForm } from '@/app/compare/compare-slug-form';
+import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
 import { getDb } from '@/services/db/client';
@@ -190,24 +190,12 @@ export default async function ComparePage({ searchParams }: PageProps) {
             key={p.slug}
             className="border-border/80 bg-card/30 flex flex-col items-center gap-2 rounded-lg border p-4 text-center"
           >
-            {p.imageUrl ? (
-              <Image
-                src={p.imageUrl}
-                alt={`${p.brand} ${p.model}`}
-                width={160}
-                height={160}
-                unoptimized
-                className="bg-muted/40 h-40 w-40 object-contain"
-              />
-            ) : (
-              <div
-                className="bg-muted/50 text-muted-foreground flex h-40 w-40 items-center justify-center rounded-lg text-3xl font-semibold"
-                role="img"
-                aria-label={`${p.brand} ${p.model}`}
-              >
-                {p.brand.charAt(0)}
-              </div>
-            )}
+            <PhoneImage
+              src={p.imageUrl}
+              label={`${p.brand} ${p.model}`}
+              size={160}
+              className="flex w-40 justify-center"
+            />
             <p className="text-muted-foreground text-xs uppercase">{p.brand}</p>
             <p className="text-foreground text-lg font-semibold">{p.model}</p>
             {p.tagline ? <p className="text-muted-foreground text-sm">{p.tagline}</p> : null}

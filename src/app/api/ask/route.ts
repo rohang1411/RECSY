@@ -8,6 +8,7 @@ import { env } from '@/env';
 import { MAX_CHAT_MESSAGE_BYTES } from '@/lib/constants';
 import { toAppError } from '@/lib/errors';
 import { getRequestClientIp } from '@/lib/request-ip';
+import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
 import { chunkTextForStream, persistChatQuery, runPhoneQna } from '@/services/chat/answer';
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             usage: result.usage,
             model: result.model,
             retrievalMs: result.retrieval.debug.totalMs,
+            retrievalTrace: buildAskRetrievalTrace(result.retrieval),
           });
 
           void persistChatQuery({

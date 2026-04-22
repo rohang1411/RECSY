@@ -10,9 +10,10 @@ import type { AspectDefinitionRow } from '@/services/scorecard/types';
 import { loadRecommendationCatalog } from './catalog';
 import { extractUserRequirements } from './extract-requirements';
 import { rankCandidates, type ScoredCandidate } from './match';
+import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
 import { buildRecommenderQueryText } from './spec-embedding-text';
-import { getLatestRequirementsForSession } from './session';
+import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 
 export type RecommendApiPick = {
   readonly phoneId: string;
@@ -38,6 +39,8 @@ export type RecommendPipelineResult =
       readonly requirements: UserRequirements;
       readonly picks: readonly RecommendApiPick[];
       readonly relaxed: readonly string[];
+      /** `true` when this turn re-ranked the previous turn's picks instead of the full catalog. */
+      readonly refined: boolean;
     };
 
 function buildDefaultAspectWeights(
@@ -76,7 +79,11 @@ export async function runRecommendationPipeline(input: {
   readonly userMessage: string;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
-  const previous = await getLatestRequirementsForSession(input.db, input.sessionId);
+  const [previous, priorPickIds] = await Promise.all([
+    getLatestRequirementsForSession(input.db, input.sessionId),
+    getLatestRecommendPickIds(input.db, input.sessionId),
+  ]);
+
   const requirements = await extractUserRequirements({
     llm: input.llm,
     userMessage: input.userMessage,
@@ -91,11 +98,14 @@ export async function runRecommendationPipeline(input: {
     return { kind: 'clarify', requirements, clarifyingQuestion: q };
   }
 
+  const refineDetection = detectRefineIntent(input.userMessage);
+  const refineEligible = refineDetection.refine && priorPickIds != null && priorPickIds.length > 0;
+
   const defRows = await input.db.select().from(aspectDefinitions);
   const defaultW = buildDefaultAspectWeights(defRows);
-  const catalog = await loadRecommendationCatalog(input.db);
+  const fullCatalog = await loadRecommendationCatalog(input.db);
 
-  const hasSpecEmb = catalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
+  const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
   let queryEmbedding: readonly number[] | undefined;
   if (hasSpecEmb) {
     const qtext = buildRecommenderQueryText(requirements);
@@ -107,14 +117,55 @@ export async function runRecommendationPipeline(input: {
     );
   }
 
-  const { picks, relaxed } = rankCandidates(catalog, requirements, defaultW, { queryEmbedding });
+  let picks: readonly ScoredCandidate[] = [];
+  let relaxed: readonly string[] = [];
+  let refined = false;
 
-  input.log.info({ pickCount: picks.length, relaxed }, 'recommender results');
+  if (refineEligible) {
+    const priorIdSet = new Set(priorPickIds);
+    const narrowed = fullCatalog.filter((entry) => priorIdSet.has(entry.phoneId));
+    if (narrowed.length > 0) {
+      const res = rankCandidates(narrowed, requirements, defaultW, { queryEmbedding });
+      if (res.picks.length > 0) {
+        picks = res.picks;
+        relaxed = res.relaxed;
+        refined = true;
+        input.log.info(
+          {
+            priorCount: priorPickIds.length,
+            narrowedCount: narrowed.length,
+            refinePicks: picks.length,
+            refineMatched: refineDetection.matched,
+          },
+          'recommender refine over prior picks',
+        );
+      }
+    }
+    if (!refined) {
+      input.log.info(
+        {
+          priorCount: priorPickIds.length,
+          narrowedCount: narrowed.length,
+          refineMatched: refineDetection.matched,
+        },
+        'refine detected but prior picks did not survive filters — falling back to full catalog',
+      );
+    }
+  }
+
+  if (!refined) {
+    const res = rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
+    picks = res.picks;
+    relaxed = res.relaxed;
+  }
+
+  input.log.info({ pickCount: picks.length, relaxed, refined }, 'recommender results');
 
   return {
     kind: 'results',
     requirements,
     picks: toApiPicks(picks),
     relaxed,
+    refined,
   };
 }

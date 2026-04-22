@@ -187,7 +187,44 @@ Run just the retrieval suite:
 pnpm test -- --run src/services/retrieval
 ```
 
-## 9. Known limitations
+## 9. Ask trace in the phone UI
+
+For **transparency** (not for changing scores), the phone-page chat shows a
+collapsible panel after each answer. Data comes from the same
+`RetrievalResult` the generator used:
+
+- **Code:** `src/lib/ask-retrieval-trace.ts` builds a JSON summary
+  (`AskRetrievalTrace`) from `RetrievalDebug` + final chunks.
+- **API:** `POST /api/ask` NDJSON `type: "done"` always includes
+  `retrievalTrace` (stages with ms + counts, distinct sources, coverage-relaxed
+  flag, linked source titles). `phone-chat.tsx` forwards it into React state —
+  the regression where the client silently dropped it is fixed by
+  [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
+- **UI:** `src/app/p/[slug]/phone-chat.tsx` — `<details>` + source list.
+
+This is **not** a second retrieval pass; it mirrors what already ran. See
+[ADR 0011 — phone Q&A scope, images, home, ask trace](../adr/0011-phone-qa-scope-images-home-ask-trace.md).
+
+## 10. Empty-corpus behavior (no ingestion yet)
+
+`pnpm db:setup` seeds the phone catalog but **not** sources / chunks. On a fresh
+environment, any phone page will retrieve zero chunks until you run
+`pnpm ingest --phone <slug>` (or equivalent for that phone). In that state:
+
+- Hybrid retrieval still runs through every stage; each one reports `count: 0`.
+- `runPhoneQna` detects the empty chunks list, **skips the LLM call entirely**,
+  and returns a deterministic message that names the gap and points users to
+  Recommend / Compare. The trace panel still renders so operators can confirm
+  the empty state at a glance.
+- The sentinel `model: 'no-context@v1'` (`NO_CONTEXT_MODEL` in
+  `src/services/chat/answer.ts`) is stored on the `chat_queries` row so you can
+  SQL-query affected turns with `SELECT phone_id, COUNT(*) ... WHERE model =
+'no-context@v1' GROUP BY phone_id` to prioritize ingestion.
+
+See [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md)
+for the rationale (honesty + zero LLM spend on empty corpus).
+
+## 11. Known limitations
 
 - **Query embedding cost.** Every call costs one Gemini embedding
   request. `LlmProvider.embed` is **not** cached (complexity vs

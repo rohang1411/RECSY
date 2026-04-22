@@ -120,6 +120,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         clarifyingQuestion: result.kind === 'clarify' ? result.clarifyingQuestion : undefined,
         picks: result.kind === 'results' ? result.picks : undefined,
         relaxed: result.kind === 'results' ? result.relaxed : undefined,
+        refined: result.kind === 'results' ? result.refined : undefined,
       },
       { status: 200, headers: { 'X-Trace-Id': traceId } },
     );

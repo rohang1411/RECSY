@@ -25,6 +25,7 @@ Phase 7 intended to ship: installable **PWA** surface (at least manifest + icons
 
 ## Related
 
+- [ADR 0011 — phone Q&A scope, images, home, ask trace](0011-phone-qa-scope-images-home-ask-trace.md) — complements this ADR (per-phone chat behavior and `PhoneImage` notes).
 - [ADR 0004 — hybrid retrieval](0004-hybrid-retrieval.md)
 - [ADR 0005 — e2e and evaluation](0005-e2e-and-evaluation.md)
 - [ADR 0009 — phone UX, images, compare](0009-phone-ux-images-compare.md)

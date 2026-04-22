@@ -24,6 +24,13 @@ interface ChatLine {
   readonly text: string;
 }
 
+function rankLabel(index: number): string {
+  if (index === 0) return 'Top pick';
+  if (index === 1) return 'Runner-up';
+  if (index === 2) return '3rd';
+  return `#${index + 1}`;
+}
+
 export function RecommendClient() {
   const [input, setInput] = useState('');
   const [lines, setLines] = useState<ChatLine[]>([
@@ -34,6 +41,7 @@ export function RecommendClient() {
   ]);
   const [picks, setPicks] = useState<readonly ApiPick[] | null>(null);
   const [relaxed, setRelaxed] = useState<readonly string[] | null>(null);
+  const [refined, setRefined] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +52,7 @@ export function RecommendClient() {
     setError(null);
     setPicks(null);
     setRelaxed(null);
+    setRefined(false);
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
     try {
@@ -79,8 +88,10 @@ export function RecommendClient() {
         const relaxedList = Array.isArray(rawRelaxed)
           ? (rawRelaxed as string[]).filter((s): s is string => typeof s === 'string')
           : [];
+        const rawRefined = (data as { refined?: unknown }).refined === true;
         setPicks(pickList);
         setRelaxed(relaxedList);
+        setRefined(rawRefined);
         if (pickList.length === 0) {
           setLines((prev) => [
             ...prev,
@@ -90,10 +101,17 @@ export function RecommendClient() {
             },
           ]);
         } else {
+          const countLabel =
+            pickList.length === 1
+              ? 'one match'
+              : pickList.length === 2
+                ? 'two picks'
+                : `top ${pickList.length}`;
+          const base = rawRefined
+            ? `Re-ranked your earlier picks — here is the ${countLabel}.`
+            : `Here ${pickList.length === 1 ? 'is' : 'are'} the ${countLabel}, ranked for what you said matters.`;
           const intro =
-            relaxedList.length > 0
-              ? `Here are picks tuned to what you said. (Adjusted: ${relaxedList.join(', ')}.)`
-              : 'Here are picks tuned to what you said.';
+            relaxedList.length > 0 ? `${base} (Adjusted: ${relaxedList.join(', ')}.)` : base;
           setLines((prev) => [...prev, { role: 'assistant', text: intro }]);
         }
       } else {
@@ -151,19 +169,23 @@ export function RecommendClient() {
 
         {picks && picks.length > 0 ? (
           <div className="mt-6 space-y-4">
-            {picks.length >= 2 && picks[0] != null && picks[1] != null ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-muted-foreground text-xs">
+                Showing {picks.length} {picks.length === 1 ? 'match' : 'picks'}, ranked
+                {refined ? ' · re-ranked from your earlier picks' : ''}
+              </p>
+              {picks.length >= 2 && picks[0] != null && picks[1] != null ? (
                 <Link
                   href={`/compare?a=${encodeURIComponent(picks[0].slug)}&b=${encodeURIComponent(picks[1].slug)}`}
-                  className="text-primary focus-visible:ring-ring inline-flex items-center gap-1.5 font-medium hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                  className="text-primary focus-visible:ring-ring inline-flex items-center gap-1.5 text-xs font-medium hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
                   <Scale className="size-3.5" aria-hidden />
-                  Compare the top 2
+                  Compare top 2
                 </Link>
-              </p>
-            ) : null}
+              ) : null}
+            </div>
             <ul className="space-y-3">
-              {picks.map((p) => {
+              {picks.map((p, idx) => {
                 const price = formatUsdFromNumericString(p.msrpUsd);
                 return (
                   <li key={p.phoneId}>
@@ -183,10 +205,25 @@ export function RecommendClient() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                                {p.brand}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={cn(
+                                    'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+                                    idx === 0
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-muted text-muted-foreground border-border/80 border',
+                                  )}
+                                  aria-label={`Rank ${idx + 1}`}
+                                >
+                                  {rankLabel(idx)}
+                                </span>
+                                <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                                  {p.brand}
+                                </p>
+                              </div>
+                              <p className="text-foreground mt-1 text-base font-semibold">
+                                {p.model}
                               </p>
-                              <p className="text-foreground text-base font-semibold">{p.model}</p>
                             </div>
                             <div className="text-right text-sm">
                               <span className="text-foreground block font-medium tabular-nums">

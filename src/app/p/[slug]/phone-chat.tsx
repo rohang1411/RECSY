@@ -1,8 +1,10 @@
 'use client';
 
+import { ChevronDown } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { CitationChip } from '@/components/phone/CitationChip';
+import type { AskRetrievalTrace } from '@/lib/ask-retrieval-trace';
 import type { ResolvedCitation } from '@/services/chat/citations';
 
 const CITATION_TAG =
@@ -16,6 +18,7 @@ type StreamEvent =
       usage: { tokensIn: number; tokensOut: number };
       model: string;
       retrievalMs: number;
+      retrievalTrace?: AskRetrievalTrace;
     }
   | { type: 'error'; code: string; message: string };
 
@@ -55,13 +58,61 @@ function AnswerBody({ text, citations }: { text: string; citations: ResolvedCita
   );
 }
 
+function RetrievalTracePanel({ trace }: { readonly trace: AskRetrievalTrace }) {
+  return (
+    <div className="border-border/60 bg-muted/20 mt-4 rounded-lg border px-3 py-2 text-left">
+      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+        How this answer was built
+      </p>
+      <ol className="text-muted-foreground mt-2 space-y-1 text-xs">
+        {trace.stages.map((s) => (
+          <li key={s.name} className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-foreground/90">{s.name}</span>
+            <span>
+              {s.count != null ? `${s.count} hit${s.count === 1 ? '' : 's'} · ` : ''}
+              {s.ms} ms
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-muted-foreground mt-2 text-xs">
+        Final context: {trace.chunkCount} excerpt{trace.chunkCount === 1 ? '' : 's'} from{' '}
+        {trace.distinctSourceCount} source{trace.distinctSourceCount === 1 ? '' : 's'} · hybrid
+        total {trace.totalMs} ms
+        {trace.coverageRelaxed ? ' · source diversity limit relaxed (small corpus)' : ''}
+      </p>
+      {trace.sources.length > 0 ? (
+        <ul className="border-border/50 mt-2 space-y-1 border-t pt-2 text-xs">
+          {trace.sources.map((s) => (
+            <li key={s.url} className="truncate">
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary font-medium hover:underline"
+                title={s.title}
+              >
+                [{s.type}] {s.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
   const [query, setQuery] = useState('');
   const [answer, setAnswer] = useState('');
   const [citations, setCitations] = useState<ResolvedCitation[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ retrievalMs?: number; model?: string } | null>(null);
+  const [meta, setMeta] = useState<{
+    retrievalMs?: number;
+    model?: string;
+    retrievalTrace?: AskRetrievalTrace;
+  } | null>(null);
 
   const ask = useCallback(async () => {
     const q = query.trim();
@@ -106,7 +157,11 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
             setAnswer(assembled);
           } else if (evt.type === 'done') {
             setCitations(evt.citations);
-            setMeta({ retrievalMs: evt.retrievalMs, model: evt.model });
+            setMeta({
+              retrievalMs: evt.retrievalMs,
+              model: evt.model,
+              retrievalTrace: evt.retrievalTrace,
+            });
           } else if (evt.type === 'error') {
             throw new Error(evt.message);
           }
@@ -123,7 +178,16 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <h2 className="text-foreground text-lg font-semibold tracking-tight">Ask about this phone</h2>
       <p className="text-muted-foreground mt-1 text-sm">
-        Answers use retrieved review excerpts and inline citation links.
+        Excerpts are from reviews about <strong>this phone only</strong>. Asking to compare other
+        models or prices may be out of scope — use{' '}
+        <a className="text-primary font-medium hover:underline" href="/recommend">
+          Recommend
+        </a>{' '}
+        or{' '}
+        <a className="text-primary font-medium hover:underline" href="/browse">
+          Browse
+        </a>{' '}
+        for cross-device picks. Inline links cite sources.
       </p>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -162,6 +226,17 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               Retrieved in {Math.round(meta.retrievalMs)} ms
               {meta.model ? ` · ${meta.model}` : ''}
             </p>
+          ) : null}
+          {meta?.retrievalTrace ? (
+            <details className="group mt-3">
+              <summary className="text-muted-foreground hover:text-foreground cursor-pointer list-none text-xs font-medium [&::-webkit-details-marker]:hidden">
+                <span className="inline-flex items-center gap-1.5">
+                  <ChevronDown className="text-muted-foreground size-3.5 transition-transform group-open:rotate-180" />
+                  Show retrieval pipeline &amp; sources
+                </span>
+              </summary>
+              <RetrievalTracePanel trace={meta.retrievalTrace} />
+            </details>
           ) : null}
         </article>
       ) : null}

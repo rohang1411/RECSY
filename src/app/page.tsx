@@ -1,4 +1,4 @@
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, GitCompare, MessageCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -58,6 +58,57 @@ export default function HomePage() {
             className="border-border bg-card hover:bg-secondary text-foreground focus-visible:ring-ring inline-flex h-11 items-center justify-center rounded-md border px-5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Browse phones
+          </Link>
+        </div>
+
+        <div className="border-border/60 from-card/40 to-background mt-20 grid max-w-4xl grid-cols-1 gap-4 rounded-2xl border bg-gradient-to-b p-6 text-left sm:grid-cols-3">
+          <div className="sm:col-span-3">
+            <h2 className="text-foreground text-sm font-semibold tracking-tight">
+              What you can do
+            </h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Everything below ties back to the same review-backed catalog — use whichever entry
+              point fits.
+            </p>
+          </div>
+          <Link
+            href="/recommend"
+            className="border-border/80 bg-card/60 hover:border-primary/30 focus-visible:ring-ring group rounded-xl border p-4 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            <MessageCircle
+              className="text-primary size-5 transition group-hover:scale-105"
+              aria-hidden
+            />
+            <p className="text-foreground mt-2 text-sm font-medium">Recommender chat</p>
+            <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+              Turn budget and priorities into three picks, with prices and images when we have them.
+            </p>
+          </Link>
+          <Link
+            href="/browse"
+            className="border-border/80 bg-card/60 hover:border-primary/30 focus-visible:ring-ring group rounded-xl border p-4 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            <BookOpen
+              className="text-primary size-5 transition group-hover:scale-105"
+              aria-hidden
+            />
+            <p className="text-foreground mt-2 text-sm font-medium">Browse &amp; filters</p>
+            <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+              Skim the seed catalog, open a phone page, and ask Q&amp;A scoped to that device.
+            </p>
+          </Link>
+          <Link
+            href="/compare"
+            className="border-border/80 bg-card/60 hover:border-primary/30 focus-visible:ring-ring group rounded-xl border p-4 transition focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            <GitCompare
+              className="text-primary size-5 transition group-hover:scale-105"
+              aria-hidden
+            />
+            <p className="text-foreground mt-2 text-sm font-medium">Compare</p>
+            <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+              Side-by-side two models from the catalog (pickers or URL slugs).
+            </p>
           </Link>
         </div>
       </div>

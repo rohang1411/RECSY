@@ -120,6 +120,14 @@ Phase 0 (scaffold + design system + service skeletons + CI) is complete.
 Subsequent phases are tracked in the top-level `.cursor/plans` planning
 document. Each phase ends on a green build with updated ADRs.
 
+## Documentation
+
+- **`docs/RECSY_V2_PROJECT_CONTEXT.md`** — live backlog, feature inventory, change log
+- **`docs/RECSY_V2_PROJECT_GUIDE.md`** — one-stop narrative for contributors
+- **ADRs** — `docs/adr/`, including PWA/SEO/[`0010`](docs/adr/0010-pwa-seo-analytics-compare.md), phone Q&A / ask trace / [`0011`](docs/adr/0011-phone-qa-scope-images-home-ask-trace.md), and recommender refine / rank UI / empty-corpus / [`0012`](docs/adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md)
+- **Retrieval** — [`docs/retrieval/README.md`](docs/retrieval/README.md) (incl. ask trace §9 and empty-corpus behavior §10)
+- **Recommender** — [`docs/recommender/README.md`](docs/recommender/README.md) (incl. refine-over-prior-picks)
+
 ## License
 
 Internal / portfolio. Not licensed for redistribution yet.

@@ -23,7 +23,33 @@ ranking** → **three diverse picks**. Full pipeline semantics: §11 in
 **Responses**
 
 - `{ "kind": "clarify", "clarifyingQuestion": string }`
-- `{ "kind": "results", "picks": [...], "relaxed": string[] }`
+- `{ "kind": "results", "picks": [...], "relaxed": string[], "refined": boolean }`
+
+`refined: true` signals that this turn re-ranked the previous turn's picks
+instead of scanning the full catalog — see **Refine over prior picks** below
+and [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
+Pick count in `picks` is **honest**: up to 3, but fewer if the ranker (or the
+narrowed refine set) produced fewer matches. The UI never pads.
+
+### Refine over prior picks
+
+Short follow-ups like "which of these is best for performance" or "rank them
+for battery" are detected by `detectRefineIntent` in
+`src/services/recommender/refine-intent.ts` and re-rank only the phones that
+came back on the most recent `recommend` turn in this session. This keeps the
+pipeline stateful enough for realistic conversational refinement without a
+dedicated chat intent or schema change.
+
+Rules of thumb:
+
+- **Refine is detected** when the message is short and uses phrases like
+  "of these", "between the top two", "rank them", "which of the three".
+- **New-query hints override refine** — anything like "under $500",
+  "instead", "forget those", "show me something different", or "start over"
+  skips the refine path and runs the full catalog ranker.
+- **If the refine set is empty after filters** (e.g. a newly tightened budget
+  excludes all prior picks), the pipeline falls back to the full-catalog path
+  and clears `refined` so users still get useful picks.
 
 ### Stage A: structured `UserRequirements` (Gemini + Zod)
 

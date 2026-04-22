@@ -39,8 +39,10 @@ export interface PhoneQnaResult {
 
 const SYSTEM_PREAMBLE = `You are RECSY — concise, neutral, and honest about smartphones.
 
+Context: SOURCE EXCERPTS come from reviews and articles about **one phone** — the product page the user is viewing. They are not a full catalog and may not mention other models, prices, or generations (e.g. "iPhone 17") at all.
+
 Rules:
-- Use ONLY the SOURCE EXCERPTS below. If they do not support an answer, say so.
+- Use ONLY the SOURCE EXCERPTS below. If they do not support an answer, say briefly what is missing. If the user asks to compare this phone to another model, a budget pick across models, or pricing not in the excerpts, explain that these excerpts are scoped to this device and point them to the site recommender or browse flow (you may say "try the recommender" or "browse the catalog" — no URL required).
 - Every substantive factual claim needs an inline citation tag exactly like [c:CHUNK_UUID] where CHUNK_UUID is one of the ids shown in the excerpts.
 - Place tags immediately after the sentence or clause they support.
 - Do not invent chunk ids or facts.`;
@@ -103,8 +105,28 @@ async function chatAnswer(
 }
 
 /**
+ * Returned by {@link runPhoneQna} when hybrid retrieval finds **zero chunks**
+ * for the current phone. Set as the `model` field so downstream analytics (and
+ * the client UI) can tell apart "empty corpus" from a real LLM response. This
+ * is intentional: if the corpus is empty we should not burn an LLM call just
+ * to emit a generic refusal that looks like a model failure.
+ */
+export const NO_CONTEXT_MODEL = 'no-context@v1';
+
+const NO_CONTEXT_MESSAGE =
+  'I have no review sources ingested for this phone yet, so I can only be honest: ' +
+  "I cannot answer questions about it from reviews right now. If you're a developer, " +
+  'run `pnpm ingest --phone <slug>` to pull articles/videos for this device. For ' +
+  'cross-device picks, try the recommender. To compare spec sheets side-by-side, use Compare.';
+
+/**
  * Retrieves context, generates an answer with the LLM, validates citation tags,
  * and retries once with a stricter prompt if the model hallucinates chunk ids.
+ *
+ * Short-circuits with a transparent explanatory message (no LLM call) when
+ * retrieval returns **zero chunks** — the phone has no corpus, so the honest
+ * answer is "nothing has been ingested yet". This avoids paying for a model
+ * refusal that reads like a bug to end users.
  */
 export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult> {
   const { phoneId, query, retriever, llm, log, signal, retrievalOptions } = input;
@@ -125,6 +147,17 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       ...(retrievalOptions ?? {}),
     },
   });
+
+  if (retrieval.chunks.length === 0) {
+    log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
+    return {
+      text: NO_CONTEXT_MESSAGE,
+      citations: [],
+      retrieval,
+      usage: { tokensIn: 0, tokensOut: 0 },
+      model: NO_CONTEXT_MODEL,
+    };
+  }
 
   const allowed = new Set(retrieval.chunks.map((c) => c.chunkId.toLowerCase()));
 
