@@ -1,0 +1,145 @@
+# =============================================================================
+# Tiered, automated ingestion.
+#
+# Daily cron that picks phones that are due for a refresh based on their
+# freshness tier (hot / warm / cold) and shards the work across a 4-job
+# matrix. Each shard pulls a deterministic slice of the due-set using a hash
+# mod on phone id, so the same phone always lands on the same shard.
+#
+# Schedule:
+#   - 02:17 UTC daily. Each tier gets a dedicated cron:
+#     * hot  runs every day
+#     * warm runs on even days (Mon/Wed/Fri-ish over a week)
+#     * cold runs only on Sundays
+#   We encode this by passing a tier input to the matrix and gating via
+#   `if:` on the day-of-week.
+#
+# Manual dispatch:
+#   - Supports overriding tier, limit, shard count for ad-hoc runs.
+#
+# Concurrency:
+#   - One run per (tier, shard) at a time; subsequent cron runs for the same
+#     shard queue (cancel-in-progress: false) so we don't drop scheduled work.
+#
+# Secrets: see ingest.yml — same set.
+# =============================================================================
+name: ingest (tiered)
+
+on:
+  schedule:
+    # 02:17 UTC daily. The job matrix handles tier selection.
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Which tier to run (default: all)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - hot
+          - warm
+          - cold
+      limit:
+        description: 'Max phones per shard per run'
+        required: false
+        default: '15'
+        type: string
+      per_phone_limit:
+        description: 'Max candidates per adapter per phone'
+        required: false
+        default: '5'
+        type: string
+
+concurrency:
+  group: ingest-tiered-${{ github.event.inputs.tier || 'cron' }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan shards / tiers
+    runs-on: ubuntu-latest
+    outputs:
+      tiers: ${{ steps.plan.outputs.tiers }}
+    steps:
+      - id: plan
+        shell: bash
+        run: |
+          # Select which tiers to run.
+          # - On workflow_dispatch, respect the user's choice.
+          # - On schedule, derive from the day of the week:
+          #     * hot  → every day
+          #     * warm → even days (or Mon/Wed/Fri/Sat for denser coverage)
+          #     * cold → Sunday only
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.event.inputs.tier }}" in
+              hot)  echo 'tiers=["hot"]'  >> "$GITHUB_OUTPUT" ;;
+              warm) echo 'tiers=["warm"]' >> "$GITHUB_OUTPUT" ;;
+              cold) echo 'tiers=["cold"]' >> "$GITHUB_OUTPUT" ;;
+              *)    echo 'tiers=["hot","warm","cold"]' >> "$GITHUB_OUTPUT" ;;
+            esac
+            exit 0
+          fi
+
+          DOW=$(date -u +%u)    # 1..7 Mon..Sun
+          TIERS='["hot"]'
+          # Warm: Mon, Wed, Fri, Sat → hits most phones once/week.
+          if [ "$DOW" = "1" ] || [ "$DOW" = "3" ] || [ "$DOW" = "5" ] || [ "$DOW" = "6" ]; then
+            TIERS='["hot","warm"]'
+          fi
+          # Cold: Sundays only.
+          if [ "$DOW" = "7" ]; then
+            TIERS='["hot","warm","cold"]'
+          fi
+          echo "tiers=$TIERS" >> "$GITHUB_OUTPUT"
+
+  ingest:
+    name: ingest tier=${{ matrix.tier }} shard=${{ matrix.shard }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        tier: ${{ fromJson(needs.plan.outputs.tiers) }}
+        shard: [0, 1, 2, 3]
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tiered ingestion
+        shell: bash
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '15' }}"
+          PER_PHONE_LIMIT="${{ github.event.inputs.per_phone_limit || '5' }}"
+          pnpm exec tsx scripts/ingest-auto.ts \
+            --tier "${{ matrix.tier }}" \
+            --limit "$LIMIT" \
+            --per-phone-limit "$PER_PHONE_LIMIT" \
+            --shard "${{ matrix.shard }}" \
+            --total-shards 4
