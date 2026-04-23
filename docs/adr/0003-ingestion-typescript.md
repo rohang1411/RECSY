@@ -5,6 +5,9 @@
 - **Phase:** 2 (Ingestion)
 - **Supersedes:** the Python adapter direction sketched in §13 of
   `RECSY_V2_PROJECT_CONTEXT.md` (now updated).
+- **Extended by:** [ADR 0014](0014-automated-ingestion-curation.md) —
+  automated tiered scheduling, Curator + Disambiguator agents, polite HTTP,
+  GSMArena + YouTube-channel adapters, DB-driven source profiles.
 
 ## Context
 

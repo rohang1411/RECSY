@@ -5,6 +5,11 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { CitationChip } from '@/components/phone/CitationChip';
 import type { AskRetrievalTrace } from '@/lib/ask-retrieval-trace';
+import {
+  CLIENT_SETTING_DEFAULTS,
+  CLIENT_SETTING_KEYS,
+  useClientSetting,
+} from '@/lib/client-settings';
 import type { ResolvedCitation } from '@/services/chat/citations';
 
 const CITATION_TAG =
@@ -113,6 +118,10 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     model?: string;
     retrievalTrace?: AskRetrievalTrace;
   } | null>(null);
+  const [enterToSend] = useClientSetting<boolean>(
+    CLIENT_SETTING_KEYS.enterToSend,
+    CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
+  );
 
   const ask = useCallback(async () => {
     const q = query.trim();
@@ -196,6 +205,12 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
           <textarea
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (enterToSend && e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void ask();
+              }
+            }}
             rows={3}
             placeholder="e.g. How is the battery life for heavy camera use?"
             className="border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-y rounded-lg border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"

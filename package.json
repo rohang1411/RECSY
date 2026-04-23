@@ -35,6 +35,9 @@
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
     "ingest": "tsx --env-file=.env.local scripts/ingest.ts",
+    "ingest:auto": "tsx --env-file=.env.local scripts/ingest-auto.ts",
+    "creator:watch": "tsx --env-file=.env.local scripts/creator-watch.ts",
+    "ingest:report": "tsx --env-file=.env.local scripts/ingest-report.ts",
     "ingest:smoke": "tsx --env-file=.env.local scripts/ingest-smoke.ts",
     "prepare": "node scripts/prepare-husky.mjs"
   },

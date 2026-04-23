@@ -149,6 +149,15 @@ temp/
 *.pem
 
 
+# --- Memory bank (local agent scratch) ----------------------------------------
+# `memory-bank/` is the local AI-agent context folder (see the "Cursor's Memory
+# Bank" user rule). It holds a compact, developer-curated snapshot of the
+# project used by coding agents between sessions. It is *not* the source of
+# truth — `docs/` is — and it is intentionally untracked so each developer can
+# maintain their own working copy without conflicting with the repo.
+memory-bank/
+
+
 # --- Legacy (Flutter) build artefacts -----------------------------------------
 # The `legacy/` directory preserves the pre-rewrite Flutter project for
 # historical reference. We keep the source tracked but ignore generated

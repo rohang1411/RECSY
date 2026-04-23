@@ -14,7 +14,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    environment: 'jsdom',
+    // Default to `node` — none of our current tests render React into a DOM,
+    // and `@t3-oss/env-nextjs` blocks server-side env vars when it detects a
+    // browser-like global (jsdom counts). Individual test files that need a
+    // DOM can opt in via `// @vitest-environment jsdom`.
+    environment: 'node',
     setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', '.next', 'tests/integration/**'],

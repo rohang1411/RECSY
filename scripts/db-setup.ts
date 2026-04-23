@@ -73,10 +73,14 @@ async function main(): Promise<void> {
     const rlsSQL = await readFile(RLS_SQL, 'utf8');
     await runMultiStatementSQL(client, rlsSQL);
 
-    STEP(5, 'seeding aspect_definitions + phones');
+    STEP(5, 'seeding aspect_definitions + phones + ingestion profiles');
     const summary = await runSeeds(db);
     log(
-      `        aspects upserted: ${summary.aspects.upserted}, phones upserted: ${summary.phones.upserted}`,
+      `        aspects: ${summary.aspects.upserted}, phones: ${summary.phones.upserted}, ` +
+        `creators: ${summary.creatorProfiles.upserted}, ` +
+        `subreddits: ${summary.subredditProfiles.upserted}, ` +
+        `domains: ${summary.domainProfiles.upserted}, ` +
+        `aliases: ${summary.phoneAliases.upserted}`,
     );
 
     log('\n[db:setup] OK - all five steps completed.');

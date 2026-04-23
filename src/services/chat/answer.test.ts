@@ -4,7 +4,7 @@ import type { LlmProvider } from '@/services/llm/types';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalResult } from '@/services/retrieval/types';
 
-import { NO_CONTEXT_MODEL, runPhoneQna } from './answer';
+import { NO_CONTEXT_MODEL, buildNoContextMessage, runPhoneQna } from './answer';
 
 function emptyRetrieval(phoneId: string, query: string): RetrievalResult {
   return {
@@ -57,7 +57,48 @@ describe('runPhoneQna zero-chunk short-circuit', () => {
     expect(res.citations).toEqual([]);
     expect(res.usage).toEqual({ tokensIn: 0, tokensOut: 0 });
     expect(res.text.length).toBeGreaterThan(0);
-    expect(res.text).toMatch(/no review sources ingested/i);
+    expect(res.text).toMatch(/haven't collected reviews/i);
     expect(llm.chat).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildNoContextMessage', () => {
+  it('falls back to generic copy without metadata', () => {
+    const msg = buildNoContextMessage(undefined);
+    expect(msg).toMatch(/haven't collected reviews/i);
+  });
+
+  it('names the phone and mentions days-since-last-ingest', () => {
+    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    const msg = buildNoContextMessage({
+      brand: 'Google',
+      model: 'Pixel 9 Pro',
+      lastIngestAt: fourDaysAgo,
+      nextIngestAt: null,
+    });
+    expect(msg).toContain('Google Pixel 9 Pro');
+    expect(msg).toMatch(/4 days ago/);
+  });
+
+  it('says "scheduled in about Nh" when next refresh < 48h', () => {
+    const in12h = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    const msg = buildNoContextMessage({
+      brand: 'Apple',
+      model: 'iPhone 17',
+      lastIngestAt: null,
+      nextIngestAt: in12h,
+    });
+    expect(msg).toMatch(/about 12h/);
+  });
+
+  it('falls back to "days" when next refresh > 48h', () => {
+    const in4d = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+    const msg = buildNoContextMessage({
+      brand: null,
+      model: null,
+      lastIngestAt: null,
+      nextIngestAt: in4d,
+    });
+    expect(msg).toMatch(/about 4 days/);
   });
 });

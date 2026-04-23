@@ -12,11 +12,19 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { aspectDefinitions, phones } from '../../src/services/db/schema';
 import { ASPECT_DEFINITION_SEEDS, validateAspectSeedWeights } from './aspect-definitions';
+import { seedCreatorProfiles } from './creator-profiles';
+import { seedDomainProfiles } from './domain-profiles';
+import { seedPhoneAliases } from './phone-aliases';
 import { PHONE_SEEDS } from './phones-starter';
+import { seedSubredditProfiles } from './subreddit-profiles';
 
 export interface SeedSummary {
   aspects: { upserted: number };
   phones: { upserted: number };
+  creatorProfiles: { upserted: number };
+  subredditProfiles: { upserted: number };
+  domainProfiles: { upserted: number };
+  phoneAliases: { upserted: number };
 }
 
 /**
@@ -30,7 +38,20 @@ export async function runSeeds(
 ): Promise<SeedSummary> {
   const aspects = await seedAspectDefinitions(db);
   const phonesUp = await seedPhones(db);
-  return { aspects, phones: phonesUp };
+  // Profile tables are independent; they can be run in any order.
+  // `phoneAliases` MUST run after `phones` because it resolves FKs by slug.
+  const creatorProfilesUp = await seedCreatorProfiles(db);
+  const subredditProfilesUp = await seedSubredditProfiles(db);
+  const domainProfilesUp = await seedDomainProfiles(db);
+  const phoneAliasesUp = await seedPhoneAliases(db);
+  return {
+    aspects,
+    phones: phonesUp,
+    creatorProfiles: creatorProfilesUp,
+    subredditProfiles: subredditProfilesUp,
+    domainProfiles: domainProfilesUp,
+    phoneAliases: phoneAliasesUp,
+  };
 }
 
 async function seedAspectDefinitions(

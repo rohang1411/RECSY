@@ -40,6 +40,12 @@ export function AppHeader() {
           >
             Compare
           </Link>
+          <Link
+            href="/settings"
+            className="text-muted-foreground hover:text-foreground inline-flex text-sm transition-colors"
+          >
+            Settings
+          </Link>
           <ThemeToggle />
         </nav>
       </div>
