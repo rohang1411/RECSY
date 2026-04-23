@@ -86,7 +86,7 @@ CREATE TABLE "subreddit_profiles" (
 	CONSTRAINT "subreddit_profiles_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
-DROP INDEX "rate_limits_key_window_idx";--> statement-breakpoint
+DROP INDEX IF EXISTS "rate_limits_key_window_idx";--> statement-breakpoint
 ALTER TABLE "ingest_runs" ADD COLUMN "tier" "ingest_tier";--> statement-breakpoint
 ALTER TABLE "ingest_runs" ADD COLUMN "discovery_strategy" text;--> statement-breakpoint
 ALTER TABLE "ingest_runs" ADD COLUMN "rejected_reason" text;--> statement-breakpoint
@@ -113,4 +113,4 @@ CREATE INDEX "subreddit_profiles_status_idx" ON "subreddit_profiles" USING btree
 CREATE INDEX "ingest_runs_rejected_reason_idx" ON "ingest_runs" USING btree ("rejected_reason");--> statement-breakpoint
 CREATE INDEX "ingest_runs_started_at_idx" ON "ingest_runs" USING btree ("started_at");--> statement-breakpoint
 CREATE INDEX "phones_next_ingest_at_idx" ON "phones" USING btree ("next_ingest_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "rate_limits_key_window_uniq" ON "rate_limits" USING btree ("key","window_start");
+CREATE UNIQUE INDEX IF NOT EXISTS "rate_limits_key_window_uniq" ON "rate_limits" USING btree ("key","window_start");
