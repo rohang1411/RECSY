@@ -1,0 +1,11 @@
+.next
+node_modules
+pnpm-lock.yaml
+drizzle/migrations
+coverage
+out
+build
+public
+next-env.d.ts
+# Pre-rewrite Flutter project — preserved for reference, not formatted.
+legacy
