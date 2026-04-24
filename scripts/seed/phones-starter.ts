@@ -208,6 +208,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     status: 'active',
     regionAvailability: ['US', 'GB', 'EU', 'AU', 'CA', 'JP'],
     specJson: P({
+      gsmarenaUrl: 'https://www.gsmarena.com/google_pixel_9_pro_xl-13217.php',
       display: {
         size_in: 6.8,
         resolution: '2992x1344',
@@ -424,6 +425,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     status: 'active',
     regionAvailability: ['US', 'GB', 'IN', 'EU', 'AU', 'CA', 'JP', 'KR'],
     specJson: P({
+      gsmarenaUrl: 'https://www.gsmarena.com/samsung_galaxy_s25-13561.php',
       display: {
         size_in: 6.2,
         resolution: '2340x1080',
@@ -464,6 +466,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     status: 'active',
     regionAvailability: ['US', 'GB', 'EU', 'AU', 'CA', 'JP'],
     specJson: P({
+      gsmarenaUrl: 'https://www.gsmarena.com/google_pixel_9-13219.php',
       display: {
         size_in: 6.3,
         resolution: '2424x1080',
@@ -624,6 +627,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
     status: 'active',
     regionAvailability: ['GB', 'IN', 'EU'],
     specJson: P({
+      gsmarenaUrl: 'https://www.gsmarena.com/oneplus_nord_4-13177.php',
       display: {
         size_in: 6.74,
         resolution: '2772x1240',
