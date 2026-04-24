@@ -1310,6 +1310,7 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
 | Document                           | Use it for                                         |
 | ---------------------------------- | -------------------------------------------------- |
 | `docs/RECSY_V2_PROJECT_CONTEXT.md` | live plan, status, backlog, change log, issues log |
+| `docs/deployment/README.md`        | deployment runbook, status snapshot, and missing automation templates |
 | `docs/ingest/README.md`            | operating or extending ingestion                   |
 | `docs/retrieval/README.md`         | tuning and debugging hybrid retrieval              |
 | `docs/recommender/README.md`       | recommender semantics and operator notes           |
