@@ -193,7 +193,7 @@ export function makePoliteHttp(opts: PoliteHttpOptions = {}): PoliteHttp {
       }
       const host = normalizeHost(parsed.host);
 
-      if (!options.bypassRobots) {
+      if (!options.bypassRobots && process.env.IGNORE_ROBOTS !== 'true') {
         const allowed = await isAllowed(url);
         if (!allowed) {
           throw new NotFoundError('robots.txt disallowed', { url, host });

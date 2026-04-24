@@ -685,8 +685,7 @@ fixtures without a network or an LLM.
   for the phone model over the last year. Thread + top-N comments above
   `MIN_COMMENT_SCORE`. Spam / karma floors applied.
 - **Article** (`adapters/article.ts`). `linkedom` + `@mozilla/readability`
-  (same algorithm as Firefox Reader View). Discovery is a no-op on the
-  free tier; URLs are supplied via the CLI's `--url` flag.
+  (same algorithm as Firefox Reader View). Discovery uses DuckDuckGo HTML Lite to search for reviews and filters against trusted `domain_profiles`; URLs can also be supplied via the CLI's `--url` flag.
 
 ### Orchestration
 
