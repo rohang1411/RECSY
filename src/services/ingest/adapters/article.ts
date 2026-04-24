@@ -119,6 +119,11 @@ export class ArticleAdapter implements SourceAdapter {
             candidates.push({
               url: href,
               title: link.textContent?.trim() || href,
+              author: null,
+              channel: null,
+              language: 'en',
+              publishedAt: null,
+              raw: {},
             });
           }
         } catch {
