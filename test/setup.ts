@@ -22,7 +22,7 @@ for (const [k, v] of Object.entries(TEST_ENV_DEFAULTS)) {
 // eslint-disable-next-line no-restricted-syntax -- test bootstrap override before @/env import
 if (process.env.NODE_ENV === 'test') {
   // eslint-disable-next-line no-restricted-syntax -- test bootstrap override before @/env import
-  process.env.NODE_ENV = 'development';
+  (process.env as any).NODE_ENV = 'development';
 }
 
 import '@testing-library/jest-dom/vitest';

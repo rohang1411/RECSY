@@ -16,7 +16,7 @@ describe('shardIndex', () => {
   it('distributes across shards reasonably', () => {
     const buckets = new Array(4).fill(0) as number[];
     for (let i = 0; i < 1_000; i++) {
-      buckets[shardIndex(`phone-${i}`, 4)]++;
+      buckets[shardIndex(`phone-${i}`, 4)]!++;
     }
     // Sanity check: every shard should get SOME phones. The distribution
     // won't be exactly uniform but it should be within an order of magnitude.

@@ -41,13 +41,13 @@ import { logger } from '../src/services/logger';
 import { creatorProfiles, subredditProfiles } from '../src/services/db/schema';
 
 interface CliArgs {
-  readonly tier: IngestTier | 'all';
-  readonly limit: number;
-  readonly dryRun: boolean;
-  readonly shard: number;
-  readonly totalShards: number;
+  tier: IngestTier | 'all';
+  limit: number;
+  dryRun: boolean;
+  shard: number;
+  totalShards: number;
   /** Per-phone, per-adapter discovery limit. */
-  readonly perPhoneLimit: number;
+  perPhoneLimit: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -189,11 +189,11 @@ async function main(): Promise<void> {
       http,
       getPhoneRawJson: async (phone) => {
         const rows = await db
-          .select({ rawJson: phones.rawJson })
+          .select({ specJson: phones.specJson })
           .from(phones)
           .where(eq(phones.id, phone.id))
           .limit(1);
-        const raw = rows[0]?.rawJson as { gsmarenaUrl?: string } | null | undefined;
+        const raw = rows[0]?.specJson as { gsmarenaUrl?: string } | null | undefined;
         return raw ?? null;
       },
     }),

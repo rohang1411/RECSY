@@ -251,7 +251,7 @@ export function makePoliteHttp(opts: PoliteHttpOptions = {}): PoliteHttp {
           minTimeout: 1_000,
           factor: 2,
           randomize: true,
-          onFailedAttempt: (err) => {
+          onFailedAttempt: (err: any) => {
             log.warn(
               { url, attempt: err.attemptNumber, err: err.message },
               'http get failed; will retry',
