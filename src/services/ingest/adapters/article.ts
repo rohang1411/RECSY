@@ -117,10 +117,8 @@ export class ArticleAdapter implements SourceAdapter {
           if (trustedHosts.has(host) && !seen.has(href)) {
             seen.add(href);
             candidates.push({
-              _type: 'source_candidate',
               url: href,
-              type: 'article',
-              title: link.textContent?.trim() || undefined,
+              title: link.textContent?.trim() || href,
             });
           }
         } catch {
