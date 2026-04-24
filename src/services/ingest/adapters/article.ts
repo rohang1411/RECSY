@@ -22,6 +22,9 @@
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 
+import { eq } from 'drizzle-orm';
+import { getDb } from '@/services/db/client';
+import { domainProfiles } from '@/services/db/schema';
 import { IntegrationError, NotFoundError } from '@/lib/errors';
 import { logger } from '@/services/logger';
 
@@ -47,11 +50,96 @@ export class ArticleAdapter implements SourceAdapter {
   readonly type = 'article' as const;
   private readonly log = logger.child({ component: 'ingest.adapter.article' });
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async discover(_phone: PhoneRef, _opts: DiscoverOpts): Promise<SourceCandidate[]> {
-    // Articles are discovered via the CLI's --url flag for now. A future
-    // version may layer a search engine on top (e.g. Google CSE, Brave).
-    return [];
+  async discover(phone: PhoneRef, _opts: DiscoverOpts): Promise<SourceCandidate[]> {
+    const query = `${phone.brand} ${phone.model} review`;
+
+    const db = getDb();
+    const activeDomains = await db
+      .select({ host: domainProfiles.host })
+      .from(domainProfiles)
+      .where(eq(domainProfiles.status, 'active'));
+
+    const trustedHosts = new Set(
+      activeDomains
+        .map((d) => d.host.toLowerCase())
+        // exclude platform-specific sub-adapters to avoid duplicate ingestion paths
+        .filter((h) => h !== 'youtube.com' && h !== 'reddit.com' && h !== 'gsmarena.com'),
+    );
+
+    if (trustedHosts.size === 0) return [];
+
+    const url = 'https://lite.duckduckgo.com/lite/';
+    const body = new URLSearchParams({ q: query });
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      const res = await fetch(url, {
+        method: 'POST',
+        body,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
+          Origin: 'https://lite.duckduckgo.com',
+          Referer: 'https://lite.duckduckgo.com/',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        this.log.warn({ status: res.status, phone: phone.slug }, 'DDG Lite discovery failed');
+        return [];
+      }
+
+      const html = await res.text();
+      const { document } = parseHTML(html);
+
+      // DuckDuckGo Lite uses a.result-link for organic results
+      const links = document.querySelectorAll('a.result-link');
+      const candidates: SourceCandidate[] = [];
+      const seen = new Set<string>();
+
+      for (const link of links) {
+        if (candidates.length >= 5) break;
+
+        const href = link.getAttribute('href');
+        if (!href) continue;
+
+        try {
+          const parsedUrl = new URL(href);
+          // Standardize hostname by removing leading www.
+          const host = parsedUrl.hostname.replace(/^www\./, '');
+
+          if (trustedHosts.has(host) && !seen.has(href)) {
+            seen.add(href);
+            candidates.push({
+              _type: 'source_candidate',
+              url: href,
+              type: 'article',
+              title: link.textContent?.trim() || null,
+            });
+          }
+        } catch {
+          // skip invalid URLs safely
+        }
+      }
+
+      this.log.info(
+        { phone: phone.slug, count: candidates.length },
+        'article auto-discovery via DDG',
+      );
+      return candidates;
+    } catch (err) {
+      this.log.warn(
+        { err: err instanceof Error ? err.message : String(err), phone: phone.slug },
+        'DDG Lite discovery threw',
+      );
+      return [];
+    }
   }
 
   async fetch(candidate: SourceCandidate): Promise<RawSource> {

@@ -132,3 +132,47 @@ document. Each phase ends on a green build with updated ADRs.
 ## License
 
 Internal / portfolio. Not licensed for redistribution yet.
+
+---
+
+## V1 Details
+
+_The following details the original Flutter-based V1 application._
+
+RECSY is a Flutter-based mobile application designed to help users find the best mobile phone based on their preferences. It provides personalized recommendations, detailed specifications, and a comparison feature to assist in making an informed decision.
+
+### Demo Video
+
+[![Watch the demo](https://img.youtube.com/vi/hhJCmkwLen8/maxresdefault.jpg)](https://www.youtube.com/watch?v=hhJCmkwLen8)
+
+<details>
+<summary>Alternatively, watch via Embedded Iframe</summary>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/hhJCmkwLen8?si=-7wcjBbUngRndcaF" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</details>
+
+### ✨ Features
+
+- **Personalized Recommendations**: Get phone recommendations tailored to your needs.
+- **Detailed Phone Specifications**: View in-depth details for each mobile phone, including display, processor, camera, and battery information.
+- **Compare Phones**: Compare the specifications of multiple phones side-by-side.
+- **Favorites**: Save your favorite phones for quick access later.
+- **User Authentication**: Sign in to sync your favorites and preferences across devices.
+- **Web & Mobile Support**: Built with Flutter, the app was initially built for android and the support for web platforms is in development. The app was previuosly deployed on the Google Play Store and now it is available on APKPure (Link: https://apkpure.com/recsy-ai-smartphone-recommend/com.recsy.mobile_recommender).
+
+### 🛠️ Tech Stack & Dependencies
+
+- **Framework**: [Flutter](https://flutter.dev/)
+- **Backend & Database**: [Firebase](https://firebase.google.com/)
+  - **Authentication**: `firebase_auth`, `google_sign_in`
+  - **Database**: `firebase_database`, `cloud_firestore`
+  - **Storage**: Used for hosting phone images.
+- **State Management**: [Provider](https://pub.dev/packages/provider)
+- **UI Components**:
+  - `carousel_slider`: For image carousels.
+  - `dots_indicator`: To display progress for carousels.
+  - `fluttertoast`: For simple user notifications.
+- **Utilities**:
+  - `url_launcher`: To open external links (e.g., 'Buy Now').
+  - `http`, `html`, `xml`, `csv`: For data fetching and parsing.
+  - `logger`: For application logging and debugging.

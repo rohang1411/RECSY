@@ -941,8 +941,9 @@ What it does:
 
 Important property:
 
-- discovery is intentionally a no-op right now; article URLs are supplied
-  directly through the CLI
+- discovery automatically queries DuckDuckGo for `[brand] [model] review`
+- it limits results to domains explicitly trusted in `domain_profiles` (e.g., TechRadar, TheVerge)
+- it can still accept explicit URLs through the CLI for manual overrides
 
 ### Shared chunking
 
@@ -1307,18 +1308,18 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
 
 ### Companion docs
 
-| Document                           | Use it for                                         |
-| ---------------------------------- | -------------------------------------------------- |
-| `docs/RECSY_V2_PROJECT_CONTEXT.md` | live plan, status, backlog, change log, issues log |
+| Document                           | Use it for                                                            |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `docs/RECSY_V2_PROJECT_CONTEXT.md` | live plan, status, backlog, change log, issues log                    |
 | `docs/deployment/README.md`        | deployment runbook, status snapshot, and missing automation templates |
-| `docs/ingest/README.md`            | operating or extending ingestion                   |
-| `docs/retrieval/README.md`         | tuning and debugging hybrid retrieval              |
-| `docs/recommender/README.md`       | recommender semantics and operator notes           |
-| `docs/scorecard/README.md`         | scorecard operator notes                           |
-| `docs/browse/README.md`            | browse/filter contract                             |
-| `docs/compare/README.md`           | compare behavior                                   |
-| `docs/eval/README.md`              | evaluation tiers and commands                      |
-| `docs/adr/*.md`                    | why key decisions were made                        |
+| `docs/ingest/README.md`            | operating or extending ingestion                                      |
+| `docs/retrieval/README.md`         | tuning and debugging hybrid retrieval                                 |
+| `docs/recommender/README.md`       | recommender semantics and operator notes                              |
+| `docs/scorecard/README.md`         | scorecard operator notes                                              |
+| `docs/browse/README.md`            | browse/filter contract                                                |
+| `docs/compare/README.md`           | compare behavior                                                      |
+| `docs/eval/README.md`              | evaluation tiers and commands                                         |
+| `docs/adr/*.md`                    | why key decisions were made                                           |
 
 ### Recommended reading order for a new engineer or AI
 

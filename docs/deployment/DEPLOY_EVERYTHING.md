@@ -11,12 +11,12 @@ running commands.
 
 By the end of this guide, you should have:
 
-| Part | Where it lives | What it does |
-| --- | --- | --- |
-| Next.js app | Vercel | serves the website and API routes |
-| Postgres database | Supabase | stores phones, sources, chunks, scorecards, sessions, cache, and telemetry |
-| Background jobs | GitHub Actions | keeps the corpus fresh and runs operator workflows |
-| Initial production data | Supabase + scripts | fills embeddings, ingests sources, and generates scorecards |
+| Part                    | Where it lives     | What it does                                                               |
+| ----------------------- | ------------------ | -------------------------------------------------------------------------- |
+| Next.js app             | Vercel             | serves the website and API routes                                          |
+| Postgres database       | Supabase           | stores phones, sources, chunks, scorecards, sessions, cache, and telemetry |
+| Background jobs         | GitHub Actions     | keeps the corpus fresh and runs operator workflows                         |
+| Initial production data | Supabase + scripts | fills embeddings, ingests sources, and generates scorecards                |
 
 This guide covers:
 
@@ -49,19 +49,19 @@ All four pieces need to be configured correctly.
 
 ### Terms in plain English
 
-| Term | Plain-English meaning |
-| --- | --- |
-| repository | the GitHub project that stores the code |
-| environment variable | a named configuration value like an API key or URL |
-| secret | a sensitive environment variable that should not be shown publicly |
-| deployment | a live version of the app running on a host |
-| preview deployment | a temporary deployment for a branch or pull request |
-| production deployment | the live version users should use |
-| workflow | an automated GitHub Actions job |
-| cron | a schedule that runs a workflow automatically |
-| bootstrap | the first-time setup and data fill that makes the app useful |
-| migration | a database schema change applied in a controlled way |
-| RLS | Row Level Security, which controls who can read or write DB rows |
+| Term                  | Plain-English meaning                                              |
+| --------------------- | ------------------------------------------------------------------ |
+| repository            | the GitHub project that stores the code                            |
+| environment variable  | a named configuration value like an API key or URL                 |
+| secret                | a sensitive environment variable that should not be shown publicly |
+| deployment            | a live version of the app running on a host                        |
+| preview deployment    | a temporary deployment for a branch or pull request                |
+| production deployment | the live version users should use                                  |
+| workflow              | an automated GitHub Actions job                                    |
+| cron                  | a schedule that runs a workflow automatically                      |
+| bootstrap             | the first-time setup and data fill that makes the app useful       |
+| migration             | a database schema change applied in a controlled way               |
+| RLS                   | Row Level Security, which controls who can read or write DB rows   |
 
 ### What is safe and what writes to production
 
@@ -90,13 +90,13 @@ project before pointing `.env.local` at production.
 
 After following this runbook, the finished system should look like this:
 
-| Part | Host | Result |
-| --- | --- | --- |
-| Website | Vercel | `/`, `/recommend`, `/browse`, `/compare`, `/p/[slug]`, and public metadata routes work |
-| API | Vercel | `/api/ask`, `/api/recommend`, `/api/health` work |
-| Database | Supabase | schema, RLS, seeds, embeddings, chunks, and scorecards exist |
-| Data refresh | GitHub Actions | ingestion and creator-watch workflows run on schedule |
-| Operator safety | docs + workflows | DB rollout, scorecard refresh, validation, and recovery are documented |
+| Part            | Host             | Result                                                                                 |
+| --------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| Website         | Vercel           | `/`, `/recommend`, `/browse`, `/compare`, `/p/[slug]`, and public metadata routes work |
+| API             | Vercel           | `/api/ask`, `/api/recommend`, `/api/health` work                                       |
+| Database        | Supabase         | schema, RLS, seeds, embeddings, chunks, and scorecards exist                           |
+| Data refresh    | GitHub Actions   | ingestion and creator-watch workflows run on schedule                                  |
+| Operator safety | docs + workflows | DB rollout, scorecard refresh, validation, and recovery are documented                 |
 
 ## High-level deployment order
 
@@ -123,11 +123,11 @@ Follow these steps in order:
 
 You need these tools on your computer:
 
-| Tool | Why you need it | How to verify |
-| --- | --- | --- |
-| Git | clone the repo and push commits | `git --version` |
-| Node.js 20 or newer | run the app and scripts | `node -v` |
-| pnpm 9 or newer | install packages and run scripts | `pnpm -v` |
+| Tool                | Why you need it                  | How to verify   |
+| ------------------- | -------------------------------- | --------------- |
+| Git                 | clone the repo and push commits  | `git --version` |
+| Node.js 20 or newer | run the app and scripts          | `node -v`       |
+| pnpm 9 or newer     | install packages and run scripts | `pnpm -v`       |
 
 ### 1.1 Check whether the tools already exist
 
@@ -231,12 +231,12 @@ button text.
 
 You need four values from Supabase:
 
-| Value | What it is | Where you will use it |
-| --- | --- | --- |
-| Postgres connection string | the DB connection URL | local scripts, Vercel server code, GitHub Actions |
-| public project URL | your Supabase base URL | browser and server |
-| anon key | public browser-safe key | browser and server |
-| service role key | powerful server-only key | server code and automation only |
+| Value                      | What it is               | Where you will use it                             |
+| -------------------------- | ------------------------ | ------------------------------------------------- |
+| Postgres connection string | the DB connection URL    | local scripts, Vercel server code, GitHub Actions |
+| public project URL         | your Supabase base URL   | browser and server                                |
+| anon key                   | public browser-safe key  | browser and server                                |
+| service role key           | powerful server-only key | server code and automation only                   |
 
 ### 3.3 Find the Postgres connection string
 
@@ -324,22 +324,22 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 ### 5.3 What each variable means
 
-| Variable | Meaning |
-| --- | --- |
-| `NODE_ENV` | local runtime mode; keep this as `development` locally |
-| `DATABASE_URL` | Postgres connection string used by Drizzle and server scripts |
-| `NEXT_PUBLIC_SUPABASE_URL` | public Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser-safe Supabase key |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only Supabase key |
-| `LLM_PROVIDER` | current provider selection; use `gemini` |
-| `GEMINI_API_KEY` | Google AI Studio API key |
-| `LLM_CHAT_MODEL` | default model for chat and structured output |
-| `LLM_REASONING_MODEL` | model reserved for heavier reasoning paths |
-| `LLM_EMBEDDING_MODEL` | embedding model for retrieval and spec embeddings |
-| `LLM_CACHE_ENABLED` | whether cached LLM responses are enabled |
-| `RETRIEVAL_LLM_RERANK` | optional retrieval rerank; usually keep `false` |
-| `LOG_LEVEL` | default logging verbosity |
-| `NEXT_PUBLIC_SITE_URL` | canonical site URL used by metadata logic |
+| Variable                        | Meaning                                                       |
+| ------------------------------- | ------------------------------------------------------------- |
+| `NODE_ENV`                      | local runtime mode; keep this as `development` locally        |
+| `DATABASE_URL`                  | Postgres connection string used by Drizzle and server scripts |
+| `NEXT_PUBLIC_SUPABASE_URL`      | public Supabase project URL                                   |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser-safe Supabase key                                     |
+| `SUPABASE_SERVICE_ROLE_KEY`     | server-only Supabase key                                      |
+| `LLM_PROVIDER`                  | current provider selection; use `gemini`                      |
+| `GEMINI_API_KEY`                | Google AI Studio API key                                      |
+| `LLM_CHAT_MODEL`                | default model for chat and structured output                  |
+| `LLM_REASONING_MODEL`           | model reserved for heavier reasoning paths                    |
+| `LLM_EMBEDDING_MODEL`           | embedding model for retrieval and spec embeddings             |
+| `LLM_CACHE_ENABLED`             | whether cached LLM responses are enabled                      |
+| `RETRIEVAL_LLM_RERANK`          | optional retrieval rerank; usually keep `false`               |
+| `LOG_LEVEL`                     | default logging verbosity                                     |
+| `NEXT_PUBLIC_SITE_URL`          | canonical site URL used by metadata logic                     |
 
 ### 5.4 Keep this file private
 
@@ -494,11 +494,11 @@ In the project setup screen or project settings:
 
 The repo works with these values:
 
-| Setting | Value |
-| --- | --- |
+| Setting         | Value                            |
+| --------------- | -------------------------------- |
 | Install command | `pnpm install --frozen-lockfile` |
-| Build command | `pnpm build` |
-| Output | normal Next.js deployment |
+| Build command   | `pnpm build`                     |
+| Output          | normal Next.js deployment        |
 
 ### 10.3 Add environment variables in Vercel
 
@@ -516,7 +516,7 @@ Practical steps:
 
 Add these at minimum:
 
-- `DATABASE_URL` (🚨 **Crucial**: Vercel serverless functions require IPv4. You *must* use the **Transaction Pooler URL** (`...pooler.supabase.com:6543`) from your Supabase Dashboard -> Database -> Connection String. If you use the direct `db.rls...` connection string, Vercel will fail with a `getaddrinfo ENOTFOUND` DNS error.)
+- `DATABASE_URL` (🚨 **Crucial**: Vercel serverless functions require IPv4. You _must_ use the **Transaction Pooler URL** (`...pooler.supabase.com:6543`) from your Supabase Dashboard -> Database -> Connection String. If you use the direct `db.rls...` connection string, Vercel will fail with a `getaddrinfo ENOTFOUND` DNS error.)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -661,13 +661,14 @@ If some phones still have weak review coverage, use targeted ingestion:
 ```powershell
 pnpm ingest --phone google-pixel-9-pro
 pnpm ingest --phone google-pixel-9-pro --adapter reddit --limit 3
+pnpm ingest --phone google-pixel-9-pro --adapter article
 pnpm ingest --phone google-pixel-9-pro --adapter article --url https://example.com/review
 ```
 
 Use this when:
 
 - YouTube transcripts are unavailable
-- you want to force a specific article URL
+- you want to force a specific article URL (otherwise `article` auto-searches DuckDuckGo)
 - one phone clearly needs more data than the rest
 
 ### 12.5 Generate scorecards
@@ -768,13 +769,13 @@ Use this exact checklist after the first live deploy:
 
 The repo already contains these workflow files:
 
-| File | Purpose |
-| --- | --- |
-| `.github/workflows/ci.yml` | quality, Playwright, and optional retrieval eval |
-| `.github/workflows/ingest.yml` | manual single-phone ingestion |
-| `.github/workflows/ingest-tiered.yml` | scheduled tiered ingestion |
-| `.github/workflows/creator-watch.yml` | scheduled metadata polling |
-| `.github/workflows/ingest-on-new-phone.yml` | manual bootstrap for new phones |
+| File                                        | Purpose                                          |
+| ------------------------------------------- | ------------------------------------------------ |
+| `.github/workflows/ci.yml`                  | quality, Playwright, and optional retrieval eval |
+| `.github/workflows/ingest.yml`              | manual single-phone ingestion                    |
+| `.github/workflows/ingest-tiered.yml`       | scheduled tiered ingestion                       |
+| `.github/workflows/creator-watch.yml`       | scheduled metadata polling                       |
+| `.github/workflows/ingest-on-new-phone.yml` | manual bootstrap for new phones                  |
 
 ### 16.1 Open the Actions tab
 
@@ -1007,4 +1008,3 @@ change the project's known product limits, including:
 
 See [`STATUS_AND_GAPS.md`](./STATUS_AND_GAPS.md) for the current status of
 those items and the recommended order for future work.
-

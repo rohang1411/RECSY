@@ -141,9 +141,11 @@ Mrwhosetheboss, TheTechChap, SuperSaf, TheUnlockr, MrMobile.
 
 ### Article (`adapters/article.ts`)
 
-- Discovery is a no-op — supply URLs via `--url` or let `crawl_queue` feed them.
-- Fetch via polite HTTP → `linkedom` + `@mozilla/readability`. Paywalls /
-  JS-only pages return short bodies → `NotFoundError`, skipped.
+- **Discovery combines:**
+  1. DuckDuckGo HTML Lite search for `[brand] [model] review`.
+  2. Strict filtering against `domain_profiles` (e.g., TechRadar, TheVerge) to prevent spam.
+  3. Manual `--url` overrides via the CLI or `crawl_queue`.
+- **Fetch:** via polite HTTP → `linkedom` + `@mozilla/readability`. Paywalls / JS-only pages return short bodies → `NotFoundError`, skipped.
 
 ### GSMArena (`adapters/gsmarena.ts`) — **new**
 
