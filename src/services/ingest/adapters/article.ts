@@ -120,7 +120,7 @@ export class ArticleAdapter implements SourceAdapter {
               _type: 'source_candidate',
               url: href,
               type: 'article',
-              title: link.textContent?.trim() || null,
+              title: link.textContent?.trim() || undefined,
             });
           }
         } catch {
