@@ -1,0 +1,70 @@
+# =============================================================================
+# Ingest-on-new-phone — bootstrap ingestion when a phone is freshly added.
+#
+# A new phone inserted with `next_ingest_at = null` will be picked up by the
+# next scheduled tiered run anyway, but that could be up to 24h away. This
+# workflow is manually dispatched (or triggered by a thin admin tool via the
+# GH API) to immediately fire a single `ingest-auto --tier hot --limit 1`
+# run targeted at the new phone.
+#
+# Why not auto-hook into a DB trigger? Because this repo has no webhook/API
+# surface for the DB to hit — dispatching from an admin UI / script is
+# simpler and fits free-tier constraints.
+# =============================================================================
+name: ingest-on-new-phone
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: 'Phone slug just added. Example: pixel-9-pro-xl'
+        required: true
+        type: string
+      limit:
+        description: 'Max candidates per adapter'
+        required: false
+        default: '5'
+        type: string
+
+concurrency:
+  group: ingest-new-${{ github.event.inputs.phone }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap ingestion for ${{ github.event.inputs.phone }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run targeted ingestion
+        shell: bash
+        run: |
+          pnpm exec tsx scripts/ingest.ts \
+            --phone "${{ github.event.inputs.phone }}" \
+            --limit "${{ github.event.inputs.limit }}"

@@ -8,6 +8,20 @@
       "when": 1776772284967,
       "tag": "0000_light_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776895842576,
+      "tag": "0001_automated_ingestion",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776896949220,
+      "tag": "0002_add_gsmarena_source_type",
+      "breakpoints": true
     }
   ]
 }

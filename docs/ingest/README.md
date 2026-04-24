@@ -1,32 +1,49 @@
 # Ingestion
 
-> How RECSY v2 turns review content from YouTube, Reddit, and editorial sites
-> into the vectorised chunks that back every retrieval call.
+> How RECSY v2 turns review content from YouTube, Reddit, articles, and
+> GSMArena into curated, vectorised chunks that back every retrieval call.
 
-This doc is the practical operator's guide. For the architecture rationale
-(why TypeScript, why these three source types) see
-[ADR 0003](../adr/0003-ingestion-typescript.md).
+This doc is the practical operator's guide. For rationale:
+
+- [ADR 0003](../adr/0003-ingestion-typescript.md) — why TypeScript, not a Python sidecar.
+- [ADR 0014](../adr/0014-automated-ingestion-curation.md) — why tiers, curator, disambiguator, and polite HTTP.
 
 ---
 
 ## TL;DR
 
 ```bash
-# One-shot, per-phone
+# One-shot, per-phone (interactive / manual)
 pnpm ingest --phone pixel-9-pro-xl
-
-# Scoped to one adapter
 pnpm ingest --phone pixel-9-pro-xl --adapter youtube --limit 3
-
-# Manual URL (discovery bypass)
 pnpm ingest --phone pixel-9-pro-xl --adapter article \
   --url https://www.gsmarena.com/google_pixel_9_pro_xl-review-xxxx.php
-
-# Pipeline dry run (no embeddings, no writes)
 pnpm ingest --phone pixel-9-pro-xl --dry-run
+
+# Automated (tiered) — the one GitHub Actions runs
+pnpm ingest:auto --tier hot --limit 15
+pnpm ingest:auto --tier warm --shard 0 --total-shards 4
+pnpm ingest:auto --dry-run               # discover + curate only
+
+# Metadata-only RSS poll (hourly-ish)
+pnpm creator:watch --max-candidates 5
+
+# Weekly audit digest
+pnpm ingest:report --days 7
 ```
 
 Every run produces structured `pino` logs and an aggregate summary table.
+
+---
+
+## Two entrypoints
+
+| Script                     | When it runs                | What it does                                                                                                                   |
+| -------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/ingest.ts`        | Manual, one phone at a time | Interactive CLI for targeted runs (`--phone <slug>`, `--adapter`, `--url`, `--dry-run`). Great for debugging a single source.  |
+| `scripts/ingest-auto.ts`   | GitHub Actions daily cron   | Picks phones by freshness tier + shard, wires the full agent stack (Curator + Disambiguator), updates `phones.next_ingest_at`. |
+| `scripts/creator-watch.ts` | GitHub Actions every 6h     | RSS-only poll of `creator_profiles`. Matches entries against `phone_aliases` and enqueues `crawl_queue` rows. No embedding.    |
+| `scripts/ingest-report.ts` | Manual or weekly cron       | Audit digest: runs by adapter/tier/status, top rejected reasons, overdue phones, avg relevance/quality.                        |
 
 ---
 
@@ -34,85 +51,190 @@ Every run produces structured `pino` logs and an aggregate summary table.
 
 ```mermaid
 flowchart LR
+  subgraph Scheduler[Scheduler]
+    direction TB
+    PT[pickPhones<br/>tier + shard] --> MI[markIngested<br/>next_ingest_at]
+  end
   subgraph Orchestrator[IngestOrchestrator]
     direction TB
-    D[discover] --> F[fetch] --> C[chunk] --> E[embed] --> W[write]
+    D[discover] --> F[fetch] --> C[chunk] --> DIS[disambiguator<br/>if ≥2 aliases]
+    DIS --> CUR[curator<br/>keep? relevance? quality?]
+    CUR -->|keep| E[embed] --> W[write]
+    CUR -->|drop| RJ[recordRejectedRun]
   end
-  Phone[(phones)] --> Orchestrator
-  Orchestrator --> Sources[(sources)]
-  Orchestrator --> Chunks[(chunks<br/>+ embedding)]
-  Orchestrator --> Runs[(ingest_runs)]
+  Scheduler --> Orchestrator
+  Phones[(phones)] --> Scheduler
+  Orchestrator --> Sources[(sources<br/>+relevance/quality/aspects)]
+  Orchestrator --> Chunks[(chunks<br/>+embedding)]
+  Orchestrator --> Runs[(ingest_runs<br/>+tier/rejectedReason)]
+  Orchestrator --> Links[(source_phone_links<br/>primary/secondary)]
 ```
 
 All adapters implement the same `SourceAdapter` interface
 (`src/services/ingest/types.ts`). The orchestrator doesn't know anything
-source-specific — new source types (e.g. "podcast transcripts",
-"manufacturer press release") plug in by adding a class.
+source-specific — new source types plug in by adding a class.
 
-| Stage    | Module                                       | Purity       | Retried?   |
-| -------- | -------------------------------------------- | ------------ | ---------- |
-| discover | `adapters/*.ts::discover`                    | Network-only | Per-query  |
-| fetch    | `adapters/*.ts::fetch`                       | Network      | Per-URL    |
-| chunk    | `chunking.ts`, `adapters/youtube.ts` (timed) | **Pure**     | N/A        |
-| embed    | `embedder.ts` → `LlmProvider.embed`          | Network      | `p-retry`  |
-| write    | `writer.ts` (transactional)                  | DB           | Per-source |
+| Stage        | Module                                               | Purity       | Retried?                     |
+| ------------ | ---------------------------------------------------- | ------------ | ---------------------------- |
+| discover     | `adapters/*.ts::discover`                            | Network-only | Per-query                    |
+| fetch        | `adapters/*.ts::fetch`                               | Network      | Per-URL                      |
+| chunk        | `chunking.ts`, `adapters/youtube.ts`                 | **Pure**     | N/A                          |
+| disambiguate | `agents/disambiguator.ts` (only on ≥2 phone aliases) | LLM          | No (falls back to heuristic) |
+| curate       | `agents/curator.ts`                                  | LLM          | No (falls back to keep)      |
+| embed        | `embedder.ts` → `LlmProvider.embed`                  | Network      | `p-retry`                    |
+| write        | `writer.ts` (transactional)                          | DB           | Per-source                   |
 
-Because `chunk` is pure, you can unit-test adapter output against fixture
-HTML / transcripts without a network or an LLM.
+Because `chunk` and both agents' fallback paths are deterministic, adapters
+remain unit-testable against fixture data without a network or LLM.
+
+---
+
+## Freshness tiers
+
+Launch-date driven, defined in `src/services/ingest/scheduler/tiers.ts`:
+
+| Tier | Criterion                                      | Cadence   |
+| ---- | ---------------------------------------------- | --------- |
+| hot  | Launched ≤ 60 days ago, or `status='upcoming'` | ~3.5 days |
+| warm | Launched 60–365 days ago                       | 7 days    |
+| cold | Launched > 365 days ago                        | 14 days   |
+
+- `classifyTier(launchDate)` → `'hot' | 'warm' | 'cold'`.
+- `computeNextIngestAt(tier)` → next `Date` to refresh.
+- `pickPhones({ tiers, shard, totalShards, limit })` → due phones, ordered
+  hot → warm → cold, shard-deterministic (FNV-32 on phone id).
+- `markIngested({ phoneId, tier })` — sets `last_ingest_at=now`,
+  `next_ingest_at=now + interval(tier)`.
+
+New phones bootstrap automatically: `next_ingest_at = null` is treated as
+"immediately due", so the next scheduled run picks them up.
 
 ---
 
 ## Adapters
 
-### YouTube (`adapters/youtube.ts`)
+### YouTube transcripts (`adapters/youtube.ts`)
 
-- Uses `youtubei.js` (Innertube); no API key required.
-- Discovery queries: `"{brand} {model} review"`, `"camera test"`,
-  `"long term review"` — deduped by video id.
-- Fetch: metadata + transcript (human-captioned if available; falls back to
-  auto-generated).
-- Chunking is **timestamp-aware**: every chunk carries a `startTs` and an
-  `anchor` of `?t=<sec>` so retrieval citations deep-link into the video.
+- `youtubei.js` (Innertube); no API key required.
+- Chunking is **timestamp-aware**: every chunk carries `startTs` and an
+  `anchor=?t=<sec>` so citations deep-link into the video.
+- Fallback chain (first non-empty wins): Innertube `getTranscript()` →
+  caption tracks on the `Info` object → watch-page HTML scrape.
+- **Known limitation:** YouTube throttles the `timedtext` endpoint on
+  datacenter IPs (including GitHub Actions). Every track empties out →
+  `NotFoundError: no transcript available` → skipped cleanly.
 
-**Transcript fallback chain** (tries in order, first non-empty wins):
+### YouTube channel RSS (`adapters/youtube-channel.ts`) — **new**
 
-1. `info.getTranscript()` — the Innertube transcript endpoint. Fastest when
-   it works; YouTube sporadically rotates the endpoint and returns HTTP 400.
-2. Caption tracks already on the `Info` object
-   (`info.captions.caption_tracks`), fetched as `timedtext?fmt=json3`.
-3. Watch-page HTML scrape → `captionTracks` → `timedtext?fmt=json3`. Same
-   mechanism the YouTube web player falls back to.
+Primary discovery path for the tiered pipeline:
 
-Within tiers 2/3 we iterate through ranked tracks (manual English → ASR
-English → any English → any) because YouTube sometimes lists a "manual
-English" track that returns an empty response; the real captions are on
-the ASR track one position lower.
+- Polls `https://www.youtube.com/feeds/videos.xml?channel_id=<UC...>` for
+  each active `creator_profiles` row. No API key, no Innertube.
+- Matches entry titles+descriptions against `phone_aliases` (longest-match-wins).
+- Only emits candidates where the target phone is mentioned. Reuses
+  `YouTubeAdapter.fetch/chunk` for transcripts.
+- Per-run RSS cache so processing phone B after phone A doesn't re-fetch
+  the same MKBHD feed.
 
-> **Known limitation — YouTube datacenter IP throttling.** YouTube's
-> `timedtext` endpoint returns HTTP 200 with **zero bytes** when called
-> from a non-residential IP, even with matching cookies and referer. We
-> see this consistently from datacenter IPs, CI runners (GitHub Actions),
-> and similar environments. In that case every track empties out, the
-> adapter reports `NotFoundError: no transcript available`, and the
-> orchestrator skips the source cleanly. Article and Reddit adapters are
-> unaffected. A residential-IP proxy would fix this but costs money —
-> out of scope for the zero-budget MVP.
+Creator allowlist (seeded in `scripts/seed/creator-profiles.ts`): MKBHD,
+Mrwhosetheboss, TheTechChap, SuperSaf, TheUnlockr, MrMobile.
 
 ### Article (`adapters/article.ts`)
 
-- Discovery is a no-op on the free tier — supply URLs via `--url`.
-- Fetch: `linkedom` + `@mozilla/readability` (same algorithm as Firefox
-  Reader View). Paywalls / JS-rendered pages → `NotFoundError`, skipped.
-- Chunking: the shared sentence-aligned chunker.
+- Discovery is a no-op — supply URLs via `--url` or let `crawl_queue` feed them.
+- Fetch via polite HTTP → `linkedom` + `@mozilla/readability`. Paywalls /
+  JS-only pages return short bodies → `NotFoundError`, skipped.
 
-### Reddit (`adapters/reddit.ts`)
+### GSMArena (`adapters/gsmarena.ts`) — **new**
 
-- Reddit's public JSON endpoints, no OAuth, custom `User-Agent`.
-- Discovery: search an allowlist of subreddits (`r/Android`,
-  `r/GooglePixel`, `r/apple`, etc.) for `"{brand} {model}"`, last year,
-  score ≥ `MIN_THREAD_SCORE`.
-- Fetch: title + selftext + top-N comments above `MIN_COMMENT_SCORE`.
-- Chunking: shared chunker.
+- **Discovery combines:**
+  1. `phones.raw_json.gsmarenaUrl` override (manual curation for renames).
+  2. `res.php3?sSearch=<brand> <model>` → device page → in-site
+     `*-review-*.php` links.
+- **Fetch** reuses the article Readability pipeline, via `http.ts` (the
+  per-host 4s limit applies).
+- Never calls `res.php3` more than once per phone per run; never recurses
+  into unrelated device pages.
+
+### Reddit (`adapters/reddit.ts`) — **extended**
+
+- Still the public JSON API, custom `User-Agent`, no OAuth.
+- Subreddit allowlist is now **DB-driven** from `subreddit_profiles` (with a
+  hardcoded fallback for tests).
+- Two discovery paths per run:
+  - `/r/<sub>/search.json?q="{brand} {model}"` — always.
+  - `/r/<sub>/new.json` — for `scope='device'` subs, or general-scope when
+    the phone launched recently.
+- Filters by `minScore` (per-profile), NSFW, stickied, age.
+
+---
+
+## Agents
+
+### Heuristic alias matcher (`agents/alias-match.ts`)
+
+- Loads `phone_aliases` once per orchestrator run (cached).
+- `matchAliases(text, aliases)` returns hits with position and alias length.
+- **Longest-match-wins:** if "Galaxy S25 Ultra" matches, "S25" is suppressed
+  for that span. Prevents false multi-phone matches on comparison titles.
+
+### DisambiguatorAgent (`agents/disambiguator.ts`)
+
+Only invoked when heuristic matching finds **≥2 distinct phones** in a
+title/description. Gemini Flash picks the primary with confidence and
+reason, plus secondaries with relevance. Writes:
+
+- `source_phone_links` rows — `role='primary'` + N×`role='secondary'`.
+- If primary resolves to a different phone (via `phoneLookup` of
+  `phones.slug`), the orchestrator **reassigns** the source to that phone
+  and demotes the originating phone to a secondary link.
+
+Fallback: on LLM error, returns the top heuristic match as primary (safe
+default, never stalls the pipeline).
+
+### CuratorAgent (`agents/curator.ts`)
+
+Gatekeeper between `chunk()` and `embed()`. Takes title + first 3 chunks,
+asks Gemini Flash for:
+
+- `keep: boolean` + `rejectedReason` if dropping.
+- `relevance: 0..10`, `quality: 0..10` — persisted on `sources`.
+- `aspectsCovered: string[]` — feeds the aspect scorecard.
+- `sentimentSummary: 'positive' | 'mixed' | 'negative' | 'neutral'`.
+
+Dropped sources are **not embedded**; a `recordRejectedRun` row is written
+so we can audit false negatives in `pnpm ingest:report`.
+
+Fallback: on LLM error, keep the source un-enriched. Better to have raw
+content than lose it.
+
+---
+
+## Polite HTTP
+
+`src/services/ingest/http.ts` (`makePoliteHttp`) wraps every outgoing fetch.
+Non-negotiable:
+
+- **Per-host token bucket.** State persisted in `rate_limit_state` so
+  parallel GitHub Actions shards cooperate via UPSERT.
+- **User-Agent pool.** Three self-identifying variants pointing at the repo
+  — rotated, not spoofed.
+- **robots.txt respect.** Cached 24h per host; disallowed URLs raise
+  `NotFoundError` and the orchestrator skips them.
+- **`Retry-After`** on 429/503, capped at 30s.
+- **Timeout + retry** via `p-retry` (exp backoff, jitter).
+
+Default limits (see `DEFAULT_RATE_LIMIT_OPTIONS`):
+
+| Host              | Min interval |
+| ----------------- | ------------ |
+| `gsmarena.com`    | 4s           |
+| `reddit.com`      | 2s           |
+| `www.youtube.com` | 1s           |
+| (everything else) | 3s           |
+
+Exception: the `YouTubeAdapter` transcript path uses `youtubei.js` and not
+`PoliteHttp.get`; it's YouTube-only, so host-level throttling still holds.
 
 ---
 
@@ -120,16 +242,16 @@ the ASR track one position lower.
 
 Re-running ingest on a phone is **safe** and **cheap**:
 
-1. The writer upserts the `sources` row by `(phone_id, url)`.
-2. It compares the new `content_hash` (sha256 of normalised body) to the
-   stored one.
-3. If the hash matches → bumps `last_fetched_at`, skips embedding +
-   chunk replacement entirely, and records `ingest_runs.status = skipped`.
-4. If the hash differs → deletes old chunks for that source and inserts
-   the new ones in the same transaction. No half-written state ever.
+1. Writer upserts `sources` by `(phone_id, url)`.
+2. Compares new `content_hash` (sha256 of normalised body) to stored one.
+3. If unchanged → bumps `last_fetched_at`, skips embedding + chunk
+   replacement, records `ingest_runs.status='skipped'`.
+4. If changed → deletes old chunks, inserts new ones in the same
+   transaction. No half-written state.
+5. `source_phone_links` are replaced atomically per source.
 
-This means: you can schedule a nightly re-ingest of every phone without
-burning embedding tokens on unchanged sources.
+Safe to schedule nightly re-ingests without burning embedding tokens on
+unchanged sources.
 
 ---
 
@@ -144,45 +266,68 @@ Reads from `src/env.ts`. Relevant knobs:
 | `LLM_CACHE_ENABLED`   | Caches LLM responses — not applied to embeddings. |
 | `LOG_LEVEL`           | `info` for dev; `debug` for per-segment tracing.  |
 
+Profile tables (DB-driven, no code changes needed to expand coverage):
+
+| Table                | What it controls                                                     | Seed                                 |
+| -------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| `phone_aliases`      | Names used to detect phone mentions in text                          | `scripts/seed/phone-aliases.ts`      |
+| `creator_profiles`   | YouTube channels we poll (`platform`, `external_id`, `trust_weight`) | `scripts/seed/creator-profiles.ts`   |
+| `subreddit_profiles` | Subreddits we poll (`scope`, `minScore`)                             | `scripts/seed/subreddit-profiles.ts` |
+| `domain_profiles`    | Per-host trust + robots cache                                        | `scripts/seed/domain-profiles.ts`    |
+
 ---
 
 ## GitHub Actions
 
-`.github/workflows/ingest.yml` provides:
+Four workflows, narrowly-scoped:
 
-- **Manual** (`workflow_dispatch`) — run any phone + adapter on demand from
-  the GitHub UI. Accepts `phone`, `adapter`, `limit` inputs.
-- **Scheduled** (`cron: '17 3 * * *'`) — nightly run across a hand-curated
-  phone roster. Will be swapped for a `phones WHERE status='active'` query
-  in Phase 3.
+| File                                        | Trigger                           | What it does                                                                                                                    |
+| ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ingest.yml`              | `workflow_dispatch` only          | Manual single-phone run. Inputs: phone, adapter, limit.                                                                         |
+| `.github/workflows/ingest-tiered.yml`       | `cron: '17 2 * * *'` + dispatch   | Daily tiered run, matrix `tier × shard[0..3]`. Plan job picks tiers by day-of-week (hot daily, warm Mon/Wed/Fri/Sat, cold Sun). |
+| `.github/workflows/creator-watch.yml`       | `cron: '23 */6 * * *'` + dispatch | Metadata-only RSS poll. Enqueues hot-tier `crawl_queue` rows.                                                                   |
+| `.github/workflows/ingest-on-new-phone.yml` | `workflow_dispatch`               | Bootstrap ingestion when an admin adds a phone that shouldn't wait for the next cron.                                           |
 
-Concurrency key is per-phone so manual + nightly never fight.
+Concurrency key is per-phone on the manual dispatch so operator + scheduled
+runs never fight.
 
 ---
 
 ## Adding a new adapter
 
 1. Add a class in `src/services/ingest/adapters/<name>.ts` implementing
-   `SourceAdapter`.
-2. Add a matching value to the `source_type` enum in
-   `src/services/db/schema.ts` (requires a migration).
-3. Wire it into the CLI in `scripts/ingest.ts` (and the orchestrator
-   construction inside it).
-4. Add unit tests against fixture data (HTML, JSON, transcript JSON).
-5. Update the allowlist in `.github/workflows/ingest.yml` if it should run
-   in the nightly roster.
+   `SourceAdapter`. All network calls **must** go through `PoliteHttp.get`.
+2. If it introduces a new source type, add to the `source_type` enum in
+   `src/services/db/schema.ts` and generate a migration.
+3. If it's a per-source profile (creator/subreddit/domain), add a row to
+   the relevant profile table seed.
+4. Wire it into the adapter list in `scripts/ingest.ts` (manual) and
+   `scripts/ingest-auto.ts` (tiered).
+5. Add unit tests against fixture data.
+6. If it's a trusted, high-volume source, consider adding an alias loader
+   so the Curator's context mentions known phones by name.
+
+---
+
+## Adding a new creator or subreddit
+
+No code edit required: add a row to `creator_profiles` / `subreddit_profiles`
+with `status='active'`. The next `ingest-auto.ts` run will pick it up.
 
 ---
 
 ## Troubleshooting
 
-| Symptom                                  | Likely cause / fix                                                                       |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `NotFoundError: no transcript available` | Captions disabled, live stream, or datacenter-IP throttling (see YouTube note). Skipped. |
-| `NotFoundError: Article body too short`  | Paywalled / JS-rendered / bot-blocked — normal, skipped.                                 |
-| `IntegrationError: HTTP 429`             | Source rate-limited us. `p-retry` will back off.                                         |
-| `embed batch failed, retrying`           | Gemini transient. Retries exhaust → run fails.                                           |
-| `source upsert returned no row`          | Schema drift — regenerate migrations.                                                    |
-| `phone not found: <slug>`                | `pnpm db:setup` first (seeds 20 phones).                                                 |
-| Gemini `ByteString`/non-ASCII error      | Env var or User-Agent contains a non-ASCII char. Fix header; Node's `fetch` is strict.   |
-| `outputDimensionality: expected number`  | You changed `LLM_EMBEDDING_DIMS`. Dimension is hardcoded (768) — remove the env var.     |
+| Symptom                                   | Likely cause / fix                                                                                                                            |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NotFoundError: no transcript available`  | Captions disabled, live stream, or datacenter-IP throttling. Skipped cleanly.                                                                 |
+| `NotFoundError: robots.txt disallowed`    | The host's robots.txt forbids our UA on that path. Expected for login-walled URLs. Skipped.                                                   |
+| `NotFoundError: Article body too short`   | Paywalled / JS-rendered / bot-blocked — normal, skipped.                                                                                      |
+| `IntegrationError: HTTP 429`              | Source rate-limited us; `p-retry` + `Retry-After` will back off. Investigate `rate_limit_state` if it persists.                               |
+| `curator rejected source; skipping`       | Normal. Check `pnpm ingest:report` to see the `rejected_reason` distribution — sustained false-negatives indicate tuning.                     |
+| `disambiguator reassigned primary phone`  | Normal on comparison videos. The source's primary `phone_id` is the one the agent identified; the originating phone becomes a secondary link. |
+| `alias loader failed; proceeding without` | DB blip or missing seed. Pipeline falls back to heuristic-less behaviour (Curator still runs, no disambiguation).                             |
+| `embed batch failed, retrying`            | Gemini transient. Retries exhaust → run fails cleanly, phone will retry next cron.                                                            |
+| `phone not found: <slug>`                 | `pnpm db:setup` first, then `pnpm db:seed`.                                                                                                   |
+| Gemini `ByteString`/non-ASCII error       | Env var or User-Agent contains non-ASCII. Node's `fetch` is strict about header bytes.                                                        |
+| `outputDimensionality: expected number`   | You changed `LLM_EMBEDDING_DIMS`. Dimension is hardcoded (768) — remove the env var.                                                          |

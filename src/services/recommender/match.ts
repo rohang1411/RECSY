@@ -23,6 +23,20 @@ export interface ScoredCandidate {
   readonly summary: string;
 }
 
+/**
+ * Scores this close are effectively indistinguishable given the weighting
+ * resolution (0.xx). Two picks within this delta are treated as a tie when
+ * deciding whether to surface a "scores are tied" notice to the user.
+ *
+ * Picked conservatively — real aspect deltas are ≥ 0.5 in practice, so 0.05
+ * only fires on genuine ties (e.g. every pick defaults to 5.0 because no
+ * scorecards are ingested).
+ */
+export const SCORE_TIE_EPSILON = 0.05;
+
+/** Aspect score used when a phone has no scored entry for an aspect. */
+const NEUTRAL_ASPECT_SCORE = 5;
+
 export interface FilterPassOptions {
   readonly relaxBudgetMax: boolean;
   readonly ignoreFoldable: boolean;
@@ -136,7 +150,7 @@ export function weightedAspectScore(
   let acc = 0;
   for (const name of ASPECT_NAMES) {
     const w = weights.get(name) ?? 0;
-    const s = scores.get(name) ?? 5;
+    const s = scores.get(name) ?? NEUTRAL_ASPECT_SCORE;
     acc += w * s;
   }
   return acc;
@@ -155,15 +169,83 @@ export function topWeightedAspect(
       best = name;
     }
   }
-  return { aspect: best, value: scores.get(best) ?? 5 };
+  return { aspect: best, value: scores.get(best) ?? NEUTRAL_ASPECT_SCORE };
 }
 
-export function pickSummaryLine(
-  entry: PhoneCatalogEntry,
-  weights: ReadonlyMap<AspectName, number>,
-): string {
-  const { aspect, value } = topWeightedAspect(weights, entry.aspectScores);
-  return `Strongest on ${aspect} for what you said matters (aspect score ${value.toFixed(1)}/10).`;
+/**
+ * Ranked list of aspect names by weight (highest first). Ties are broken by
+ * the canonical `ASPECT_NAMES` order for determinism.
+ */
+export function aspectsByWeight(weights: ReadonlyMap<AspectName, number>): AspectName[] {
+  return [...ASPECT_NAMES].sort((a, b) => {
+    const wa = weights.get(a) ?? 0;
+    const wb = weights.get(b) ?? 0;
+    if (wb !== wa) return wb - wa;
+    return ASPECT_NAMES.indexOf(a) - ASPECT_NAMES.indexOf(b);
+  });
+}
+
+/**
+ * Returns `true` when `entry` has no real scorecard data — either because
+ * `aspectScores` is empty or because every recorded score is exactly the
+ * neutral fallback (5.0) that the ranker substitutes when no scorecard row
+ * exists. This is how we detect "no reviewer data yet" and explain ties to
+ * the user honestly.
+ */
+export function hasRealAspectData(entry: PhoneCatalogEntry): boolean {
+  if (entry.aspectScores.size === 0) return false;
+  for (const v of entry.aspectScores.values()) {
+    if (Number.isFinite(v) && v !== NEUTRAL_ASPECT_SCORE) return true;
+  }
+  return false;
+}
+
+/**
+ * Context used to render the per-pick summary shown in the recommend chat.
+ * Collected once per turn so every pick describes itself relative to the
+ * **same** ranking story (top aspect, refined vs. fresh, data-present vs.
+ * data-missing).
+ */
+export interface SummaryContext {
+  readonly weights: ReadonlyMap<AspectName, number>;
+  /** When `true`, this turn re-ranks the previous turn's picks rather than the full catalog. */
+  readonly refined: boolean;
+  /** `true` when every candidate in the current ranking is missing real aspect data. */
+  readonly corpusScorecardMissing: boolean;
+}
+
+export function pickSummaryLine(entry: PhoneCatalogEntry, context: SummaryContext): string {
+  const scores = entry.aspectScores;
+  const sorted = aspectsByWeight(context.weights);
+  const primary = sorted[0] ?? 'value';
+  const secondary = sorted[1] ?? null;
+
+  const phoneHasData = hasRealAspectData(entry);
+
+  // No reviewer data anywhere in this ranking set → explain honestly.
+  if (context.corpusScorecardMissing || !phoneHasData) {
+    if (context.refined) {
+      return secondary
+        ? `No reviewer scorecard yet — ranked by stated priorities (top: ${primary}, then ${secondary}) and specs only.`
+        : `No reviewer scorecard yet — ranked by your stated ${primary} priority and specs.`;
+    }
+    return `No reviewer scorecard yet for this phone — ranking reflects your stated priorities and specs only.`;
+  }
+
+  const primaryVal = scores.get(primary) ?? NEUTRAL_ASPECT_SCORE;
+  // On refined turns the user usually cares about the *new* priority (often
+  // the 2nd-ranked aspect in this turn's weights) — surface both so the
+  // summary adapts to "which should I pick if performance is my 2nd priority".
+  if (context.refined && secondary && secondary !== primary) {
+    const secondaryVal = scores.get(secondary) ?? NEUTRAL_ASPECT_SCORE;
+    return `${capitalize(primary)} ${primaryVal.toFixed(1)}/10, ${secondary} ${secondaryVal.toFixed(1)}/10 among your earlier picks.`;
+  }
+
+  return `Strongest on ${primary} for what you said matters (aspect score ${primaryVal.toFixed(1)}/10).`;
+}
+
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
 }
 
 /** Additive 0..`RECOMMEND_SPEC_SIMANTIC_BUMP` from cosine(query, spec_embedding). */
@@ -207,19 +289,21 @@ export function pickDiverseTop(
   return out;
 }
 
-function scoreEntry(
-  entry: PhoneCatalogEntry,
-  requirements: UserRequirements,
-  weights: ReadonlyMap<AspectName, number>,
-  queryEmbedding: readonly number[] | undefined,
-): ScoredCandidate {
-  const haystack = buildSearchHaystack(entry);
-  let score = weightedAspectScore(entry.aspectScores, weights);
-  const ratio = mustHaveMatchRatio(haystack, requirements.must_haves);
-  score = score * (0.72 + 0.28 * ratio);
-  score += specSemanticBonus(entry, queryEmbedding);
+interface ScoringContext {
+  readonly requirements: UserRequirements;
+  readonly weights: ReadonlyMap<AspectName, number>;
+  readonly queryEmbedding: readonly number[] | undefined;
+  readonly summary: SummaryContext;
+}
 
-  for (const l of requirements.brand_preference.liked) {
+function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandidate {
+  const haystack = buildSearchHaystack(entry);
+  let score = weightedAspectScore(entry.aspectScores, ctx.weights);
+  const ratio = mustHaveMatchRatio(haystack, ctx.requirements.must_haves);
+  score = score * (0.72 + 0.28 * ratio);
+  score += specSemanticBonus(entry, ctx.queryEmbedding);
+
+  for (const l of ctx.requirements.brand_preference.liked) {
     const t = l.trim().toLowerCase();
     if (t && haystack.includes(t)) {
       score += RECOMMEND_LIKED_BRAND_BONUS;
@@ -236,74 +320,86 @@ function scoreEntry(
     msrpUsd: entry.msrpUsd,
     imageUrl: entry.imageUrl,
     score,
-    summary: pickSummaryLine(entry, weights),
+    summary: pickSummaryLine(entry, ctx.summary),
   };
 }
 
 function collectScored(
   catalog: readonly PhoneCatalogEntry[],
-  requirements: UserRequirements,
-  weights: ReadonlyMap<AspectName, number>,
+  ctx: ScoringContext,
   opts: FilterPassOptions,
-  queryEmbedding: readonly number[] | undefined,
 ): ScoredCandidate[] {
   const out: ScoredCandidate[] = [];
   for (const entry of catalog) {
-    if (!passesHardFilters(entry, requirements, opts)) continue;
+    if (!passesHardFilters(entry, ctx.requirements, opts)) continue;
     const haystack = buildSearchHaystack(entry);
-    if (dealBreakerHit(haystack, requirements.deal_breakers)) continue;
-    out.push(scoreEntry(entry, requirements, weights, queryEmbedding));
+    if (dealBreakerHit(haystack, ctx.requirements.deal_breakers)) continue;
+    out.push(scoreEntry(entry, ctx));
   }
   out.sort((a, b) => b.score - a.score);
   return out;
+}
+
+export interface RankResult {
+  readonly picks: ScoredCandidate[];
+  readonly relaxed: string[];
+  /**
+   * `true` when the top picks are within {@link SCORE_TIE_EPSILON} of each
+   * other. UI should surface a "scores effectively tied" note.
+   */
+  readonly scoresTied: boolean;
+  /**
+   * `true` when none of the ranked candidates have real aspect scores (every
+   * aspect defaults to the neutral 5.0). Typically means no chunks were
+   * ingested yet so scorecards could not be built.
+   */
+  readonly scorecardMissing: boolean;
+  /** Normalised aspect weights used for this ranking. */
+  readonly weights: ReadonlyMap<AspectName, number>;
 }
 
 export function rankCandidates(
   catalog: readonly PhoneCatalogEntry[],
   requirements: UserRequirements,
   defaultWeights: ReadonlyMap<AspectName, number>,
-  options?: { readonly queryEmbedding?: readonly number[] },
-): { picks: ScoredCandidate[]; relaxed: string[] } {
+  options?: { readonly queryEmbedding?: readonly number[]; readonly refined?: boolean },
+): RankResult {
   const queryEmbedding = options?.queryEmbedding;
+  const refined = options?.refined === true;
   const weights = resolveAspectWeights(requirements, defaultWeights);
   const relaxed: string[] = [];
 
-  let ranked = collectScored(
-    catalog,
+  const corpusScorecardMissing = catalog.every((c) => !hasRealAspectData(c));
+
+  const ctx: ScoringContext = {
     requirements,
     weights,
-    {
-      relaxBudgetMax: false,
-      ignoreFoldable: false,
-    },
     queryEmbedding,
-  );
+    summary: {
+      weights,
+      refined,
+      corpusScorecardMissing,
+    },
+  };
+
+  let ranked = collectScored(catalog, ctx, {
+    relaxBudgetMax: false,
+    ignoreFoldable: false,
+  });
 
   if (ranked.length === 0 && requirements.budget_usd?.max != null) {
-    ranked = collectScored(
-      catalog,
-      requirements,
-      weights,
-      {
-        relaxBudgetMax: true,
-        ignoreFoldable: false,
-      },
-      queryEmbedding,
-    );
+    ranked = collectScored(catalog, ctx, {
+      relaxBudgetMax: true,
+      ignoreFoldable: false,
+    });
     if (ranked.length > 0) relaxed.push('budget_max_widened');
   }
 
   if (ranked.length === 0 && requirements.form_factor?.foldable === true) {
-    ranked = collectScored(
-      catalog,
-      requirements,
-      weights,
-      {
-        relaxBudgetMax: true,
-        ignoreFoldable: true,
-      },
-      queryEmbedding,
-    );
+    ranked = collectScored(catalog, ctx, {
+      relaxBudgetMax: true,
+      ignoreFoldable: true,
+    });
     if (ranked.length > 0) relaxed.push('foldable_preference_ignored');
   }
 
@@ -311,12 +407,34 @@ export function rankCandidates(
     for (const entry of catalog) {
       const haystack = buildSearchHaystack(entry);
       if (dealBreakerHit(haystack, requirements.deal_breakers)) continue;
-      ranked.push(scoreEntry(entry, requirements, weights, queryEmbedding));
+      ranked.push(scoreEntry(entry, ctx));
     }
     ranked.sort((a, b) => b.score - a.score);
     if (ranked.length > 0) relaxed.push('fallback_all_active_phones');
   }
 
   const picks = pickDiverseTop(ranked, RECOMMEND_TOP_PICKS, RECOMMEND_MAX_PER_BRAND);
-  return { picks, relaxed };
+
+  const scoresTied = detectTopScoreTie(picks);
+  const scorecardMissing =
+    picks.length > 0 && picks.every((p) => !hasRealAspectDataForPhoneId(catalog, p.phoneId));
+
+  return { picks, relaxed, scoresTied, scorecardMissing, weights };
+}
+
+function detectTopScoreTie(picks: readonly ScoredCandidate[]): boolean {
+  if (picks.length < 2) return false;
+  const top = picks[0]!.score;
+  for (let i = 1; i < picks.length; i++) {
+    if (Math.abs(top - picks[i]!.score) > SCORE_TIE_EPSILON) return false;
+  }
+  return true;
+}
+
+function hasRealAspectDataForPhoneId(
+  catalog: readonly PhoneCatalogEntry[],
+  phoneId: string,
+): boolean {
+  const entry = catalog.find((c) => c.phoneId === phoneId);
+  return entry ? hasRealAspectData(entry) : false;
 }

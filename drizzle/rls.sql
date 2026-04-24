@@ -40,6 +40,14 @@ ALTER TABLE chat_queries             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE llm_cache                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest_runs              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits              ENABLE ROW LEVEL SECURITY;
+-- Automated ingestion pipeline tables — all service-role-only.
+ALTER TABLE phone_aliases            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE creator_profiles         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subreddit_profiles       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE domain_profiles          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE source_phone_links       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crawl_queue              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limit_state         ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- Public read policies — anon + authenticated can browse the corpus.
@@ -75,10 +83,18 @@ CREATE POLICY anon_select_chunks
   TO anon, authenticated
   USING (true);
 
+DROP POLICY IF EXISTS anon_select_source_phone_links ON source_phone_links;
+CREATE POLICY anon_select_source_phone_links
+  ON source_phone_links FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
 -- ---------------------------------------------------------------------------
 -- No anon policies for the following tables — only service_role sees them:
 --   recommendation_sessions, recommendation_turns, recommendation_feedback,
---   chat_queries, llm_cache, ingest_runs, rate_limits.
+--   chat_queries, llm_cache, ingest_runs, rate_limits,
+--   phone_aliases, creator_profiles, subreddit_profiles, domain_profiles,
+--   crawl_queue, rate_limit_state.
 --
 -- Rationale:
 --   - chat/recommendation logs may contain user-provided text that we don't

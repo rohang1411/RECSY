@@ -27,6 +27,17 @@ export interface PhoneQnaInput {
   readonly signal?: AbortSignal;
   /** Overrides default retrieval knobs (e.g. tests or experiments). */
   readonly retrievalOptions?: RetrievalOptions;
+  /**
+   * Optional phone metadata used to produce a time-aware, user-friendly
+   * message on the empty-corpus short-circuit. All fields are best-effort
+   * — unknown values fall back to the generic wording.
+   */
+  readonly phoneMeta?: {
+    readonly brand?: string | null;
+    readonly model?: string | null;
+    readonly lastIngestAt?: Date | string | null;
+    readonly nextIngestAt?: Date | string | null;
+  };
 }
 
 export interface PhoneQnaResult {
@@ -113,11 +124,67 @@ async function chatAnswer(
  */
 export const NO_CONTEXT_MODEL = 'no-context@v1';
 
-const NO_CONTEXT_MESSAGE =
-  'I have no review sources ingested for this phone yet, so I can only be honest: ' +
-  "I cannot answer questions about it from reviews right now. If you're a developer, " +
-  'run `pnpm ingest --phone <slug>` to pull articles/videos for this device. For ' +
-  'cross-device picks, try the recommender. To compare spec sheets side-by-side, use Compare.';
+const GENERIC_NO_CONTEXT_MESSAGE =
+  "We haven't collected reviews for this phone yet, so I can't answer questions about it from real sources right now. " +
+  'Our ingestion pipeline refreshes phones automatically (new launches first, older devices on a slower cadence), so this page should populate on its own soon. ' +
+  'In the meantime, try the recommender for cross-device picks, or Compare for side-by-side specs.';
+
+/**
+ * Build a user-friendly, time-aware empty-corpus message. We prefer brand +
+ * model when known, and surface when the next automated refresh is expected
+ * so users (and support) don't mistake an ops-state for a bug.
+ */
+export function buildNoContextMessage(phoneMeta: PhoneQnaInput['phoneMeta'] | undefined): string {
+  if (!phoneMeta) return GENERIC_NO_CONTEXT_MESSAGE;
+  const label =
+    phoneMeta.brand && phoneMeta.model ? `${phoneMeta.brand} ${phoneMeta.model}` : 'this phone';
+
+  const lastAt = toDate(phoneMeta.lastIngestAt);
+  const nextAt = toDate(phoneMeta.nextIngestAt);
+  const now = Date.now();
+
+  const parts: string[] = [];
+  parts.push(`We don't have ingested reviews for ${label} yet.`);
+
+  if (lastAt) {
+    const daysAgo = Math.max(0, Math.round((now - lastAt.getTime()) / (24 * 60 * 60 * 1000)));
+    if (daysAgo <= 1) {
+      parts.push(
+        "Our last ingestion run didn't surface any long-form reviews — the phone may still be new or niche.",
+      );
+    } else {
+      parts.push(
+        `Our last ingestion for it ran ${daysAgo === 1 ? '1 day' : `${daysAgo} days`} ago and didn't find usable reviews.`,
+      );
+    }
+  } else {
+    parts.push(
+      "We haven't run an ingestion pass for it yet — it will be picked up on the next scheduled crawl.",
+    );
+  }
+
+  if (nextAt && nextAt.getTime() > now) {
+    const hours = Math.max(1, Math.round((nextAt.getTime() - now) / (60 * 60 * 1000)));
+    if (hours < 48) {
+      parts.push(`Next refresh is scheduled in about ${hours}h.`);
+    } else {
+      const days = Math.round(hours / 24);
+      parts.push(`Next refresh is scheduled in about ${days} day${days === 1 ? '' : 's'}.`);
+    }
+  }
+
+  parts.push(
+    'In the meantime, try the recommender for cross-device picks or Compare for side-by-side specs.',
+  );
+
+  return parts.join(' ');
+}
+
+function toDate(v: Date | string | null | undefined): Date | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 /**
  * Retrieves context, generates an answer with the LLM, validates citation tags,
@@ -151,7 +218,7 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (retrieval.chunks.length === 0) {
     log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
     return {
-      text: NO_CONTEXT_MESSAGE,
+      text: buildNoContextMessage(input.phoneMeta),
       citations: [],
       retrieval,
       usage: { tokensIn: 0, tokensOut: 0 },

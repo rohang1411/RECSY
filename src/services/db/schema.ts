@@ -36,7 +36,7 @@ import {
 
 export const phoneStatusEnum = pgEnum('phone_status', ['active', 'discontinued', 'upcoming']);
 
-export const sourceTypeEnum = pgEnum('source_type', ['youtube', 'reddit', 'article']);
+export const sourceTypeEnum = pgEnum('source_type', ['youtube', 'reddit', 'article', 'gsmarena']);
 export const sourceStatusEnum = pgEnum('source_status', ['active', 'removed', 'stale']);
 
 export const aspectEnum = pgEnum('aspect', [
@@ -73,6 +73,28 @@ export const ingestStatusEnum = pgEnum('ingest_status', [
   'skipped',
 ]);
 
+export const ingestTierEnum = pgEnum('ingest_tier', ['hot', 'warm', 'cold']);
+
+export const publishedPrecisionEnum = pgEnum('published_precision', ['day', 'month', 'year']);
+
+export const sourcePhoneRoleEnum = pgEnum('source_phone_role', ['primary', 'secondary']);
+
+export const profileStatusEnum = pgEnum('profile_status', ['active', 'disabled']);
+
+export const crawlQueueStatusEnum = pgEnum('crawl_queue_status', [
+  'queued',
+  'in_progress',
+  'done',
+  'failed',
+]);
+
+export const sentimentSummaryEnum = pgEnum('sentiment_summary', [
+  'positive',
+  'mixed',
+  'negative',
+  'neutral',
+]);
+
 // ---------------------------------------------------------------------------
 // phones
 // ---------------------------------------------------------------------------
@@ -99,6 +121,20 @@ export const phones = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'`),
+    /**
+     * When the automated ingestion pipeline last ran for this phone. Null
+     * means "never ingested". Surfaced in the phone-page empty-corpus UI.
+     */
+    lastIngestAt: timestamp('last_ingest_at', { withTimezone: true }),
+    /**
+     * When the scheduler should next pick this phone up. Set by the
+     * ingestion pipeline on completion based on the freshness tier:
+     *   hot  (launch ≤ 60d, or status='upcoming') → +3 days
+     *   warm (60d < age ≤ 180d)                   → +7 days
+     *   cold (age > 180d)                         → +14 days
+     * Null => "eligible now".
+     */
+    nextIngestAt: timestamp('next_ingest_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -106,6 +142,7 @@ export const phones = pgTable(
     index('phones_brand_idx').on(t.brand),
     index('phones_status_idx').on(t.status),
     index('phones_spec_embedding_idx').using('hnsw', t.specEmbedding.op('vector_cosine_ops')),
+    index('phones_next_ingest_at_idx').on(t.nextIngestAt),
   ],
 );
 
@@ -131,6 +168,22 @@ export const sources = pgTable(
     contentHash: text('content_hash').notNull(),
     status: sourceStatusEnum('status').notNull().default('active'),
     rawJson: jsonb('raw_json').notNull().$type<Record<string, unknown>>().default({}),
+    /** Curator output: 0..1 — how much of the content is about THIS phone. */
+    relevance: numeric('relevance', { precision: 3, scale: 2 }),
+    /** Curator output: 0..1 — review depth vs. blurb/rant. */
+    quality: numeric('quality', { precision: 3, scale: 2 }),
+    sentimentSummary: sentimentSummaryEnum('sentiment_summary'),
+    /** Aspect enum values from aspect_definitions — stored as text[] for flexibility. */
+    aspectsCovered: text('aspects_covered')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    /** YouTube view_count / Reddit score / article pageviews (when available). */
+    viewCount: integer('view_count'),
+    /** Normalized 0..1 engagement score — adapter-specific formula. */
+    engagementScore: numeric('engagement_score', { precision: 4, scale: 3 }),
+    /** Whether `publishedAt` is accurate to the day, month, or year only. */
+    publishedPrecision: publishedPrecisionEnum('published_precision'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -345,6 +398,15 @@ export const ingestRuns = pgTable(
     status: ingestStatusEnum('status').notNull(),
     chunksCreated: integer('chunks_created').notNull().default(0),
     error: text('error'),
+    /** Freshness tier at the time this run was dispatched. */
+    tier: ingestTierEnum('tier'),
+    /** e.g. 'rss', 'search', 'sitemap', 'manual', 'gsmarena-lookup'. */
+    discoveryStrategy: text('discovery_strategy'),
+    /**
+     * If status='skipped' because of a filter (curator/disambiguator/etc),
+     * the machine-readable reason for auditing false negatives.
+     */
+    rejectedReason: text('rejected_reason'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     durationMs: integer('duration_ms'),
@@ -352,8 +414,174 @@ export const ingestRuns = pgTable(
   (t) => [
     index('ingest_runs_adapter_idx').on(t.adapter),
     index('ingest_runs_status_idx').on(t.status),
+    index('ingest_runs_rejected_reason_idx').on(t.rejectedReason),
+    index('ingest_runs_started_at_idx').on(t.startedAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Automated ingestion pipeline — profiles, queues, and politeness state.
+// ---------------------------------------------------------------------------
+
+/**
+ * Fuzzy-match helpers. A title like "S25 Ultra long-term" resolves to the
+ * Samsung Galaxy S25 Ultra via a row here; the alias may be abbreviated,
+ * colloquial, or region-specific.
+ */
+export const phoneAliases = pgTable(
+  'phone_aliases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    alias: text('alias').notNull(),
+    /** Higher priority wins in tie-breakers across multiple phones. */
+    priority: integer('priority').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('phone_aliases_phone_alias_uniq').on(t.phoneId, t.alias),
+    index('phone_aliases_alias_idx').on(t.alias),
+  ],
+);
+
+/**
+ * Known tech YouTube / Reddit / editorial creators we actively monitor.
+ * `platform` is an open string (not an enum) so we can add platforms without
+ * a migration; values in use today: 'youtube', 'reddit', 'article'.
+ */
+export const creatorProfiles = pgTable(
+  'creator_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    platform: text('platform').notNull(),
+    /** YouTube channel_id, Reddit username, or article site slug. */
+    externalId: text('external_id').notNull(),
+    handle: text('handle').notNull(),
+    trustWeight: numeric('trust_weight', { precision: 3, scale: 2 }).notNull().default('0.8'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    status: profileStatusEnum('status').notNull().default('active'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('creator_profiles_platform_external_uniq').on(t.platform, t.externalId),
+    index('creator_profiles_status_idx').on(t.status),
+  ],
+);
+
+/** Subreddits we search/poll — a superset of the legacy hardcoded allowlist. */
+export const subredditProfiles = pgTable(
+  'subreddit_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull().unique(),
+    /** 'general' (cross-brand) vs 'device' (tied to one phone family). */
+    scope: text('scope').notNull().default('general'),
+    minScore: integer('min_score').notNull().default(20),
+    trustWeight: numeric('trust_weight', { precision: 3, scale: 2 }).notNull().default('0.7'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    status: profileStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('subreddit_profiles_status_idx').on(t.status)],
+);
+
+/**
+ * Per-host crawl configuration. The `http.ts` wrapper reads these at request
+ * time to decide rate limits, UA choice, and whether to consult robots.txt.
+ */
+export const domainProfiles = pgTable(
+  'domain_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** e.g. 'gsmarena.com' — stored lowercase, without www. */
+    host: text('host').notNull().unique(),
+    trustWeight: numeric('trust_weight', { precision: 3, scale: 2 }).notNull().default('0.5'),
+    rateLimitMs: integer('rate_limit_ms').notNull().default(3_000),
+    robotsRespected: boolean('robots_respected').notNull().default(true),
+    /** Last-parsed robots.txt, kept as parsed ruleset for O(1) matching. */
+    robotsJson: jsonb('robots_json').$type<unknown>(),
+    robotsFetchedAt: timestamp('robots_fetched_at', { withTimezone: true }),
+    status: profileStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('domain_profiles_status_idx').on(t.status)],
+);
+
+/**
+ * Many-to-many: one YouTube comparison video can reference several phones.
+ * `chunks.phoneId` stays denormalised to the PRIMARY phone for fast
+ * retrieval; `source_phone_links` surfaces the source on secondary phone
+ * pages via a second query.
+ */
+export const sourcePhoneLinks = pgTable(
+  'source_phone_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => sources.id, { onDelete: 'cascade' }),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    role: sourcePhoneRoleEnum('role').notNull(),
+    /** Optional per-phone relevance from the disambiguator. */
+    relevance: numeric('relevance', { precision: 3, scale: 2 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('source_phone_links_source_phone_uniq').on(t.sourceId, t.phoneId),
+    index('source_phone_links_phone_idx').on(t.phoneId),
+  ],
+);
+
+/**
+ * Work queue for the scheduler. The tiered daily cron picks rows where
+ * status='queued' AND scheduledFor <= now(). Retries bump `attempts` and
+ * re-queue with exponential backoff (handled in TS, not SQL).
+ */
+export const crawlQueue = pgTable(
+  'crawl_queue',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    adapter: text('adapter').notNull(),
+    tier: ingestTierEnum('tier').notNull().default('warm'),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    status: crawlQueueStatusEnum('status').notNull().default('queued'),
+    /** Optional direct URL (creator-watch populates this; scheduler discovery leaves null). */
+    url: text('url'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('crawl_queue_status_sched_idx').on(t.status, t.scheduledFor),
+    index('crawl_queue_phone_idx').on(t.phoneId),
+  ],
+);
+
+/**
+ * Per-host token-bucket state, persisted so that parallel GitHub Actions
+ * shards cooperate via UPSERT. Updated on every request by `http.ts`.
+ */
+export const rateLimitState = pgTable('rate_limit_state', {
+  host: text('host').primaryKey(),
+  /** When the CURRENT window started. */
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull().defaultNow(),
+  reqCount: integer('req_count').notNull().default(0),
+  /** Earliest time a new request is allowed. */
+  nextAllowedAt: timestamp('next_allowed_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // Simple rate-limiter table. Cleaned by `pg_cron`.
@@ -378,11 +606,28 @@ export const phonesRelations = relations(phones, ({ many }) => ({
   sources: many(sources),
   chunks: many(chunks),
   aspects: many(aspects),
+  aliases: many(phoneAliases),
+  sourceLinks: many(sourcePhoneLinks),
+  crawlQueue: many(crawlQueue),
 }));
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
   phone: one(phones, { fields: [sources.phoneId], references: [phones.id] }),
   chunks: many(chunks),
+  phoneLinks: many(sourcePhoneLinks),
+}));
+
+export const phoneAliasesRelations = relations(phoneAliases, ({ one }) => ({
+  phone: one(phones, { fields: [phoneAliases.phoneId], references: [phones.id] }),
+}));
+
+export const sourcePhoneLinksRelations = relations(sourcePhoneLinks, ({ one }) => ({
+  source: one(sources, { fields: [sourcePhoneLinks.sourceId], references: [sources.id] }),
+  phone: one(phones, { fields: [sourcePhoneLinks.phoneId], references: [phones.id] }),
+}));
+
+export const crawlQueueRelations = relations(crawlQueue, ({ one }) => ({
+  phone: one(phones, { fields: [crawlQueue.phoneId], references: [phones.id] }),
 }));
 
 export const chunksRelations = relations(chunks, ({ one }) => ({
@@ -410,5 +655,5 @@ export const recommendationTurnsRelations = relations(recommendationTurns, ({ on
   feedback: many(recommendationFeedback),
 }));
 
-// Explicitly silence unused relations warnings while keeping them exported.
-void boolean; // (placeholder import slot — retained for future flags)
+// `boolean` is now referenced by `domain_profiles.robots_respected`.
+// No placeholder needed anymore.

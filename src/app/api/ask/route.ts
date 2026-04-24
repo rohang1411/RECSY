@@ -51,6 +51,10 @@ export async function POST(request: NextRequest): Promise<Response> {
       .select({
         id: phones.id,
         status: phones.status,
+        brand: phones.brand,
+        model: phones.model,
+        lastIngestAt: phones.lastIngestAt,
+        nextIngestAt: phones.nextIngestAt,
       })
       .from(phones)
       .where(eq(phones.slug, body.phoneSlug))
@@ -81,6 +85,12 @@ export async function POST(request: NextRequest): Promise<Response> {
             signal: request.signal,
             retrievalOptions: {
               rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
+            },
+            phoneMeta: {
+              brand: phone.brand,
+              model: phone.model,
+              lastIngestAt: phone.lastIngestAt,
+              nextIngestAt: phone.nextIngestAt,
             },
           });
 

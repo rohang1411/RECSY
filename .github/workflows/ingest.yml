@@ -1,11 +1,12 @@
 # =============================================================================
-# Scheduled + manual ingestion.
+# Manual (workflow_dispatch) ingestion for a single phone.
+#
+# This workflow is intentionally narrow: an operator runs it when they want to
+# force ingestion for a specific phone/adapter combination. The scheduled,
+# tiered roster lives in `ingest-tiered.yml`.
 #
 # Triggers:
 #   - workflow_dispatch — manual run with optional phone/adapter/limit inputs.
-#   - schedule         — nightly at 03:17 UTC (low-traffic window for most
-#                        social platforms; staggered off the hour to avoid
-#                        GitHub Actions peak).
 #
 # Secrets required (set at repo or organisation level):
 #   DATABASE_URL                 — Postgres URI (service_role key embedded).
@@ -13,10 +14,8 @@
 #   NEXT_PUBLIC_SUPABASE_URL
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY
 #   GEMINI_API_KEY
-#
-# Non-secret defaults are set inline to keep this file self-describing.
 # =============================================================================
-name: ingest
+name: ingest (manual)
 
 on:
   workflow_dispatch:
@@ -26,7 +25,7 @@ on:
         required: true
         type: string
       adapter:
-        description: 'Adapter: youtube | reddit | article | all'
+        description: 'Adapter: youtube | reddit | article | gsmarena | all'
         required: false
         default: 'all'
         type: choice
@@ -35,27 +34,23 @@ on:
           - youtube
           - reddit
           - article
+          - gsmarena
       limit:
         description: 'Max candidates per adapter'
         required: false
         default: '5'
         type: string
-  schedule:
-    # 03:17 UTC daily.
-    - cron: '17 3 * * *'
 
 concurrency:
-  group: ingest-${{ github.event.inputs.phone || 'nightly' }}
+  group: ingest-manual-${{ github.event.inputs.phone }}
   cancel-in-progress: false
 
 jobs:
   ingest:
-    name: Ingest sources for ${{ github.event.inputs.phone || 'nightly-roster' }}
+    name: Ingest ${{ github.event.inputs.phone }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # Pipe secrets into the env so `tsx --env-file` is not required here;
-      # the Node process reads them natively via `src/env.ts`.
       NODE_ENV: production
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -63,8 +58,6 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       LOG_LEVEL: info
-      # `@t3-oss/env-nextjs` short-circuits validation for CI-shaped builds;
-      # ingestion explicitly wants it enabled so missing secrets fail fast.
       SKIP_ENV_VALIDATION: 'false'
 
     steps:
@@ -86,7 +79,6 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run manual ingestion
-        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           ADAPTER_FLAG=""
@@ -97,27 +89,3 @@ jobs:
             --phone "${{ github.event.inputs.phone }}" \
             $ADAPTER_FLAG \
             --limit "${{ github.event.inputs.limit }}"
-
-      - name: Run nightly roster
-        if: github.event_name == 'schedule'
-        shell: bash
-        # For now the nightly roster is hand-curated; Phase 3+ will pull this
-        # list from the `phones` table (status = 'active' AND launched in the
-        # last N days).
-        run: |
-          PHONES=(
-            "google-pixel-9-pro-xl"
-            "apple-iphone-16-pro-max"
-            "samsung-galaxy-s25-ultra"
-            "nothing-phone-2a-plus"
-          )
-          FAIL=0
-          for slug in "${PHONES[@]}"; do
-            echo ""
-            echo "::group::ingest $slug"
-            if ! pnpm exec tsx scripts/ingest.ts --phone "$slug" --limit 3; then
-              FAIL=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $FAIL

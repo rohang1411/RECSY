@@ -5,6 +5,11 @@ import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
+import {
+  CLIENT_SETTING_DEFAULTS,
+  CLIENT_SETTING_KEYS,
+  useClientSetting,
+} from '@/lib/client-settings';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
 import { cn } from '@/lib/utils';
 
@@ -42,8 +47,15 @@ export function RecommendClient() {
   const [picks, setPicks] = useState<readonly ApiPick[] | null>(null);
   const [relaxed, setRelaxed] = useState<readonly string[] | null>(null);
   const [refined, setRefined] = useState<boolean>(false);
+  const [scoresTied, setScoresTied] = useState<boolean>(false);
+  const [scorecardMissing, setScorecardMissing] = useState<boolean>(false);
+  const [topAspects, setTopAspects] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [enterToSend] = useClientSetting<boolean>(
+    CLIENT_SETTING_KEYS.enterToSend,
+    CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
+  );
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -53,6 +65,9 @@ export function RecommendClient() {
     setPicks(null);
     setRelaxed(null);
     setRefined(false);
+    setScoresTied(false);
+    setScorecardMissing(false);
+    setTopAspects([]);
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
     try {
@@ -89,9 +104,19 @@ export function RecommendClient() {
           ? (rawRelaxed as string[]).filter((s): s is string => typeof s === 'string')
           : [];
         const rawRefined = (data as { refined?: unknown }).refined === true;
+        const rawScoresTied = (data as { scoresTied?: unknown }).scoresTied === true;
+        const rawScorecardMissing =
+          (data as { scorecardMissing?: unknown }).scorecardMissing === true;
+        const rawTopAspects = (data as { topAspects?: unknown }).topAspects;
+        const topAspectsList = Array.isArray(rawTopAspects)
+          ? (rawTopAspects as string[]).filter((s): s is string => typeof s === 'string')
+          : [];
         setPicks(pickList);
         setRelaxed(relaxedList);
         setRefined(rawRefined);
+        setScoresTied(rawScoresTied);
+        setScorecardMissing(rawScorecardMissing);
+        setTopAspects(topAspectsList);
         if (pickList.length === 0) {
           setLines((prev) => [
             ...prev,
@@ -113,6 +138,34 @@ export function RecommendClient() {
           const intro =
             relaxedList.length > 0 ? `${base} (Adjusted: ${relaxedList.join(', ')}.)` : base;
           setLines((prev) => [...prev, { role: 'assistant', text: intro }]);
+
+          // Honest follow-up when ranking could not separate the picks.
+          if (rawScoresTied && pickList.length > 1) {
+            const priorityHint =
+              topAspectsList.length >= 2
+                ? ` on ${topAspectsList[0]} and ${topAspectsList[1]}`
+                : topAspectsList[0]
+                  ? ` on ${topAspectsList[0]}`
+                  : '';
+            const reason = rawScorecardMissing
+              ? 'because no reviewer scorecard has been ingested yet, so every aspect falls back to a neutral 5.0'
+              : 'because the weighted aspect scores are effectively identical for your priorities';
+            setLines((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                text: `These picks are effectively tied${priorityHint} — ${reason}. Any of them is a defensible choice; ingest reviews (see docs) or add a sharper constraint (e.g. budget, must-have) to break the tie.`,
+              },
+            ]);
+          } else if (rawScorecardMissing && pickList.length > 0) {
+            setLines((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                text: `Heads up: no reviewer scorecard has been ingested yet, so this ranking is driven by specs and your priorities only — aspect scores all default to 5.0.`,
+              },
+            ]);
+          }
         }
       } else {
         throw new Error('Unknown response kind');
@@ -173,6 +226,7 @@ export function RecommendClient() {
               <p className="text-muted-foreground text-xs">
                 Showing {picks.length} {picks.length === 1 ? 'match' : 'picks'}, ranked
                 {refined ? ' · re-ranked from your earlier picks' : ''}
+                {topAspects.length > 0 ? ` · by ${topAspects.slice(0, 2).join(' then ')}` : ''}
               </p>
               {picks.length >= 2 && picks[0] != null && picks[1] != null ? (
                 <Link
@@ -184,6 +238,25 @@ export function RecommendClient() {
                 </Link>
               ) : null}
             </div>
+            {scoresTied || scorecardMissing ? (
+              <div
+                role="note"
+                className="border-border/80 bg-muted/40 text-muted-foreground rounded-md border px-3 py-2 text-xs leading-relaxed"
+              >
+                {scorecardMissing ? (
+                  <p>
+                    No reviewer scorecard data yet — aspect scores default to 5.0/10, so this is a
+                    specs- and priorities-only ranking.
+                  </p>
+                ) : null}
+                {scoresTied && picks.length > 1 ? (
+                  <p className={scorecardMissing ? 'mt-1' : undefined}>
+                    Top {picks.length} picks are within a rounding error on your priorities — treat
+                    as a tie.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <ul className="space-y-3">
               {picks.map((p, idx) => {
                 const price = formatUsdFromNumericString(p.msrpUsd);
@@ -262,7 +335,7 @@ export function RecommendClient() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (enterToSend && e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 void send();
               }

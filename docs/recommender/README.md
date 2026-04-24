@@ -23,13 +23,34 @@ ranking** → **three diverse picks**. Full pipeline semantics: §11 in
 **Responses**
 
 - `{ "kind": "clarify", "clarifyingQuestion": string }`
-- `{ "kind": "results", "picks": [...], "relaxed": string[], "refined": boolean }`
+- ```json
+  {
+    "kind": "results",
+    "picks": [...],
+    "relaxed": string[],
+    "refined": boolean,
+    "scoresTied": boolean,
+    "scorecardMissing": boolean,
+    "topAspects": string[]   // up to 2 aspect names, highest weight first
+  }
+  ```
 
-`refined: true` signals that this turn re-ranked the previous turn's picks
-instead of scanning the full catalog — see **Refine over prior picks** below
-and [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
-Pick count in `picks` is **honest**: up to 3, but fewer if the ranker (or the
-narrowed refine set) produced fewer matches. The UI never pads.
+Semantics of the flags (see [ADR 0013](../adr/0013-recommender-summary-context-tie-honesty-settings.md)):
+
+- `refined: true` — this turn re-ranked the previous turn's picks (not the
+  full catalog). See **Refine over prior picks** below and
+  [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
+- `scoresTied: true` — every returned pick is within `SCORE_TIE_EPSILON = 0.05`
+  of the top score. UI surfaces this so three 5.00/5.00/5.00 cards are
+  explained, not pretended-to-be-ranked.
+- `scorecardMissing: true` — none of the returned picks have real scorecard
+  data (every `aspects` row is either absent or the neutral 5.0 fallback).
+  This means the ranking is driven by specs + stated priorities only; ingest
+  reviews to get a richer ranking.
+- `topAspects: string[]` — up to two aspect names (e.g. `["camera", "performance"]`)
+  that drove this ranking. The UI renders them as `ranked · by camera then performance`.
+- `picks` count is **honest**: up to 3, but fewer if the ranker (or the
+  narrowed refine set) produced fewer matches. The UI never pads.
 
 ### Refine over prior picks
 
@@ -50,6 +71,24 @@ Rules of thumb:
 - **If the refine set is empty after filters** (e.g. a newly tightened budget
   excludes all prior picks), the pipeline falls back to the full-catalog path
   and clears `refined` so users still get useful picks.
+
+### Summary strings adapt to refine and data state
+
+`pickSummaryLine(entry, { weights, refined, corpusScorecardMissing })` in
+`src/services/recommender/match.ts` picks one of four strings so the per-card
+summary reflects what we actually know (see [ADR 0013](../adr/0013-recommender-summary-context-tie-honesty-settings.md)):
+
+| Context                                         | Summary                                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Refined turn + real scorecard data              | `<Primary> <value>/10, <secondary> <value>/10 among your earlier picks.` — names **both** priority axes. |
+| Refined turn + no scorecard data                | `No reviewer scorecard yet — ranked by stated priorities (top: <a>, then <b>) and specs only.`           |
+| Fresh turn + no scorecard data (this phone)     | `No reviewer scorecard yet for this phone — ranking reflects your stated priorities and specs only.`     |
+| Fresh turn + real scorecard data (default path) | `Strongest on <aspect> for what you said matters (aspect score <value>/10).`                             |
+
+This is why "which should I prefer if performance is my 2nd priority?" no
+longer produces three cards that all say _Strongest on camera_: a refined turn
+with data names **camera** and **performance**, and a refined turn without
+data says so in English instead of misleading the user.
 
 ### Stage A: structured `UserRequirements` (Gemini + Zod)
 

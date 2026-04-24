@@ -9,7 +9,7 @@ import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
 import { loadRecommendationCatalog } from './catalog';
 import { extractUserRequirements } from './extract-requirements';
-import { rankCandidates, type ScoredCandidate } from './match';
+import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
 import { buildRecommenderQueryText } from './spec-embedding-text';
@@ -41,6 +41,12 @@ export type RecommendPipelineResult =
       readonly relaxed: readonly string[];
       /** `true` when this turn re-ranked the previous turn's picks instead of the full catalog. */
       readonly refined: boolean;
+      /** `true` when all returned picks tie on score (within `SCORE_TIE_EPSILON`). */
+      readonly scoresTied: boolean;
+      /** `true` when none of the returned picks have real scorecard data. */
+      readonly scorecardMissing: boolean;
+      /** Top 1–2 aspect names driving the ranking, highest weight first. */
+      readonly topAspects: readonly string[];
     };
 
 function buildDefaultAspectWeights(
@@ -118,17 +124,20 @@ export async function runRecommendationPipeline(input: {
   }
 
   let picks: readonly ScoredCandidate[] = [];
-  let relaxed: readonly string[] = [];
+  let rankResult: RankResult | null = null;
   let refined = false;
 
   if (refineEligible) {
     const priorIdSet = new Set(priorPickIds);
     const narrowed = fullCatalog.filter((entry) => priorIdSet.has(entry.phoneId));
     if (narrowed.length > 0) {
-      const res = rankCandidates(narrowed, requirements, defaultW, { queryEmbedding });
+      const res = rankCandidates(narrowed, requirements, defaultW, {
+        queryEmbedding,
+        refined: true,
+      });
       if (res.picks.length > 0) {
         picks = res.picks;
-        relaxed = res.relaxed;
+        rankResult = res;
         refined = true;
         input.log.info(
           {
@@ -136,6 +145,8 @@ export async function runRecommendationPipeline(input: {
             narrowedCount: narrowed.length,
             refinePicks: picks.length,
             refineMatched: refineDetection.matched,
+            scoresTied: res.scoresTied,
+            scorecardMissing: res.scorecardMissing,
           },
           'recommender refine over prior picks',
         );
@@ -156,10 +167,24 @@ export async function runRecommendationPipeline(input: {
   if (!refined) {
     const res = rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
     picks = res.picks;
-    relaxed = res.relaxed;
+    rankResult = res;
   }
 
-  input.log.info({ pickCount: picks.length, relaxed, refined }, 'recommender results');
+  // `rankResult` is populated whichever branch ran above.
+  const result = rankResult!;
+  const relaxed = result.relaxed;
+  const topAspects = aspectsByWeight(result.weights).slice(0, 2);
+
+  input.log.info(
+    {
+      pickCount: picks.length,
+      relaxed,
+      refined,
+      scoresTied: result.scoresTied,
+      scorecardMissing: result.scorecardMissing,
+    },
+    'recommender results',
+  );
 
   return {
     kind: 'results',
@@ -167,5 +192,8 @@ export async function runRecommendationPipeline(input: {
     picks: toApiPicks(picks),
     relaxed,
     refined,
+    scoresTied: result.scoresTied,
+    scorecardMissing: result.scorecardMissing,
+    topAspects,
   };
 }

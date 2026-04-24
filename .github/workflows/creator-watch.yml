@@ -1,0 +1,69 @@
+# =============================================================================
+# Creator-watch — metadata-only RSS poll for trusted YouTube channels.
+#
+# Runs every 6 hours. Doesn't pay for transcripts or embeddings — just
+# discovers new videos from MKBHD / Mrwhosetheboss / TheTechChap / SuperSaf /
+# TheUnlockr / MrMobile, matches them to phones via phone_aliases, and
+# enqueues hot-tier crawl_queue rows. The tiered cron picks them up.
+#
+# Why separate from ingest-tiered.yml?
+#   - Different cadence (6h vs daily).
+#   - Much cheaper — no embedding / LLM work.
+#   - Keeps tiered runtime predictable.
+# =============================================================================
+name: creator-watch
+
+on:
+  schedule:
+    # Every 6h, offset from the hour to avoid GH Actions peak.
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      max_candidates:
+        description: 'Max candidates per phone'
+        required: false
+        default: '5'
+        type: string
+
+concurrency:
+  group: creator-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Poll creator feeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Poll feeds
+        shell: bash
+        run: |
+          MAX="${{ github.event.inputs.max_candidates || '5' }}"
+          pnpm exec tsx scripts/creator-watch.ts --max-candidates "$MAX"

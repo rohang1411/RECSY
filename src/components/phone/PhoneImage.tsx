@@ -17,7 +17,7 @@ export function PhoneImage({ src, label, className, size = 200 }: PhoneImageProp
   const initial = label.trim().charAt(0).toUpperCase() || '?';
   if (src && src.length > 0) {
     return (
-      <div className={className}>
+      <div className={className} style={{ width: size, height: size }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- remote product art; see module docstring */}
         <img
           src={src}
@@ -27,7 +27,7 @@ export function PhoneImage({ src, label, className, size = 200 }: PhoneImageProp
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="bg-muted/50 h-auto w-full max-w-full rounded-xl object-contain"
+          className="bg-muted/50 h-full w-full rounded-xl object-contain"
         />
       </div>
     );

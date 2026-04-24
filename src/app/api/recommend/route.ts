@@ -121,6 +121,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         picks: result.kind === 'results' ? result.picks : undefined,
         relaxed: result.kind === 'results' ? result.relaxed : undefined,
         refined: result.kind === 'results' ? result.refined : undefined,
+        scoresTied: result.kind === 'results' ? result.scoresTied : undefined,
+        scorecardMissing: result.kind === 'results' ? result.scorecardMissing : undefined,
+        topAspects: result.kind === 'results' ? result.topAspects : undefined,
       },
       { status: 200, headers: { 'X-Trace-Id': traceId } },
     );

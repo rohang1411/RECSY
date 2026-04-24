@@ -207,22 +207,33 @@ This is **not** a second retrieval pass; it mirrors what already ran. See
 
 ## 10. Empty-corpus behavior (no ingestion yet)
 
-`pnpm db:setup` seeds the phone catalog but **not** sources / chunks. On a fresh
-environment, any phone page will retrieve zero chunks until you run
-`pnpm ingest --phone <slug>` (or equivalent for that phone). In that state:
+`pnpm db:setup` seeds the phone catalog but **not** sources / chunks. Under
+automated tiered ingestion (see [ADR 0014](../adr/0014-automated-ingestion-curation.md)),
+new phones bootstrap on their first scheduled cron, but there's still a
+small window — and edge cases where Curator rejects every discovered source
+— where a phone legitimately has zero chunks.
+
+In that state:
 
 - Hybrid retrieval still runs through every stage; each one reports `count: 0`.
 - `runPhoneQna` detects the empty chunks list, **skips the LLM call entirely**,
-  and returns a deterministic message that names the gap and points users to
-  Recommend / Compare. The trace panel still renders so operators can confirm
-  the empty state at a glance.
-- The sentinel `model: 'no-context@v1'` (`NO_CONTEXT_MODEL` in
-  `src/services/chat/answer.ts`) is stored on the `chat_queries` row so you can
-  SQL-query affected turns with `SELECT phone_id, COUNT(*) ... WHERE model =
-'no-context@v1' GROUP BY phone_id` to prioritize ingestion.
+  and returns a deterministic, **time-aware** message produced by
+  `buildNoContextMessage(phoneMeta)` in `src/services/chat/answer.ts`. It
+  names brand + model, mentions days-since-last-ingest, and surfaces the
+  next scheduled refresh window (e.g. "Next refresh is scheduled in about
+  12h"). `POST /api/ask` passes `{brand, model, lastIngestAt, nextIngestAt}`
+  from the same row it already fetches, so there's no extra query cost.
+- The sentinel `model: 'no-context@v1'` (`NO_CONTEXT_MODEL`) is stored on
+  the `chat_queries` row so you can SQL-query affected turns with
+  `SELECT phone_id, COUNT(*) ... WHERE model = 'no-context@v1' GROUP BY
+phone_id` — useful for spot-checking phones that keep hitting the
+  short-circuit despite running through ingestion.
+- `pnpm ingest:report --days 7` surfaces "phones overdue for ingestion"
+  and the Curator rejection-reason histogram to correlate.
 
 See [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md)
-for the rationale (honesty + zero LLM spend on empty corpus).
+(original honesty + no-LLM-spend rationale) and [ADR 0014](../adr/0014-automated-ingestion-curation.md)
+(user-friendly copy + tiered scheduler that makes this state rare).
 
 ## 11. Known limitations
 

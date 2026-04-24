@@ -308,17 +308,17 @@ flowchart TD
 
 ### Most important code locations by subsystem
 
-| Subsystem     | Key files                                                                             |
-| ------------- | ------------------------------------------------------------------------------------- |
-| Recommender   | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*` |
-| Retrieval     | `src/services/retrieval/*`                                                            |
-| Phone Q-and-A | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`               |
-| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-run.ts`                                |
-| Ingestion     | `src/services/ingest/*`, `scripts/ingest.ts`                                          |
-| Database      | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                 |
-| Seeds         | `scripts/seed/*`                                                                      |
-| Browse        | `src/features/browse/*`, `src/app/browse/*`                                           |
-| Compare       | `src/app/compare/*`                                                                   |
+| Subsystem     | Key files                                                                              |
+| ------------- | -------------------------------------------------------------------------------------- |
+| Recommender   | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*`  |
+| Retrieval     | `src/services/retrieval/*`                                                             |
+| Phone Q-and-A | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`                |
+| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-run.ts`                                 |
+| Ingestion     | `src/services/ingest/*`, `scripts/{ingest,ingest-auto,creator-watch,ingest-report}.ts` |
+| Database      | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                  |
+| Seeds         | `scripts/seed/*`                                                                       |
+| Browse        | `src/features/browse/*`, `src/app/browse/*`                                            |
+| Compare       | `src/app/compare/*`                                                                    |
 
 ## 7. Core Data Model and Domain Concepts
 
@@ -565,6 +565,29 @@ same three slugs and makes the recommender feel stateless. The pipeline now:
 No schema change: refine turns are stored as `intent: 'recommend'` rows whose
 `candidatePhoneIds` reflect the re-ranked subset.
 
+### Context-aware summaries and tie honesty
+
+Introduced by [ADR 0013](adr/0013-recommender-summary-context-tie-honesty-settings.md).
+`rankCandidates` returns a richer result alongside `picks` + `relaxed`:
+
+- `scoresTied: boolean` — every pick is within `SCORE_TIE_EPSILON` (0.05) of
+  the top score. Almost always means the scorecard is missing or the user's
+  priorities do not differentiate the picks.
+- `scorecardMissing: boolean` — none of the returned picks has any real
+  aspect data (`aspects` table empty or every row at the neutral 5.0
+  fallback). A fresh install without ingestion hits this reliably.
+- `weights` — the normalised aspect weights that drove the ranking; the
+  pipeline exposes the top two as `topAspects` on the API for the UI.
+
+`pickSummaryLine(entry, { weights, refined, corpusScorecardMissing })` picks
+one of four strings so the per-card summary reflects reality (refined turns
+with real data name both the primary and secondary priority axes; refined
+turns without data say so; fresh turns fall back to the existing single-axis
+line). `/recommend` renders a banner between the list header and the pick
+cards when ties or missing data are detected, and appends an honest chat
+bubble to the conversation so the signal is visible to anyone reading the
+chat back.
+
 ### Relaxation ladder
 
 When strict filtering returns nothing, the recommender progressively relaxes:
@@ -588,11 +611,12 @@ The API returns `relaxed` codes so the UI can be honest about any adjustments.
 The two response shapes are:
 
 - `{ "kind": "clarify", "clarifyingQuestion": "..." }`
-- `{ "kind": "results", "picks": [...], "relaxed": [...], "refined": boolean }`
+- `{ "kind": "results", "picks": [...], "relaxed": [...], "refined": boolean, "scoresTied": boolean, "scorecardMissing": boolean, "topAspects": string[] }`
 
 `refined: true` means this turn re-ranked the previous turn's picks instead of
 the full catalog. The client uses that to show the "Re-ranked your earlier
-picks" label.
+picks" label. `scoresTied` / `scorecardMissing` / `topAspects` let the UI
+explain a flat ranking honestly (see the previous section).
 
 ## 9. Phone Q-and-A and Hybrid Retrieval
 
@@ -713,22 +737,32 @@ See also [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md) and
 
 ### Empty-corpus short-circuit
 
-`runPhoneQna` short-circuits when hybrid retrieval returns **zero chunks** — typical on a
-freshly set-up environment that has not yet run `pnpm ingest --phone <slug>`. In that case:
+`runPhoneQna` short-circuits when hybrid retrieval returns **zero chunks**. With automated
+tiered ingestion (ADR 0014), this state is rare: new phones bootstrap on the next scheduled
+cron and refreshes keep the corpus warm. When it does happen:
 
-- **No LLM call.** The function returns a deterministic message that explains the missing
-  data, gives the developer hint, and routes the user to Recommend / Compare.
+- **No LLM call.** The function returns a deterministic message produced by
+  `buildNoContextMessage(phoneMeta)` in `src/services/chat/answer.ts`. The message is
+  **time-aware** — it names brand + model, mentions days-since-last-ingest, and surfaces
+  the next scheduled refresh window (e.g. "Next refresh is scheduled in about 12h"). No
+  developer-oriented `pnpm ingest --phone <slug>` in user-facing text.
 - **Sentinel model.** `model: 'no-context@v1'` (exported as `NO_CONTEXT_MODEL`) makes it
   trivial to query for affected turns in `chat_queries`. `usage.tokensIn` / `usage.tokensOut`
   are both 0.
-- **Trace still renders.** `RetrievalResult.debug` is still produced and serialized, so the
-  client's pipeline panel shows every stage with `count: 0` — operators can see at a glance
-  that ingestion, not retrieval or the model, is the thing to fix.
+- **Phone metadata comes free.** `POST /api/ask` already loads the phone row; it now
+  pulls `brand`, `model`, `lastIngestAt`, `nextIngestAt` in the same query and passes
+  them as `phoneMeta` to `runPhoneQna`.
+- **Trace still renders.** `RetrievalResult.debug` is still produced and serialized, so
+  the client's pipeline panel shows every stage with `count: 0` — operators can see at a
+  glance that ingestion, not retrieval or the model, is the thing to fix. `pnpm ingest:report`
+  surfaces "overdue" phones + Curator rejection histograms to correlate.
 
 This is a product decision: an honest empty-corpus message is strictly better than paying
 for a generic model refusal that reads like a bug. Once a phone has at least one chunk the
 normal hybrid + LLM path takes over with no code change. Full rationale in
-[ADR 0012](adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
+[ADR 0012](adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) (original
+short-circuit) and [ADR 0014](adr/0014-automated-ingestion-curation.md) (user-friendly,
+time-aware copy + tiered scheduler).
 
 ### What gets stored
 
@@ -946,16 +980,49 @@ This means re-running ingestion is safe and cheap.
 
 ### CLI and workflows
 
-Key command:
+Two entrypoints:
 
 ```bash
-pnpm ingest --phone <slug> [--adapter youtube|reddit|article] [--url <url>] [--limit N] [--dry-run]
+# Manual, single phone (operator / debugging)
+pnpm ingest --phone <slug> [--adapter youtube|reddit|article|gsmarena] [--url <url>] [--limit N] [--dry-run]
+
+# Automated, tiered (GitHub Actions daily cron)
+pnpm ingest:auto --tier hot|warm|cold|all --shard K --total-shards N --limit N --dry-run
+
+# Metadata-only RSS poll (GitHub Actions every 6h)
+pnpm creator:watch --max-candidates 5
+
+# Weekly audit
+pnpm ingest:report --days 7
 ```
 
-GitHub Actions:
+Four GitHub Actions workflows:
 
-- `.github/workflows/ingest.yml` supports manual dispatch
-- the same workflow also runs a nightly roster
+- `.github/workflows/ingest.yml` — manual `workflow_dispatch` only (single phone).
+- `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC. Matrix `tier × shard[0..3]`.
+  Hot runs daily; warm on Mon/Wed/Fri/Sat; cold on Sunday.
+- `.github/workflows/creator-watch.yml` — every 6h metadata-only RSS poll from
+  `creator_profiles`; enqueues hot-tier rows into `crawl_queue`.
+- `.github/workflows/ingest-on-new-phone.yml` — manual bootstrap for admin-added phones
+  that shouldn't wait for the next cron.
+
+### Scheduler, tiers, and agents (ADR 0014)
+
+- **Tiers** (`src/services/ingest/scheduler/tiers.ts`) — `hot` (≤60d, ~3.5d cadence),
+  `warm` (60–365d, 7d), `cold` (>365d, 14d). Driven off `phones.launchDate`.
+- **Scheduler** (`scheduler/pick-phones.ts`) — picks phones where `next_ingest_at` is
+  null or past; filters by tier; shards via FNV-32 on phone id; orders hot → warm → cold.
+- **CuratorAgent** (`agents/curator.ts`) — Gemini Flash gatekeeper between `chunk()` and
+  `embed()`. Scores `relevance` / `quality` (0–10), extracts `aspectsCovered`, emits
+  `sentimentSummary`. Dropped sources skip embedding; `rejectedReason` lands in
+  `ingest_runs` for audit via `pnpm ingest:report`.
+- **DisambiguatorAgent** (`agents/disambiguator.ts`) — only fires on ≥2 alias matches
+  (longest-match-wins). Picks primary + secondaries; writes `source_phone_links` rows
+  with `role='primary' | 'secondary'`. Orchestrator can reassign the primary phone when
+  the LLM's pick differs from the ingesting phone.
+- **Polite HTTP** (`http.ts` + `rate-limit.ts`) — per-host token bucket persisted in
+  `rate_limit_state` (parallel GH Actions shards cooperate via UPSERT); UA pool;
+  robots.txt cache; `Retry-After` honored on 429/503; timeout + `p-retry` exp backoff.
 
 ### Biggest current external limitation
 
@@ -1243,6 +1310,7 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
 | Document                           | Use it for                                         |
 | ---------------------------------- | -------------------------------------------------- |
 | `docs/RECSY_V2_PROJECT_CONTEXT.md` | live plan, status, backlog, change log, issues log |
+| `docs/deployment/README.md`        | deployment runbook, status snapshot, and missing automation templates |
 | `docs/ingest/README.md`            | operating or extending ingestion                   |
 | `docs/retrieval/README.md`         | tuning and debugging hybrid retrieval              |
 | `docs/recommender/README.md`       | recommender semantics and operator notes           |
@@ -1272,6 +1340,8 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
    - `0009` and `0010` for polish, compare, PWA, SEO, and analytics
    - `0011` for phone Q&A scope, `PhoneImage` delivery, landing cards, and ask retrieval trace
    - `0012` for recommender refine-over-prior-picks, rank UI, and empty-corpus honesty
+   - `0013` for context-aware recommender summaries, tie/no-data honesty, and the client settings surface
+   - `0014` for automated tiered ingestion with Curator + Disambiguator agents, polite HTTP, GSMArena + YouTube-channel adapters, and the time-aware empty-corpus message
 5. Open the corresponding service code in `src/services/`.
 
 ### One-sentence mental model
