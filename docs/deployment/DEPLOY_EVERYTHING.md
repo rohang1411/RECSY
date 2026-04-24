@@ -516,7 +516,7 @@ Practical steps:
 
 Add these at minimum:
 
-- `DATABASE_URL`
+- `DATABASE_URL` (🚨 **Crucial**: Vercel serverless functions require IPv4. You *must* use the **Transaction Pooler URL** (`...pooler.supabase.com:6543`) from your Supabase Dashboard -> Database -> Connection String. If you use the direct `db.rls...` connection string, Vercel will fail with a `getaddrinfo ENOTFOUND` DNS error.)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
