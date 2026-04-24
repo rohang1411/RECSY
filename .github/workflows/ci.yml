@@ -115,7 +115,6 @@ jobs:
     name: eval · retrieval (optional, Gemini)
     runs-on: ubuntu-latest
     needs: [quality]
-    if: secrets.GEMINI_API_KEY != ''
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -164,7 +163,9 @@ jobs:
         run: pnpm exec tsx scripts/db-setup.ts
 
       - name: Seed minimal retrieval eval corpus
+        if: env.GEMINI_API_KEY != ''
         run: pnpm ci:retrieval-fixture
 
       - name: Run hybrid retrieval eval
+        if: env.GEMINI_API_KEY != ''
         run: pnpm exec tsx scripts/eval-retrieval.ts
