@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   typedRoutes: true,
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   images: {
     // Seeded + editorial photos may point at Wikimedia Commons; Supabase
     // storage and OEM CDNs are added the same way as they are onboarded.
