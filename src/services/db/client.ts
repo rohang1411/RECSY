@@ -25,8 +25,8 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 function getClient(): ReturnType<typeof postgres> {
   if (_client === null) {
-    // Vercel auto-injected database URLs often contain `?pgbouncer=true` for 
-    // Prisma compatibility. The `postgres` driver passes unknown query params 
+    // Vercel auto-injected database URLs often contain `?pgbouncer=true` for
+    // Prisma compatibility. The `postgres` driver passes unknown query params
     // to the database as startup parameters, which Supavisor rejects, causing
     // the very first query to fail with an oblique "Failed query" wrapper.
     let url = env.DATABASE_URL;

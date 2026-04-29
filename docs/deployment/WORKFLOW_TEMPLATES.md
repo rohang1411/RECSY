@@ -151,4 +151,3 @@ If you add these templates, use this order:
    errors fail fast.
 3. Use repository secrets, not committed files, for production values.
 4. Reuse the same secret names that the existing ingest workflows already use.
-
