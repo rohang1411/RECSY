@@ -21,4 +21,24 @@ describe('@/env', () => {
 
     expect(env.LLM_PROVIDER).toBe('gemini');
   });
+
+  it('supplies server defaults when SKIP_ENV_VALIDATION is "true"', async () => {
+    vi.resetModules();
+    process.env = {
+      ...originalEnv,
+      SKIP_ENV_VALIDATION: 'true',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'test-anon-key',
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+      SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+      GEMINI_API_KEY: 'test-gemini-key',
+    };
+    delete process.env.LOG_LEVEL;
+    delete process.env.LLM_PROVIDER;
+
+    const { env } = await import('./env');
+
+    expect(env.LOG_LEVEL).toBe('info');
+    expect(env.LLM_PROVIDER).toBe('gemini');
+  });
 });
