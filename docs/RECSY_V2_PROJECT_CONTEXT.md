@@ -1550,6 +1550,19 @@ dissenting_quotes)`.
 
 #### CRITICAL
 
+- **`db:setup` bootstrap could skip required extensions, then die on the first `vector(768)` migration.**
+  The setup script's tolerant multi-statement runner split SQL on raw `;`
+  characters without understanding `--` comments. `drizzle/extensions.sql`
+  contains semicolons inside comments, so CI / bootstrap runs could mis-parse
+  step 1, emit soft warnings, and continue into Drizzle migrations without
+  `vector`, `pg_trgm`, or `pgcrypto` actually installed. The visible failure
+  then appeared later at `CREATE TABLE "chunks" ... "embedding" vector(768)`.
+  - **Fix.** `scripts/db-setup.ts` now installs required extensions with
+    explicit statements that fail fast, and only treats `pg_cron` as optional.
+  - **Hardening.** Bootstrap no longer depends on comment-sensitive SQL
+    splitting for extensions, so a doc/comment edit in `extensions.sql` cannot
+    silently break CI setup.
+
 - **Tiered ingestion cron crashed before picking phones: `Unknown LLM_PROVIDER: undefined`.**
   The `ingest-tiered.yml` job exported `SKIP_ENV_VALIDATION: 'false'`, but
   `src/env.ts` used `Boolean(process.env.SKIP_ENV_VALIDATION)`, so the literal
