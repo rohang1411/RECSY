@@ -5,10 +5,10 @@ RECSY v2 in a real environment.
 
 ## What is in this folder
 
-| File | Use it for |
-| --- | --- |
-| `DEPLOY_EVERYTHING.md` | End-to-end runbook for provisioning services, bootstrapping data, deploying the app, enabling background jobs, and validating production. |
-| `STATUS_AND_GAPS.md` | Current project status, what is already covered, what is not covered yet, and what is left before the system feels fully operational. |
+| File                    | Use it for                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEPLOY_EVERYTHING.md`  | End-to-end runbook for provisioning services, bootstrapping data, deploying the app, enabling background jobs, and validating production.          |
+| `STATUS_AND_GAPS.md`    | Current project status, what is already covered, what is not covered yet, and what is left before the system feels fully operational.              |
 | `WORKFLOW_TEMPLATES.md` | Ready-to-copy GitHub Actions templates for the two main deployment gaps in the current repo: automatic DB rollout and scheduled scorecard refresh. |
 
 ## Current deployment shape
@@ -50,4 +50,3 @@ The main remaining deployment work is operational:
 - add an automatic production DB rollout workflow
 - add a scheduled scorecard refresh workflow
 - run the first production corpus bootstrap and scorecard generation
-

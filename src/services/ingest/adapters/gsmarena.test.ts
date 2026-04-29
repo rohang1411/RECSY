@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { PoliteHttp } from '../http';
 import type { PhoneRef, SourceCandidate } from '../types';
@@ -174,6 +174,3 @@ describe('GsmArenaAdapter.chunk', () => {
     expect(chunks[0]!.chunkIndex).toBe(0);
   });
 });
-
-// Exhaustively consume `vi` to silence the lint error when unused in this file.
-vi.fn;

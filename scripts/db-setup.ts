@@ -37,10 +37,16 @@ const STEP = (n: number, name: string) =>
   console.log(`\n[db:setup] step ${n}/5 - ${name}`);
 
 const ROOT = resolve(__dirname, '..');
-const EXTENSIONS_SQL = resolve(ROOT, 'drizzle', 'extensions.sql');
 const FTS_SQL = resolve(ROOT, 'drizzle', 'fts.sql');
 const RLS_SQL = resolve(ROOT, 'drizzle', 'rls.sql');
 const MIGRATIONS_DIR = resolve(ROOT, 'drizzle', 'migrations');
+const REQUIRED_EXTENSION_STATEMENTS = [
+  'CREATE SCHEMA IF NOT EXISTS extensions;',
+  'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;',
+  'CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;',
+  'CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;',
+] as const;
+const OPTIONAL_EXTENSION_STATEMENTS = ['CREATE EXTENSION IF NOT EXISTS pg_cron;'] as const;
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -59,8 +65,7 @@ async function main(): Promise<void> {
     await client`select set_config('search_path', 'public, extensions', false)`;
 
     STEP(1, 'enabling extensions');
-    const extensionsSQL = await readFile(EXTENSIONS_SQL, 'utf8');
-    await runMultiStatementSQL(client, extensionsSQL, { tolerateErrors: true });
+    await ensureExtensions(client);
 
     STEP(2, 'applying migrations');
     await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
@@ -93,55 +98,24 @@ async function main(): Promise<void> {
  * Run a SQL file containing multiple statements via Postgres' simple query
  * protocol. The `postgres` driver normally uses extended-protocol prepared
  * statements which only allow a single statement per round-trip.
- *
- * @param tolerateErrors When true, individual statement failures are logged
- *                       but don't abort the whole batch. Used for extensions
- *                       so a missing pg_cron on free tier is a soft warning.
  */
-async function runMultiStatementSQL(
-  sql: postgres.Sql,
-  text: string,
-  opts: { tolerateErrors?: boolean } = {},
-): Promise<void> {
-  if (opts.tolerateErrors) {
-    // Iterate per-statement so we can swallow non-fatal failures.
-    const statements = splitStatements(text);
-    for (const stmt of statements) {
-      if (!stmt.trim()) continue;
-      try {
-        await sql.unsafe(stmt).simple();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`        warn: ${msg.slice(0, 200)}`);
-      }
-    }
-    return;
-  }
+async function runMultiStatementSQL(sql: postgres.Sql, text: string): Promise<void> {
   await sql.unsafe(text).simple();
 }
 
-/** Naive but adequate splitter: terminates on `;` outside of $$ blocks. */
-function splitStatements(sqlText: string): string[] {
-  const out: string[] = [];
-  let buf = '';
-  let inDollar = false;
-  for (let i = 0; i < sqlText.length; i++) {
-    const ch = sqlText[i];
-    const next = sqlText[i + 1];
-    if (ch === '$' && next === '$') {
-      inDollar = !inDollar;
-      buf += '$$';
-      i++;
-      continue;
-    }
-    buf += ch;
-    if (ch === ';' && !inDollar) {
-      out.push(buf);
-      buf = '';
+async function ensureExtensions(sql: postgres.Sql): Promise<void> {
+  for (const stmt of REQUIRED_EXTENSION_STATEMENTS) {
+    await sql.unsafe(stmt).simple();
+  }
+
+  for (const stmt of OPTIONAL_EXTENSION_STATEMENTS) {
+    try {
+      await sql.unsafe(stmt).simple();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`        warn: ${msg.slice(0, 200)}`);
     }
   }
-  if (buf.trim()) out.push(buf);
-  return out;
 }
 
 function log(msg: string): void {

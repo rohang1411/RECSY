@@ -36,6 +36,10 @@ export const env = createEnv({
       .string()
       .default('true')
       .transform((v) => v.toLowerCase() !== 'false'),
+    IGNORE_ROBOTS: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
 
     /**
      * When true, hybrid retrieval runs the optional Gemini structured rerank
@@ -67,26 +71,29 @@ export const env = createEnv({
    * dynamically.
    */
   runtimeEnv: {
-    NODE_ENV: process.env.NODE_ENV,
+    // Fallbacks mirror the Zod `.default(...)` so that `SKIP_ENV_VALIDATION`
+    // builds (which short-circuit validation) still produce usable values
+    // for server-side consumers like `logger` and LLM bootstrapping.
+    NODE_ENV: process.env.NODE_ENV ?? 'development',
     DATABASE_URL: process.env.DATABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    LLM_PROVIDER: process.env.LLM_PROVIDER,
+    LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
-    LLM_CHAT_MODEL: process.env.LLM_CHAT_MODEL,
-    LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL,
-    LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL,
-    LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED,
-    RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK,
-    LOG_LEVEL: process.env.LOG_LEVEL,
-    SENTRY_DSN: process.env.SENTRY_DSN,
+    LLM_CHAT_MODEL: process.env.LLM_CHAT_MODEL ?? 'gemini-2.5-flash',
+    LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL ?? 'gemini-2.5-pro',
+    LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL ?? 'gemini-embedding-001',
+    LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED ?? 'true',
+    IGNORE_ROBOTS: process.env.IGNORE_ROBOTS ?? 'false',
+    RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
+    LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+    SENTRY_DSN: process.env.SENTRY_DSN ?? '',
 
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
-    // Fallbacks mirror the Zod `.default(...)` so that `SKIP_ENV_VALIDATION`
-    // builds (which short-circuit validation) still produce usable values
-    // for build-time consumers like `metadataBase`.
+    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN ?? '',
+    // Public build-time fallbacks keep App Router metadata and health info
+    // working even when the quality job intentionally skips full validation.
     NEXT_PUBLIC_COMMIT_SHA: process.env.NEXT_PUBLIC_COMMIT_SHA ?? 'dev',
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000',
   },

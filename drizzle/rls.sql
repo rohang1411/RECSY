@@ -52,42 +52,57 @@ ALTER TABLE rate_limit_state         ENABLE ROW LEVEL SECURITY;
 -- ---------------------------------------------------------------------------
 -- Public read policies — anon + authenticated can browse the corpus.
 -- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  public_read_roles text;
+BEGIN
+  SELECT string_agg(quote_ident(rolname), ', ' ORDER BY rolname)
+    INTO public_read_roles
+    FROM pg_roles
+   WHERE rolname IN ('anon', 'authenticated');
 
-DROP POLICY IF EXISTS anon_select_phones ON phones;
-CREATE POLICY anon_select_phones
-  ON phones FOR SELECT
-  TO anon, authenticated
-  USING (status = 'active');
+  IF public_read_roles IS NULL THEN
+    RAISE NOTICE 'Skipping public-read RLS policies: roles anon/authenticated do not exist';
+    RETURN;
+  END IF;
 
-DROP POLICY IF EXISTS anon_select_aspect_definitions ON aspect_definitions;
-CREATE POLICY anon_select_aspect_definitions
-  ON aspect_definitions FOR SELECT
-  TO anon, authenticated
-  USING (true);
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_phones ON phones';
+  EXECUTE format(
+    'CREATE POLICY anon_select_phones ON phones FOR SELECT TO %s USING (status = ''active'')',
+    public_read_roles
+  );
 
-DROP POLICY IF EXISTS anon_select_aspects ON aspects;
-CREATE POLICY anon_select_aspects
-  ON aspects FOR SELECT
-  TO anon, authenticated
-  USING (true);
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_aspect_definitions ON aspect_definitions';
+  EXECUTE format(
+    'CREATE POLICY anon_select_aspect_definitions ON aspect_definitions FOR SELECT TO %s USING (true)',
+    public_read_roles
+  );
 
-DROP POLICY IF EXISTS anon_select_sources ON sources;
-CREATE POLICY anon_select_sources
-  ON sources FOR SELECT
-  TO anon, authenticated
-  USING (status = 'active');
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_aspects ON aspects';
+  EXECUTE format(
+    'CREATE POLICY anon_select_aspects ON aspects FOR SELECT TO %s USING (true)',
+    public_read_roles
+  );
 
-DROP POLICY IF EXISTS anon_select_chunks ON chunks;
-CREATE POLICY anon_select_chunks
-  ON chunks FOR SELECT
-  TO anon, authenticated
-  USING (true);
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_sources ON sources';
+  EXECUTE format(
+    'CREATE POLICY anon_select_sources ON sources FOR SELECT TO %s USING (status = ''active'')',
+    public_read_roles
+  );
 
-DROP POLICY IF EXISTS anon_select_source_phone_links ON source_phone_links;
-CREATE POLICY anon_select_source_phone_links
-  ON source_phone_links FOR SELECT
-  TO anon, authenticated
-  USING (true);
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_chunks ON chunks';
+  EXECUTE format(
+    'CREATE POLICY anon_select_chunks ON chunks FOR SELECT TO %s USING (true)',
+    public_read_roles
+  );
+
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_source_phone_links ON source_phone_links';
+  EXECUTE format(
+    'CREATE POLICY anon_select_source_phone_links ON source_phone_links FOR SELECT TO %s USING (true)',
+    public_read_roles
+  );
+END
+$$;
 
 -- ---------------------------------------------------------------------------
 -- No anon policies for the following tables — only service_role sees them:

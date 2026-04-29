@@ -107,8 +107,9 @@ export function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
   if (err instanceof Error) {
     let causeStr = 'no cause';
-    if ('cause' in err) causeStr = String((err as any).cause);
-    if ('code' in err) causeStr += ` | code: ${(err as any).code}`;
+    const errorWithMetadata = err as Error & { cause?: unknown; code?: unknown };
+    if ('cause' in err) causeStr = String(errorWithMetadata.cause);
+    if ('code' in err) causeStr += ` | code: ${String(errorWithMetadata.code)}`;
     return new AppError('INTERNAL', `${err.message} [CAUSE: ${causeStr}]`, { cause: err });
   }
   return new AppError('INTERNAL', 'Unknown error', { context: { raw: String(err) } });
