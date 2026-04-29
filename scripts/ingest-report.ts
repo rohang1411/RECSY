@@ -20,7 +20,9 @@
  */
 import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 
+import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { getDb } from '../src/services/db/client';
+import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { ingestRuns, phones, sources } from '../src/services/db/schema';
 import { logger } from '../src/services/logger';
 import { classifyTier, REFRESH_INTERVAL_DAYS } from '../src/services/ingest';
@@ -51,6 +53,15 @@ function hr(title: string): void {
 async function main(): Promise<void> {
   const { days } = parseArgs(process.argv.slice(2));
   const db = getDb();
+  const missing = await findMissingPublicSchema(db, [
+    { table: 'ingest_runs', columns: ['tier', 'rejected_reason', 'chunks_created', 'started_at'] },
+    { table: 'phones', columns: ['last_ingest_at', 'next_ingest_at', 'launch_date'] },
+    { table: 'sources', columns: ['relevance', 'quality', 'created_at'] },
+  ]);
+  if (missing.length > 0) {
+    console.warn(describeMissingSchema('ingest-report', missing));
+    process.exit(0);
+  }
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
   console.log(`[ingest-report] window: last ${days}d (since ${since.toISOString()})`);
@@ -168,10 +179,7 @@ function pad(s: string, n: number): string {
 }
 
 main().catch((err) => {
-  logger.error(
-    { err: err instanceof Error ? (err.stack ?? err.message) : err },
-    'ingest-report crashed',
-  );
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  logger.error({ err: summarizeErrorChainForLogs(err) }, 'ingest-report crashed');
+  console.error(summarizeErrorChainForLogs(err));
   process.exit(1);
 });
