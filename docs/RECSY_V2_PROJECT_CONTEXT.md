@@ -1546,6 +1546,27 @@ dissenting_quotes)`.
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
 
+### Operations — GitHub Actions ingestion (2026-04-29)
+
+#### CRITICAL
+
+- **Tiered ingestion cron crashed before picking phones: `Unknown LLM_PROVIDER: undefined`.**
+  The `ingest-tiered.yml` job exported `SKIP_ENV_VALIDATION: 'false'`, but
+  `src/env.ts` used `Boolean(process.env.SKIP_ENV_VALIDATION)`, so the literal
+  string `"false"` still skipped validation. With validation skipped,
+  `@t3-oss/env-nextjs` did not apply schema defaults, leaving
+  `env.LLM_PROVIDER` undefined; `getLlm()` then threw during startup before
+  the scheduler could pick any phones. The production ingestion workflows also
+  relied on the code default instead of declaring a provider explicitly.
+  - **Fix.** `src/env.ts` now skips validation only when
+    `SKIP_ENV_VALIDATION === 'true'`. The ingestion and creator-watch GitHub
+    Actions workflows now export `LLM_PROVIDER: gemini` explicitly.
+  - **Hardening.** `src/env.test.ts` asserts that
+    `SKIP_ENV_VALIDATION='false'` still runs validation and applies the
+    `LLM_PROVIDER` default. Production workflows keep validation enabled, so
+    missing required secrets fail fast instead of producing undefined runtime
+    config.
+
 ### Phase 7 polish — Context-aware summaries, tie honesty, client settings (2026-04-22)
 
 #### HIGH
