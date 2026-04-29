@@ -1550,6 +1550,21 @@ dissenting_quotes)`.
 
 #### CRITICAL
 
+- **Automation scripts could crash on partially rolled-out ingestion schema with opaque `Failed query` wrappers.**
+  Scheduled jobs like `creator-watch`, `ingest:auto`, and `ingest-report`
+  assumed Phase 2 ingestion tables already existed. On environments where DB
+  migrations lagged the code rollout, they could die immediately on tables like
+  `phone_aliases` or `creator_profiles`, and Drizzle often surfaced only the
+  outer `Failed query` message unless you inspected the nested cause chain.
+  - **Fix.** Added a shared schema guard that checks required public tables /
+    columns before these scripts proceed. When the ingestion schema is missing,
+    the scripts now log an actionable message telling the operator to run
+    `pnpm db:setup` and exit cleanly instead of crashing. Alias loading also
+    falls back to an empty set when the alias table is absent.
+  - **Hardening.** Error logs for these automation scripts now flatten nested
+    cause chains so future DB failures expose the underlying Postgres reason
+    directly.
+
 - **`db:setup` RLS bootstrap assumed Supabase roles existed and crashed on vanilla Postgres CI.**
   The RLS SQL created policies `TO anon, authenticated` directly. That works
   on Supabase, which pre-provisions those roles, but the plain Postgres

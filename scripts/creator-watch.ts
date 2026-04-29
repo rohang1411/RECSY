@@ -17,7 +17,9 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
+import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { getDb } from '../src/services/db/client';
+import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { crawlQueue, creatorProfiles, phones } from '../src/services/db/schema';
 import {
   makeDbAliasLoader,
@@ -51,6 +53,17 @@ function parseArgs(argv: readonly string[]): CliArgs {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const db = getDb();
+
+  const missing = await findMissingPublicSchema(db, [
+    { table: 'phones' },
+    { table: 'phone_aliases' },
+    { table: 'creator_profiles' },
+    { table: 'crawl_queue' },
+  ]);
+  if (missing.length > 0) {
+    console.warn(describeMissingSchema('creator-watch', missing));
+    process.exit(0);
+  }
 
   const http = makePoliteHttp({ db });
   const aliasLoader = makeDbAliasLoader(db);
@@ -160,11 +173,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error(
-    { err: err instanceof Error ? (err.stack ?? err.message) : err },
-    'creator-watch crashed',
-  );
+  logger.error({ err: summarizeErrorChainForLogs(err) }, 'creator-watch crashed');
   console.error('[creator-watch] FAILED');
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  console.error(summarizeErrorChainForLogs(err));
   process.exit(1);
 });

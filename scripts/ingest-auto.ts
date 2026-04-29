@@ -19,6 +19,8 @@
  *   2 — bad arguments.
  */
 import { getDb } from '../src/services/db/client';
+import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
+import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { eq } from 'drizzle-orm';
 import { phones } from '../src/services/db/schema';
 import {
@@ -174,6 +176,18 @@ async function loadSubredditProfiles(db: ReturnType<typeof getDb>): Promise<Subr
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const db = getDb();
+  const missing = await findMissingPublicSchema(db, [
+    { table: 'phones', columns: ['next_ingest_at', 'last_ingest_at'] },
+    { table: 'phone_aliases' },
+    { table: 'creator_profiles' },
+    { table: 'subreddit_profiles' },
+    { table: 'source_phone_links' },
+    { table: 'ingest_runs', columns: ['tier', 'discovery_strategy', 'rejected_reason'] },
+  ]);
+  if (missing.length > 0) {
+    console.warn(describeMissingSchema('ingest:auto', missing));
+    process.exit(0);
+  }
   const llm = getLlm();
 
   const http = makePoliteHttp({ db });
@@ -275,11 +289,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error(
-    { err: err instanceof Error ? (err.stack ?? err.message) : err },
-    'ingest:auto crashed',
-  );
+  logger.error({ err: summarizeErrorChainForLogs(err) }, 'ingest:auto crashed');
   console.error('[ingest:auto] FAILED');
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  console.error(summarizeErrorChainForLogs(err));
   process.exit(1);
 });

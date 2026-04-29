@@ -5,24 +5,40 @@
  */
 import { eq } from 'drizzle-orm';
 
+import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
+import { hasMissingDbObjectError } from '@/services/db/schema-guard';
 import { phoneAliases, phones } from '@/services/db/schema';
+import { logger } from '@/services/logger';
 
 import type { AliasRow } from './alias-match';
 import type { PhoneDirectoryEntry, PhoneLookupBySlug } from '../orchestrator';
 import type { Db } from '../writer';
 
+const log = logger.child({ component: 'ingest.alias-loader' });
+
 export function makeDbAliasLoader(db: Db): () => Promise<readonly AliasRow[]> {
   return async () => {
-    const rows = await db
-      .select({
-        phoneId: phoneAliases.phoneId,
-        slug: phones.slug,
-        alias: phoneAliases.alias,
-        priority: phoneAliases.priority,
-      })
-      .from(phoneAliases)
-      .innerJoin(phones, eq(phones.id, phoneAliases.phoneId));
-    return rows satisfies readonly AliasRow[];
+    try {
+      const rows = await db
+        .select({
+          phoneId: phoneAliases.phoneId,
+          slug: phones.slug,
+          alias: phoneAliases.alias,
+          priority: phoneAliases.priority,
+        })
+        .from(phoneAliases)
+        .innerJoin(phones, eq(phones.id, phoneAliases.phoneId));
+      return rows satisfies readonly AliasRow[];
+    } catch (err) {
+      if (hasMissingDbObjectError(err)) {
+        log.warn(
+          { err: summarizeErrorChainForLogs(err) },
+          'phone_aliases unavailable; continuing with an empty alias set',
+        );
+        return [];
+      }
+      throw err;
+    }
   };
 }
 
