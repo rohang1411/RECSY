@@ -92,10 +92,12 @@ export const env = createEnv({
   },
 
   /**
-   * Skip validation when `SKIP_ENV_VALIDATION` is set. Useful for Docker
-   * image builds where env is injected at runtime.
+   * Skip validation only when `SKIP_ENV_VALIDATION=true`. Useful for Docker
+   * image builds where env is injected at runtime. Treating any non-empty
+   * string as truthy makes `SKIP_ENV_VALIDATION=false` skip validation too,
+   * which also bypasses Zod defaults.
    */
-  skipValidation: Boolean(process.env.SKIP_ENV_VALIDATION),
+  skipValidation: process.env.SKIP_ENV_VALIDATION === 'true',
 
   /**
    * Treat empty strings as `undefined` so that unset optional variables
