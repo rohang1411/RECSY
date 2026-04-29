@@ -2,9 +2,10 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { rateLimits } from './src/services/db/schema';
 import { sql } from 'drizzle-orm';
+import { env } from './src/env';
 
 // Convert DB URL to use pooler port 6543
-let url = process.env.DATABASE_URL!.replace(':5432/', ':6543/');
+let url = env.DATABASE_URL.replace(':5432/', ':6543/');
 if (!url.includes('pgbouncer')) {
   url += url.includes('?') ? '&pgbouncer=true' : '?pgbouncer=true';
 }
@@ -22,7 +23,7 @@ async function check() {
         set: { count: sql`${rateLimits.count} + 1` },
       })
       .returning({ count: rateLimits.count });
-    console.log('SUCCESS:', row);
+    console.warn('SUCCESS:', row);
   } catch (e) {
     console.error('ERROR OCCURRED:', e);
   } finally {

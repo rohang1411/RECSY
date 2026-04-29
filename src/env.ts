@@ -36,6 +36,10 @@ export const env = createEnv({
       .string()
       .default('true')
       .transform((v) => v.toLowerCase() !== 'false'),
+    IGNORE_ROBOTS: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
 
     /**
      * When true, hybrid retrieval runs the optional Gemini structured rerank
@@ -77,6 +81,7 @@ export const env = createEnv({
     LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL,
     LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL,
     LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED,
+    IGNORE_ROBOTS: process.env.IGNORE_ROBOTS ?? 'false',
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK,
     LOG_LEVEL: process.env.LOG_LEVEL,
     SENTRY_DSN: process.env.SENTRY_DSN,

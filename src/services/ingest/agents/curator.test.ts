@@ -11,7 +11,8 @@ function fakeLlm(verdict: CuratorVerdict): LlmProvider {
     name: 'fake',
     chat: vi.fn(),
     chatStream: vi.fn(),
-    structured: vi.fn(async <T>(_input: StructuredInput<T>): Promise<StructuredResult<T>> => {
+    structured: vi.fn(async <T>(input: StructuredInput<T>): Promise<StructuredResult<T>> => {
+      expect(input.schemaName).toBeTruthy();
       return {
         value: verdict as unknown as T,
         usage: { tokensIn: 100, tokensOut: 40 },

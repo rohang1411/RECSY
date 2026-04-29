@@ -29,15 +29,16 @@ function fakeLlm(result: DisambiguatorResult): LlmProvider {
     name: 'fake',
     chat: vi.fn(),
     chatStream: vi.fn(),
-    structured: vi.fn(
-      async <T>(_input: StructuredInput<T>): Promise<StructuredResult<T>> => ({
+    structured: vi.fn(async <T>(input: StructuredInput<T>): Promise<StructuredResult<T>> => {
+      expect(input.schemaName).toBeTruthy();
+      return {
         value: result as unknown as T,
         usage: { tokensIn: 60, tokensOut: 25 },
         model: 'fake',
         cached: false,
         attempts: 1,
-      }),
-    ),
+      };
+    }),
     embed: vi.fn(),
   } as unknown as LlmProvider;
 }

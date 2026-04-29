@@ -38,7 +38,6 @@ const ASPECT_VALUES = [
   'software',
   'value',
 ] as const;
-type Aspect = (typeof ASPECT_VALUES)[number];
 
 export const curatorVerdictSchema = z.object({
   keep: z

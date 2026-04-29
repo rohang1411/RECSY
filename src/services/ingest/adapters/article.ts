@@ -50,8 +50,9 @@ export class ArticleAdapter implements SourceAdapter {
   readonly type = 'article' as const;
   private readonly log = logger.child({ component: 'ingest.adapter.article' });
 
-  async discover(phone: PhoneRef, _opts: DiscoverOpts): Promise<SourceCandidate[]> {
+  async discover(phone: PhoneRef, opts: DiscoverOpts): Promise<SourceCandidate[]> {
     const query = `${phone.brand} ${phone.model} review`;
+    const limit = opts.limit ?? 5;
 
     const db = getDb();
     const activeDomains = await db
@@ -104,7 +105,7 @@ export class ArticleAdapter implements SourceAdapter {
       const seen = new Set<string>();
 
       for (const link of links) {
-        if (candidates.length >= 5) break;
+        if (candidates.length >= limit) break;
 
         const href = link.getAttribute('href');
         if (!href) continue;

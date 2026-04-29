@@ -18,6 +18,7 @@
  */
 import pRetry, { AbortError } from 'p-retry';
 
+import { env } from '@/env';
 import { IntegrationError, NotFoundError } from '@/lib/errors';
 import { logger } from '@/services/logger';
 
@@ -193,7 +194,7 @@ export function makePoliteHttp(opts: PoliteHttpOptions = {}): PoliteHttp {
       }
       const host = normalizeHost(parsed.host);
 
-      if (!options.bypassRobots && process.env.IGNORE_ROBOTS !== 'true') {
+      if (!options.bypassRobots && String(env.IGNORE_ROBOTS).toLowerCase() !== 'true') {
         const allowed = await isAllowed(url);
         if (!allowed) {
           throw new NotFoundError('robots.txt disallowed', { url, host });
@@ -251,9 +252,9 @@ export function makePoliteHttp(opts: PoliteHttpOptions = {}): PoliteHttp {
           minTimeout: 1_000,
           factor: 2,
           randomize: true,
-          onFailedAttempt: (err: any) => {
+          onFailedAttempt: (err) => {
             log.warn(
-              { url, attempt: err.attemptNumber, err: err.message },
+              { url, attempt: err.attemptNumber, err: err.error.message },
               'http get failed; will retry',
             );
           },
