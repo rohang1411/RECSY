@@ -1550,6 +1550,19 @@ dissenting_quotes)`.
 
 #### CRITICAL
 
+- **`db:setup` RLS bootstrap assumed Supabase roles existed and crashed on vanilla Postgres CI.**
+  The RLS SQL created policies `TO anon, authenticated` directly. That works
+  on Supabase, which pre-provisions those roles, but the plain Postgres
+  service used in CI has neither role. Step 4/5 then failed with
+  `role "anon" does not exist`, even though the schema and seed steps were
+  otherwise portable.
+  - **Fix.** `drizzle/rls.sql` now discovers which of `anon` /
+    `authenticated` actually exist and only creates public-read policies when
+    at least one is present. On vanilla Postgres it logs a notice and skips
+    those policy statements instead of aborting bootstrap.
+  - **Hardening.** `db:setup` now supports both Supabase and plain Postgres
+    without needing environment-specific SQL forks or synthetic role creation.
+
 - **`db:setup` bootstrap could skip required extensions, then die on the first `vector(768)` migration.**
   The setup script's tolerant multi-statement runner split SQL on raw `;`
   characters without understanding `--` comments. `drizzle/extensions.sql`
