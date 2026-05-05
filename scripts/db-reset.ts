@@ -11,7 +11,7 @@
  */
 import { spawn } from 'node:child_process';
 
-import postgres from 'postgres';
+import { createPostgresClient } from '../src/services/db/connection';
 
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
@@ -26,7 +26,7 @@ async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required.');
 
-  const client = postgres(url, { max: 1, prepare: false });
+  const client = createPostgresClient(url, { max: 1, prepare: false });
   try {
     log('[db:reset] dropping public schema');
     await client.unsafe('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;').simple();

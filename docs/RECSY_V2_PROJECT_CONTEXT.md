@@ -1833,6 +1833,19 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   Script refused to start.
   - **Fix.** Wrapped in an `async main()` IIFE.
 
+- **GitHub Actions Postgres scripts resolving Supabase over IPv6 first.**
+  `creator-watch` and any other workflow using the hosted `DATABASE_URL`
+  could fail before the first real query with `connect ENETUNREACH ...:5432`
+  wrapped as a generic Drizzle "Failed query" error. The underlying runner
+  had no route to the chosen AAAA record even though the same hostname had a
+  reachable IPv4 address.
+  - **Fix.** Added a shared DB connection helper in
+    `src/services/db/connection.ts` that strips Supavisor-only query params
+    and forces Node to prefer IPv4 DNS answers for Supabase hosts before
+    opening the Postgres client. Routed both the shared Drizzle client and the
+    raw DB utility scripts (`db:setup`, `db:ping`, `db:smoke`, `db:reset`)
+    through the helper so the fix covers ingestion automation broadly.
+
 - **`youtubei.js` missing `basic_info.publish_date` type.** TS error
   even though the property exists at runtime.
   - **Fix.** Escape-hatch `any` cast with an explicit

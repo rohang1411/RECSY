@@ -19,8 +19,9 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import type postgres from 'postgres';
 
+import { createPostgresClient } from '../src/services/db/connection';
 import { aspectDefinitions, chunks, phones, sources } from '../src/services/db/schema';
 
 interface CheckResult {
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required.');
 
-  const client = postgres(url, { max: 1, prepare: false });
+  const client = createPostgresClient(url, { max: 1, prepare: false });
   const db = drizzle(client);
   const results: CheckResult[] = [];
 

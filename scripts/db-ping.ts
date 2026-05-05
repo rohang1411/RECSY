@@ -7,7 +7,7 @@
  *
  * Usage: `pnpm db:ping`
  */
-import postgres from 'postgres';
+import { createPostgresClient } from '../src/services/db/connection';
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -16,7 +16,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const sql = postgres(url, { max: 1, prepare: false, connect_timeout: 10 });
+  const sql = createPostgresClient(url, { max: 1, prepare: false, connect_timeout: 10 });
 
   try {
     const started = Date.now();
