@@ -10,10 +10,11 @@
  * (`@supabase/supabase-js`) for edge routes.
  */
 import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import type postgres from 'postgres';
 
 import { env } from '@/env';
 
+import { createPostgresClient } from './connection';
 import * as schema from './schema';
 
 /**
@@ -25,21 +26,7 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 function getClient(): ReturnType<typeof postgres> {
   if (_client === null) {
-    // Vercel auto-injected database URLs often contain `?pgbouncer=true` for
-    // Prisma compatibility. The `postgres` driver passes unknown query params
-    // to the database as startup parameters, which Supavisor rejects, causing
-    // the very first query to fail with an oblique "Failed query" wrapper.
-    let url = env.DATABASE_URL;
-    try {
-      const parsed = new URL(url);
-      parsed.searchParams.delete('pgbouncer');
-      parsed.searchParams.delete('connection_limit');
-      url = parsed.toString();
-    } catch {
-      // Ignore if not a valid URL
-    }
-
-    _client = postgres(url, {
+    _client = createPostgresClient(env.DATABASE_URL, {
       max: env.NODE_ENV === 'production' ? 10 : 3,
       idle_timeout: 20,
       prepare: false, // required for Supabase's pgbouncer transaction mode

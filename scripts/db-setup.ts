@@ -27,8 +27,9 @@ import { resolve } from 'node:path';
 
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
+import type postgres from 'postgres';
 
+import { createPostgresClient } from '../src/services/db/connection';
 import { runSeeds } from './seed';
 
 const STEP = (n: number, name: string) =>
@@ -56,7 +57,7 @@ async function main(): Promise<void> {
 
   // Disable prepared statements — Supabase pgbouncer (transaction mode)
   // does not support them and the migrator runs many ad-hoc statements.
-  const client = postgres(url, { max: 1, prepare: false });
+  const client = createPostgresClient(url, { max: 1, prepare: false });
   const db = drizzle(client);
 
   try {
