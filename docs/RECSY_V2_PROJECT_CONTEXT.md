@@ -1844,7 +1844,11 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
     and forces Node to prefer IPv4 DNS answers for Supabase hosts before
     opening the Postgres client. Routed both the shared Drizzle client and the
     raw DB utility scripts (`db:setup`, `db:ping`, `db:smoke`, `db:reset`)
-    through the helper so the fix covers ingestion automation broadly.
+    through the helper so the fix covers ingestion automation broadly. Also
+    pinned `NODE_OPTIONS=--dns-result-order=ipv4first` in the GitHub
+    automation workflows (`creator-watch`, `ingest-tiered`, `ingest`,
+    `ingest-on-new-phone`) so hosted runners prefer IPv4 before `tsx` even
+    starts the Node process.
 
 - **`youtubei.js` missing `basic_info.publish_date` type.** TS error
   even though the property exists at runtime.
