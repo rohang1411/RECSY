@@ -23,7 +23,7 @@
  * or be live streams. We surface those as `NotFoundError` so the orchestrator
  * skips them and records a clean telemetry row.
  */
-import { Innertube } from 'youtubei.js';
+import { Innertube, Log } from 'youtubei.js';
 
 import { IntegrationError, NotFoundError } from '@/lib/errors';
 import { logger } from '@/services/logger';
@@ -65,6 +65,10 @@ const ytCache: CachedYt = { client: null, promise: null };
 async function getYt(): Promise<Innertube> {
   if (ytCache.client) return ytCache.client;
   if (!ytCache.promise) {
+    // youtubei.js parser warnings are noisy when YouTube adds non-critical
+    // UI nodes (shopping shelves, badges, etc.). We log actionable adapter
+    // failures through pino instead, so keep the library console quiet.
+    Log.setLevel(Log.Level.NONE);
     // `retrieve_player: true` (the default) is required for caption tracks
     // to be populated on the `Info` object, which Fallback B below needs.
     ytCache.promise = Innertube.create().then((c) => {

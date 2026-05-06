@@ -1163,6 +1163,24 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-05-06 - YouTube ingestion unusable-source telemetry
+
+- **YouTube transcript misses are no longer hard adapter errors.** Public
+  YouTube discovery can find good candidate review videos while all transcript
+  paths return empty/400 because captions are unavailable to the current
+  client/IP. The orchestrator now records those `NotFoundError` fetch failures
+  as `skippedUnusable` instead of `errors`, so a phone run that successfully
+  ingests articles is not failed by transcript-only misses.
+- **CLI summary now separates `unusable` from `errors`.** `pnpm ingest` prints
+  per-adapter and total unusable counts, making `discovered > 0, fetched = 0`
+  diagnosable without reading debug logs.
+- **`youtubei.js` parser noise suppressed.** The adapter turns the library's
+  internal logger off before creating the Innertube client; actionable failures
+  still flow through the app's structured `pino` logs.
+- **Regression coverage.** Added `orchestrator.test.ts` cases proving
+  `NotFoundError` is counted as unusable while unexpected failures remain
+  errors.
+
 ### 2026-04-22 — Automated, tiered ingestion with LLM curation (ADR 0014)
 
 - **ADR 0014** — [automated tiered ingestion with LLM curation](./adr/0014-automated-ingestion-curation.md). Extends ADR 0003 (TypeScript ingestion) with a scheduling + curation layer so the corpus refreshes without operator involvement.
@@ -1705,6 +1723,20 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
 
 #### HIGH
 
+- **YouTube transcript-unavailable candidates made `pnpm ingest` exit 1 even
+  when other adapters wrote data.** A Pixel 9 Pro XL run discovered five
+  YouTube videos but every transcript strategy returned empty/400. That is a
+  normal external-source condition, not a broken adapter. Because the
+  orchestrator stored those `NotFoundError`s in the adapter `errors` array,
+  the CLI failed the whole run despite the article adapter writing 4 sources
+  and 94 chunks.
+  - **Fix.** Added a first-class `skippedUnusable` counter to adapter and
+    phone summaries. `NotFoundError` fetch failures now increment that counter
+    and continue; unexpected exceptions still land in `errors` and preserve
+    the non-zero exit behavior.
+  - **Hardening.** `pnpm ingest` prints `unusable=...` separately from
+    `errors=...`, and `orchestrator.test.ts` locks the classification down.
+
 - **`User-Agent` em-dash crashing Node `fetch` in article adapter.**
   `pnpm ingest:smoke` failed with
   `TypeError: Cannot convert argument to a ByteString because the character at index 71 has a value of 8212`.
@@ -1889,8 +1921,10 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
 - **`youtubei.js` parser warnings spamming stdout.** The library
   complains about novel UI nodes (`ShoppingTimelyShelfView`, etc.) it
   doesn't recognise. Non-fatal but noisy in ingestion logs.
-  - **Status.** Accepted. A future PR may redirect the library's
-    internal logger to `pino` at `debug` level.
+  - **Fix.** `YouTubeAdapter` now calls `Log.setLevel(Log.Level.NONE)`
+    before creating the Innertube client. We keep actionable failures in
+    structured `pino` logs and avoid dumping parser-generated class bodies
+    into operator output.
 
 ### Phase 1 — Database (2026-04-21)
 
@@ -1925,9 +1959,10 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   HTTP 200 + zero bytes from most non-residential IPs — including our
   dev machine and GitHub Actions runners. All three transcript fallback
   tiers hit the same ceiling because the signed URLs wrap the same
-  underlying resource. Accepted as out-of-scope for a zero-budget MVP;
-  a residential proxy would fix it at ~$50–100/mo. See §13 "Known
-  issues".
+  underlying resource. The orchestrator records these as `skippedUnusable`,
+  not adapter errors. Accepted as out-of-scope for a zero-budget MVP; a
+  residential proxy or authenticated transcript provider would fix it at
+  ongoing cost. See §13 "Known issues".
 - **Gemini free-tier quota.** We stay well within limits in dev, but
   production cadence (nightly ingest of ~20 phones + ongoing chat
   queries) will nudge against rate limits eventually. Mitigations are
