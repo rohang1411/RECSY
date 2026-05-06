@@ -4,12 +4,13 @@
  * https://www.youtube.com/feeds/videos.xml?channel_id=... for RSS polling).
  *
  * Expanding: add new rows to `CREATOR_SEEDS`; the seeder upserts on
- * (platform, external_id) so adding a row is always safe.
+ * (platform, external_id) so adding a row is always safe. If a known handle's
+ * channel ID changes, the seeder disables stale active rows for that handle.
  *
  * Disabling a creator: set `status: 'disabled'` rather than deleting, so
  * older sources stay attributable.
  */
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { creatorProfiles } from '../../src/services/db/schema';
@@ -42,28 +43,28 @@ export const CREATOR_SEEDS: readonly CreatorSeed[] = [
   },
   {
     platform: 'youtube',
-    externalId: 'UCddiUEpeqJcYeBxX1IVBKvQ',
+    externalId: 'UCzlXf-yUIaOpOjEjPrOO9TA',
     handle: 'TheTechChap',
     trustWeight: '0.85',
     notes: 'Tom Honeyands — practical, travel-photography focused reviews.',
   },
   {
     platform: 'youtube',
-    externalId: 'UCPl1Gu8jmccFPt-vbvqgLTg',
+    externalId: 'UCIrrRLyFMVmmL9NDAU2obJA',
     handle: 'SuperSaf',
     trustWeight: '0.85',
     notes: 'Saf Malik — camera shootouts + long-term comparisons.',
   },
   {
     platform: 'youtube',
-    externalId: 'UC5lDVbmgb-sAcx2fjwy3KQA',
+    externalId: 'UCaDBRJTQhIg_QhCkW7SxWGQ',
     handle: 'TheUnlockr',
     trustWeight: '0.80',
     notes: 'Jon Rettinger — launch-window reviews and network tests.',
   },
   {
     platform: 'youtube',
-    externalId: 'UCE_M8A5yxnLfW0KghEeajjw',
+    externalId: 'UCSOpcUkE-is7u7c4AkLgqTw',
     handle: 'MrMobile',
     trustWeight: '0.85',
     notes: 'Michael Fisher — feature-film style reviews with real-world framing.',
@@ -72,8 +73,8 @@ export const CREATOR_SEEDS: readonly CreatorSeed[] = [
 
 export async function seedCreatorProfiles(
   db: PostgresJsDatabase<Record<string, never>>,
-): Promise<{ upserted: number }> {
-  if (CREATOR_SEEDS.length === 0) return { upserted: 0 };
+): Promise<{ upserted: number; disabledStale: number }> {
+  if (CREATOR_SEEDS.length === 0) return { upserted: 0, disabledStale: 0 };
   const rows = CREATOR_SEEDS.map((s) => ({
     platform: s.platform,
     externalId: s.externalId,
@@ -96,5 +97,25 @@ export async function seedCreatorProfiles(
       },
     })
     .returning({ id: creatorProfiles.id });
-  return { upserted: result.length };
+
+  let disabledStale = 0;
+  for (const seed of CREATOR_SEEDS) {
+    const stale = await db
+      .update(creatorProfiles)
+      .set({
+        status: 'disabled',
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(creatorProfiles.platform, seed.platform),
+          eq(creatorProfiles.handle, seed.handle),
+          sql`${creatorProfiles.externalId} <> ${seed.externalId}`,
+        ),
+      )
+      .returning({ id: creatorProfiles.id });
+    disabledStale += stale.length;
+  }
+
+  return { upserted: result.length, disabledStale };
 }

@@ -153,4 +153,25 @@ describe('YouTubeChannelAdapter.discover', () => {
     await adapter.discover(s25Ultra, { limit: 5 });
     expect(calls).toBe(1);
   });
+
+  it('caches failed RSS feeds for the rest of the run', async () => {
+    let calls = 0;
+    const http: PoliteHttp = {
+      async get() {
+        calls += 1;
+        throw new Error('HTTP 404 feed not found');
+      },
+      async isAllowed() {
+        return true;
+      },
+    };
+    const adapter = new YouTubeChannelAdapter({
+      http,
+      creators: [mkbhd],
+      aliases: ALIASES,
+    });
+    await adapter.discover(s25Ultra, { limit: 5 });
+    await adapter.discover(s25Ultra, { limit: 5 });
+    expect(calls).toBe(1);
+  });
 });

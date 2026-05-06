@@ -1565,6 +1565,19 @@ dissenting_quotes)`.
     cause chains so future DB failures expose the underlying Postgres reason
     directly.
 
+- **`creator-watch` repeatedly polled stale / wrong YouTube channel IDs.**
+  The implementation-plan channel IDs for TheTechChap, TheUnlockr, and
+  MrMobile were invalid, and later seed updates had also mapped several handles
+  to the wrong active channels (The Verge, Booredatwork, Apple, and SuperSaf
+  Shorts). Because `creator_profiles` upserts on `(platform, external_id)`,
+  corrected IDs did not retire old active rows for the same handle; every phone
+  then re-fetched the same broken feeds and emitted repeated HTTP 404 warnings.
+  - **Fix.** Corrected the seeded creator channel IDs, made `db:setup` disable
+    stale active `creator_profiles` rows with the same `(platform, handle)` but
+    a superseded `external_id`, updated the implementation-plan tables, and
+    cached failed YouTube RSS fetches for the rest of a run so one bad creator
+    row only warns once.
+
 - **`db:setup` RLS bootstrap assumed Supabase roles existed and crashed on vanilla Postgres CI.**
   The RLS SQL created policies `TO anon, authenticated` directly. That works
   on Supabase, which pre-provisions those roles, but the plain Postgres
