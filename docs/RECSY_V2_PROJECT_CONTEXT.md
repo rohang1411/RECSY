@@ -1163,6 +1163,21 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-05-13 - YouTube transcript fallback chain hardening
+
+- **External transcript fallbacks.** YouTube ingestion now tries two optional
+  subtitle-only fallbacks after the in-process `youtubei.js` / `timedtext`
+  paths fail: `yt-dlp` and Python `youtube-transcript-api`. Both normalize
+  their outputs into the existing timestamped `TranscriptSegment[]` path.
+- **Ban-risk controls.** The fallback layer does not download audio/video,
+  uses short timeouts and one retry max, spaces external attempts, and does not
+  use account cookies unless an operator explicitly configures
+  `YTDLP_COOKIES_FILE` / `YTDLP_COOKIES_BASE64`.
+- **GitHub Actions support.** Manual, tiered, and new-phone ingestion jobs now
+  install Python 3.12 plus `yt-dlp` and `youtube-transcript-api`. Optional
+  secrets (`YTDLP_COOKIES_BASE64`, `YTDLP_PROXY`, `YTDLP_EXTRACTOR_ARGS`) can
+  be supplied without changing code.
+
 ### 2026-05-06 - YouTube ingestion unusable-source telemetry
 
 - **YouTube transcript misses are no longer hard adapter errors.** Public
@@ -1722,6 +1737,19 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
     to the callsite, not in a dotenv where it can drift silently.
 
 #### HIGH
+
+- **YouTube caption metadata exists but caption bodies are withheld.** Local
+  probes showed the watch page exposes valid `captionTracks` for Pixel review
+  videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
+  body from Node, curl, and Chromium. This is YouTube subtitle access gating,
+  not failed discovery.
+  - **Fix.** Added a last-mile fallback chain: `yt-dlp` subtitle-only
+    extraction followed by Python `youtube-transcript-api`, both parsed back
+    into the same timestamped segment model as the native adapter.
+  - **Hardening.** The fallbacks are opt-out, subtitle-only, timeout-limited,
+    spaced between attempts, and cookie-free by default. Operators can add
+    cookies, a proxy, or `yt-dlp` extractor args / PO-token provider config via
+    env when needed, but the default path minimizes account/IP risk.
 
 - **YouTube transcript-unavailable candidates made `pnpm ingest` exit 1 even
   when other adapters wrote data.** A Pixel 9 Pro XL run discovered five

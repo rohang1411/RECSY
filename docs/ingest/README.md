@@ -118,11 +118,20 @@ New phones bootstrap automatically: `next_ingest_at = null` is treated as
 - `youtubei.js` (Innertube); no API key required.
 - Chunking is **timestamp-aware**: every chunk carries `startTs` and an
   `anchor=?t=<sec>` so citations deep-link into the video.
-- Fallback chain (first non-empty wins): Innertube `getTranscript()` →
-  caption tracks on the `Info` object → watch-page HTML scrape.
+- Fallback chain (first non-empty wins): Innertube `getTranscript()` ->
+  caption tracks on the `Info` object -> watch-page HTML scrape -> `yt-dlp`
+  subtitle-only download -> Python `youtube-transcript-api`.
+- External transcript fallbacks are conservative by default:
+  - no audio/video download (`yt-dlp --skip-download`);
+  - one retry max and short timeouts;
+  - a pause between external transcript attempts;
+  - no cookies unless `YTDLP_COOKIES_FILE` / `YTDLP_COOKIES_BASE64` is
+    explicitly configured.
 - **Known limitation:** YouTube throttles the `timedtext` endpoint on
-  datacenter IPs (including GitHub Actions). Every track empties out →
-  `NotFoundError: no transcript available` → skipped cleanly.
+  datacenter IPs (including GitHub Actions). Every track empties out ->
+  `NotFoundError: no transcript available` -> skipped cleanly. `yt-dlp` +
+  `youtube-transcript-api` improve coverage but may still need a PO-token
+  provider, cookies, or a proxy for heavily gated subtitle requests.
 
 ### YouTube channel RSS (`adapters/youtube-channel.ts`) — **new**
 

@@ -46,6 +46,7 @@ import {
   type CaptionTrack,
   type TranscriptSegment,
 } from './youtube-transcript';
+import { fetchExternalTranscript } from './youtube-external-transcripts';
 
 const TARGET_TOKENS_PER_CHUNK = 400;
 const OVERLAP_TOKENS = 60;
@@ -211,6 +212,20 @@ export class YouTubeAdapter implements SourceAdapter {
     if (viaScrape.length > 0) {
       this.log.debug({ videoId, n: viaScrape.length, via: 'watch-scrape' }, 'transcript loaded');
       return viaScrape;
+    }
+
+    // 4. Optional external CLI/library fallbacks. These are intentionally
+    // last because they spawn tools and may need cookies/PO-token config.
+    const viaExternal = await fetchExternalTranscript(
+      videoId,
+      `https://www.youtube.com/watch?v=${videoId}`,
+    );
+    if (viaExternal && viaExternal.segments.length > 0) {
+      this.log.info(
+        { videoId, n: viaExternal.segments.length, via: viaExternal.provider },
+        'transcript loaded',
+      );
+      return viaExternal.segments;
     }
 
     this.log.info({ videoId }, 'all transcript strategies returned empty');
