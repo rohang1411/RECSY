@@ -34,7 +34,7 @@ import type {
 } from '../types';
 
 const USER_AGENT =
-  'RECSYBot/0.1 (Node.js; +https://github.com/rohan/recsy) — read-only public-content aggregator';
+  'RECSYBot/0.1 (Node.js; +https://github.com/rohan/recsy) - read-only public-content aggregator';
 
 /**
  * Legacy hardcoded allowlist — kept as a fallback when the adapter is

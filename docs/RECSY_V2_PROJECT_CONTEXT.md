@@ -1738,6 +1738,17 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
 
 #### HIGH
 
+- **Reddit adapter rejected its own `User-Agent` header before network I/O.**
+  The default Reddit `User-Agent` string used a Unicode dash, which is invalid
+  for Node's fetch header ByteString conversion. Discovery logged
+  `reddit fetch failed` instantly for every subreddit even though Reddit's JSON
+  endpoint was reachable with an ASCII header.
+  - **Fix.** Replaced the Unicode dash with an ASCII hyphen in
+    `src/services/ingest/adapters/reddit.ts`.
+  - **Hardening.** Re-ran `pnpm ingest --phone google-pixel-9-pro-xl --adapter
+reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
+    with zero errors.
+
 - **YouTube caption metadata exists but caption bodies are withheld.** Local
   probes showed the watch page exposes valid `captionTracks` for Pixel review
   videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
