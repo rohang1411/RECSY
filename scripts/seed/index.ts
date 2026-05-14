@@ -21,7 +21,7 @@ import { seedSubredditProfiles } from './subreddit-profiles';
 export interface SeedSummary {
   aspects: { upserted: number };
   phones: { upserted: number };
-  creatorProfiles: { upserted: number };
+  creatorProfiles: { upserted: number; disabledStale: number };
   subredditProfiles: { upserted: number };
   domainProfiles: { upserted: number };
   phoneAliases: { upserted: number };

@@ -83,7 +83,8 @@ async function main(): Promise<void> {
     const summary = await runSeeds(db);
     log(
       `        aspects: ${summary.aspects.upserted}, phones: ${summary.phones.upserted}, ` +
-        `creators: ${summary.creatorProfiles.upserted}, ` +
+        `creators: ${summary.creatorProfiles.upserted} ` +
+        `(disabled stale: ${summary.creatorProfiles.disabledStale}), ` +
         `subreddits: ${summary.subredditProfiles.upserted}, ` +
         `domains: ${summary.domainProfiles.upserted}, ` +
         `aliases: ${summary.phoneAliases.upserted}`,

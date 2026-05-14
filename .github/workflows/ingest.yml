@@ -59,6 +59,10 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       LLM_PROVIDER: gemini
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      YTDLP_COOKIES_BASE64: ${{ secrets.YTDLP_COOKIES_BASE64 }}
+      YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
+      YTDLP_EXTRACTOR_ARGS: ${{ secrets.YTDLP_EXTRACTOR_ARGS }}
+      YTDLP_SLEEP_REQUESTS_SECONDS: '3'
       LOG_LEVEL: info
       SKIP_ENV_VALIDATION: 'false'
 
@@ -76,8 +80,16 @@ jobs:
         with:
           run_install: false
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install transcript fallback tools
+        run: python -m pip install --disable-pip-version-check --upgrade yt-dlp youtube-transcript-api
 
       - name: Run manual ingestion
         shell: bash

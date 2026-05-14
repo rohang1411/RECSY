@@ -1163,6 +1163,39 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-05-13 - YouTube transcript fallback chain hardening
+
+- **External transcript fallbacks.** YouTube ingestion now tries two optional
+  subtitle-only fallbacks after the in-process `youtubei.js` / `timedtext`
+  paths fail: `yt-dlp` and Python `youtube-transcript-api`. Both normalize
+  their outputs into the existing timestamped `TranscriptSegment[]` path.
+- **Ban-risk controls.** The fallback layer does not download audio/video,
+  uses short timeouts and one retry max, spaces external attempts, and does not
+  use account cookies unless an operator explicitly configures
+  `YTDLP_COOKIES_FILE` / `YTDLP_COOKIES_BASE64`.
+- **GitHub Actions support.** Manual, tiered, and new-phone ingestion jobs now
+  install Python 3.12 plus `yt-dlp` and `youtube-transcript-api`. Optional
+  secrets (`YTDLP_COOKIES_BASE64`, `YTDLP_PROXY`, `YTDLP_EXTRACTOR_ARGS`) can
+  be supplied without changing code.
+
+### 2026-05-06 - YouTube ingestion unusable-source telemetry
+
+- **YouTube transcript misses are no longer hard adapter errors.** Public
+  YouTube discovery can find good candidate review videos while all transcript
+  paths return empty/400 because captions are unavailable to the current
+  client/IP. The orchestrator now records those `NotFoundError` fetch failures
+  as `skippedUnusable` instead of `errors`, so a phone run that successfully
+  ingests articles is not failed by transcript-only misses.
+- **CLI summary now separates `unusable` from `errors`.** `pnpm ingest` prints
+  per-adapter and total unusable counts, making `discovered > 0, fetched = 0`
+  diagnosable without reading debug logs.
+- **`youtubei.js` parser noise suppressed.** The adapter turns the library's
+  internal logger off before creating the Innertube client; actionable failures
+  still flow through the app's structured `pino` logs.
+- **Regression coverage.** Added `orchestrator.test.ts` cases proving
+  `NotFoundError` is counted as unusable while unexpected failures remain
+  errors.
+
 ### 2026-04-22 — Automated, tiered ingestion with LLM curation (ADR 0014)
 
 - **ADR 0014** — [automated tiered ingestion with LLM curation](./adr/0014-automated-ingestion-curation.md). Extends ADR 0003 (TypeScript ingestion) with a scheduling + curation layer so the corpus refreshes without operator involvement.
@@ -1565,6 +1598,19 @@ dissenting_quotes)`.
     cause chains so future DB failures expose the underlying Postgres reason
     directly.
 
+- **`creator-watch` repeatedly polled stale / wrong YouTube channel IDs.**
+  The implementation-plan channel IDs for TheTechChap, TheUnlockr, and
+  MrMobile were invalid, and later seed updates had also mapped several handles
+  to the wrong active channels (The Verge, Booredatwork, Apple, and SuperSaf
+  Shorts). Because `creator_profiles` upserts on `(platform, external_id)`,
+  corrected IDs did not retire old active rows for the same handle; every phone
+  then re-fetched the same broken feeds and emitted repeated HTTP 404 warnings.
+  - **Fix.** Corrected the seeded creator channel IDs, made `db:setup` disable
+    stale active `creator_profiles` rows with the same `(platform, handle)` but
+    a superseded `external_id`, updated the implementation-plan tables, and
+    cached failed YouTube RSS fetches for the rest of a run so one bad creator
+    row only warns once.
+
 - **`db:setup` RLS bootstrap assumed Supabase roles existed and crashed on vanilla Postgres CI.**
   The RLS SQL created policies `TO anon, authenticated` directly. That works
   on Supabase, which pre-provisions those roles, but the plain Postgres
@@ -1691,6 +1737,56 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
     to the callsite, not in a dotenv where it can drift silently.
 
 #### HIGH
+
+- **Reddit adapter rejected its own `User-Agent` header before network I/O.**
+  The default Reddit `User-Agent` string used a Unicode dash, which is invalid
+  for Node's fetch header ByteString conversion. Discovery logged
+  `reddit fetch failed` instantly for every subreddit even though Reddit's JSON
+  endpoint was reachable with an ASCII header. The failure happened before any
+  outbound request left the process, so the adapter looked like a network or
+  Reddit-side outage even though the root cause was local header validation.
+  - **Fix.** Replaced the Unicode dash with an ASCII hyphen in
+    `src/services/ingest/adapters/reddit.ts`, restoring valid request headers
+    for both `/search.json` and `/new.json` discovery calls.
+  - **Hardening.** Re-ran `pnpm ingest --phone google-pixel-9-pro-xl --adapter
+reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
+    with zero errors.
+
+- **YouTube caption metadata exists but caption bodies are withheld.** Local
+  probes showed the watch page exposes valid `captionTracks` for Pixel review
+  videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
+  body from Node, curl, and Chromium. In the same runs, `youtubei.js`
+  `getTranscript()` was often returning HTTP 400, and the in-process fallback
+  tiers based on the `Info` object and watch-page scrape were finding caption
+  metadata but still getting empty transcript bodies. This is YouTube subtitle
+  access gating, not failed discovery.
+  - **Fix.** Added a last-mile fallback chain in
+    `src/services/ingest/adapters/youtube-external-transcripts.ts`:
+    `yt-dlp` subtitle-only extraction first, then Python
+    `youtube-transcript-api` if `yt-dlp` returns nothing. Both providers parse
+    back into the same timestamped `TranscriptSegment[]` shape already used by
+    the native adapter, so downstream chunking, citation anchoring, embedding,
+    and writes stay unchanged.
+  - **Hardening.** The fallbacks are opt-out, subtitle-only, timeout-limited,
+    spaced between attempts, and cookie-free by default. Operators can add
+    cookies, a proxy, or `yt-dlp` extractor args / PO-token provider config via
+    env when needed, but the default path minimizes account/IP risk. CI now also
+    installs Python plus `yt-dlp` and `youtube-transcript-api` in the ingestion
+    workflows so GitHub Actions has the same recovery path as local runs.
+
+- **YouTube transcript-unavailable candidates made `pnpm ingest` exit 1 even
+  when other adapters wrote data.** A Pixel 9 Pro XL run discovered five
+  YouTube videos but every transcript strategy returned empty/400. That is a
+  normal external-source condition, not a broken adapter. Because the
+  orchestrator stored those `NotFoundError`s in the adapter `errors` array,
+  the CLI failed the whole run despite the article adapter writing 4 sources
+  and 94 chunks.
+  - **Fix.** Added a first-class `skippedUnusable` counter to adapter and
+    phone summaries. `NotFoundError` fetch failures now increment that counter
+    and continue; unexpected exceptions still land in `errors` and preserve
+    the non-zero exit behavior.
+  - **Hardening.** `pnpm ingest` prints `unusable=...` separately from
+    `errors=...`, and `orchestrator.test.ts` locks the classification down.
 
 - **`User-Agent` em-dash crashing Node `fetch` in article adapter.**
   `pnpm ingest:smoke` failed with
@@ -1876,8 +1972,10 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
 - **`youtubei.js` parser warnings spamming stdout.** The library
   complains about novel UI nodes (`ShoppingTimelyShelfView`, etc.) it
   doesn't recognise. Non-fatal but noisy in ingestion logs.
-  - **Status.** Accepted. A future PR may redirect the library's
-    internal logger to `pino` at `debug` level.
+  - **Fix.** `YouTubeAdapter` now calls `Log.setLevel(Log.Level.NONE)`
+    before creating the Innertube client. We keep actionable failures in
+    structured `pino` logs and avoid dumping parser-generated class bodies
+    into operator output.
 
 ### Phase 1 — Database (2026-04-21)
 
@@ -1912,9 +2010,10 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   HTTP 200 + zero bytes from most non-residential IPs — including our
   dev machine and GitHub Actions runners. All three transcript fallback
   tiers hit the same ceiling because the signed URLs wrap the same
-  underlying resource. Accepted as out-of-scope for a zero-budget MVP;
-  a residential proxy would fix it at ~$50–100/mo. See §13 "Known
-  issues".
+  underlying resource. The orchestrator records these as `skippedUnusable`,
+  not adapter errors. Accepted as out-of-scope for a zero-budget MVP; a
+  residential proxy or authenticated transcript provider would fix it at
+  ongoing cost. See §13 "Known issues".
 - **Gemini free-tier quota.** We stay well within limits in dev, but
   production cadence (nightly ingest of ~20 phones + ongoing chat
   queries) will nudge against rate limits eventually. Mitigations are

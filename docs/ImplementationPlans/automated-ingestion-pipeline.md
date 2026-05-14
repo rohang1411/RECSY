@@ -100,14 +100,14 @@ concurrency.
 
 Allowlist stored in `creator_profiles` (seeded):
 
-| Handle         | Channel ID                |
-| -------------- | ------------------------- |
-| MKBHD          | UCBJycsmduvYEL83R_U4JriQ  |
-| Mrwhosetheboss | UCMiJRAwDNSNzuYeN2uWa0pA  |
-| TheTechChap    | UCpngLOfsCC9LRbtm7jlG\_-g |
-| SuperSaf       | UCIrrRLyFMVmmL9NDAU2obJA  |
-| TheUnlockr     | UCKCcvNC6gbiLQYr4b37-saQ  |
-| MrMobile       | UCX5Vbb-NNQoNqj0-rP3HMsw  |
+| Handle         | Channel ID               |
+| -------------- | ------------------------ |
+| MKBHD          | UCBJycsmduvYEL83R_U4JriQ |
+| Mrwhosetheboss | UCMiJRAwDNSNzuYeN2uWa0pA |
+| TheTechChap    | UCzlXf-yUIaOpOjEjPrOO9TA |
+| SuperSaf       | UCIrrRLyFMVmmL9NDAU2obJA |
+| TheUnlockr     | UCaDBRJTQhIg_QhCkW7SxWGQ |
+| MrMobile       | UCSOpcUkE-is7u7c4AkLgqTw |
 
 Discovery polls
 `https://www.youtube.com/feeds/videos.xml?channel_id={id}` every 6 h — no API

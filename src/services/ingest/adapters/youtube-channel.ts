@@ -102,6 +102,7 @@ export class YouTubeChannelAdapter implements SourceAdapter {
       try {
         entries = await this.loadFeed(creator);
       } catch (err) {
+        this.feedCache.set(creator.channelId, []);
         this.log.warn(
           { creator: creator.handle, err: errMsg(err) },
           'rss feed fetch failed; skipping creator this run',

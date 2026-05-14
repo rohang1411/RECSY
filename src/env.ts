@@ -40,6 +40,27 @@ export const env = createEnv({
       .string()
       .default('false')
       .transform((v) => v.toLowerCase() === 'true'),
+    YOUTUBE_TRANSCRIPT_EXTERNAL_ENABLED: z
+      .string()
+      .default('true')
+      .transform((v) => v.toLowerCase() !== 'false'),
+    YOUTUBE_TRANSCRIPT_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
+    YOUTUBE_TRANSCRIPT_EXTERNAL_MIN_GAP_MS: z.coerce.number().int().min(0).default(3000),
+    YTDLP_ENABLED: z
+      .string()
+      .default('true')
+      .transform((v) => v.toLowerCase() !== 'false'),
+    YTDLP_PATH: z.string().default('yt-dlp'),
+    YTDLP_COOKIES_FILE: z.string().optional(),
+    YTDLP_COOKIES_BASE64: z.string().optional(),
+    YTDLP_PROXY: z.string().optional(),
+    YTDLP_EXTRACTOR_ARGS: z.string().optional(),
+    YTDLP_SLEEP_REQUESTS_SECONDS: z.coerce.number().min(0).default(2),
+    YOUTUBE_TRANSCRIPT_API_ENABLED: z
+      .string()
+      .default('true')
+      .transform((v) => v.toLowerCase() !== 'false'),
+    YOUTUBE_TRANSCRIPT_PYTHON: z.string().default('python'),
 
     /**
      * When true, hybrid retrieval runs the optional Gemini structured rerank
@@ -85,6 +106,19 @@ export const env = createEnv({
     LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL ?? 'gemini-embedding-001',
     LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED ?? 'true',
     IGNORE_ROBOTS: process.env.IGNORE_ROBOTS ?? 'false',
+    YOUTUBE_TRANSCRIPT_EXTERNAL_ENABLED: process.env.YOUTUBE_TRANSCRIPT_EXTERNAL_ENABLED ?? 'true',
+    YOUTUBE_TRANSCRIPT_TIMEOUT_MS: process.env.YOUTUBE_TRANSCRIPT_TIMEOUT_MS ?? '20000',
+    YOUTUBE_TRANSCRIPT_EXTERNAL_MIN_GAP_MS:
+      process.env.YOUTUBE_TRANSCRIPT_EXTERNAL_MIN_GAP_MS ?? '3000',
+    YTDLP_ENABLED: process.env.YTDLP_ENABLED ?? 'true',
+    YTDLP_PATH: process.env.YTDLP_PATH ?? 'yt-dlp',
+    YTDLP_COOKIES_FILE: process.env.YTDLP_COOKIES_FILE,
+    YTDLP_COOKIES_BASE64: process.env.YTDLP_COOKIES_BASE64,
+    YTDLP_PROXY: process.env.YTDLP_PROXY,
+    YTDLP_EXTRACTOR_ARGS: process.env.YTDLP_EXTRACTOR_ARGS,
+    YTDLP_SLEEP_REQUESTS_SECONDS: process.env.YTDLP_SLEEP_REQUESTS_SECONDS ?? '2',
+    YOUTUBE_TRANSCRIPT_API_ENABLED: process.env.YOUTUBE_TRANSCRIPT_API_ENABLED ?? 'true',
+    YOUTUBE_TRANSCRIPT_PYTHON: process.env.YOUTUBE_TRANSCRIPT_PYTHON ?? 'python',
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
     SENTRY_DSN: process.env.SENTRY_DSN ?? '',

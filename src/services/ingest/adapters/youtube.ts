@@ -23,7 +23,7 @@
  * or be live streams. We surface those as `NotFoundError` so the orchestrator
  * skips them and records a clean telemetry row.
  */
-import { Innertube } from 'youtubei.js';
+import { Innertube, Log } from 'youtubei.js';
 
 import { IntegrationError, NotFoundError } from '@/lib/errors';
 import { logger } from '@/services/logger';
@@ -46,6 +46,7 @@ import {
   type CaptionTrack,
   type TranscriptSegment,
 } from './youtube-transcript';
+import { fetchExternalTranscript } from './youtube-external-transcripts';
 
 const TARGET_TOKENS_PER_CHUNK = 400;
 const OVERLAP_TOKENS = 60;
@@ -65,6 +66,10 @@ const ytCache: CachedYt = { client: null, promise: null };
 async function getYt(): Promise<Innertube> {
   if (ytCache.client) return ytCache.client;
   if (!ytCache.promise) {
+    // youtubei.js parser warnings are noisy when YouTube adds non-critical
+    // UI nodes (shopping shelves, badges, etc.). We log actionable adapter
+    // failures through pino instead, so keep the library console quiet.
+    Log.setLevel(Log.Level.NONE);
     // `retrieve_player: true` (the default) is required for caption tracks
     // to be populated on the `Info` object, which Fallback B below needs.
     ytCache.promise = Innertube.create().then((c) => {
@@ -207,6 +212,20 @@ export class YouTubeAdapter implements SourceAdapter {
     if (viaScrape.length > 0) {
       this.log.debug({ videoId, n: viaScrape.length, via: 'watch-scrape' }, 'transcript loaded');
       return viaScrape;
+    }
+
+    // 4. Optional external CLI/library fallbacks. These are intentionally
+    // last because they spawn tools and may need cookies/PO-token config.
+    const viaExternal = await fetchExternalTranscript(
+      videoId,
+      `https://www.youtube.com/watch?v=${videoId}`,
+    );
+    if (viaExternal && viaExternal.segments.length > 0) {
+      this.log.info(
+        { videoId, n: viaExternal.segments.length, via: viaExternal.provider },
+        'transcript loaded',
+      );
+      return viaExternal.segments;
     }
 
     this.log.info({ videoId }, 'all transcript strategies returned empty');

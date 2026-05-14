@@ -122,10 +122,10 @@ The scheduler picks `N` phones where `next_ingest_at <= now()` ordered by tier t
   ```
   MKBHD           UCBJycsmduvYEL83R_U4JriQ
   Mrwhosetheboss  UCMiJRAwDNSNzuYeN2uWa0pA
-  TheTechChap     UCpngLOfsCC9LRbtm7jlG_-g
+  TheTechChap     UCzlXf-yUIaOpOjEjPrOO9TA
   SuperSaf        UCIrrRLyFMVmmL9NDAU2obJA
-  TheUnlockr      UCKCcvNC6gbiLQYr4b37-saQ
-  MrMobile        UCX5Vbb-NNQoNqj0-rP3HMsw
+  TheUnlockr      UCaDBRJTQhIg_QhCkW7SxWGQ
+  MrMobile        UCSOpcUkE-is7u7c4AkLgqTw
   ```
 - **Discovery is poll-based, not search-based.** Hit `https://www.youtube.com/feeds/videos.xml?channel_id={id}` (no API key, no quota) per channel every 6 h. For each new video title:
   1. Phone-alias match against `phone_aliases` table.

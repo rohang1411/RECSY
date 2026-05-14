@@ -105,6 +105,7 @@ export interface PhoneIngestSummary {
   readonly totals: {
     readonly discovered: number;
     readonly fetched: number;
+    readonly skippedUnusable: number;
     readonly skippedDuplicate: number;
     readonly chunksWritten: number;
     readonly sourcesWritten: number;
@@ -208,6 +209,7 @@ export class IngestOrchestrator {
           0,
           0,
           0,
+          0,
           [{ url: '(discover)', error: errMsg(err) }],
           startedAt,
         );
@@ -215,6 +217,7 @@ export class IngestOrchestrator {
     }
 
     let fetched = 0;
+    let skippedUnusable = 0;
     let skippedDuplicate = 0;
     let sourcesWritten = 0;
     let chunksWritten = 0;
@@ -408,13 +411,14 @@ export class IngestOrchestrator {
         }
       } catch (err) {
         const message = errMsg(err);
-        errors.push({ url: candidate.url, error: message });
         if (err instanceof NotFoundError) {
+          skippedUnusable += 1;
           log.info(
             { url: candidate.url, reason: message },
             'source skipped (not found / unusable)',
           );
         } else {
+          errors.push({ url: candidate.url, error: message });
           log.error({ url: candidate.url, err: message }, 'source failed');
         }
       }
@@ -424,6 +428,7 @@ export class IngestOrchestrator {
       adapter.type,
       candidates.length,
       fetched,
+      skippedUnusable,
       skippedDuplicate,
       sourcesWritten,
       chunksWritten,
@@ -462,6 +467,7 @@ function makeSummary(
   type: SourceType,
   discovered: number,
   fetched: number,
+  skippedUnusable: number,
   skippedDuplicate: number,
   sources: number,
   chunks: number,
@@ -472,6 +478,7 @@ function makeSummary(
     type,
     discovered,
     fetched,
+    skippedUnusable,
     skippedDuplicate,
     written: { sources, chunks },
     errors,
@@ -484,6 +491,7 @@ function aggregate(phone: PhoneRef, summaries: AdapterRunSummary[]): PhoneIngest
     (acc, s) => ({
       discovered: acc.discovered + s.discovered,
       fetched: acc.fetched + s.fetched,
+      skippedUnusable: acc.skippedUnusable + s.skippedUnusable,
       skippedDuplicate: acc.skippedDuplicate + s.skippedDuplicate,
       chunksWritten: acc.chunksWritten + s.written.chunks,
       sourcesWritten: acc.sourcesWritten + s.written.sources,
@@ -492,6 +500,7 @@ function aggregate(phone: PhoneRef, summaries: AdapterRunSummary[]): PhoneIngest
     {
       discovered: 0,
       fetched: 0,
+      skippedUnusable: 0,
       skippedDuplicate: 0,
       chunksWritten: 0,
       sourcesWritten: 0,

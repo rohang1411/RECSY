@@ -151,7 +151,7 @@ function printSummary(summary: Summary): void {
   console.log(`[ingest] phone: ${summary.slug}`);
   for (const a of summary.adapters) {
     console.log(
-      `  ${pad(a.type, 8)} discovered=${a.discovered} fetched=${a.fetched} skipped=${a.skippedDuplicate} sources=${a.written.sources} chunks=${a.written.chunks} errors=${a.errors.length} (${a.durationMs}ms)`,
+      `  ${pad(a.type, 8)} discovered=${a.discovered} fetched=${a.fetched} unusable=${a.skippedUnusable} skipped=${a.skippedDuplicate} sources=${a.written.sources} chunks=${a.written.chunks} errors=${a.errors.length} (${a.durationMs}ms)`,
     );
     for (const e of a.errors) {
       console.log(`    ! ${e.url} → ${truncate(e.error, 140)}`);
@@ -160,7 +160,7 @@ function printSummary(summary: Summary): void {
   const t = summary.totals;
   console.log('');
   console.log(
-    `[ingest] total sources=${t.sourcesWritten} chunks=${t.chunksWritten} skipped=${t.skippedDuplicate} errors=${t.errors}`,
+    `[ingest] total sources=${t.sourcesWritten} chunks=${t.chunksWritten} unusable=${t.skippedUnusable} skipped=${t.skippedDuplicate} errors=${t.errors}`,
   );
 }
 
