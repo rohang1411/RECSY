@@ -1742,9 +1742,12 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   The default Reddit `User-Agent` string used a Unicode dash, which is invalid
   for Node's fetch header ByteString conversion. Discovery logged
   `reddit fetch failed` instantly for every subreddit even though Reddit's JSON
-  endpoint was reachable with an ASCII header.
+  endpoint was reachable with an ASCII header. The failure happened before any
+  outbound request left the process, so the adapter looked like a network or
+  Reddit-side outage even though the root cause was local header validation.
   - **Fix.** Replaced the Unicode dash with an ASCII hyphen in
-    `src/services/ingest/adapters/reddit.ts`.
+    `src/services/ingest/adapters/reddit.ts`, restoring valid request headers
+    for both `/search.json` and `/new.json` discovery calls.
   - **Hardening.** Re-ran `pnpm ingest --phone google-pixel-9-pro-xl --adapter
 reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
     with zero errors.
@@ -1752,15 +1755,24 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
 - **YouTube caption metadata exists but caption bodies are withheld.** Local
   probes showed the watch page exposes valid `captionTracks` for Pixel review
   videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
-  body from Node, curl, and Chromium. This is YouTube subtitle access gating,
-  not failed discovery.
-  - **Fix.** Added a last-mile fallback chain: `yt-dlp` subtitle-only
-    extraction followed by Python `youtube-transcript-api`, both parsed back
-    into the same timestamped segment model as the native adapter.
+  body from Node, curl, and Chromium. In the same runs, `youtubei.js`
+  `getTranscript()` was often returning HTTP 400, and the in-process fallback
+  tiers based on the `Info` object and watch-page scrape were finding caption
+  metadata but still getting empty transcript bodies. This is YouTube subtitle
+  access gating, not failed discovery.
+  - **Fix.** Added a last-mile fallback chain in
+    `src/services/ingest/adapters/youtube-external-transcripts.ts`:
+    `yt-dlp` subtitle-only extraction first, then Python
+    `youtube-transcript-api` if `yt-dlp` returns nothing. Both providers parse
+    back into the same timestamped `TranscriptSegment[]` shape already used by
+    the native adapter, so downstream chunking, citation anchoring, embedding,
+    and writes stay unchanged.
   - **Hardening.** The fallbacks are opt-out, subtitle-only, timeout-limited,
     spaced between attempts, and cookie-free by default. Operators can add
     cookies, a proxy, or `yt-dlp` extractor args / PO-token provider config via
-    env when needed, but the default path minimizes account/IP risk.
+    env when needed, but the default path minimizes account/IP risk. CI now also
+    installs Python plus `yt-dlp` and `youtube-transcript-api` in the ingestion
+    workflows so GitHub Actions has the same recovery path as local runs.
 
 - **YouTube transcript-unavailable candidates made `pnpm ingest` exit 1 even
   when other adapters wrote data.** A Pixel 9 Pro XL run discovered five
