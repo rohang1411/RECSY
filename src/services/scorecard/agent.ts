@@ -7,6 +7,9 @@ import type { Logger } from 'pino';
 import { env } from '@/env';
 import { ASPECT_NAMES, MMR_LAMBDA } from '@/lib/constants';
 import type { AppDb } from '@/services/db/client';
+import type { LlmProvider, ChatMessage } from '@/services/llm/types';
+import type { HybridRetriever } from '@/services/retrieval/retriever';
+import type { RetrievedChunk } from '@/services/retrieval/types';
 import { eq, sql } from 'drizzle-orm';
 import { scorecardRuns, aspectDefinitions, aspects, phones } from '@/services/db/schema';
 
