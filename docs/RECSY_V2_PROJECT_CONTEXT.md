@@ -90,6 +90,7 @@ experiences on one site:
   software, value) aggregated from YouTube, Reddit, and editorial reviews —
   and a chat Q&A where every answer is grounded in cited source excerpts
   (YouTube deep-links include timestamps).
+- **Internal Pipeline Observatory.** An internal-only, narrative-driven dashboard (`/internal/pipeline`) that visualizes the entire RECSY data lifecycle for presentations, featuring live database metrics and pre-computed pipeline replays.
 
 **Stack summary.** Next.js 16 · Drizzle ORM → Supabase Postgres + pgvector ·
 Gemini 2.5 Flash/Pro via Vercel AI SDK · TypeScript ingestion adapters
@@ -202,6 +203,10 @@ struggle at night?", "is the battery really that good?").
 
 Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
+### Quaternary — "reviewers and collaborators"
+
+Lands on `/internal/pipeline` to inspect the system architecture, live corpus metrics, and data pipeline walkthroughs without reading the codebase.
+
 ### Core user flows
 
 | #   | Flow                     | Entry                            | Exit                                       |
@@ -210,6 +215,7 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | U2  | Consensus & Q&A          | `/p/<slug>`                      | Answer with citations → buy-link / browse  |
 | U3  | Browse & filter          | `/browse` (Phase 3+)             | Phone page                                 |
 | U4  | Compare two phones       | `/compare/<a>-vs-<b>` (Phase 5+) | Phone page                                 |
+| U5  | System architecture demo | `/internal/pipeline`             | Pipeline walkthrough                       |
 
 ### Non-users we explicitly decline to serve
 
@@ -267,6 +273,7 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects        |
 | Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL` |
 | Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link      |
+| Internal Pipeline Observatory              | ✓      | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                   |
 
 > **Backlog check (2026-04-22).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev.
 
@@ -307,6 +314,7 @@ flowchart LR
     Extractor --> Gemini
     Ranker --> Gemini
     Retriever --> PG
+    PipelineDash["/internal/pipeline dashboard"] --> PG
   end
 ```
 
