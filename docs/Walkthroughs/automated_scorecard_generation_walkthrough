@@ -1,0 +1,34 @@
+# Automated Scorecard Generation Walkthrough
+
+The scorecard generation pipeline is now fully automated! It reuses the battle-tested tiered scheduling pattern from the ingestion pipeline, ensuring that phone scorecards stay up-to-date while protecting our Gemini free tier limits.
+
+## Changes Made
+
+### 1. Database Schema
+- **`phones` Table**: Added `last_scorecard_at` and `next_scorecard_at` to track when a phone was last scored and when it's due next.
+- **`scorecard_runs` Table**: A brand-new telemetry table that tracks the status, duration, extracted score, and any errors for each aspect run. It also stores the `chunk_fingerprint` to track chunk changes.
+
+### 2. Core Modules
+- **`scheduler.ts`**: Provides `pickScorecardPhones` to fetch due phones (with sharding support) and `markScorecardComplete` to update their next run target.
+  - *Interval logic*: 3 days if recently ingested, otherwise 7 days.
+- **`staleness.ts`**: Calculates an `md5` fingerprint of a phone's chunks directly in Postgres. This allows the system to skip LLM calls entirely if no new reviews were ingested.
+
+### 3. Agent & Pacing
+- The core `agent.ts` was updated to record its execution results to the `scorecard_runs` table.
+- Added a `4500ms` pacing delay between aspect extractions to ensure we never hit the Gemini structured output 15 RPM rate limit.
+- If one aspect fails (e.g., rate limit), it won't crash the script; it gracefully logs the failure and continues to the next aspect.
+
+### 4. Automation & Workflows
+- **`scorecard-auto.ts`**: A new CLI script similar to `ingest-auto.ts` that runs the end-to-end scheduled batch generation.
+- **`ingest-auto.ts` Hook**: The ingest pipeline now automatically nudges the `next_scorecard_at` schedule up if it ingested new chunks, ensuring scorecards update quickly when new data arrives.
+- **GitHub Actions**: Added `.github/workflows/scorecard-auto.yml` which triggers daily at `02:17 UTC`.
+
+## Testing Conducted
+1. Applied Drizzle migration successfully.
+2. `pnpm scorecard:auto --dry-run` successfully identified un-scored active phones.
+3. `pnpm scorecard:auto --limit 1` processed a real generation, respecting the pacing interval.
+4. Consecutive `scorecard:auto` runs correctly skipped phones that were already scored and fetched the next ones in the queue.
+5. The original `pnpm scorecard:run --phone <slug>` CLI still works flawlessly.
+
+> [!TIP]
+> **View Telemetry**: You can now view the scorecard performance and results by querying the `scorecard_runs` table! This provides a solid foundation for surfacing these insights in the Pipeline Observatory dashboard.

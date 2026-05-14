@@ -243,7 +243,7 @@ flowchart TD
   Hybrid --> Answer["Grounded answer with validated citations"]
 
   Ingest["pnpm ingest / ingest workflow"] --> Sources["sources + chunks"]
-  Scorecard["pnpm scorecard:run"] --> Aspects["aspects"]
+  Scorecard["scorecard runs"] --> Aspects["aspects"]
   SpecEmbed["pnpm spec-embed:backfill"] --> Phones["phones + spec_embedding"]
 
   Sources --> Hybrid
@@ -321,7 +321,7 @@ flowchart TD
 | Recommender   | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*`  |
 | Retrieval     | `src/services/retrieval/*`                                                             |
 | Phone Q-and-A | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`                |
-| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-run.ts`                                 |
+| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-auto.ts`, `scripts/scorecard-run.ts`    |
 | Ingestion     | `src/services/ingest/*`, `scripts/{ingest,ingest-auto,creator-watch,ingest-report}.ts` |
 | Database      | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                  |
 | Seeds         | `scripts/seed/*`                                                                       |

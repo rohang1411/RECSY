@@ -31,6 +31,7 @@
     "ci:retrieval-fixture": "tsx scripts/seed-retrieval-eval-fixture.ts",
     "eval:retrieval": "tsx --env-file=.env.local scripts/eval-retrieval.ts",
     "scorecard:run": "tsx --env-file=.env.local scripts/scorecard-run.ts",
+    "scorecard:auto": "tsx --env-file=.env.local scripts/scorecard-auto.ts",
     "spec-embed:backfill": "tsx --env-file=.env.local scripts/backfill-spec-embeddings.ts",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",

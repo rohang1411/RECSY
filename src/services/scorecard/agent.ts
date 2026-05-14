@@ -7,11 +7,8 @@ import type { Logger } from 'pino';
 import { env } from '@/env';
 import { ASPECT_NAMES, MMR_LAMBDA } from '@/lib/constants';
 import type { AppDb } from '@/services/db/client';
-import { aspectDefinitions, aspects, phones } from '@/services/db/schema';
-import type { ChatMessage, LlmProvider } from '@/services/llm/types';
-import type { HybridRetriever } from '@/services/retrieval/retriever';
-import type { RetrievedChunk } from '@/services/retrieval/types';
 import { eq, sql } from 'drizzle-orm';
+import { scorecardRuns, aspectDefinitions, aspects, phones } from '@/services/db/schema';
 
 import {
   SCORECARD_K_PER_RETRIEVER,
@@ -35,6 +32,8 @@ export interface ScorecardRunContext {
   readonly retriever: HybridRetriever;
   readonly llm: LlmProvider;
   readonly log: Logger;
+  readonly chunkFingerprint?: string;
+  readonly aspectDelayMs?: number;
 }
 
 function chunkAllowList(chunks: readonly RetrievedChunk[]): ReadonlySet<string> {
@@ -152,106 +151,160 @@ async function llmExtract(
 export async function runSingleAspect(
   ctx: ScorecardRunContext,
   def: AspectDefinitionRow,
-): Promise<void> {
+): Promise<{ ok: boolean }> {
+  const startedAt = new Date();
   const log = ctx.log.child({ aspect: def.aspect, aspectDefinitionId: def.id });
   const query = buildCombinedRetrievalQuery(def.queryPrompts);
 
-  const retrieval = await ctx.retriever.search({
-    phoneId: ctx.phoneId,
-    query,
-    options: {
-      kPerRetriever: SCORECARD_K_PER_RETRIEVER,
-      targetResults: SCORECARD_TARGET_RESULTS,
-      minDistinctSources: SCORECARD_MIN_DISTINCT_SOURCES,
-      mmrLambda: MMR_LAMBDA,
-      rerank: 'off',
-    },
-  });
-
-  if (retrieval.chunks.length === 0) {
-    log.info('no chunks; writing neutral aspect row');
-    await upsertAspect(ctx, def.id, {
-      score: '5.0',
-      rawScore: '5.0',
-      confidence: '0.15',
-      nSources: 0,
-      nSupporting: 0,
-      nDissenting: 0,
-      summary: 'Not enough ingested reviews to score this aspect yet.',
-      supportingQuotes: [],
-      dissentingQuotes: [],
+  try {
+    const retrieval = await ctx.retriever.search({
+      phoneId: ctx.phoneId,
+      query,
+      options: {
+        kPerRetriever: SCORECARD_K_PER_RETRIEVER,
+        targetResults: SCORECARD_TARGET_RESULTS,
+        minDistinctSources: SCORECARD_MIN_DISTINCT_SOURCES,
+        mmrLambda: MMR_LAMBDA,
+        rerank: 'off',
+      },
     });
-    return;
-  }
 
-  const allowed = chunkAllowList(retrieval.chunks);
-  const byChunk = buildChunkMap(retrieval.chunks);
+    if (retrieval.chunks.length === 0) {
+      log.info('no chunks; writing neutral aspect row');
+      await upsertAspect(ctx, def.id, {
+        score: '5.0',
+        rawScore: '5.0',
+        confidence: '0.15',
+        nSources: 0,
+        nSupporting: 0,
+        nDissenting: 0,
+        summary: 'Not enough ingested reviews to score this aspect yet.',
+        supportingQuotes: [],
+        dissentingQuotes: [],
+      });
+      await recordTelemetry(ctx, def, 'success', {
+        score: '5.0',
+        confidence: '0.15',
+        nSources: 0,
+        startedAt,
+      });
+      return { ok: true };
+    }
 
-  let messages = buildExtractionMessages({
-    brand: ctx.brand,
-    model: ctx.model,
-    aspectDescription: def.description,
-    aspectKey: def.aspect,
-    chunks: retrieval.chunks,
-  });
+    const allowed = chunkAllowList(retrieval.chunks);
+    const byChunk = buildChunkMap(retrieval.chunks);
 
-  let extraction = await llmExtract(ctx.llm, messages);
-  let invalid = validateEvidence(extraction, allowed);
-
-  if (invalid.length > 0) {
-    log.warn({ invalid }, 'first extraction had invalid chunk ids; retrying');
-    messages = buildExtractionMessages({
+    let messages = buildExtractionMessages({
       brand: ctx.brand,
       model: ctx.model,
       aspectDescription: def.description,
       aspectKey: def.aspect,
       chunks: retrieval.chunks,
-      retryInvalid: invalid,
     });
-    extraction = await llmExtract(ctx.llm, messages);
-    invalid = validateEvidence(extraction, allowed);
-  }
 
-  if (invalid.length > 0) {
-    log.warn({ invalid }, 'stripping invalid evidence after retry');
-    extraction = stripInvalidEvidence(extraction, allowed);
-  }
+    let extraction = await llmExtract(ctx.llm, messages);
+    let invalid = validateEvidence(extraction, allowed);
 
-  const referencedChunks: RetrievedChunk[] = [];
-  const seenChunk = new Set<string>();
-  for (const item of [...extraction.supporting, ...extraction.dissenting]) {
-    const key = item.chunkId.toLowerCase();
-    const ch = byChunk.get(key);
-    if (ch && !seenChunk.has(key)) {
-      seenChunk.add(key);
-      referencedChunks.push(ch);
+    if (invalid.length > 0) {
+      log.warn({ invalid }, 'first extraction had invalid chunk ids; retrying');
+      messages = buildExtractionMessages({
+        brand: ctx.brand,
+        model: ctx.model,
+        aspectDescription: def.description,
+        aspectKey: def.aspect,
+        chunks: retrieval.chunks,
+        retryInvalid: invalid,
+      });
+      extraction = await llmExtract(ctx.llm, messages);
+      invalid = validateEvidence(extraction, allowed);
     }
+
+    if (invalid.length > 0) {
+      log.warn({ invalid }, 'stripping invalid evidence after retry');
+      extraction = stripInvalidEvidence(extraction, allowed);
+    }
+
+    const referencedChunks: RetrievedChunk[] = [];
+    const seenChunk = new Set<string>();
+    for (const item of [...extraction.supporting, ...extraction.dissenting]) {
+      const key = item.chunkId.toLowerCase();
+      const ch = byChunk.get(key);
+      if (ch && !seenChunk.has(key)) {
+        seenChunk.add(key);
+        referencedChunks.push(ch);
+      }
+    }
+    const boost = recencyConfidenceBoost(referencedChunks);
+    const confidence = Math.min(1, extraction.confidence + boost);
+    const rawScore = extraction.overallScore;
+    const score = rawScore;
+
+    const supportingQuotes = toQuotes(extraction.supporting, byChunk);
+    const dissentingQuotes = toQuotes(extraction.dissenting, byChunk);
+    const nSources = distinctSourceCount(extraction, byChunk);
+
+    await upsertAspect(ctx, def.id, {
+      score: formatScore(score),
+      rawScore: formatScore(rawScore),
+      confidence: formatConfidence(confidence),
+      nSources,
+      nSupporting: supportingQuotes.length,
+      nDissenting: dissentingQuotes.length,
+      summary: extraction.summary,
+      supportingQuotes,
+      dissentingQuotes,
+    });
+
+    await recordTelemetry(ctx, def, 'success', {
+      score: formatScore(score),
+      confidence: formatConfidence(confidence),
+      nSources,
+      startedAt,
+    });
+
+    log.info(
+      { score: formatScore(score), confidence: formatConfidence(confidence) },
+      'aspect upserted',
+    );
+    return { ok: true };
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : String(err) }, 'aspect extraction failed');
+    await recordTelemetry(ctx, def, 'failed', {
+      startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { ok: false };
   }
-  const boost = recencyConfidenceBoost(referencedChunks);
-  const confidence = Math.min(1, extraction.confidence + boost);
-  const rawScore = extraction.overallScore;
-  const score = rawScore;
+}
 
-  const supportingQuotes = toQuotes(extraction.supporting, byChunk);
-  const dissentingQuotes = toQuotes(extraction.dissenting, byChunk);
-  const nSources = distinctSourceCount(extraction, byChunk);
-
-  await upsertAspect(ctx, def.id, {
-    score: formatScore(score),
-    rawScore: formatScore(rawScore),
-    confidence: formatConfidence(confidence),
-    nSources,
-    nSupporting: supportingQuotes.length,
-    nDissenting: dissentingQuotes.length,
-    summary: extraction.summary,
-    supportingQuotes,
-    dissentingQuotes,
+async function recordTelemetry(
+  ctx: ScorecardRunContext,
+  def: AspectDefinitionRow,
+  status: 'success' | 'failed' | 'skipped',
+  opts: {
+    score?: string;
+    confidence?: string;
+    nSources?: number;
+    startedAt: Date;
+    error?: string;
+    skipReason?: string;
+  },
+): Promise<void> {
+  const durationMs = Date.now() - opts.startedAt.getTime();
+  await ctx.db.insert(scorecardRuns).values({
+    phoneId: ctx.phoneId,
+    aspect: def.aspect,
+    status,
+    skipReason: opts.skipReason,
+    chunkFingerprint: ctx.chunkFingerprint,
+    score: opts.score,
+    confidence: opts.confidence,
+    nSources: opts.nSources,
+    durationMs,
+    error: opts.error,
+    startedAt: opts.startedAt,
+    finishedAt: new Date(),
   });
-
-  log.info(
-    { score: formatScore(score), confidence: formatConfidence(confidence) },
-    'aspect upserted',
-  );
 }
 
 async function upsertAspect(
@@ -301,10 +354,13 @@ async function upsertAspect(
     });
 }
 
-export async function runScorecardForPhone(ctx: ScorecardRunContext): Promise<{ updated: number }> {
+export async function runScorecardForPhone(
+  ctx: ScorecardRunContext,
+): Promise<{ updated: number; failed: number; fingerprint: string }> {
   const rows = await ctx.db.select().from(aspectDefinitions);
   const latest = latestAspectDefinitionsByAspect(rows);
   let updated = 0;
+  let failed = 0;
 
   for (const name of ASPECT_NAMES) {
     const def = latest.get(name);
@@ -312,11 +368,19 @@ export async function runScorecardForPhone(ctx: ScorecardRunContext): Promise<{ 
       ctx.log.warn({ aspect: name }, 'missing aspect_definition row');
       continue;
     }
-    await runSingleAspect(ctx, def);
-    updated += 1;
+    const res = await runSingleAspect(ctx, def);
+    if (res.ok) {
+      updated += 1;
+    } else {
+      failed += 1;
+    }
+
+    if (ctx.aspectDelayMs && ctx.aspectDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, ctx.aspectDelayMs));
+    }
   }
 
-  return { updated };
+  return { updated, failed, fingerprint: ctx.chunkFingerprint || '' };
 }
 
 /** Load phone row by slug for CLI / scripts. */

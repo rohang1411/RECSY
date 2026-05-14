@@ -22,7 +22,7 @@ filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
 and [`docs/recommender/README.md`](./recommender/README.md).
 Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
-extraction with chunk-id validation + one retry, `pnpm scorecard:run`, neutral
+extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto`, neutral
 rows when retrieval is empty, recency as a **confidence** bump only, and
 `ScorecardSection` on `/p/[slug]` when aspects exist. **Calibration** (z-score /
 price bracket) and **multi-query fusion** per aspect are explicitly deferred;
@@ -249,7 +249,7 @@ Lands on `/internal/pipeline` to inspect the system architecture, live corpus me
 | `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents                  |
 | Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                 |
 | Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)             |
-| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist                                                                                  |
+| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto`; UI when rows exist                                                                       |
 | Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                           |
 | Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                 |
 | Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                               |
@@ -293,7 +293,7 @@ flowchart LR
     Embedder --> PG[("Supabase<br/>Postgres + pgvector + pg_trgm")]
   end
 
-  subgraph Batch["Scorecard (weekly cron)"]
+  subgraph Batch["Scorecard (daily cron)"]
     PG --> AgentGraph["Aspect agent graph<br/>retrieve → extract → aggregate → calibrate"]
     AgentGraph --> PG
   end
@@ -594,8 +594,8 @@ cannot support it — honest relaxation beats silent failure.
 
 Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md)
 and [`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
-from hybrid retrieval + structured LLM extraction. **`pg_cron` / weekly batch**
-is documented for later; today the operator entrypoint is **`pnpm scorecard:run`**.
+from hybrid retrieval + structured LLM extraction. **Automated daily batch**
+runs via GitHub Actions (`pnpm scorecard:auto`); manual CLI remains as `pnpm scorecard:run`.
 
 ### Agent graph (MVP pseudocode)
 
@@ -621,8 +621,7 @@ for each phone × latest aspect_definition (seven axes):
 - **Z-score calibration within price bracket** — peer-normalised scores using
   `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
   identical.
-- **Automation** — `pg_cron` per phone, same operational pattern as ingestion
-  when we schedule it.
+- **Automation** — `pnpm scorecard:auto` handles daily scheduling, chunk fingerprinting to skip unchanged phones, and telemetry via GitHub Actions.
 
 ### Key properties (unchanged intent)
 
@@ -1335,7 +1334,8 @@ dissenting_quotes)`.
 - **`src/services/scorecard/`** — combined-query retrieval per aspect, Zod
   extraction schema, chunk-id validation with one retry + strip, recency
   confidence bump, upsert into `aspects`.
-- **`pnpm scorecard:run`** — `scripts/scorecard-run.ts`; `--phone <slug>` or
+- **`pnpm scorecard:auto`** — automated daily pipeline (`scripts/scorecard-auto.ts`).
+- **`pnpm scorecard:run`** — manual CLI `scripts/scorecard-run.ts`; `--phone <slug>` or
   `--all` (active phones only).
 - **`ScorecardSection`** on `/p/[slug]` — renders when at least one aspect row
   exists; seven-axis list with score, confidence, evidence counts, summary.

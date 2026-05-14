@@ -22,6 +22,13 @@
       "when": 1776896949220,
       "tag": "0002_add_gsmarena_source_type",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778752209805,
+      "tag": "0003_stale_karma",
+      "breakpoints": true
     }
   ]
 }
