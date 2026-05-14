@@ -21,7 +21,7 @@
 import { getDb } from '../src/services/db/client';
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { phones } from '../src/services/db/schema';
 import {
   ArticleAdapter,
@@ -271,6 +271,24 @@ async function main(): Promise<void> {
       );
       if (!args.dryRun) {
         await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+
+        // Nudge scorecard schedule — re-score 24h after fresh ingestion
+        // Only bring forward, never push back a sooner deadline.
+        if (summary.totals.chunksWritten > 0) {
+          const nudgeTarget = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          await db
+            .update(phones)
+            .set({
+              nextScorecardAt: nudgeTarget,
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(phones.id, phone.id),
+                or(isNull(phones.nextScorecardAt), gt(phones.nextScorecardAt, nudgeTarget)),
+              ),
+            );
+        }
       }
       successes += 1;
     } catch (err) {

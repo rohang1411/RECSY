@@ -135,6 +135,10 @@ export const phones = pgTable(
      * Null => "eligible now".
      */
     nextIngestAt: timestamp('next_ingest_at', { withTimezone: true }),
+    /** When scorecard was last computed for this phone. Null = never scored. */
+    lastScorecardAt: timestamp('last_scorecard_at', { withTimezone: true }),
+    /** When the scheduler should next re-score this phone. Null = eligible now. */
+    nextScorecardAt: timestamp('next_scorecard_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -143,6 +147,7 @@ export const phones = pgTable(
     index('phones_status_idx').on(t.status),
     index('phones_spec_embedding_idx').using('hnsw', t.specEmbedding.op('vector_cosine_ops')),
     index('phones_next_ingest_at_idx').on(t.nextIngestAt),
+    index('phones_next_scorecard_at_idx').on(t.nextScorecardAt),
   ],
 );
 
@@ -282,6 +287,34 @@ export const aspects = pgTable(
   (t) => [
     unique('aspects_phone_aspect_uniq').on(t.phoneId, t.aspectDefinitionId),
     index('aspects_phone_id_idx').on(t.phoneId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// scorecard_runs — Telemetry and caching guard for aspect extraction
+// ---------------------------------------------------------------------------
+
+export const scorecardRuns = pgTable(
+  'scorecard_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id').references(() => phones.id, { onDelete: 'set null' }),
+    aspect: aspectEnum('aspect').notNull(),
+    status: ingestStatusEnum('status').notNull(),
+    skipReason: text('skip_reason'),
+    chunkFingerprint: text('chunk_fingerprint'),
+    score: numeric('score', { precision: 3, scale: 1 }),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    nSources: integer('n_sources'),
+    durationMs: integer('duration_ms'),
+    error: text('error'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('scorecard_runs_phone_idx').on(t.phoneId),
+    index('scorecard_runs_status_idx').on(t.status),
+    index('scorecard_runs_started_at_idx').on(t.startedAt),
   ],
 );
 
@@ -609,6 +642,7 @@ export const phonesRelations = relations(phones, ({ many }) => ({
   aliases: many(phoneAliases),
   sourceLinks: many(sourcePhoneLinks),
   crawlQueue: many(crawlQueue),
+  scorecardRuns: many(scorecardRuns),
 }));
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
@@ -641,6 +675,10 @@ export const aspectsRelations = relations(aspects, ({ one }) => ({
     fields: [aspects.aspectDefinitionId],
     references: [aspectDefinitions.id],
   }),
+}));
+
+export const scorecardRunsRelations = relations(scorecardRuns, ({ one }) => ({
+  phone: one(phones, { fields: [scorecardRuns.phoneId], references: [phones.id] }),
 }));
 
 export const recommendationSessionsRelations = relations(recommendationSessions, ({ many }) => ({
