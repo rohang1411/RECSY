@@ -180,6 +180,11 @@ export class GeminiProvider implements LlmProvider {
           attempts,
         };
       } catch (retryErr) {
+        console.error('--- GEMINI VALIDATION ERROR ---');
+        console.error('First Attempt:', briefStructuredFailure(lastError));
+        console.error('Second Attempt:', briefStructuredFailure(retryErr));
+        console.error('Raw Retry Error:', retryErr);
+        console.error('--------------------------------');
         throw new LlmSchemaViolation(
           'Gemini structured output failed validation twice',
           {
