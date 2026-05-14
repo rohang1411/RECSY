@@ -9,7 +9,14 @@
  * error-feedback message appended, as specified in `LlmProvider.structured`.
  */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { embedMany, generateObject, generateText, streamText, type ModelMessage } from 'ai';
+import {
+  APICallError,
+  embedMany,
+  generateObject,
+  generateText,
+  streamText,
+  type ModelMessage,
+} from 'ai';
 import type { z } from 'zod';
 import { ZodError } from 'zod';
 
@@ -140,6 +147,17 @@ export class GeminiProvider implements LlmProvider {
       };
     } catch (err) {
       lastError = err;
+
+      // If it's an API error (503, 429, 401), do not attempt schema repair.
+      // Schema repair only makes sense if the model actually output something
+      // that we couldn't parse or validate.
+      const isApiError =
+        err instanceof APICallError || (err instanceof Error && err.name === 'AI_APICallError');
+
+      if (isApiError) {
+        throw new LlmError('Gemini API call failed', { model: input.model }, err);
+      }
+
       // Retry once with an explicit "your output was malformed" nudge.
       try {
         // Gemini 2.x allows `system` only as the first message; do not append a
