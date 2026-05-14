@@ -95,4 +95,42 @@
   [data-theme='dark'] {
     color-scheme: dark;
   }
+
+  body:has(main [data-internal-dashboard='true']) > div > header,
+  body:has(main [data-internal-dashboard='true']) > div > footer {
+    display: none;
+  }
+
+  body:has(main [data-internal-dashboard='true']) > div > main {
+    min-height: 100dvh;
+  }
+}
+
+@layer utilities {
+  @keyframes pipeline-dash {
+    to {
+      stroke-dashoffset: -32;
+    }
+  }
+
+  @keyframes pipeline-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+      transform: scale(1);
+    }
+
+    50% {
+      opacity: 1;
+      transform: scale(1.45);
+    }
+  }
+
+  .pipeline-flow-line {
+    animation: pipeline-dash 2.4s linear infinite;
+  }
+
+  .pipeline-pulse {
+    animation: pipeline-pulse 2.8s ease-in-out infinite;
+  }
 }
