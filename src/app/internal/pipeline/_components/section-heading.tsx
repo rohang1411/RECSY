@@ -1,8 +1,20 @@
-import { Activity, Database, type LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  BrainCircuit,
+  Database,
+  FileSearch,
+  GitBranch,
+  Smartphone,
+  type LucideIcon,
+} from 'lucide-react';
 
 const ICONS = {
   activity: Activity,
+  brain: BrainCircuit,
   database: Database,
+  gitBranch: GitBranch,
+  search: FileSearch,
+  smartphone: Smartphone,
 } satisfies Record<string, LucideIcon>;
 
 export function SectionHeading({

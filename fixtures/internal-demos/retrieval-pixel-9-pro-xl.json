@@ -1,0 +1,84 @@
+{
+  "id": "retrieval-pixel-9-pro-xl-low-light",
+  "phoneSlug": "google-pixel-9-pro-xl",
+  "title": "Pixel 9 Pro XL camera retrieval replay",
+  "question": "How is the camera in low light?",
+  "generatedAt": "2026-05-13T18:20:00.000Z",
+  "latencyMs": 1280,
+  "stages": [
+    {
+      "id": "query",
+      "label": "Query embedding",
+      "count": 1,
+      "detail": "The user question is embedded and kept phone-scoped.",
+      "color": "var(--chart-1)"
+    },
+    {
+      "id": "vector",
+      "label": "Vector candidates",
+      "count": 30,
+      "detail": "Nearest review chunks are pulled from the phone corpus.",
+      "color": "var(--chart-2)"
+    },
+    {
+      "id": "text",
+      "label": "Keyword candidates",
+      "count": 18,
+      "detail": "Camera, night, low-light, zoom, and video terms widen recall.",
+      "color": "var(--chart-3)"
+    },
+    {
+      "id": "fusion",
+      "label": "RRF fusion",
+      "count": 34,
+      "detail": "Overlapping vector and keyword results are blended by rank.",
+      "color": "var(--chart-4)"
+    },
+    {
+      "id": "diversify",
+      "label": "MMR diversify",
+      "count": 16,
+      "detail": "Near-duplicate chunks are reduced so sources do not crowd each other out.",
+      "color": "var(--chart-5)"
+    },
+    {
+      "id": "final",
+      "label": "Cited context",
+      "count": 6,
+      "detail": "The answer uses the highest-scoring, source-diverse evidence.",
+      "color": "var(--primary)"
+    }
+  ],
+  "sourceMix": [
+    { "type": "youtube", "count": 2, "color": "var(--chart-2)" },
+    { "type": "article", "count": 2, "color": "var(--chart-3)" },
+    { "type": "reddit", "count": 1, "color": "var(--chart-4)" },
+    { "type": "gsmarena", "count": 1, "color": "var(--accent)" }
+  ],
+  "finalChunks": [
+    {
+      "rank": 1,
+      "sourceTitle": "Long-form camera review",
+      "sourceType": "youtube",
+      "score": 0.91,
+      "excerpt": "Night shots keep strong exposure and color, while moving subjects still need steadier hands.",
+      "reason": "Directly answers low-light still-photo behavior."
+    },
+    {
+      "rank": 2,
+      "sourceTitle": "Editorial camera comparison",
+      "sourceType": "article",
+      "score": 0.86,
+      "excerpt": "The main sensor favors detail preservation over aggressive brightening in dim scenes.",
+      "reason": "Adds cross-device comparison context."
+    },
+    {
+      "rank": 3,
+      "sourceTitle": "Owner discussion thread",
+      "sourceType": "reddit",
+      "score": 0.78,
+      "excerpt": "Users praise night mode consistency, with complaints mostly around motion blur indoors.",
+      "reason": "Balances reviewer claims with owner reports."
+    }
+  ]
+}

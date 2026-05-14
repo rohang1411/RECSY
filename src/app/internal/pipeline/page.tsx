@@ -1,10 +1,17 @@
 import type { Metadata } from 'next';
 
+import { getPhoneEvidenceCatalog } from '@/services/internal/phone-evidence';
 import { getPipelineSnapshot } from '@/services/internal/pipeline-snapshot';
+import { getRecommendationDemo } from '@/services/internal/recommend-explain';
+import { getRetrievalDemo } from '@/services/internal/retrieval-explain';
 
 import { CorpusOverview } from './_components/corpus-overview';
 import { DatabaseMap } from './_components/database-map';
+import { GuidedWalkthrough } from './_components/guided-walkthrough';
+import { PhoneEvidenceSection } from './_components/phone-evidence-section';
 import { PipelineHero } from './_components/pipeline-hero';
+import { RecommendSection } from './_components/recommend-section';
+import { RetrievalSection } from './_components/retrieval-section';
 import { SectionHeading } from './_components/section-heading';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +22,12 @@ export const metadata: Metadata = {
 };
 
 export default async function PipelineObservatoryPage() {
-  const snapshot = await getPipelineSnapshot();
+  const [snapshot, retrievalDemo, recommendationDemo] = await Promise.all([
+    getPipelineSnapshot(),
+    getRetrievalDemo(),
+    getRecommendationDemo(),
+  ]);
+  const phoneEvidenceCatalog = await getPhoneEvidenceCatalog();
 
   return (
     <main className="relative min-h-dvh">
@@ -68,6 +80,36 @@ export default async function PipelineObservatoryPage() {
           <CorpusOverview snapshot={snapshot} />
         </section>
 
+        <section id="phone-evidence" className="scroll-mt-28">
+          <SectionHeading
+            eyebrow="Phone evidence lens"
+            title="What Gets Stored For One Device"
+            description="A device-level inspector for source rows, embedded chunks, generated scorecards, spec vectors, and ingest telemetry."
+            icon="smartphone"
+          />
+          <PhoneEvidenceSection catalog={phoneEvidenceCatalog} />
+        </section>
+
+        <section id="retrieval-replay" className="scroll-mt-28">
+          <SectionHeading
+            eyebrow="Retrieval replay"
+            title="How Stored Chunks Become Citations"
+            description="A deterministic, no-LLM replay of the hybrid retrieval stages behind phone Q and A."
+            icon="search"
+          />
+          <RetrievalSection demo={retrievalDemo} />
+        </section>
+
+        <section id="recommendation-replay" className="scroll-mt-28">
+          <SectionHeading
+            eyebrow="Recommendation replay"
+            title="How Evidence Becomes Ranked Picks"
+            description="A precomputed recommendation turn that shows requirement extraction, candidate filtering, score contributions, and citations."
+            icon="brain"
+          />
+          <RecommendSection demo={recommendationDemo} />
+        </section>
+
         <section id="database-map" className="scroll-mt-28 pb-12">
           <SectionHeading
             eyebrow="Storage contract"
@@ -78,6 +120,7 @@ export default async function PipelineObservatoryPage() {
           <DatabaseMap groups={snapshot.tableGroups} />
         </section>
       </div>
+      <GuidedWalkthrough />
     </main>
   );
 }

@@ -84,7 +84,10 @@ export interface PipelineHeroCounts {
 
 export function PipelineHero({ counts }: { readonly counts: PipelineHeroCounts }) {
   return (
-    <section className="border-border/60 bg-card/40 relative overflow-hidden rounded-lg border px-4 py-5 shadow-2xl shadow-black/20 backdrop-blur-xl sm:px-5">
+    <section
+      id="pipeline-hero"
+      className="border-border/60 bg-card/40 relative overflow-hidden rounded-lg border px-4 py-5 shadow-2xl shadow-black/20 backdrop-blur-xl sm:px-5"
+    >
       <div
         aria-hidden
         className="absolute inset-0 bg-[linear-gradient(120deg,color-mix(in_oklch,var(--primary)_8%,transparent),transparent_36%,color-mix(in_oklch,var(--accent)_10%,transparent))]"
@@ -209,9 +212,11 @@ function scrollToStage(id: string) {
     id === 'catalog' || id === 'ingest' || id === 'sources' || id === 'chunks'
       ? 'corpus-overview'
       : id === 'scorecard'
-        ? 'database-map'
-        : id === 'retrieval' || id === 'recommend'
-          ? 'database-map'
-          : 'corpus-overview';
+        ? 'phone-evidence'
+        : id === 'retrieval'
+          ? 'retrieval-replay'
+          : id === 'recommend'
+            ? 'recommendation-replay'
+            : 'corpus-overview';
   document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
