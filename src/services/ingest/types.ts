@@ -106,6 +106,20 @@ export interface DiscoverOpts {
   readonly hint?: string;
 }
 
+/** Pipeline stage that produced an ingest_runs record. */
+export type IngestStage = 'discover' | 'fetch' | 'curator' | 'embed' | 'write' | 'phone_run';
+
+/**
+ * Machine-readable error category for retry routing.
+ */
+export type IngestErrorCode =
+  | 'quota_exceeded'
+  | 'rate_limit'
+  | 'network_error'
+  | 'not_found'
+  | 'schema_error'
+  | 'unknown';
+
 /** Per-adapter, per-phone telemetry returned to the orchestrator. */
 export interface AdapterRunSummary {
   readonly type: SourceType;

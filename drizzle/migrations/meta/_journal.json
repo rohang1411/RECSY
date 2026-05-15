@@ -29,6 +29,13 @@
       "when": 1778752209805,
       "tag": "0003_stale_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778874337454,
+      "tag": "0004_equal_sauron",
+      "breakpoints": true
     }
   ]
 }

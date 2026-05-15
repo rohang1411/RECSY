@@ -19,7 +19,8 @@ import { chunks, ingestRuns, sourcePhoneLinks, sources } from '@/services/db/sch
 import { logger } from '@/services/logger';
 
 import type { getDb } from '../db/client';
-import type { RawChunk, RawSource, SourceType } from './types';
+import { classifyIngestError, computeRetryAfter } from './error-classify';
+import type { IngestErrorCode, IngestStage, RawChunk, RawSource, SourceType } from './types';
 
 export type Db = ReturnType<typeof getDb>;
 
@@ -150,6 +151,10 @@ export class IngestionWriter {
             tier: tier ?? null,
             discoveryStrategy: discoveryStrategy ?? null,
             rejectedReason: 'unchanged-content',
+            stage: 'write',
+            errorCode: null,
+            retryAfter: null,
+            candidateTitle: raw.candidate.title,
             startedAt,
             finishedAt,
             durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -257,6 +262,10 @@ export class IngestionWriter {
           chunksCreated: preparedChunks.length,
           tier: tier ?? null,
           discoveryStrategy: discoveryStrategy ?? null,
+          stage: 'write',
+          errorCode: null,
+          retryAfter: null,
+          candidateTitle: raw.candidate.title,
           startedAt,
           finishedAt,
           durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -267,6 +276,7 @@ export class IngestionWriter {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.log.error({ url, err: message }, 'writer transaction failed');
+      const errorCode = classifyIngestError(err);
       // Best-effort failure record (outside the failed transaction).
       try {
         await this.db.insert(ingestRuns).values({
@@ -276,6 +286,10 @@ export class IngestionWriter {
           status: 'failed',
           chunksCreated: 0,
           error: message.slice(0, 2_000),
+          stage: 'write',
+          errorCode,
+          retryAfter: computeRetryAfter(errorCode),
+          candidateTitle: raw.candidate.title,
           startedAt,
           finishedAt: new Date(),
           durationMs: Date.now() - startedAt.getTime(),
@@ -288,6 +302,46 @@ export class IngestionWriter {
   }
 
   /**
+   * Record a pipeline failure before the write transaction (curator, embed, …).
+   */
+  async recordFailedRun(input: {
+    readonly adapterName: string;
+    readonly phoneId: string;
+    readonly sourceUrl: string;
+    readonly candidateTitle?: string | null;
+    readonly stage: IngestStage;
+    readonly errorCode: IngestErrorCode;
+    readonly error: string;
+    readonly retryAfter?: Date | null;
+    readonly tier?: 'hot' | 'warm' | 'cold' | null;
+    readonly discoveryStrategy?: string | null;
+  }): Promise<void> {
+    const startedAt = new Date();
+    try {
+      await this.db.insert(ingestRuns).values({
+        adapter: input.adapterName,
+        phoneId: input.phoneId,
+        sourceUrl: input.sourceUrl,
+        status: 'failed',
+        chunksCreated: 0,
+        error: input.error.slice(0, 2_000),
+        stage: input.stage,
+        errorCode: input.errorCode,
+        retryAfter: input.retryAfter ?? null,
+        candidateTitle: input.candidateTitle ?? null,
+        tier: input.tier ?? null,
+        discoveryStrategy: input.discoveryStrategy ?? null,
+        startedAt,
+        finishedAt: new Date(),
+        durationMs: 0,
+      });
+    } catch (dbErr) {
+      const message = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      this.log.warn({ url: input.sourceUrl, err: message }, 'failed to record failed ingest run');
+    }
+  }
+
+  /**
    * Record a run that was filtered out before any DB writes — e.g. the
    * CuratorAgent rejected the source as off-topic/low-quality. We still want
    * this in `ingest_runs` so audits show why a candidate was dropped.
@@ -296,7 +350,11 @@ export class IngestionWriter {
     readonly adapterName: string;
     readonly phoneId: string;
     readonly sourceUrl: string;
+    readonly candidateTitle?: string | null;
     readonly rejectedReason: string;
+    readonly stage?: IngestStage;
+    readonly errorCode?: IngestErrorCode;
+    readonly retryAfter?: Date | null;
     readonly tier?: 'hot' | 'warm' | 'cold' | null;
     readonly discoveryStrategy?: string | null;
     readonly error?: string | null;
@@ -310,6 +368,10 @@ export class IngestionWriter {
         status: 'skipped',
         chunksCreated: 0,
         rejectedReason: input.rejectedReason,
+        stage: input.stage ?? 'curator',
+        errorCode: input.errorCode ?? null,
+        retryAfter: input.retryAfter ?? null,
+        candidateTitle: input.candidateTitle ?? null,
         tier: input.tier ?? null,
         discoveryStrategy: input.discoveryStrategy ?? null,
         error: input.error ? input.error.slice(0, 2_000) : null,
