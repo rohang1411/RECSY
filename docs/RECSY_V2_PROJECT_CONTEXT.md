@@ -22,7 +22,7 @@ filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
 and [`docs/recommender/README.md`](./recommender/README.md).
 Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
-extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto`, neutral
+extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto` (scheduler + chunk fingerprint + `scorecard_runs` telemetry; **2026-05-15** hardening: reschedule only after `updated > 0`, per-aspect skip rows — see [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md)), neutral
 rows when retrieval is empty, recency as a **confidence** bump only, and
 `ScorecardSection` on `/p/[slug]` when aspects exist. **Calibration** (z-score /
 price bracket) and **multi-query fusion** per aspect are explicitly deferred;
@@ -44,6 +44,8 @@ ranked caption tracks until one yields segments; failures degrade
 gracefully to a skipped-source telemetry row. Phase 1 (DB, data
 model, seed corpus) and Phase 0 (scaffold, design system, service
 skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
+
+**Ops / automation (2026-05-14—15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an all–cold-tier catalog often produced **no picks** on weekdays). Automated scorecard (`scripts/scorecard-auto.ts`): **`markScorecardComplete` only when `result.updated > 0`** (all-aspect failures leave the phone due for retry); staleness skip logs **seven** `scorecard_runs` rows (`ASPECT_NAMES`). See [§22 Change Log](#22-change-log) (entry **2026-05-15**) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ---
 
@@ -230,52 +232,52 @@ Lands on `/internal/pipeline` to inspect the system architecture, live corpus me
 
 **Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
 
-| Feature                                    | Status | Phase | Notes                                                                                                                                   |
-| ------------------------------------------ | ------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Landing hero + CTA                         | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                               |
-| Dark/light theme (OKLCH tokens)            | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                                |
-| `/api/health` liveness probe               | ✓      | 0     |                                                                                                                                         |
-| Typed env validation                       | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                              |
-| LLM provider abstraction                   | ✓      | 0     | Gemini impl + cache decorator                                                                                                           |
-| Drizzle schema (12 tables, 8 enums)        | ✓      | 0     |                                                                                                                                         |
-| Postgres extensions bootstrapped           | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                          |
-| Initial migration applied                  | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                      |
-| RLS policies                               | ✓      | 1     | default-deny + anon read on public tables                                                                                               |
-| `PhoneSpec` Zod schema                     | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                         |
-| Aspect definitions seeded                  | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                           |
-| Starter phone corpus (20 phones)           | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                                   |
-| `db:setup` orchestrator + `db:smoke`       | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                  |
-| MCP-style ingestion adapters               | ✓      | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                         |
-| `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents                  |
-| Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                 |
-| Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)             |
-| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto`; UI when rows exist                                                                       |
-| Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                           |
-| Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                 |
-| Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                               |
-| About page                                 | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                               |
-| Compare (two phones)                       | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                     |
-| Phone page: spec grid + MSRP + image       | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                        |
-| Browse + rec cards: product imagery        | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                        |
-| Recommender: price + image on pick cards   | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                    |
-| PWA manifest + icons (installable)         | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                       |
-| SEO + default OG (sitemap, robots)         | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                    |
-| Product analytics (Vercel)                 | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                           |
-| Compare: catalog pickers + slug form       | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                             |
-| Starter corpus: sample `image_url`         | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                    |
-| Hybrid `eval:retrieval` in CI              | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)     |
-| PWA **offline** shell (service worker)     | ◯      | 7+    | Deferred; ADR 0010                                                                                                                      |
-| Phone Q&A: cross-scope guidance + trace UI | ✓      | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI  |
-| Landing: “What you can do” cards           | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `/` below hero                                                         |
-| `PhoneImage` remote delivery               | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `<img>` + `referrerPolicy="no-referrer"`                               |
-| Recommender: refine-over-prior-picks       | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — re-ranks prior picks on conversational follow-ups       |
-| Recommender: tie + no-data honesty         | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `scoresTied`, `scorecardMissing`, `topAspects`, banner     |
-| Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects        |
-| Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL` |
-| Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link      |
-| Internal Pipeline Observatory              | ✓      | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                   |
+| Feature                                    | Status | Phase | Notes                                                                                                                                                                                              |
+| ------------------------------------------ | ------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing hero + CTA                         | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                                                                                          |
+| Dark/light theme (OKLCH tokens)            | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                                                                                           |
+| `/api/health` liveness probe               | ✓      | 0     |                                                                                                                                                                                                    |
+| Typed env validation                       | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                                                                                         |
+| LLM provider abstraction                   | ✓      | 0     | Gemini impl + cache decorator                                                                                                                                                                      |
+| Drizzle schema (12 tables, 8 enums)        | ✓      | 0     |                                                                                                                                                                                                    |
+| Postgres extensions bootstrapped           | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                                                                                     |
+| Initial migration applied                  | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                                                                                 |
+| RLS policies                               | ✓      | 1     | default-deny + anon read on public tables                                                                                                                                                          |
+| `PhoneSpec` Zod schema                     | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                                                                                    |
+| Aspect definitions seeded                  | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                                                                                      |
+| Starter phone corpus (20 phones)           | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                                                                                              |
+| `db:setup` orchestrator + `db:smoke`       | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                                                                             |
+| MCP-style ingestion adapters               | ✓      | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                                                                                    |
+| `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see §22) |
+| Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                                                                            |
+| Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                                        |
+| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto` (see implementation plan + §22 2026-05-15); UI when rows exist                                                                                       |
+| Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                                                                                      |
+| Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                                                                            |
+| Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                                                                                          |
+| About page                                 | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                                                                                          |
+| Compare (two phones)                       | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                                                                                |
+| Phone page: spec grid + MSRP + image       | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                                                                                   |
+| Browse + rec cards: product imagery        | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                                                                                   |
+| Recommender: price + image on pick cards   | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                                                                               |
+| PWA manifest + icons (installable)         | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                                                                                  |
+| SEO + default OG (sitemap, robots)         | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                                                                               |
+| Product analytics (Vercel)                 | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                                                                                      |
+| Compare: catalog pickers + slug form       | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                                                                                        |
+| Starter corpus: sample `image_url`         | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                                                                               |
+| Hybrid `eval:retrieval` in CI              | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)                                                                |
+| PWA **offline** shell (service worker)     | ◯      | 7+    | Deferred; ADR 0010                                                                                                                                                                                 |
+| Phone Q&A: cross-scope guidance + trace UI | ✓      | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI                                                             |
+| Landing: “What you can do” cards           | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `/` below hero                                                                                                                    |
+| `PhoneImage` remote delivery               | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `<img>` + `referrerPolicy="no-referrer"`                                                                                          |
+| Recommender: refine-over-prior-picks       | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — re-ranks prior picks on conversational follow-ups                                                                  |
+| Recommender: tie + no-data honesty         | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `scoresTied`, `scorecardMissing`, `topAspects`, banner                                                                |
+| Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects                                                                   |
+| Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL`                                                            |
+| Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link                                                                 |
+| Internal Pipeline Observatory              | ✓      | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                                                                              |
 
-> **Backlog check (2026-04-22).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev.
+> **Backlog check (2026-05-15).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev. **Shipped this week:** tiered ingest cron alignment (`ingest-tiered.yml` + `--tier all` on schedule) and `scorecard:auto` rescheduling/telemetry fixes — [§22](#22-change-log).
 
 ---
 
@@ -621,7 +623,7 @@ for each phone × latest aspect_definition (seven axes):
 - **Z-score calibration within price bracket** — peer-normalised scores using
   `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
   identical.
-- **Automation** — `pnpm scorecard:auto` handles daily scheduling, chunk fingerprinting to skip unchanged phones, and telemetry via GitHub Actions.
+- **Automation** — `pnpm scorecard:auto` handles daily scheduling (`scorecard-auto.yml`), chunk fingerprinting to skip unchanged corpora, `scorecard_runs` telemetry, and `phones.next_scorecard_at` / `last_scorecard_at` via `markScorecardComplete` **only after at least one aspect succeeds** (`updated > 0`). Staleness skips insert **one skipped row per aspect** (`ASPECT_NAMES`). Operator detail: [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ### Key properties (unchanged intent)
 
@@ -928,6 +930,14 @@ inline. `NEXT_PUBLIC_COMMIT_SHA` is injected from `github.sha` where applicable.
 We run one Supabase project in MVP. Will split when cost/complexity
 justifies it.
 
+### Scheduled automation (GitHub Actions)
+
+Beyond `ci.yml`, production-adjacent cron jobs include:
+
+- **`ingest-tiered.yml`** — daily 02:17 UTC: four parallel shards call `pnpm exec tsx scripts/ingest-auto.ts` with **`--tier all`** on `schedule` (manual dispatch may pass `--tier hot|warm|cold|all`). Tier priority (hot → warm → cold) remains inside `pickPhones`; the workflow no longer gates **cold** to Sundays only (that pattern starved cold-tier catalogs on weekdays).
+- **`scorecard-auto.yml`** — same cron time; `pnpm exec tsx scripts/scorecard-auto.ts` with configurable `--limit` / `--force`.
+- **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** — per ADR 0014 / operator docs.
+
 ---
 
 ## 19. Project Phases & Progress
@@ -938,7 +948,7 @@ justifies it.
 | 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                                                               |
 | 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                                                              |
 | 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups                                         |
-| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                                                        |
+| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred; automation hardened 2026-05-15 (see §22)                              |
 | 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                                                                   |
 | 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                                                         |
 | 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | ADR 0009 + 0010: manifest, SEO, OG, analytics, compare pickers, sample images; SW offline + optional eval job follow-ups |
@@ -1170,6 +1180,12 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-05-15 — Tiered ingest cron + automated scorecard hardening
+
+- **`.github/workflows/ingest-tiered.yml`** — Removed the `plan` job that selected tiers by day-of-week and matrixed `tier × shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes “cron runs but picks zero phones” when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
+- **`scripts/scorecard-auto.ts`** — **`markScorecardComplete`** runs only when **`runScorecardForPhone` returns `updated > 0`**; if every aspect fails, the phone stays due, a **warn** is logged, and **`failures`** increments for exit-code semantics. Staleness path (`chunks_unchanged`) inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) instead of a single `aspect: 'camera'` sentinel.
+- **Documentation** — [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations).
+
 ### 2026-05-13 - YouTube transcript fallback chain hardening
 
 - **External transcript fallbacks.** YouTube ingestion now tries two optional
@@ -1228,7 +1244,7 @@ dissenting_quotes)`.
   - `scripts/creator-watch.ts` (`pnpm creator:watch`) — RSS-only poll. Enqueues hot-tier rows into `crawl_queue` with alias-matched URLs. No embedding. Cheap enough for 4×/day.
   - `scripts/ingest-report.ts` (`pnpm ingest:report [--days N]`) — weekly audit: runs by adapter×status, by tier, top `rejected_reason`, avg relevance/quality on new sources, phones overdue relative to 2× their tier's interval.
   - `.github/workflows/ingest.yml` — retired the hand-coded nightly roster; now only a manual `workflow_dispatch` entrypoint.
-  - `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC. A `plan` job picks tiers by day-of-week (hot every day, warm Mon/Wed/Fri/Sat, cold Sun). Matrix `tier × shard[0..3]`, `max-parallel: 4`.
+  - `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC, four-shard matrix calling `ingest-auto.ts` (**as of 2026-05-14**: `schedule` uses `--tier all`; earlier revision used a `plan` job + day-of-week tier matrix, which skipped cold-tier phones on non-Sundays). `max-parallel: 4`.
   - `.github/workflows/creator-watch.yml` — every 6h, 23 minutes past the hour.
   - `.github/workflows/ingest-on-new-phone.yml` — `workflow_dispatch` bootstrap for admin-added phones.
 - **Empty-corpus UX, time-aware** (`src/services/chat/answer.ts`) — `buildNoContextMessage(phoneMeta)` names brand + model, mentions days-since-last-ingest, and surfaces the next scheduled refresh window (e.g. "Next refresh is scheduled in about 12h"). `POST /api/ask` passes `{brand, model, lastIngestAt, nextIngestAt}` from the same row it already fetches. No more developer-oriented `pnpm ingest --phone <slug>` in user-facing text. ADR 0012's short-circuit + `NO_CONTEXT_MODEL='no-context@v1'` sentinel stay.

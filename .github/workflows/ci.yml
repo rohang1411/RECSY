@@ -106,9 +106,11 @@ jobs:
 
   # Hybrid retrieval `eval:retrieval` needs: Postgres, seeded phones, a tiny
   # ingested chunk (see `ci:retrieval-fixture`) and a real Gemini key for
-  # query embedding. Add repo secret `GEMINI_API_KEY` to enable.
+  # query embedding. Entire job is skipped when `GEMINI_API_KEY` secret is unset.
   retrieval-eval:
     name: eval · retrieval (optional, Gemini)
+    # Skip whole job when no API key — avoids Postgres + pnpm setup for a no-op.
+    if: ${{ secrets.GEMINI_API_KEY != '' }}
     runs-on: ubuntu-latest
     needs: [quality]
     services:
@@ -157,9 +159,7 @@ jobs:
         run: pnpm exec tsx scripts/db-setup.ts
 
       - name: Seed minimal retrieval eval corpus
-        if: env.GEMINI_API_KEY != ''
         run: pnpm ci:retrieval-fixture
 
       - name: Run hybrid retrieval eval
-        if: env.GEMINI_API_KEY != ''
         run: pnpm exec tsx scripts/eval-retrieval.ts

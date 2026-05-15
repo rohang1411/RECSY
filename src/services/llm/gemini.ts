@@ -7,6 +7,10 @@
  *
  * Retry policy: schema-violating structured outputs are retried once with an
  * error-feedback message appended, as specified in `LlmProvider.structured`.
+ *
+ * Optional second API key (`GEMINI_API_KEY_2`) and client-side pacing
+ * (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) support Google AI Studio
+ * free-tier style caps; authoritative limits remain on Google's side.
  */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import {
@@ -23,6 +27,12 @@ import { ZodError } from 'zod';
 import { env } from '@/env';
 import { LlmError, LlmSchemaViolation } from '@/lib/errors';
 
+import {
+  estimateTokensFromMessages,
+  estimateTokensFromTexts,
+  GeminiRequestGovernor,
+  isLikelyGeminiQuotaExhaustedError,
+} from './gemini-request-governor';
 import type {
   ChatDelta,
   ChatInput,
@@ -41,6 +51,14 @@ import type {
  */
 const EMBEDDING_DIMENSIONS = 768;
 
+type GoogleGenAI = ReturnType<typeof createGoogleGenerativeAI>;
+
+type GeminiExecuteResult<T> = {
+  readonly value: T;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+};
+
 function briefStructuredFailure(err: unknown, max = 500): string {
   if (err instanceof ZodError) {
     return err.issues
@@ -57,58 +75,196 @@ function briefStructuredFailure(err: unknown, max = 500): string {
   return String(err).slice(0, max);
 }
 
+/**
+ * Schema-repair retry only helps when the model returned parseable-ish output
+ * that failed Zod. When the SDK has already exhausted HTTP retries (often
+ * 429 quota) or the provider returned a hard API error, a second `generateObject`
+ * call wastes quota and surfaces misleading "validation twice" messages.
+ */
+function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
+  if (err instanceof APICallError) return true;
+  if (err instanceof Error && err.name === 'AI_APICallError') return true;
+  if (err instanceof Error && err.name === 'AI_RetryError') return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded/i.test(msg);
+}
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
-  private readonly google = createGoogleGenerativeAI({ apiKey: env.GEMINI_API_KEY });
+  private readonly clients: readonly GoogleGenAI[];
+  private readonly governor: GeminiRequestGovernor | null;
+  private preferredKeyIndex = 0;
+
+  constructor() {
+    const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2].filter(
+      (k): k is string => typeof k === 'string' && k.length > 0,
+    );
+    this.clients = keys.map((apiKey) => createGoogleGenerativeAI({ apiKey }));
+    this.governor =
+      env.GEMINI_RATE_LIMIT_PROFILE === 'google_ai_studio_free'
+        ? new GeminiRequestGovernor(this.clients.length, {
+            profile: 'google_ai_studio_free',
+            rpm: env.GEMINI_FREE_RPM,
+            tpmInput: env.GEMINI_FREE_TPM_INPUT,
+            rpd: env.GEMINI_FREE_RPD,
+          })
+        : null;
+  }
+
+  /**
+   * Runs `op` against successive API keys when Google returns quota-style errors.
+   * When `GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`, enforces per-key RPM/TPM/RPD
+   * before each outbound call (in-process; use `off` on multi-instance paid deploys).
+   */
+  private async executeWithGeminiKeys<T>(params: {
+    readonly model: string;
+    readonly estimateInputTokens: number;
+    readonly op: (google: GoogleGenAI, keyIndex: number) => Promise<GeminiExecuteResult<T>>;
+  }): Promise<GeminiExecuteResult<T>> {
+    if (this.clients.length === 0) {
+      throw new LlmError('Gemini misconfigured: no API keys', { model: params.model });
+    }
+
+    const start = this.preferredKeyIndex;
+    let lastErr: unknown;
+
+    for (let step = 0; step < this.clients.length; step++) {
+      const keyIndex = (start + step) % this.clients.length;
+
+      if (this.governor) {
+        const ok = await this.governor.acquireForKey(keyIndex, params.estimateInputTokens);
+        if (!ok) {
+          const h = Math.round(this.governor.msUntilNextUtcDay() / 3_600_000);
+          lastErr = new Error(
+            `Gemini free-tier daily request budget reached for API key #${keyIndex + 1} (resets next UTC day, ~${h}h).`,
+          );
+          continue;
+        }
+      }
+
+      try {
+        const google = this.clients[keyIndex]!;
+        const { value, inputTokens, outputTokens } = await params.op(google, keyIndex);
+        this.preferredKeyIndex = keyIndex;
+        if (this.governor) {
+          await this.governor.recordMeasuredForKey(keyIndex, inputTokens);
+        }
+        return { value, inputTokens, outputTokens };
+      } catch (err) {
+        lastErr = err;
+        if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw new LlmError(
+      'Gemini API call failed (all configured API keys exhausted)',
+      { model: params.model },
+      lastErr,
+    );
+  }
+
+  private async resolveStreamKeyIndex(estimateInputTokens: number): Promise<number> {
+    if (!this.governor) return this.preferredKeyIndex;
+
+    for (let step = 0; step < this.clients.length; step++) {
+      const keyIndex = (this.preferredKeyIndex + step) % this.clients.length;
+      if (await this.governor.acquireForKey(keyIndex, estimateInputTokens)) {
+        return keyIndex;
+      }
+    }
+
+    const h = Math.round(this.governor.msUntilNextUtcDay() / 3_600_000);
+    throw new LlmError(
+      `Gemini free-tier daily request budget reached for all API keys (~${h}h until UTC day rollover).`,
+      { model: 'stream' },
+    );
+  }
 
   async chat(input: ChatInput): Promise<ChatResult> {
     try {
-      const result = await generateText({
-        model: this.google(input.model),
-        messages: toModelMessages(input.messages),
-        temperature: input.temperature,
-        maxOutputTokens: input.maxOutputTokens,
-        abortSignal: input.signal,
-      });
-      return {
-        text: result.text,
-        usage: {
-          tokensIn: result.usage.inputTokens ?? 0,
-          tokensOut: result.usage.outputTokens ?? 0,
-        },
+      const { value } = await this.executeWithGeminiKeys({
         model: input.model,
-        cached: false,
-      };
+        estimateInputTokens: estimateTokensFromMessages(input.messages),
+        op: async (google) => {
+          const result = await generateText({
+            model: google(input.model),
+            messages: toModelMessages(input.messages),
+            temperature: input.temperature,
+            maxOutputTokens: input.maxOutputTokens,
+            abortSignal: input.signal,
+          });
+          return {
+            value: {
+              text: result.text,
+              usage: {
+                tokensIn: result.usage.inputTokens ?? 0,
+                tokensOut: result.usage.outputTokens ?? 0,
+              },
+              model: input.model,
+              cached: false,
+            },
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+          };
+        },
+      });
+      return value;
     } catch (err) {
       throw new LlmError('Gemini chat failed', { model: input.model }, err);
     }
   }
 
   async *chatStream(input: ChatInput): AsyncIterable<ChatDelta> {
+    const est = estimateTokensFromMessages(input.messages);
+    const keyIndex = await this.resolveStreamKeyIndex(est);
+    const google = this.clients[keyIndex]!;
+
     const stream = streamText({
-      model: this.google(input.model),
+      model: google(input.model),
       messages: toModelMessages(input.messages),
       temperature: input.temperature,
       maxOutputTokens: input.maxOutputTokens,
       abortSignal: input.signal,
     });
 
-    for await (const part of stream.fullStream) {
-      if (part.type === 'text-delta') {
-        yield { type: 'text-delta', textDelta: part.text };
-      } else if (part.type === 'error') {
-        throw new LlmError('Gemini stream error', { model: input.model }, part.error);
+    try {
+      for await (const part of stream.fullStream) {
+        if (part.type === 'text-delta') {
+          yield { type: 'text-delta', textDelta: part.text };
+        } else if (part.type === 'error') {
+          throw new LlmError('Gemini stream error', { model: input.model }, part.error);
+        }
       }
-    }
 
-    const finalUsage = await stream.usage;
-    yield {
-      type: 'finish',
-      usage: {
-        tokensIn: finalUsage.inputTokens ?? 0,
-        tokensOut: finalUsage.outputTokens ?? 0,
-      },
-    };
+      const finalUsage = await stream.usage;
+      const tokensIn = finalUsage.inputTokens ?? 0;
+      if (this.governor) {
+        await this.governor.recordMeasuredForKey(keyIndex, tokensIn);
+      }
+      this.preferredKeyIndex = keyIndex;
+
+      yield {
+        type: 'finish',
+        usage: {
+          tokensIn,
+          tokensOut: finalUsage.outputTokens ?? 0,
+        },
+      };
+    } catch (err) {
+      if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
+        throw new LlmError(
+          'Gemini stream failed (quota). Streaming cannot fail over to a backup key mid-flight; retry the request.',
+          { model: input.model },
+          err,
+        );
+      }
+      throw err instanceof LlmError
+        ? err
+        : new LlmError('Gemini stream failed', { model: input.model }, err);
+    }
   }
 
   async structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>> {
@@ -121,19 +277,30 @@ export class GeminiProvider implements LlmProvider {
       messages: readonly { role: 'system' | 'user' | 'assistant'; content: string }[],
     ): Promise<T> => {
       attempts += 1;
-      const result = await generateObject({
-        model: this.google(input.model),
-        messages: toModelMessages(messages),
-        schema: input.schema as z.ZodType<T>,
-        schemaName: input.schemaName,
-        schemaDescription: input.schemaDescription,
-        temperature: input.temperature ?? 0,
-        maxOutputTokens: input.maxOutputTokens,
-        abortSignal: input.signal,
+      const { value, inputTokens, outputTokens } = await this.executeWithGeminiKeys({
+        model: input.model,
+        estimateInputTokens: estimateTokensFromMessages(messages),
+        op: async (google) => {
+          const result = await generateObject({
+            model: google(input.model),
+            messages: toModelMessages(messages),
+            schema: input.schema as z.ZodType<T>,
+            schemaName: input.schemaName,
+            schemaDescription: input.schemaDescription,
+            temperature: input.temperature ?? 0,
+            maxOutputTokens: input.maxOutputTokens,
+            abortSignal: input.signal,
+          });
+          return {
+            value: result.object,
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+          };
+        },
       });
-      tokensIn += result.usage.inputTokens ?? 0;
-      tokensOut += result.usage.outputTokens ?? 0;
-      return result.object;
+      tokensIn += inputTokens;
+      tokensOut += outputTokens;
+      return value;
     };
 
     try {
@@ -148,21 +315,11 @@ export class GeminiProvider implements LlmProvider {
     } catch (err) {
       lastError = err;
 
-      // If it's an API error (503, 429, 401), do not attempt schema repair.
-      // Schema repair only makes sense if the model actually output something
-      // that we couldn't parse or validate.
-      const isApiError =
-        err instanceof APICallError || (err instanceof Error && err.name === 'AI_APICallError');
-
-      if (isApiError) {
+      if (shouldSkipStructuredSchemaRepair(err)) {
         throw new LlmError('Gemini API call failed', { model: input.model }, err);
       }
 
-      // Retry once with an explicit "your output was malformed" nudge.
       try {
-        // Gemini 2.x allows `system` only as the first message; do not append a
-        // second system turn (API error: "system messages are only supported
-        // at the beginning of the conversation").
         const retryMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
           ...input.messages,
           {
@@ -202,28 +359,34 @@ export class GeminiProvider implements LlmProvider {
 
   async embed(texts: readonly string[], model?: string): Promise<EmbedResult> {
     const embedModel = model ?? env.LLM_EMBEDDING_MODEL;
-    // `RETRIEVAL_DOCUMENT` is the correct task type for indexing passages
-    // (queries will use `RETRIEVAL_QUERY`). Sending a distinct task type
-    // yields embeddings better aligned for retrieval recall than the default
-    // `SEMANTIC_SIMILARITY`, per Google's embedding docs.
     const googleOptions: { outputDimensionality: number; taskType: string } = {
       outputDimensionality: EMBEDDING_DIMENSIONS,
       taskType: 'RETRIEVAL_DOCUMENT',
     };
     try {
-      const result = await embedMany({
-        model: this.google.embedding(embedModel),
-        values: [...texts],
-        providerOptions: { google: googleOptions },
-      });
-      return {
-        embeddings: result.embeddings,
+      const { value } = await this.executeWithGeminiKeys({
         model: embedModel,
-        usage: { tokensIn: result.usage?.tokens ?? 0 },
-      };
+        estimateInputTokens: estimateTokensFromTexts(texts),
+        op: async (google) => {
+          const result = await embedMany({
+            model: google.embedding(embedModel),
+            values: [...texts],
+            providerOptions: { google: googleOptions },
+          });
+          const tokensIn = result.usage?.tokens ?? 0;
+          return {
+            value: {
+              embeddings: result.embeddings,
+              model: embedModel,
+              usage: { tokensIn },
+            },
+            inputTokens: tokensIn,
+            outputTokens: 0,
+          };
+        },
+      });
+      return value;
     } catch (err) {
-      // Preserve the underlying SDK message so callers (and retry logs) see
-      // the actual HTTP / schema problem rather than a generic wrap.
       const causeMsg =
         err instanceof Error ? err.message : typeof err === 'string' ? err : 'unknown';
       throw new LlmError(

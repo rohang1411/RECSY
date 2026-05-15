@@ -13,6 +13,7 @@
  *   --help
  */
 import { parseArgs } from 'node:util';
+import { ASPECT_NAMES } from '../src/lib/constants';
 import { getDb } from '../src/services/db/client';
 import { scorecardRuns } from '../src/services/db/schema';
 import { findMissingPublicSchema, describeMissingSchema } from '../src/services/db/schema-guard';
@@ -104,17 +105,19 @@ Options:
         if (last !== null && last === fingerprint) {
           console.log(`  ${phone.slug}: skipped (chunks_unchanged)`);
 
-          // Log skipped in DB telemetry
-          await db.insert(scorecardRuns).values({
-            phoneId: phone.id,
-            aspect: 'camera', // We just use a default aspect for a phone-level skip
-            status: 'skipped',
-            skipReason: 'chunks_unchanged',
-            chunkFingerprint: fingerprint,
-            startedAt: new Date(),
-            finishedAt: new Date(),
-            durationMs: 0,
-          });
+          const now = new Date();
+          await db.insert(scorecardRuns).values(
+            ASPECT_NAMES.map((aspect) => ({
+              phoneId: phone.id,
+              aspect,
+              status: 'skipped' as const,
+              skipReason: 'chunks_unchanged',
+              chunkFingerprint: fingerprint,
+              startedAt: now,
+              finishedAt: now,
+              durationMs: 0,
+            })),
+          );
 
           await markScorecardComplete(db, { phoneId: phone.id });
           skipped++;
@@ -134,9 +137,17 @@ Options:
         aspectDelayMs: 4500, // 4.5s pacing for free tier
       });
 
-      await markScorecardComplete(db, { phoneId: phone.id });
       console.log(`  ${phone.slug}: ${result.updated} updated, ${result.failed} failed`);
-      scored++;
+      if (result.updated > 0) {
+        await markScorecardComplete(db, { phoneId: phone.id });
+        scored++;
+      } else {
+        failures++;
+        log.warn(
+          { phone: phone.slug, updated: result.updated, failed: result.failed },
+          'no aspects updated; leaving phone due for retry (not rescheduling)',
+        );
+      }
     } catch (err) {
       failures++;
       log.error(

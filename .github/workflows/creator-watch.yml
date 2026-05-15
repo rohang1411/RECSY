@@ -8,8 +8,11 @@
 #
 # Why separate from ingest-tiered.yml?
 #   - Different cadence (6h vs daily).
-#   - Much cheaper — no embedding / LLM work.
+#   - Much cheaper — no embedding / LLM work (script never calls Gemini).
 #   - Keeps tiered runtime predictable.
+#
+# GEMINI_API_KEY: env.ts requires a non-empty key even though this job does not
+# call the LLM; we use a harmless placeholder when the secret is unset.
 # =============================================================================
 name: creator-watch
 
@@ -32,6 +35,7 @@ concurrency:
 jobs:
   watch:
     name: Poll creator feeds
+    if: ${{ secrets.DATABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -42,7 +46,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       LLM_PROVIDER: gemini
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__CREATOR_WATCH_GEMINI_PLACEHOLDER_NOT_USED__' }}
       LOG_LEVEL: info
       SKIP_ENV_VALIDATION: 'false'
 
