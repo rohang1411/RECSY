@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const uuidStr = z.string();
+const uuidStr = z.string().uuid();
 
 export const scorecardEvidenceItemSchema = z.object({
   chunkId: uuidStr,
