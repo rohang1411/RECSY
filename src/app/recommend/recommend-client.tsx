@@ -1,8 +1,8 @@
 'use client';
 
-import { ArrowRight, Loader2, MessageCircle, Scale } from 'lucide-react';
+import { ArrowRight, Loader2, MessageCircle, RefreshCw, Scale } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import {
@@ -11,6 +11,11 @@ import {
   useClientSetting,
 } from '@/lib/client-settings';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
+import {
+  clearRecommendSession,
+  readRecommendSession,
+  writeRecommendSession,
+} from '@/lib/recommend-session';
 import { cn } from '@/lib/utils';
 
 type ApiPick = {
@@ -29,6 +34,13 @@ interface ChatLine {
   readonly text: string;
 }
 
+const INITIAL_LINES: ChatLine[] = [
+  {
+    role: 'assistant',
+    text: 'What kind of phone are you looking for? Mention budget, must-haves, and what matters most (camera, battery, gaming, etc.).',
+  },
+];
+
 function rankLabel(index: number): string {
   if (index === 0) return 'Top pick';
   if (index === 1) return 'Runner-up';
@@ -36,26 +48,96 @@ function rankLabel(index: number): string {
   return `#${index + 1}`;
 }
 
+function formatSavedAt(savedAt: number): string {
+  const diffMs = Date.now() - savedAt;
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return 'earlier this session';
+  if (diffH === 1) return '1 hour ago';
+  return `${diffH} hours ago`;
+}
+
+/** SSR-safe client mount gate (same pattern as `useClientSetting`). */
+function useClientMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 export function RecommendClient() {
+  const mounted = useClientMounted();
+  if (!mounted) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+        <div className="border-border/80 bg-card/40 rounded-xl border p-4 shadow-sm sm:p-6">
+          <div className="text-muted-foreground flex items-center justify-center py-16 text-sm">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
+            Loading…
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <RecommendClientLoaded />;
+}
+
+function RecommendClientLoaded() {
+  const session = readRecommendSession();
   const [input, setInput] = useState('');
-  const [lines, setLines] = useState<ChatLine[]>([
-    {
-      role: 'assistant',
-      text: 'What kind of phone are you looking for? Mention budget, must-haves, and what matters most (camera, battery, gaming, etc.).',
-    },
-  ]);
-  const [picks, setPicks] = useState<readonly ApiPick[] | null>(null);
-  const [relaxed, setRelaxed] = useState<readonly string[] | null>(null);
-  const [refined, setRefined] = useState<boolean>(false);
-  const [scoresTied, setScoresTied] = useState<boolean>(false);
-  const [scorecardMissing, setScorecardMissing] = useState<boolean>(false);
-  const [topAspects, setTopAspects] = useState<readonly string[]>([]);
+  const [lines, setLines] = useState<ChatLine[]>(
+    () => (session?.lines as ChatLine[] | undefined) ?? INITIAL_LINES,
+  );
+  const [picks, setPicks] = useState<readonly ApiPick[] | null>(
+    () => (session?.picks as readonly ApiPick[] | null | undefined) ?? null,
+  );
+  const [relaxed, setRelaxed] = useState<readonly string[] | null>(() => session?.relaxed ?? null);
+  const [refined, setRefined] = useState<boolean>(() => session?.refined ?? false);
+  const [scoresTied, setScoresTied] = useState<boolean>(() => session?.scoresTied ?? false);
+  const [scorecardMissing, setScorecardMissing] = useState<boolean>(
+    () => session?.scorecardMissing ?? false,
+  );
+  const [topAspects, setTopAspects] = useState<readonly string[]>(() => session?.topAspects ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Timestamp (ms) of the restored session, or null if this is a live session. */
+  const [restoredAt, setRestoredAt] = useState<number | null>(() => session?.savedAt ?? null);
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
   );
+
+  const skipNextWriteRef = useRef(true);
+
+  useEffect(() => {
+    if (skipNextWriteRef.current) {
+      skipNextWriteRef.current = false;
+      return;
+    }
+    writeRecommendSession({
+      savedAt: Date.now(),
+      lines,
+      picks,
+      relaxed,
+      refined,
+      scoresTied,
+      scorecardMissing,
+      topAspects,
+    });
+  }, [lines, picks, relaxed, refined, scoresTied, scorecardMissing, topAspects]);
+
+  const clearRestoredSession = useCallback(() => {
+    clearRecommendSession();
+    setLines(INITIAL_LINES);
+    setPicks(null);
+    setRelaxed(null);
+    setRefined(false);
+    setScoresTied(false);
+    setScorecardMissing(false);
+    setTopAspects([]);
+    setRestoredAt(null);
+    setError(null);
+  }, []);
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -68,6 +150,9 @@ export function RecommendClient() {
     setScoresTied(false);
     setScorecardMissing(false);
     setTopAspects([]);
+    setRestoredAt(null);
+    // Clear any restored session so the new query owns the slot from scratch.
+    clearRecommendSession();
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
     try {
@@ -180,6 +265,24 @@ export function RecommendClient() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <div className="border-border/80 bg-card/40 rounded-xl border p-4 shadow-sm sm:p-6">
+        {/* Stale session banner */}
+        {restoredAt !== null && picks !== null && picks.length > 0 ? (
+          <div className="border-border/60 bg-muted/30 mb-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <RefreshCw className="size-3 shrink-0" aria-hidden />
+              Results from {formatSavedAt(restoredAt)} — send a new message to refresh.
+            </p>
+            <button
+              type="button"
+              onClick={clearRestoredSession}
+              className="text-muted-foreground hover:text-foreground shrink-0 text-xs underline-offset-2 hover:underline"
+              aria-label="Clear saved results and start over"
+            >
+              Start over
+            </button>
+          </div>
+        ) : null}
+
         <ul className="max-h-[min(420px,50vh)] space-y-4 overflow-y-auto pr-1">
           {lines.map((line, i) => (
             <li
