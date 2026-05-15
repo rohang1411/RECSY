@@ -17,6 +17,8 @@ export {
 export type {
   AdapterRunSummary,
   DiscoverOpts,
+  IngestErrorCode,
+  IngestStage,
   PhoneRef,
   RawChunk,
   RawSource,
@@ -24,6 +26,7 @@ export type {
   SourceCandidate,
   SourceType,
 } from './types';
+export { classifyIngestError, computeRetryAfter } from './error-classify';
 export { IngestionWriter } from './writer';
 
 export { ArticleAdapter } from './adapters/article';
@@ -40,6 +43,12 @@ export { makeDbAliasLoader, makeDbPhoneLookup } from './agents/alias-loader';
 export { makePoliteHttp, type PoliteHttp } from './http';
 
 export { pickPhones, shardIndex, type PickedPhone } from './scheduler/pick-phones';
+export {
+  getFailedCandidatesForPhone,
+  pickPhonesEmptyCorpus,
+  pickResumePhones,
+  type FailedCandidate,
+} from './scheduler/pick-resume-phones';
 export { markIngested, bootstrapNextIngestAt } from './scheduler/enqueue';
 export {
   classifyTier,

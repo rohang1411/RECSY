@@ -18,7 +18,7 @@
  * Output is intentionally console-only; a higher-fidelity dashboard can
  * build on top of the same queries later.
  */
-import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { getDb } from '../src/services/db/client';
@@ -168,6 +168,54 @@ async function main(): Promise<void> {
     if (overdue.length > 20) {
       console.log(`  … and ${overdue.length - 20} more`);
     }
+  }
+
+  hr('Retriable failures (quota / rate-limit)');
+  const quotaFailed = await db
+    .select({
+      phoneSlug: phones.slug,
+      adapter: ingestRuns.adapter,
+      stage: ingestRuns.stage,
+      errorCode: ingestRuns.errorCode,
+      n: sql<number>`count(*)::int`,
+      latestAt: sql<string>`max(${ingestRuns.startedAt})::text`,
+    })
+    .from(ingestRuns)
+    .leftJoin(phones, eq(ingestRuns.phoneId, phones.id))
+    .where(
+      and(
+        gte(ingestRuns.startedAt, since),
+        eq(ingestRuns.status, 'failed'),
+        inArray(ingestRuns.errorCode, ['quota_exceeded', 'rate_limit']),
+      ),
+    )
+    .groupBy(phones.slug, ingestRuns.adapter, ingestRuns.stage, ingestRuns.errorCode)
+    .orderBy(desc(sql<number>`count(*)`))
+    .limit(20);
+
+  if (quotaFailed.length === 0) {
+    console.log('  (none — no quota failures this window)');
+  } else {
+    for (const r of quotaFailed) {
+      console.log(
+        `  ${pad(r.phoneSlug ?? 'unknown', 36)} ${pad(r.adapter, 12)} stage=${pad(r.stage ?? '?', 8)} ` +
+          `code=${pad(r.errorCode ?? '?', 16)} n=${r.n}  last=${r.latestAt?.slice(0, 16) ?? '?'}`,
+      );
+    }
+  }
+
+  hr('phones.last_ingest_status distribution');
+  const statusDist = await db
+    .select({
+      status: phones.lastIngestStatus,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(phones)
+    .where(eq(phones.status, 'active'))
+    .groupBy(phones.lastIngestStatus)
+    .orderBy(desc(sql<number>`count(*)`));
+  for (const r of statusDist) {
+    console.log(`  ${pad(r.status ?? 'null', 18)} phones=${r.n}`);
   }
 
   console.log('');

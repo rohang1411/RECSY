@@ -139,6 +139,11 @@ export const phones = pgTable(
     lastScorecardAt: timestamp('last_scorecard_at', { withTimezone: true }),
     /** When the scheduler should next re-score this phone. Null = eligible now. */
     nextScorecardAt: timestamp('next_scorecard_at', { withTimezone: true }),
+    /**
+     * Outcome of the most recent ingest attempt:
+     *   'success' | 'partial' | 'quota_exhausted' | 'failed' | null (never attempted).
+     */
+    lastIngestStatus: text('last_ingest_status'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -148,6 +153,7 @@ export const phones = pgTable(
     index('phones_spec_embedding_idx').using('hnsw', t.specEmbedding.op('vector_cosine_ops')),
     index('phones_next_ingest_at_idx').on(t.nextIngestAt),
     index('phones_next_scorecard_at_idx').on(t.nextScorecardAt),
+    index('phones_last_ingest_status_idx').on(t.lastIngestStatus),
   ],
 );
 
@@ -440,6 +446,14 @@ export const ingestRuns = pgTable(
      * the machine-readable reason for auditing false negatives.
      */
     rejectedReason: text('rejected_reason'),
+    /** Pipeline stage that produced this record (discover, fetch, curator, embed, write, …). */
+    stage: text('stage'),
+    /** Machine-readable error category for retry routing. */
+    errorCode: text('error_code'),
+    /** Earliest UTC time this source is eligible for retry. Null = eligible now. */
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    /** Candidate title at failure time — used when resuming without re-discovery. */
+    candidateTitle: text('candidate_title'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     durationMs: integer('duration_ms'),
@@ -449,6 +463,8 @@ export const ingestRuns = pgTable(
     index('ingest_runs_status_idx').on(t.status),
     index('ingest_runs_rejected_reason_idx').on(t.rejectedReason),
     index('ingest_runs_started_at_idx').on(t.startedAt),
+    index('ingest_runs_phone_status_stage_idx').on(t.phoneId, t.status, t.stage),
+    index('ingest_runs_error_code_started_idx').on(t.errorCode, t.startedAt),
   ],
 );
 
