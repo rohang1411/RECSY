@@ -248,6 +248,7 @@ async function main(): Promise<void> {
 
   let successes = 0;
   let failures = 0;
+  let empty = 0;
   for (const phone of picked) {
     try {
       const summary = await orchestrator.ingestPhone(
@@ -269,28 +270,40 @@ async function main(): Promise<void> {
         `  ${phone.slug} (${phone.tier})  sources=${summary.totals.sourcesWritten} ` +
           `chunks=${summary.totals.chunksWritten} errors=${summary.totals.errors}`,
       );
-      if (!args.dryRun) {
-        await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+      const wroteContent = summary.totals.chunksWritten > 0 || summary.totals.sourcesWritten > 0;
 
-        // Nudge scorecard schedule — re-score 24h after fresh ingestion
-        // Only bring forward, never push back a sooner deadline.
-        if (summary.totals.chunksWritten > 0) {
-          const nudgeTarget = new Date(Date.now() + 24 * 60 * 60 * 1000);
-          await db
-            .update(phones)
-            .set({
-              nextScorecardAt: nudgeTarget,
-              updatedAt: sql`now()`,
-            })
-            .where(
-              and(
-                eq(phones.id, phone.id),
-                or(isNull(phones.nextScorecardAt), gt(phones.nextScorecardAt, nudgeTarget)),
-              ),
-            );
+      if (!args.dryRun) {
+        if (wroteContent) {
+          await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+
+          // Nudge scorecard schedule — re-score 24h after fresh ingestion
+          // Only bring forward, never push back a sooner deadline.
+          if (summary.totals.chunksWritten > 0) {
+            const nudgeTarget = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            await db
+              .update(phones)
+              .set({
+                nextScorecardAt: nudgeTarget,
+                updatedAt: sql`now()`,
+              })
+              .where(
+                and(
+                  eq(phones.id, phone.id),
+                  or(isNull(phones.nextScorecardAt), gt(phones.nextScorecardAt, nudgeTarget)),
+                ),
+              );
+          }
+          successes += 1;
+        } else {
+          empty += 1;
+          logger.warn(
+            { phone: phone.slug, tier: phone.tier, errors: summary.totals.errors },
+            'ingest produced no sources or chunks; leaving phone due for retry (not rescheduling)',
+          );
         }
+      } else {
+        successes += 1;
       }
-      successes += 1;
     } catch (err) {
       failures += 1;
       logger.error(
@@ -301,9 +314,9 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[ingest:auto] done successes=${successes} failures=${failures} total=${picked.length}`,
+    `[ingest:auto] done successes=${successes} empty=${empty} failures=${failures} total=${picked.length}`,
   );
-  process.exit(failures > 0 && successes === 0 ? 1 : 0);
+  process.exit(failures > 0 && successes === 0 && empty === 0 ? 1 : 0);
 }
 
 main().catch((err) => {

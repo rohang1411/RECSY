@@ -23,8 +23,9 @@ export const env = createEnv({
 
     LLM_PROVIDER: z.enum(['gemini', 'groq']).default('gemini'),
     GEMINI_API_KEY: z.string().min(1),
-    /** Optional second Google AI Studio key (different GCP project). Used when the first key hits quota (429 / daily cap). */
+    /** Optional backup Google AI Studio keys (separate projects). Rotated when a prior key hits quota (429 / daily cap). */
     GEMINI_API_KEY_2: z.string().optional(),
+    GEMINI_API_KEY_3: z.string().optional(),
     /**
      * When `google_ai_studio_free`, the Gemini client paces requests per key using
      * GEMINI_FREE_RPM / GEMINI_FREE_TPM_INPUT / GEMINI_FREE_RPD (see Google AI Studio docs).
@@ -116,6 +117,7 @@ export const env = createEnv({
     LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
+    GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
     GEMINI_RATE_LIMIT_PROFILE: process.env.GEMINI_RATE_LIMIT_PROFILE ?? 'off',
     GEMINI_FREE_RPM: process.env.GEMINI_FREE_RPM ?? '5',
     GEMINI_FREE_TPM_INPUT: process.env.GEMINI_FREE_TPM_INPUT ?? '250000',

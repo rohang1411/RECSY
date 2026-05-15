@@ -8,7 +8,7 @@
  * Retry policy: schema-violating structured outputs are retried once with an
  * error-feedback message appended, as specified in `LlmProvider.structured`.
  *
- * Optional second API key (`GEMINI_API_KEY_2`) and client-side pacing
+ * Optional backup API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`) and client-side pacing
  * (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) support Google AI Studio
  * free-tier style caps; authoritative limits remain on Google's side.
  */
@@ -96,7 +96,7 @@ export class GeminiProvider implements LlmProvider {
   private preferredKeyIndex = 0;
 
   constructor() {
-    const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2].filter(
+    const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_2, env.GEMINI_API_KEY_3].filter(
       (k): k is string => typeof k === 'string' && k.length > 0,
     );
     this.clients = keys.map((apiKey) => createGoogleGenerativeAI({ apiKey }));
