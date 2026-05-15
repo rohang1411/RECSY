@@ -1,7 +1,36 @@
 # Automated Scorecard Generation
 
-> **Status**: Approved for implementation.
+> **Status**: Implemented and verified (2026-05-14). Script follow-ups applied 2026-05-15.
 > **Goal**: Make scorecard generation fully automatic so aspect scores stay fresh without manual `pnpm scorecard:run`.
+
+## Implementation Status (as of 2026-05-14)
+
+All files listed in the File Summary below have been implemented. A live
+end-to-end smoke test was run locally (`pnpm scorecard:auto --dry-run --limit 2`
+then `pnpm scorecard:auto --limit 1` twice). Key observations:
+
+- **Dry-run** exits 0, prints the two most-overdue phones — confirms DB
+  connectivity, schema guard, and `pickScorecardPhones` all work.
+- **Real run (1 phone)** exits 0 in ~49 s with `7 updated, 0 failed`. No LLM
+  call is made when the corpus is empty (neutral rows are written directly by
+  `runSingleAspect`, see §Empty corpus behaviour below).
+- **Second real run** exits 0 and picks a _different_ phone — because
+  `markScorecardComplete` pushed the first phone's `next_scorecard_at` forward
+  by 3–7 days. See the corrected Verification Plan below.
+
+### Known issues / gaps
+
+None blocking. Telemetry and rescheduling fixes (2026-05-15):
+
+- **Staleness skip telemetry** — `scorecard:auto.ts` now inserts **seven**
+  `scorecard_runs` rows (`ASPECT_NAMES`), each `status: 'skipped'`,
+  `skipReason: 'chunks_unchanged'`, so per-aspect queries align with real runs.
+- **`markScorecardComplete` after failed runs** — after `runScorecardForPhone`,
+  `markScorecardComplete` is called **only when `result.updated > 0`**. If every
+  aspect fails (`updated === 0`), the phone stays due for the next cron; a warn
+  log is emitted and `failures` is incremented for exit-code purposes.
+
+---
 
 ## Decisions (resolved)
 
@@ -216,7 +245,9 @@ Model closely on `scripts/ingest-auto.ts`. Key structure:
 //   --dry-run          Print selection, skip scoring
 //   --help
 
+import { ASPECT_NAMES } from '../src/lib/constants';
 import { getDb } from '../src/services/db/client';
+import { scorecardRuns } from '../src/services/db/schema';
 import { findMissingPublicSchema, describeMissingSchema } from '../src/services/db/schema-guard';
 import { logger } from '../src/services/logger';
 import { getLlm } from '../src/services/llm';
@@ -270,8 +301,21 @@ async function main() {
       const fingerprint = await computeChunkFingerprint(db, phone.id);
       if (!args.force) {
         const last = await getLastScorecardFingerprint(db, phone.id);
-        if (last && last === fingerprint) {
+        if (last !== null && last === fingerprint) {
           console.log(`  ${phone.slug}: skipped (chunks_unchanged)`);
+          const now = new Date();
+          await db.insert(scorecardRuns).values(
+            ASPECT_NAMES.map((aspect) => ({
+              phoneId: phone.id,
+              aspect,
+              status: 'skipped' as const,
+              skipReason: 'chunks_unchanged',
+              chunkFingerprint: fingerprint,
+              startedAt: now,
+              finishedAt: now,
+              durationMs: 0,
+            })),
+          );
           await markScorecardComplete(db, { phoneId: phone.id });
           skipped++;
           continue;
@@ -288,9 +332,17 @@ async function main() {
         chunkFingerprint: fingerprint,
         aspectDelayMs: 4500, // 4.5s pacing for free tier
       });
-      await markScorecardComplete(db, { phoneId: phone.id });
       console.log(`  ${phone.slug}: ${result.updated} updated, ${result.failed} failed`);
-      scored++;
+      if (result.updated > 0) {
+        await markScorecardComplete(db, { phoneId: phone.id });
+        scored++;
+      } else {
+        failures++;
+        log.warn(
+          { phone: phone.slug, updated: result.updated, failed: result.failed },
+          'no aspects updated; leaving phone due for retry (not rescheduling)',
+        );
+      }
     } catch (err) {
       failures++;
       log.error(
@@ -456,46 +508,63 @@ export { computeChunkFingerprint, getLastScorecardFingerprint } from './stalenes
 
 ## Potential Issues & Mitigations
 
-| Issue                                             | Mitigation                                                                                                                                                                  |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gemini 429 rate limit                             | Per-aspect try/catch; 4.5s pacing; failed aspects retain old data; phone re-queued next cycle                                                                               |
-| Ingestion and scorecard cron overlap (same time)  | Not harmful — `next_scorecard_at` scheduling means most phones won't be due. Upsert is idempotent. Worst case: scorecard reads pre-ingest chunks, next run catches new ones |
-| Schema migration not applied                      | Schema guard (`findMissingPublicSchema`) exits 0 with warning — same pattern as `ingest-auto.ts`                                                                            |
-| Chunks unchanged since last score                 | Chunk fingerprint guard skips → 0 LLM calls for that phone                                                                                                                  |
-| `aspect_definitions` version bumped               | Agent loads latest definitions; new version = new aspect definition ID = new upsert target. Old definition's row stays until overwritten                                    |
-| Phone deleted mid-run                             | FK error caught by per-phone try/catch                                                                                                                                      |
-| First-ever backfill (all 20 phones at once)       | 140 calls × 4.5s = ~10.5 min — within GH Actions 30-min timeout and free tier daily limit                                                                                   |
-| `scorecard-run.ts` breaks from return type change | Return type goes from `{ updated }` to `{ updated, failed, fingerprint }` — backwards compatible since existing callers only destructure `updated`                          |
+| Issue                                             | Mitigation                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini 429 rate limit                             | Per-aspect try/catch; 4.5s pacing; failed aspects retain old data; phone re-queued next cycle                                                                                                                                                                                                                                                   |
+| Ingestion and scorecard cron overlap (same time)  | Not harmful — `next_scorecard_at` scheduling means most phones won't be due. Upsert is idempotent. Worst case: scorecard reads pre-ingest chunks, next run catches new ones                                                                                                                                                                     |
+| Schema migration not applied                      | Schema guard (`findMissingPublicSchema`) exits 0 with warning — same pattern as `ingest-auto.ts`                                                                                                                                                                                                                                                |
+| Chunks unchanged since last score                 | Chunk fingerprint guard skips → 0 LLM calls for that phone                                                                                                                                                                                                                                                                                      |
+| Phone has no chunks (empty corpus)                | `runSingleAspect` writes neutral rows (`score=5.0, confidence=0.15`) without calling the LLM; `status=success` is recorded. Fingerprint stored as `''`. On subsequent runs the phone is correctly skip-guarded (`'' === ''`) until ingestion populates chunks. `scored=1 skipped=0 failures=0` on an empty-corpus phone is correct, not broken. |
+| `markScorecardComplete` after scoring             | After `runScorecardForPhone`, `markScorecardComplete` runs **only if `result.updated > 0`**. If no aspect succeeded, the phone remains due; a warning is logged and the run counts as a failure for exit-code purposes (see `scripts/scorecard-auto.ts`). Partial success (`updated > 0` with some failures) still reschedules.                 |
+| Staleness skip telemetry                          | On fingerprint skip, seven `scorecard_runs` rows are inserted (one per `ASPECT_NAMES` value), each `status: 'skipped'`, `skipReason: 'chunks_unchanged'`.                                                                                                                                                                                       |
+| `aspect_definitions` version bumped               | Agent loads latest definitions; new version = new aspect definition ID = new upsert target. Old definition's row stays until overwritten                                                                                                                                                                                                        |
+| Phone deleted mid-run                             | FK error caught by per-phone try/catch                                                                                                                                                                                                                                                                                                          |
+| First-ever backfill (all 20 phones at once)       | 140 calls × 4.5s = ~10.5 min — within GH Actions 30-min timeout and free tier daily limit                                                                                                                                                                                                                                                       |
+| `scorecard-run.ts` breaks from return type change | Return type goes from `{ updated }` to `{ updated, failed, fingerprint }` — backwards compatible since existing callers only destructure `updated`                                                                                                                                                                                              |
 
 ---
 
 ## File Summary
 
-| File                                   | Action | Purpose                                                                                     |
-| -------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
-| `src/services/db/schema.ts`            | MODIFY | Add `lastScorecardAt`, `nextScorecardAt` to `phones`; add `scorecardRuns` table + relations |
-| `drizzle/migrations/XXXX_*.sql`        | NEW    | Auto-generated by `pnpm db:generate`                                                        |
-| `src/services/scorecard/scheduler.ts`  | NEW    | `pickScorecardPhones()`, `markScorecardComplete()`, `bootstrapNextScorecardAt()`            |
-| `src/services/scorecard/staleness.ts`  | NEW    | `computeChunkFingerprint()`, `getLastScorecardFingerprint()`                                |
-| `src/services/scorecard/agent.ts`      | MODIFY | Per-aspect try/catch, timing, `scorecard_runs` telemetry writes, `aspectDelayMs` pacing     |
-| `src/services/scorecard/index.ts`      | MODIFY | Re-export new modules                                                                       |
-| `scripts/scorecard-auto.ts`            | NEW    | Automated CLI entry (mirrors `ingest-auto.ts`)                                              |
-| `.github/workflows/scorecard-auto.yml` | NEW    | Daily cron `02:17 UTC` + manual dispatch                                                    |
-| `scripts/ingest-auto.ts`               | MODIFY | Post-ingest `nextScorecardAt` nudge when `chunksWritten > 0`                                |
-| `package.json`                         | MODIFY | Add `scorecard:auto` script                                                                 |
+| File                                   | Action | Status  | Purpose                                                                                     |
+| -------------------------------------- | ------ | ------- | ------------------------------------------------------------------------------------------- |
+| `src/services/db/schema.ts`            | MODIFY | ✅ Done | Add `lastScorecardAt`, `nextScorecardAt` to `phones`; add `scorecardRuns` table + relations |
+| `drizzle/migrations/XXXX_*.sql`        | NEW    | ✅ Done | Auto-generated by `pnpm db:generate`                                                        |
+| `src/services/scorecard/scheduler.ts`  | NEW    | ✅ Done | `pickScorecardPhones()`, `markScorecardComplete()`, `bootstrapNextScorecardAt()`            |
+| `src/services/scorecard/staleness.ts`  | NEW    | ✅ Done | `computeChunkFingerprint()`, `getLastScorecardFingerprint()`                                |
+| `src/services/scorecard/agent.ts`      | MODIFY | ✅ Done | Per-aspect try/catch, timing, `scorecard_runs` telemetry writes, `aspectDelayMs` pacing     |
+| `src/services/scorecard/index.ts`      | MODIFY | ✅ Done | Re-export new modules                                                                       |
+| `scripts/scorecard-auto.ts`            | NEW    | ✅ Done | Automated CLI entry (mirrors `ingest-auto.ts`)                                              |
+| `.github/workflows/scorecard-auto.yml` | NEW    | ✅ Done | Daily cron `02:17 UTC` + manual dispatch                                                    |
+| `scripts/ingest-auto.ts`               | MODIFY | ✅ Done | Post-ingest `nextScorecardAt` nudge when `chunksWritten > 0`                                |
+| `package.json`                         | MODIFY | ✅ Done | Add `scorecard:auto` script                                                                 |
 
 ---
 
 ## Implementation Order
 
-1. **Schema changes** → `schema.ts` modifications + `pnpm db:generate` + apply migration
-2. **New modules** → `scheduler.ts`, `staleness.ts` (no dependencies on agent changes)
-3. **Agent changes** → `agent.ts` telemetry + error handling + pacing
-4. **Index exports** → `index.ts` re-exports
-5. **Automated script** → `scorecard-auto.ts` + `package.json` script
-6. **Post-ingest hook** → `ingest-auto.ts` modification
-7. **GH Actions workflow** → `scorecard-auto.yml`
-8. **Verify** → local smoke test, then manual workflow dispatch
+> All steps below are complete. Listed for historical reference.
+
+1. ✅ **Schema changes** → `schema.ts` modifications + `pnpm db:generate` + apply migration
+2. ✅ **New modules** → `scheduler.ts`, `staleness.ts` (no dependencies on agent changes)
+3. ✅ **Agent changes** → `agent.ts` telemetry + error handling + pacing
+4. ✅ **Index exports** → `index.ts` re-exports
+5. ✅ **Automated script** → `scorecard-auto.ts` + `package.json` script
+6. ✅ **Post-ingest hook** → `ingest-auto.ts` modification
+7. ✅ **GH Actions workflow** → `scorecard-auto.yml`
+8. ✅ **Verified** → local smoke test passed (see Implementation Status above)
+
+### Remaining follow-up items
+
+- **Scorecard only generates meaningful scores after ingestion**: the automation
+  is correct and functional, but the product value (real scores vs. neutral
+  5.0 placeholders) depends entirely on `pnpm ingest` having run first.
+
+The script-level items below were **resolved in code on 2026-05-15** (see
+`scripts/scorecard-auto.ts`):
+
+- ~~`markScorecardComplete` only when `updated > 0`~~ — done.
+- ~~Per-aspect `skipped` telemetry rows~~ — done (seven rows via `ASPECT_NAMES`).
 
 ---
 
@@ -509,16 +578,31 @@ pnpm db:generate && pnpm db:setup
 
 # 2. Dry run — verify phone selection logic
 pnpm scorecard:auto --dry-run --limit 2
+# Expected: exits 0, prints due phone slugs
 
 # 3. Real run on one phone
 pnpm scorecard:auto --limit 1
+# Expected: exits 0, "7 updated, 0 failed"
+# If corpus is empty: neutral rows are written (score=5.0, no LLM call). That is
+# correct — meaningful scores appear only after ingestion populates chunks.
 
-# 4. Re-run immediately — should skip (chunks unchanged)
+# 4. Re-run immediately — picks the NEXT due phone, not the same one
 pnpm scorecard:auto --limit 1
-# Expected output: "skipped (chunks_unchanged)"
+# NOTE: The previous run called markScorecardComplete which pushed that phone's
+# next_scorecard_at forward by 3–7 days, so it is no longer due. The scheduler
+# picks the next phone in the due queue — you will NOT see "skipped (chunks_unchanged)"
+# here unless you manually reset next_scorecard_at.
+#
+# To verify the skip path specifically:
+#   1. Reset the phone back to eligible:
+#      UPDATE phones SET next_scorecard_at = NULL WHERE slug = '<slug>';
+#   2. Re-run:
+#      pnpm scorecard:auto --limit 1
+#   Expected output: "skipped (chunks_unchanged)" (fingerprint '' matches stored '')
 
-# 5. Force re-score — should ignore fingerprint
+# 5. Force re-score — should ignore fingerprint and write neutral rows again
 pnpm scorecard:auto --limit 1 --force
+# Expected: same phone scored again regardless of fingerprint match
 
 # 6. Verify existing CLI still works
 pnpm scorecard:run --phone google-pixel-9-pro-xl

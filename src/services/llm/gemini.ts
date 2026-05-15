@@ -57,6 +57,21 @@ function briefStructuredFailure(err: unknown, max = 500): string {
   return String(err).slice(0, max);
 }
 
+/**
+ * Schema-repair retry only helps when the model returned parseable-ish output
+ * that failed Zod. When the SDK has already exhausted HTTP retries (often
+ * 429 quota) or the provider returned a hard API error, a second `generateObject`
+ * call wastes quota and surfaces misleading "validation twice" messages.
+ */
+function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
+  if (err instanceof APICallError) return true;
+  if (err instanceof Error && err.name === 'AI_APICallError') return true;
+  // SDK wraps the last HTTP failure after internal retries; not a Zod issue.
+  if (err instanceof Error && err.name === 'AI_RetryError') return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded/i.test(msg);
+}
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
   private readonly google = createGoogleGenerativeAI({ apiKey: env.GEMINI_API_KEY });
@@ -148,13 +163,7 @@ export class GeminiProvider implements LlmProvider {
     } catch (err) {
       lastError = err;
 
-      // If it's an API error (503, 429, 401), do not attempt schema repair.
-      // Schema repair only makes sense if the model actually output something
-      // that we couldn't parse or validate.
-      const isApiError =
-        err instanceof APICallError || (err instanceof Error && err.name === 'AI_APICallError');
-
-      if (isApiError) {
+      if (shouldSkipStructuredSchemaRepair(err)) {
         throw new LlmError('Gemini API call failed', { model: input.model }, err);
       }
 

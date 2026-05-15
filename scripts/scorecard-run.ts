@@ -7,7 +7,7 @@
  *   pnpm scorecard:run --all
  *
  * Requires `.env.local` (Gemini + DATABASE_URL). Cost: ~7 embedding + ~7
- * structured LLM calls per phone (one per aspect).
+ * structured LLM calls per phone (one per aspect; each call may include SDK-level retries on transient errors).
  */
 import { eq } from 'drizzle-orm';
 
@@ -46,7 +46,7 @@ async function main(): Promise<void> {
       console.error(`[scorecard:run] phone not active: ${slug}`);
       process.exit(1);
     }
-    const { updated } = await runScorecardForPhone({
+    const { updated, failed } = await runScorecardForPhone({
       phoneId: phone.id,
       brand: phone.brand,
       model: phone.model,
@@ -55,7 +55,14 @@ async function main(): Promise<void> {
       llm,
       log,
     });
-    console.log(`[scorecard:run] OK — ${updated} aspects for ${slug}`);
+    if (updated === 0) {
+      console.warn(
+        `[scorecard:run] ${failed} aspect(s) failed, 0 updated for ${slug}. If you see 429/quota in logs, free tier is ~20 generate requests/day per model for gemini-2.5-flash (aspects + SDK retries add up quickly).`,
+      );
+    } else {
+      const tail = failed > 0 ? ` (${failed} failed)` : '';
+      console.log(`[scorecard:run] OK — ${updated} aspects for ${slug}${tail}`);
+    }
     return;
   }
 
