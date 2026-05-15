@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     });
     if (updated === 0) {
       console.warn(
-        `[scorecard:run] ${failed} aspect(s) failed, 0 updated for ${slug}. If you see 429/quota in logs, free tier is ~20 generate requests/day per model for gemini-2.5-flash (aspects + SDK retries add up quickly).`,
+        `[scorecard:run] ${failed} aspect(s) failed, 0 updated for ${slug}. If you see 429/quota in logs, enable GEMINI_API_KEY_2, set GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free, or raise limits / billing on Google AI Studio.`,
       );
     } else {
       const tail = failed > 0 ? ` (${failed} failed)` : '';

@@ -1,6 +1,9 @@
 # =============================================================================
 # Tiered, automated ingestion.
 #
+# The `ingest` matrix job is skipped when GEMINI / DB secrets are unset (forks,
+# misconfigured repos) so GitHub does not run ingest-auto against empty keys.
+#
 # Daily cron that picks phones that are due for a refresh based on their
 # freshness tier (hot / warm / cold) and shards the work across a 4-job
 # matrix. Each shard pulls a deterministic slice of the due-set using a hash
@@ -96,6 +99,8 @@ jobs:
 
   ingest:
     name: ingest tier=${{ matrix.tier }} shard=${{ matrix.shard }}
+    # Skip matrix when secrets are missing (e.g. fork PRs) — avoids install + ingest-auto failing after burning quota attempts.
+    if: ${{ secrets.GEMINI_API_KEY != '' && secrets.DATABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 45

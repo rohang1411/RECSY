@@ -146,7 +146,7 @@ async function llmExtract(
     schemaName: 'AspectScorecard',
     schemaDescription: 'Consensus aspect score with grounded evidence chunk ids.',
     temperature: 0.2,
-    // Gemini 2.5 may allocate output budget to reasoning tokens; keep headroom
+    // Gemini 3.x may allocate output budget to reasoning tokens; keep headroom
     // so JSON (summary + evidence) is not cut off at finishReason "length".
     maxOutputTokens: 8192,
   });

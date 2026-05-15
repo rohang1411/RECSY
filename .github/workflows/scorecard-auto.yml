@@ -1,3 +1,5 @@
+# Automated scorecards — only runs when repo secrets are configured (skips forks /
+# empty setups so we never install deps to fail env validation or burn Gemini quota).
 name: scorecard (auto)
 
 on:
@@ -23,6 +25,7 @@ concurrency:
 jobs:
   score:
     name: Compute scorecards
+    if: ${{ secrets.GEMINI_API_KEY != '' && secrets.DATABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

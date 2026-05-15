@@ -1,6 +1,9 @@
 # =============================================================================
 # Manual (workflow_dispatch) ingestion for a single phone.
 #
+# The job is skipped when required secrets are missing (avoids a failing run
+# that would still attempt Gemini after env bootstraps).
+#
 # This workflow is intentionally narrow: an operator runs it when they want to
 # force ingestion for a specific phone/adapter combination. The scheduled,
 # tiered roster lives in `ingest-tiered.yml`.
@@ -48,6 +51,7 @@ concurrency:
 jobs:
   ingest:
     name: Ingest ${{ github.event.inputs.phone }}
+    if: ${{ secrets.GEMINI_API_KEY != '' && secrets.DATABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' && secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
