@@ -45,7 +45,7 @@ gracefully to a skipped-source telemetry row. Phase 1 (DB, data
 model, seed corpus) and Phase 0 (scaffold, design system, service
 skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 
-**Ops / automation (2026-05-14—15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an all–cold-tier catalog often produced **no picks** on weekdays). Automated scorecard (`scripts/scorecard-auto.ts`): **`markScorecardComplete` only when `result.updated > 0`** (all-aspect failures leave the phone due for retry); staleness skip logs **seven** `scorecard_runs` rows (`ASPECT_NAMES`). See [§22 Change Log](#22-change-log) (entry **2026-05-15**) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
+**Ops / automation (2026-05-14—15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an all–cold-tier catalog often produced **no picks** on weekdays). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip — full detail in [§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ---
 
@@ -251,7 +251,7 @@ Lands on `/internal/pipeline` to inspect the system architecture, live corpus me
 | `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see §22) |
 | Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                                                                            |
 | Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                                        |
-| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto` (see implementation plan + §22 2026-05-15); UI when rows exist                                                                                       |
+| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto` — daily 02:17 UTC, 20 phones/run, per-phone queue ([§12](#automated-batch-scheduling-scorecardauto)); UI when rows exist                             |
 | Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                                                                                      |
 | Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                                                                            |
 | Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                                                                                          |
@@ -419,20 +419,21 @@ Conventions enforced in review:
 
 ### Tables (Phase 1)
 
-| Table                     | Purpose                                     | Key columns                                                                              |
-| ------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `phones`                  | Canonical phone entities                    | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability` |
-| `sources`                 | Ingested artefacts (video, thread, article) | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                      |
-| `chunks`                  | Retrievable text chunks                     | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`             |
-| `aspect_definitions`      | Methodology — aspects are data              | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                    |
-| `aspects`                 | Current score per phone × aspect            | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes  |
-| `recommendation_sessions` | One per browser session (hashed)            | `session_cookie`, `ip_hash`, `status`                                                    |
-| `recommendation_turns`    | Per-message state in a session              | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                 |
-| `recommendation_feedback` | User signals on picks                       | `turn_id`, `phone_id`, `event`                                                           |
-| `chat_queries`            | Per-phone Q&A log (analytics)               | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                        |
-| `llm_cache`               | LLM response cache (sha256 prompt key)      | `prompt_hash`, `model`, `response`, `hits`                                               |
-| `ingest_runs`             | Ingestion telemetry                         | `adapter`, `status`, `chunks_created`, `error`                                           |
-| `rate_limits`             | IP-window counters                          | `key`, `window_start`, `count`                                                           |
+| Table                     | Purpose                                        | Key columns                                                                                                                                                                                                                                                            |
+| ------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phones`                  | Canonical phone entities                       | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler — [§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, `ingest_tier` |
+| `sources`                 | Ingested artefacts (video, thread, article)    | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                    |
+| `chunks`                  | Retrievable text chunks                        | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                           |
+| `aspect_definitions`      | Methodology — aspects are data                 | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                  |
+| `aspects`                 | Current score per phone × aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                |
+| `recommendation_sessions` | One per browser session (hashed)               | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                  |
+| `recommendation_turns`    | Per-message state in a session                 | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                               |
+| `recommendation_feedback` | User signals on picks                          | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                         |
+| `chat_queries`            | Per-phone Q&A log (analytics)                  | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                      |
+| `llm_cache`               | LLM response cache (sha256 prompt key)         | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                             |
+| `ingest_runs`             | Ingestion telemetry                            | `adapter`, `status`, `chunks_created`, `error`                                                                                                                                                                                                                         |
+| `scorecard_runs`          | Scorecard batch telemetry (per phone × aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                               |
+| `rate_limits`             | IP-window counters                             | `key`, `window_start`, `count`                                                                                                                                                                                                                                         |
 
 ### Enums
 
@@ -442,7 +443,7 @@ Conventions enforced in review:
 ### Indexing strategy
 
 - **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` — vector search.
-- **B-tree** on `phones.brand`, `phones.status`, `chunks.phone_id`, `chunks.source_id`.
+- **B-tree** on `phones.brand`, `phones.status`, `phones.next_scorecard_at`, `phones.next_ingest_at`, `chunks.phone_id`, `chunks.source_id`.
 - **tsvector** FTS index on `chunks.text` (added Phase 3 when hybrid retrieval lands).
 - **Unique constraints** on `phones.slug`, `(sources.phone_id, sources.url)`,
   `(aspects.phone_id, aspects.aspect_definition_id)`.
@@ -594,10 +595,12 @@ cannot support it — honest relaxation beats silent failure.
 
 ## 12. Aspect Scorecard Agent
 
-Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md)
-and [`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
+Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md),
+[ADR 0015](./adr/0015-automated-aspect-scorecard.md), and
+[`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
 from hybrid retrieval + structured LLM extraction. **Automated daily batch**
-runs via GitHub Actions (`pnpm scorecard:auto`); manual CLI remains as `pnpm scorecard:run`.
+runs via GitHub Actions (`pnpm scorecard:auto`); manual CLI remains as
+`pnpm scorecard:run`.
 
 ### Agent graph (MVP pseudocode)
 
@@ -614,6 +617,136 @@ for each phone × latest aspect_definition (seven axes):
   upsert aspects (score = raw = overallScore, quotes, n_supporting, n_dissenting, ...)
 ```
 
+### Automated batch scheduling (`scorecard:auto`)
+
+The automated pipeline is **not** “score every phone on every run.” It is a
+**per-phone queue** in Postgres: each row in `phones` carries
+`last_scorecard_at` and `next_scorecard_at`. A daily cron drains phones that
+are **due**, up to a fixed batch size, then reschedules each processed phone
+for a future run. Over multiple days the full catalog cycles through without
+burning Gemini quota on unchanged evidence.
+
+#### When it runs
+
+| Trigger              | Schedule / entrypoint                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **GitHub Actions**   | **Daily at 02:17 UTC** — `.github/workflows/scorecard-auto.yml` cron (`17 2 * * *`)                               |
+| **Manual (Actions)** | `workflow_dispatch` with optional `limit` (default **20**) and `force` (ignore staleness)                         |
+| **Local / operator** | `pnpm scorecard:auto` — same flags as the script (`--limit`, `--shard`, `--total-shards`, `--force`, `--dry-run`) |
+
+The workflow uses a **`secrets-gate`** job (see [§18](#18-cicd--deployment)): if
+`GEMINI_API_KEY`, `DATABASE_URL`, or Supabase secrets are unset (e.g. forks),
+the heavy job is **skipped** instead of failing env validation or calling Gemini
+with empty keys.
+
+#### How many phones per run
+
+- Default **`--limit 20`** — at most **20 phones** per cron execution.
+- The workflow passes `limit` from `workflow_dispatch` input or defaults to 20.
+- Phones beyond the limit stay in the queue for the next day (or the next shard,
+  if sharding is enabled).
+
+This caps daily LLM usage: a full 7-aspect scorecard takes ~35–40 seconds per
+phone (4.5 s pacing between aspects) plus retrieval/embed calls.
+
+#### Which phones are picked (`pickScorecardPhones`)
+
+Implemented in `src/services/scorecard/scheduler.ts`. On each run the orchestrator
+(`scripts/scorecard-auto.ts`) calls `pickScorecardPhones` with `onlyDue: true`
+(default):
+
+1. **Status** — `phones.status` in `('active', 'upcoming')` only.
+2. **Due** — `next_scorecard_at IS NULL` **or** `next_scorecard_at <= now()`.
+   (`NULL` means “eligible immediately,” e.g. never scheduled or bootstrapped.)
+3. **Order** — ascending `coalesce(last_scorecard_at, epoch)` — phones scored
+   longest ago (or never) first.
+4. **Sharding (optional)** — `shardIndex(phone.id, totalShards) === shard` so
+   multiple workers can partition the due-set deterministically (default:
+   `shard=0`, `totalShards=1`).
+5. **Cap** — `slice(0, limit)`.
+
+**Not all phones every day:** if the catalog has 100 active phones and
+`limit=20`, it takes ~5 daily runs to touch everyone once, assuming all are
+due. In practice, rescheduling (+3 / +7 days below) spreads work so only a
+subset is due each morning.
+
+#### After a phone is processed (`markScorecardComplete`)
+
+When a run **succeeds** (`runScorecardForPhone` returns `updated > 0`) or is
+**staleness-skipped** (`chunks_unchanged`), `markScorecardComplete` sets:
+
+| Condition                                                    | Next `next_scorecard_at`         |
+| ------------------------------------------------------------ | -------------------------------- |
+| Phone **ingested within the last 7 days** (`last_ingest_at`) | **+3 days** from completion time |
+| Otherwise                                                    | **+7 days**                      |
+
+Also sets `last_scorecard_at` to the completion timestamp.
+
+**Failures stay due:** if **every** aspect fails (`updated === 0`), the phone is
+**not** rescheduled — it remains due for the next cron so operators can retry
+after fixing quota/schema issues. A **warn** is logged and `failures` counts
+toward a non-zero exit code when nothing succeeded.
+
+**Bootstrap:** `bootstrapNextScorecardAt` assigns a jittered first deadline
+(~3 days, spread randomly) to phones with `next_scorecard_at IS NULL` so new
+catalog rows don’t all hit the same cron.
+
+#### Staleness guard (skip LLM when evidence unchanged)
+
+Before calling the agent, `computeChunkFingerprint` hashes the phone’s chunk IDs
+in Postgres (`md5(string_agg(id::text, ',' ORDER BY id))` over `chunks`). If
+the fingerprint matches the last successful run in `scorecard_runs` and
+`--force` is not set:
+
+- **No Gemini calls** for that phone.
+- Logs `skipped (chunks_unchanged)`.
+- Inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) with
+  `status: skipped`, `skip_reason: chunks_unchanged`.
+- Still calls `markScorecardComplete` (reschedules on the normal +3 / +7 cadence).
+
+Use `--force` (workflow input or CLI) to re-extract despite an unchanged corpus.
+
+#### Cooperation with ingestion (24 h nudge)
+
+Scorecard and ingest are **decoupled crons** but share schedule columns on
+`phones`. After `ingest-auto` **writes new chunks** for a phone
+(`chunksWritten > 0`), it **pulls forward** `next_scorecard_at` to
+**now + 24 hours** — but only if that is **sooner** than the existing deadline
+(`next_scorecard_at IS NULL` or `next_scorecard_at > nudgeTarget`). Ingest never
+pushes a deadline **later**.
+
+Effect: fresh review evidence is reflected in aspect scores within ~24 h
+without waiting for the default +3 / +7 day scorecard cycle. The daily
+scorecard cron at 02:17 UTC may still run earlier if the phone was already due.
+
+#### End-to-end flow
+
+```mermaid
+flowchart TD
+  Cron["scorecard-auto.yml<br/>02:17 UTC daily"] --> Gate{"secrets-gate<br/>configured?"}
+  Gate -->|no| SkipWF["Skip job"]
+  Gate -->|yes| Auto["scripts/scorecard-auto.ts"]
+  Auto --> Pick["pickScorecardPhones<br/>due phones, max limit"]
+  Pick --> Empty{"any picks?"}
+  Empty -->|no| Done0["exit 0: no phones due"]
+  Empty -->|yes| Loop["for each phone"]
+  Loop --> FP{"chunk fingerprint<br/>changed?"}
+  FP -->|no| Skip["skip LLM<br/>7× scorecard_runs skipped"]
+  FP -->|yes| Agent["runScorecardForPhone<br/>7 aspects × ~4.5s"]
+  Agent --> OK{"updated > 0?"}
+  OK -->|yes| Mark["markScorecardComplete<br/>+3d or +7d"]
+  OK -->|no| Retry["stay due<br/>warn + failures++"]
+  Skip --> Mark
+  Ingest["ingest-auto<br/>chunksWritten > 0"] --> Nudge["next_scorecard_at<br/>= now + 24h<br/>(only if sooner)"]
+  Nudge --> Pick
+```
+
+#### Telemetry
+
+- **`scorecard_runs`** — per phone × aspect (or skip): `status`, `duration_ms`,
+  `score`, `confidence`, `chunk_fingerprint`, `skip_reason`, timestamps.
+- Operator deep-dive: [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
+
 ### Full vision (deferred)
 
 - **Multi-query retrieval** — several embeds per aspect (e.g. battery life vs
@@ -623,7 +756,6 @@ for each phone × latest aspect_definition (seven axes):
 - **Z-score calibration within price bracket** — peer-normalised scores using
   `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
   identical.
-- **Automation** — `pnpm scorecard:auto` handles daily scheduling (`scorecard-auto.yml`), chunk fingerprinting to skip unchanged corpora, `scorecard_runs` telemetry, and `phones.next_scorecard_at` / `last_scorecard_at` via `markScorecardComplete` **only after at least one aspect succeeds** (`updated > 0`). Staleness skips insert **one skipped row per aspect** (`ASPECT_NAMES`). Operator detail: [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ### Key properties (unchanged intent)
 
@@ -935,7 +1067,7 @@ justifies it.
 Beyond `ci.yml`, production-adjacent cron jobs include:
 
 - **`ingest-tiered.yml`** — daily 02:17 UTC: four parallel shards call `pnpm exec tsx scripts/ingest-auto.ts` with **`--tier all`** on `schedule` (manual dispatch may pass `--tier hot|warm|cold|all`). Tier priority (hot → warm → cold) remains inside `pickPhones`; the workflow no longer gates **cold** to Sundays only (that pattern starved cold-tier catalogs on weekdays).
-- **`scorecard-auto.yml`** — same cron time; `pnpm exec tsx scripts/scorecard-auto.ts` with configurable `--limit` / `--force`.
+- **`scorecard-auto.yml`** — **daily 02:17 UTC**; `secrets-gate` then `pnpm exec tsx scripts/scorecard-auto.ts` (default **`--limit 20`**). Does **not** score the full catalog each run — see [§12 Automated batch scheduling](#automated-batch-scheduling-scorecardauto). Optional `workflow_dispatch`: `limit`, `force`.
 - **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** — per ADR 0014 / operator docs.
 
 ---
@@ -1184,7 +1316,7 @@ dissenting_quotes)`.
 
 - **`.github/workflows/ingest-tiered.yml`** — Removed the `plan` job that selected tiers by day-of-week and matrixed `tier × shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes “cron runs but picks zero phones” when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
 - **`scripts/scorecard-auto.ts`** — **`markScorecardComplete`** runs only when **`runScorecardForPhone` returns `updated > 0`**; if every aspect fails, the phone stays due, a **warn** is logged, and **`failures`** increments for exit-code semantics. Staleness path (`chunks_unchanged`) inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) instead of a single `aspect: 'camera'` sentinel.
-- **Documentation** — [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations).
+- **Documentation** — [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations). **[§12](#12-aspect-scorecard-agent)** now documents automated scorecard **frequency**, **batch limit**, **due-phone selection**, **+3 / +7 d** rescheduling, **staleness fingerprint**, and **ingest 24 h nudge** in full.
 
 ### 2026-05-13 - YouTube transcript fallback chain hardening
 
