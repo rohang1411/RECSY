@@ -125,6 +125,14 @@ describe('isLikelyGeminiQuotaExhaustedError', () => {
     expect(isLikelyGeminiQuotaExhaustedError(err)).toBe(true);
   });
 
+  it('detects all-keys exhausted wrappers and nested causes', () => {
+    const cause = new Error('RESOURCE_EXHAUSTED');
+    const err = new Error('Gemini API call failed (all configured API keys exhausted)', {
+      cause,
+    });
+    expect(isLikelyGeminiQuotaExhaustedError(err)).toBe(true);
+  });
+
   it('returns false for unrelated errors', () => {
     expect(isLikelyGeminiQuotaExhaustedError(new Error('network timeout'))).toBe(false);
     expect(isLikelyGeminiQuotaExhaustedError(null)).toBe(false);
