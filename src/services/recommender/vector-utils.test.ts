@@ -1,3 +1,10 @@
+/**
+ * Unit tests for vector utility functions (`vector-utils.ts`).
+ *
+ * Tests cover: `cosineSimilarity` (orthogonal, identical, and unit
+ * vectors), `parseVectorColumn` (number array pass-through and JSON
+ * string parsing). Pure — no external I/O.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { cosineSimilarity, parseVectorColumn } from './vector-utils';

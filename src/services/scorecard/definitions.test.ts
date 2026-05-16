@@ -1,3 +1,9 @@
+/**
+ * Unit tests for aspect definition helpers (`definitions.ts`).
+ *
+ * Tests cover: latest-version selection when multiple versions exist,
+ * deduplication by aspect name, and correct `Map` keying. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import type { AspectDefinitionRow } from './types';

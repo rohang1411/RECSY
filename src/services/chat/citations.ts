@@ -1,3 +1,17 @@
+/**
+ * Citation extraction and validation helpers for the chat pipeline.
+ *
+ * LLM answers include inline citation tags of the form `[c:<uuid>]`.
+ * This module:
+ * - Extracts all cited chunk IDs from a generated answer string.
+ * - Resolves cited IDs against the retrieved chunk set, attaching URL,
+ *   title, type, and optional YouTube timestamp to each citation.
+ * - Validates that every in-text tag references a retrieved chunk and
+ *   strips orphaned tags (hallucinated source references) from the
+ *   final answer before it is streamed to the client.
+ *
+ * Used by: `src/services/chat/answer.ts`.
+ */
 import type { RetrievedChunk } from '@/services/retrieval/types';
 
 /** Inline citation tag pattern: `[c:<uuid>]` (ASCII case-insensitive `c`). */

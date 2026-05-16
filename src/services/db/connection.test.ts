@@ -1,3 +1,10 @@
+/**
+ * Unit tests for database connection helpers (`connection.ts`).
+ *
+ * Tests cover: Supavisor param stripping (pgbouncer, connection_limit),
+ * preservation of unrelated query params, IPv4 preference detection for
+ * Supabase hostnames, and pass-through for non-Supabase URLs. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { normalizeDatabaseUrl, shouldPreferIpv4ForDatabaseUrl } from './connection';

@@ -1,3 +1,16 @@
+/**
+ * Zod schema for scorecard structured-output extraction.
+ *
+ * Defines the shape that Gemini must return for each aspect extraction:
+ * a `score` (1–10), `confidence` (`low|medium|high`), a `summary` string,
+ * and an `evidence` array of `{ chunkId, quote }` objects. `chunkId` is
+ * validated as a UUID to prevent hallucinated source references.
+ *
+ * The schema is intentionally strict — a validation failure is retried with
+ * an error-feedback nudge (see `GeminiProvider.structured`).
+ *
+ * Used by: `src/services/scorecard/agent.ts`.
+ */
 import { z } from 'zod';
 
 const uuidStr = z.string().uuid();

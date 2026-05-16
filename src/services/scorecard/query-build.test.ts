@@ -1,3 +1,10 @@
+/**
+ * Unit tests for scorecard retrieval query builder (`query-build.ts`).
+ *
+ * Tests cover: single-prompt pass-through, multiple prompt concatenation,
+ * byte-length truncation at `SCORECARD_COMBINED_QUERY_MAX_BYTES`, and
+ * deduplication of identical prompts. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { SCORECARD_COMBINED_QUERY_MAX_BYTES } from './constants';

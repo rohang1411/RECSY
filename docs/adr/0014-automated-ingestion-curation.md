@@ -237,7 +237,7 @@ same queries later; we don't need an admin UI on day one.
 - `src/app/api/ask/route.ts` — passes phone metadata.
 - `scripts/ingest-auto.ts`, `scripts/creator-watch.ts`, `scripts/ingest-report.ts`.
 - `.github/workflows/{ingest,ingest-tiered,creator-watch,ingest-on-new-phone}.yml`.
-- `docs/implementationPlans/automated-ingestion-pipeline.md` — full plan.
+- `docs/ImplementationPlans/automated-ingestion-pipeline.md` — full plan.
 
 ## Alternatives considered
 

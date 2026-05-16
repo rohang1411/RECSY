@@ -1,9 +1,10 @@
 # Automated Ingestion Pipeline — End-to-End Design
 
-> **Status.** Approved 2026-04-22. Living document — update as each phase lands.
+> **Status.** Accepted and shipped (2026-04-22 → 2026-04-29). Hardened with resumability (ADR 0017, 2026-05-15).
 > **Owner.** Ingestion.
-> **See also.** [ADR 0014](../adr/0014-automated-ingestion-curation.md) (pending),
-> [`docs/ingest/README.md`](../ingest/README.md), [ADR 0003](../adr/0003-ingestion-typescript.md).
+> **See also.** [ADR 0014](../adr/0014-automated-ingestion-curation.md) (Accepted),
+> [`docs/ingest/README.md`](../ingest/README.md), [ADR 0003](../adr/0003-ingestion-typescript.md),
+> [ADR 0017 — Ingestion resumability + intelligent retry](../adr/0017-ingestion-resumability-and-intelligent-retry.md).
 
 ## 1. Problem Today
 

@@ -1,3 +1,21 @@
+/**
+ * Recommender matching, ranking, and diversity logic.
+ *
+ * Core pipeline functions:
+ * - `passesHardFilters` / `dealBreakerHit` / `mustHaveMatchRatio` — hard
+ *   filter gates (budget, must-haves, deal-breakers).
+ * - `weightedAspectScore` — compute a weighted score from aspect rows.
+ * - `specSemanticBonus` — optional cosine-similarity bump from `spec_embedding`.
+ * - `rankCandidates` — filter + score + sort all phones; returns `RankResult`
+ *   with `scoresTied` and `scorecardMissing` flags.
+ * - `pickDiverseTop` — apply the max-per-brand diversity cap.
+ * - `resolveAspectWeights` / `aspectsByWeight` — normalise user priority weights.
+ *
+ * All functions are pure (no DB, no LLM, no side effects) — fully unit-testable
+ * with fixture inputs.
+ *
+ * Used by: `src/services/recommender/run-recommendation.ts`.
+ */
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';
 
 import {

@@ -189,7 +189,7 @@ src/services/retrieval/
 DB migration:
 
 ```
-drizzle/sql/0001_fts_index.sql
+drizzle/fts.sql
   ALTER TABLE chunks ADD COLUMN text_tsv tsvector
     GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
   CREATE INDEX chunks_text_tsv_idx ON chunks USING gin (text_tsv);

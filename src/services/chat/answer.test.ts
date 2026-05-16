@@ -1,3 +1,12 @@
+/**
+ * Unit tests for the phone Q&A answer pipeline (`answer.ts`).
+ *
+ * Tests cover: empty-corpus short-circuit, citation stripping on
+ * hallucinated tags, streaming chunk ordering, and graceful degradation
+ * when retrieval returns zero results.
+ *
+ * All LLM and retriever calls are mocked — no network or DB required.
+ */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { LlmProvider } from '@/services/llm/types';

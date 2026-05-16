@@ -1,3 +1,18 @@
+/**
+ * Recommendation catalog loader — fetches active phones with aspect scores.
+ *
+ * `loadRecommendationCatalog(db)` returns every active phone enriched
+ * with its latest aspect scores (keyed by aspect name), parsed `spec_json`,
+ * `msrp_usd`, `image_url`, and optional `spec_embedding` vector for the
+ * semantic-bump path.
+ *
+ * Phones without aspect rows are still included (scores default to the
+ * neutral value 5); the ranker uses `scorecardMissing` to signal this to
+ * the UI.
+ *
+ * Used by: `src/services/recommender/run-recommendation.ts`,
+ * `src/app/api/recommend/route.ts` (via run-recommendation).
+ */
 import { eq } from 'drizzle-orm';
 
 import type { AspectName } from '@/lib/constants';

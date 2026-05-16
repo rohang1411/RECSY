@@ -74,6 +74,8 @@ skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 21. [Glossary](#21-glossary)
 22. [Change Log](#22-change-log)
 23. [Issues Log](#23-issues-log)
+24. [Development & Documentation Rules](#24-development--documentation-rules)
+25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
 
 ---
 
@@ -771,14 +773,17 @@ flowchart TD
 
 ## 13. Ingestion Pipeline (MCP-style adapters)
 
-> **Phase 2 status.** Shipped. End-to-end verified against a live
+> **Phase 2 status.** Shipped and hardened. End-to-end verified against a live
 > article (10/10 smoke checks, idempotent re-run). YouTube ingestion
 > has a three-tier transcript fallback chain; the known YouTube
 > datacenter-IP throttling (see "Known issues") is handled by graceful
-> per-source skips. See [ADR 0003](./adr/0003-ingestion-typescript.md)
-> for the TypeScript pivot rationale and
-> [`docs/ingest/README.md`](./ingest/README.md) for the operator's
-> guide.
+> per-source skips. Automated tiered scheduling (hot/warm/cold) live per
+> [ADR 0014](./adr/0014-automated-ingestion-curation.md). Quota-failure
+> resumability and durable per-source failure records added per
+> [ADR 0017](./adr/0017-ingestion-resumability-and-intelligent-retry.md).
+> See [ADR 0003](./adr/0003-ingestion-typescript.md) for the TypeScript
+> pivot rationale and [`docs/ingest/README.md`](./ingest/README.md) for
+> the operator's guide.
 
 The ingestion layer lives at `src/services/ingest/` and is **TypeScript-
 native**. Earlier drafts of this doc called for a Python sidecar; ADR 0003
@@ -1425,6 +1430,24 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-05-15 — CI success gate, secrets-gate hardening, recommend state persistence, Gemini rotation
+
+- **Required CI success gate** ([`59edc99`](https://github.com/rohang1411/RECSY/commit/59edc99)) — `ci.yml` gains a `required` job that acts as a single merge gate, aggregating all lanes (`quality`, `e2e`, `retrieval-eval`). Workflows now also run on `master` pushes so the gate fires on direct merges.
+- **Secrets-gate for ingestion / scorecard workflows** ([`c4724d8`](https://github.com/rohang1411/RECSY/commit/c4724d8), [`18cdd6d`](https://github.com/rohang1411/RECSY/commit/18cdd6d)) — A reusable `secrets-gate` job checks for `GEMINI_API_KEY`, `DATABASE_URL`, and Supabase secrets before running the heavy jobs. On forks or environments without secrets, workflows skip cleanly instead of failing env validation or making unauthenticated LLM calls.
+- **Recommend page state persisted in `sessionStorage`** ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02)) — `RecommendClient` now serializes the conversation history to `sessionStorage` on every update and hydrates from it on mount. A full browser refresh no longer wipes the pick cards and chat turns.
+- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) — `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
+- **Scorecard chunk-id UUID validation regression fix** ([`3eee6f9`](https://github.com/rohang1411/RECSY/commit/3eee6f9)) — The scorecard extraction schema had lost its UUID format check on evidence `chunkId` fields. This allowed non-UUID strings to pass validation and produced silent evidence mismatches downstream. Restored strict `z.string().uuid()` validation.
+
+### 2026-05-14 — Internal Pipeline Observatory dashboard
+
+- **Initial dashboard** ([`d11c7ab`](https://github.com/rohang1411/RECSY/commit/d11c7ab)) — `/internal/pipeline` ships behind `INTERNAL_DASHBOARD_ENABLED`. Features: live DB stats (phone count, source count, chunk count, aspect coverage), corpus overview, metric cards.
+- **Phone evidence + retrieval pipeline components** ([`c225079`](https://github.com/rohang1411/RECSY/commit/c225079)) — `PhoneEvidenceSection`, `RetrievalFunnel`, `RetrievalSection`, `RecommendSection`, `GuidedWalkthrough`, `EvidenceTimeline`, `ScoreBreakdown`, `ScorecardRadar`, `RequirementsViewer`, `ChunkViewer`, `SourceCard`, `DatabaseMap` — all backed by `src/services/internal/{pipeline-snapshot,phone-evidence,retrieval-explain,recommend-explain}.ts`. Full ADR: [0016](./adr/0016-internal-pipeline-observatory.md).
+
+### 2026-05-14 — Automated scorecard generation (ADR 0015)
+
+- **Initial roll-out** ([`7082ee0`](https://github.com/rohang1411/RECSY/commit/7082ee0)) — `scripts/scorecard-auto.ts`, `src/services/scorecard/scheduler.ts`, `staleness.ts`; `phones.{last,next}_scorecard_at`; `scorecard_runs` telemetry table; `scorecard-auto.yml` cron (daily 02:17 UTC). Full ADR: [0015](./adr/0015-automated-aspect-scorecard.md).
+- **Telemetry + scheduling improvements** ([`a73a484`](https://github.com/rohang1411/RECSY/commit/a73a484)) — `markScorecardComplete` only fires when `updated > 0`; staleness skip writes seven `scorecard_runs` rows (one per aspect); GeminiProvider schema/API error differentiation; debug logging for validation errors ([`281be83`](https://github.com/rohang1411/RECSY/commit/281be83), [`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79)).
+
 ### 2026-05-15 — Tiered ingest cron + automated scorecard hardening
 
 - **`.github/workflows/ingest-tiered.yml`** — Removed the `plan` job that selected tiers by day-of-week and matrixed `tier × shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes “cron runs but picks zero phones” when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
@@ -1868,6 +1891,7 @@ dissenting_quotes)`.
   migrations lagged the code rollout, they could die immediately on tables like
   `phone_aliases` or `creator_profiles`, and Drizzle often surfaced only the
   outer `Failed query` message unless you inspected the nested cause chain.
+  ([`244810e`](https://github.com/rohang1411/RECSY/commit/244810e))
   - **Fix.** Added a shared schema guard that checks required public tables /
     columns before these scripts proceed. When the ingestion schema is missing,
     the scripts now log an actionable message telling the operator to run
@@ -1884,6 +1908,7 @@ dissenting_quotes)`.
   Shorts). Because `creator_profiles` upserts on `(platform, external_id)`,
   corrected IDs did not retire old active rows for the same handle; every phone
   then re-fetched the same broken feeds and emitted repeated HTTP 404 warnings.
+  ([`25c7e77`](https://github.com/rohang1411/RECSY/commit/25c7e77))
   - **Fix.** Corrected the seeded creator channel IDs, made `db:setup` disable
     stale active `creator_profiles` rows with the same `(platform, handle)` but
     a superseded `external_id`, updated the implementation-plan tables, and
@@ -1896,6 +1921,7 @@ dissenting_quotes)`.
   service used in CI has neither role. Step 4/5 then failed with
   `role "anon" does not exist`, even though the schema and seed steps were
   otherwise portable.
+  ([`7ca2e53`](https://github.com/rohang1411/RECSY/commit/7ca2e53))
   - **Fix.** `drizzle/rls.sql` now discovers which of `anon` /
     `authenticated` actually exist and only creates public-read policies when
     at least one is present. On vanilla Postgres it logs a notice and skips
@@ -1910,6 +1936,7 @@ dissenting_quotes)`.
   step 1, emit soft warnings, and continue into Drizzle migrations without
   `vector`, `pg_trgm`, or `pgcrypto` actually installed. The visible failure
   then appeared later at `CREATE TABLE "chunks" ... "embedding" vector(768)`.
+  ([`9de9a54`](https://github.com/rohang1411/RECSY/commit/9de9a54))
   - **Fix.** `scripts/db-setup.ts` now installs required extensions with
     explicit statements that fail fast, and only treats `pg_cron` as optional.
   - **Hardening.** Bootstrap no longer depends on comment-sensitive SQL
@@ -1924,6 +1951,7 @@ dissenting_quotes)`.
   `env.LLM_PROVIDER` undefined; `getLlm()` then threw during startup before
   the scheduler could pick any phones. The production ingestion workflows also
   relied on the code default instead of declaring a provider explicitly.
+  ([`2b63745`](https://github.com/rohang1411/RECSY/commit/2b63745))
   - **Fix.** `src/env.ts` now skips validation only when
     `SKIP_ENV_VALIDATION === 'true'`. The ingestion and creator-watch GitHub
     Actions workflows now export `LLM_PROVIDER: gemini` explicitly.
@@ -1932,6 +1960,63 @@ dissenting_quotes)`.
     `LLM_PROVIDER` default. Production workflows keep validation enabled, so
     missing required secrets fail fast instead of producing undefined runtime
     config.
+
+### Ops — Automated scorecard + ingestion hardening (2026-05-14 – 2026-05-15)
+
+#### HIGH
+
+- **GeminiProvider could not differentiate schema violations from API-level errors, causing wrong retry path and excessive debug noise.**
+  A schema-validation failure (model returned malformed JSON) and a network/API error both triggered the same generic retry logic. Operators saw confusing log output and retries that could not succeed (e.g. retrying a schema error with no prompt adjustment). ([`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79), debug logging [`281be83`](https://github.com/rohang1411/RECSY/commit/281be83))
+  - **Fix.** `GeminiProvider` now catches `AISDKError` subtypes separately: schema violations → single retry with error-feedback nudge; API / network errors → jittered backoff. Debug-level logging for validation errors added to aid diagnosis without spamming production.
+  - **Hardening.** `GeminiProvider` type narrowing covers the two error paths so a future SDK upgrade that changes the error hierarchy is caught by typecheck.
+
+- **Scorecard agent missing type imports caused build failure on automated roll-out.**
+  `src/services/scorecard/agent.ts` used types from `@/services/db/schema` that were referenced but not imported. The error only surfaced during the automated scorecard CI run, not local dev, because local builds had cached output. ([`5f96a9c`](https://github.com/rohang1411/RECSY/commit/5f96a9c))
+  - **Fix.** Added the missing `import type` statements.
+  - **Hardening.** `pnpm typecheck` in the `quality` CI job catches this class of error before automated workflows run.
+
+- **Vercel transaction pooler (Supavisor) URL params crashed Drizzle; phone image wrapper caused layout regression.**
+  Vercel injects `?pgbouncer=true&connection_limit=1` into `DATABASE_URL`. The Porsager `postgres` driver does not recognise those params and throws on connect. Separately, `PhoneImage`'s wrapper `<div>` was unconstrained in height, causing card layout breaks on the recommendations page. ([`1d4e3a4`](https://github.com/rohang1411/RECSY/commit/1d4e3a4), troubleshooting [`7d79673`](https://github.com/rohang1411/RECSY/commit/7d79673))
+  - **Fix.** `src/services/db/connection.ts` auto-strips Supavisor-only query params before passing the URL to the driver. `PhoneImage` wrapper gains explicit `aspect-ratio` and `overflow-hidden`.
+  - **Hardening.** `db:ping` verifies the stripped URL connects cleanly. Troubleshooting note added to `docs/deployment/README.md`.
+
+- **Migration `0001` was not idempotent: re-running `db:setup` on an existing DB failed with "index already exists" on `rate_limits`.**
+  The initial migration created a btree index on `(key, window_start)` without `IF NOT EXISTS`, so idempotent re-runs threw a Postgres error and aborted `db:setup`. ([`5378fcc`](https://github.com/rohang1411/RECSY/commit/5378fcc))
+  - **Fix.** Wrapped the index creation with `IF NOT EXISTS`. Added `db:smoke` assertion that the index exists post-setup.
+  - **Hardening.** Migration convention now requires `IF NOT EXISTS` on all standalone index statements.
+
+#### MEDIUM
+
+- **Recommend page lost all conversation state on browser refresh.**
+  `/recommend` held chat turns and pick cards in React state only. A full page refresh cleared everything. ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02))
+  - **Fix.** `RecommendClient` serializes conversation state to `sessionStorage` on every update and hydrates on mount.
+  - **Hardening.** No PII stored — only UI state (chat messages, pick slugs). State clears when the browser session ends.
+
+- **GSMArena Cloudflare Turnstile blocked automated discovery; broken creator channel IDs re-ingested stale feeds.**
+  The GSMArena adapter hit a Cloudflare Turnstile challenge on discovery. Separately, several `creator_profiles` seed rows had wrong YouTube channel IDs; corrected IDs did not retire old active rows due to upsert keying on `(platform, external_id)`. ([`2f18ff1`](https://github.com/rohang1411/RECSY/commit/2f18ff1))
+  - **Fix.** GSMArena adapter falls back to `raw_json.gsmarenaUrl` direct URL override. `db:setup` deactivates stale `creator_profiles` rows with a superseded `external_id` for the same `(platform, handle)`.
+
+- **`IGNORE_ROBOTS` missing: `robots.txt` strict adherence silently blocked valid editorial sources.**
+  The polite HTTP layer respected Disallow rules for sources that are publicly browseable. Valid editorial review domains were blocked. ([`e7e5ce6`](https://github.com/rohang1411/RECSY/commit/e7e5ce6))
+  - **Fix.** Added `IGNORE_ROBOTS=true` env escape hatch and per-domain `ignoreRobots` flag on `domain_profiles`.
+
+- **ArticleAdapter `discover()` TypeScript type errors: `null` vs `undefined`, missing required `SourceCandidate` fields.**
+  Returned `null` for optional fields that `SourceCandidate` requires as `string`. Surfaced as typecheck failures after automation rollout. ([`c14ea54`](https://github.com/rohang1411/RECSY/commit/c14ea54), [`2329f2d`](https://github.com/rohang1411/RECSY/commit/2329f2d), [`6f185a8`](https://github.com/rohang1411/RECSY/commit/6f185a8))
+  - **Fix.** All required `SourceCandidate` fields now have non-null fallbacks; `title` defaults to page hostname; missing dates default to discovery timestamp.
+
+- **TypeScript compilation errors across scripts and tests after ingestion automation rollout.**
+  Multiple files had stale type references to the old adapter API surface after the ADR 0014 rewrite. ([`25f19c5`](https://github.com/rohang1411/RECSY/commit/25f19c5))
+  - **Fix.** Updated all affected files to the new types (`IngestRunRow`, `SourceCandidateWithAdapter`, etc.).
+
+#### LOW
+
+- **GitHub Actions `secrets` context was invalid in job-level `if:` conditionals.**
+  `secrets.*` is unavailable in `job.if:` expressions — only in step-level conditions. Workflows silently skipped instead of failing with a clear error. ([`a7af86f`](https://github.com/rohang1411/RECSY/commit/a7af86f))
+  - **Fix.** Replaced inline secret checks with the `secrets-gate` reusable job pattern; downstream jobs key off the boolean output.
+
+- **CI workflows declared an explicit pnpm version that drifted from `package.json`'s `packageManager` field.**
+  Pinned `pnpm@10.x` in workflows drifted when `package.json` bumped the patch version. ([`8cce9ac`](https://github.com/rohang1411/RECSY/commit/8cce9ac))
+  - **Fix.** Removed all explicit `pnpm-version:` from workflow steps; Corepack reads `packageManager` automatically.
 
 ### Phase 7 polish — Context-aware summaries, tie honesty, client settings (2026-04-22)
 
@@ -1985,6 +2070,7 @@ dissenting_quotes)`.
   The table only carried a non-unique btree on `(key, window_start)`, so
   Drizzle could not atomically increment per-window counts; duplicate rows
   were possible under concurrency.
+  ([`5378fcc`](https://github.com/rohang1411/RECSY/commit/5378fcc))
   - **Fix.** Added `rate_limits_key_window_uniq` via `drizzle/fts.sql`
     (`CREATE UNIQUE INDEX IF NOT EXISTS`) and `uniqueIndex` in
     `schema.ts`. `db:smoke` asserts the index exists.
@@ -2005,6 +2091,7 @@ dissenting_quotes)`.
 - **Gemini `text-embedding-004` returning 404.**
   `ingest:smoke` failed with `models/text-embedding-004 is not found for
 API version v1beta`. Google retired the model on `v1beta` in early 2026.
+  ([`c95c4e2`](https://github.com/rohang1411/RECSY/commit/c95c4e2))
   - **Fix.** Migrated to `gemini-embedding-001` in `src/env.ts` (default)
     and `src/services/llm/gemini.ts`. Switched to `google.embedding(...)`
     with `providerOptions.google.outputDimensionality = 768` and
@@ -2024,6 +2111,7 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   endpoint was reachable with an ASCII header. The failure happened before any
   outbound request left the process, so the adapter looked like a network or
   Reddit-side outage even though the root cause was local header validation.
+  ([`d850c30`](https://github.com/rohang1411/RECSY/commit/d850c30))
   - **Fix.** Replaced the Unicode dash with an ASCII hyphen in
     `src/services/ingest/adapters/reddit.ts`, restoring valid request headers
     for both `/search.json` and `/new.json` discovery calls.
@@ -2034,7 +2122,8 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
 - **YouTube caption metadata exists but caption bodies are withheld.** Local
   probes showed the watch page exposes valid `captionTracks` for Pixel review
   videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
-  body from Node, curl, and Chromium. In the same runs, `youtubei.js`
+  body from Node, curl, and Chromium.
+  ([`c9927fa`](https://github.com/rohang1411/RECSY/commit/c9927fa)) In the same runs, `youtubei.js`
   `getTranscript()` was often returning HTTP 400, and the in-process fallback
   tiers based on the `Info` object and watch-page scrape were finding caption
   metadata but still getting empty transcript bodies. This is YouTube subtitle
@@ -2214,6 +2303,7 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
   wrapped as a generic Drizzle "Failed query" error. The underlying runner
   had no route to the chosen AAAA record even though the same hostname had a
   reachable IPv4 address.
+  ([`a57f3ac`](https://github.com/rohang1411/RECSY/commit/a57f3ac), [`dbe1f48`](https://github.com/rohang1411/RECSY/commit/dbe1f48))
   - **Fix.** Added a shared DB connection helper in
     `src/services/db/connection.ts` that strips Supavisor-only query params
     and forces Node to prefer IPv4 DNS answers for Supabase hosts before
@@ -2306,3 +2396,181 @@ entry to §23 if anything non-trivial broke, bump status markers in §6
 and §19, update the living **§20 risk register** (status/notes) when a
 known limitation is mitigated or a new one appears — do not remove rows,
 and keep the ToC in sync._
+
+---
+
+## 24. Development & Documentation Rules
+
+> These rules are mandatory for every human or AI agent contributing to RECSY v2. They exist so that the codebase, documentation, and tests remain internally consistent and collectively trustworthy as the project grows.
+
+### 24.1 Documentation-first
+
+Every feature, decision, or significant fix must be reflected in documentation **in the same PR** as the code change:
+
+| Document                           | What to update                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/RECSY_V2_PROJECT_CONTEXT.md` | §6 Feature Inventory status, §22 Change Log entry, §23 Issues Log entry (if something broke), §25 Pending Tasks (if deferred)               |
+| `docs/RECSY_V2_PROJECT_GUIDE.md`   | Routes table, `src/` structure, reading order, phase snapshot — if any of these change                                                      |
+| ADR (`docs/adr/*.md`)              | Write a new ADR for every non-obvious technical decision; superseded ADRs must say so with a forward link                                   |
+| Subsystem README                   | Operating notes, status, and command references in `docs/{ingest,retrieval,scorecard,recommender,deployment,browse,compare,eval}/README.md` |
+| Implementation plan                | If a task has an implementation plan, flip its status marker and cross-link the ADR once accepted                                           |
+
+All status flags across §6, §19, §22, §23, and §25 must agree. A feature cannot be "shipped" in §6 and "planned" in the guide.
+
+### 24.2 ADR coverage
+
+Every non-obvious technical decision gets an ADR. Criteria for "non-obvious":
+
+- Changes an external contract (API shape, DB schema, auth model)
+- Selects one of several viable approaches (e.g. hybrid vs. sparse-only retrieval)
+- Accepts a limitation that will surprise a new engineer
+- Reverses or supersedes a prior ADR
+
+Superseded ADRs must link forward: `**Status: Superseded by [ADR NNNN](./NNNN-…).**` at the top of the status block.
+
+### 24.3 File-header comments
+
+Every `.ts` / `.tsx` file must open with a `/** … */` JSDoc block that states:
+
+1. **Purpose** — one sentence: what this file does and why it exists.
+2. **Contents** — key exports or components in the file.
+3. **Implementation notes** — non-obvious design choices (skip for trivial files).
+4. **Used by** — which callers depend on this file.
+
+Model the template on `src/app/api/health/route.ts` and `src/services/llm/gemini.ts`.
+
+### 24.4 Tests
+
+| Rule                 | Detail                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Every new module     | ships with at least one `*.test.ts` covering the happy path                               |
+| Bug fixes            | ship with a regression test that would have caught the bug                                |
+| Coverage target      | 80 % statement coverage on `src/services/`                                                |
+| Test environment     | Vitest, Node env; use `vi.mock` / `vi.useFakeTimers` — never live DB or LLM in unit tests |
+| High-value test list | see §25 for modules that are missing tests                                                |
+| E2E                  | Playwright specs in `e2e/`; gate on `pnpm build` succeeding                               |
+
+### 24.5 Logging
+
+- Every service module uses a **request-scoped `pino` logger** obtained from `src/services/logger/index.ts`.
+- Bind context fields at child creation: `traceId`, `route`, plus domain bindings as appropriate (`phoneSlug`, `sessionId`, `adapter`, `aspect`, `tier`).
+- No `console.log` in production code (ESLint rule enforced).
+- Log levels: `trace` for per-chunk detail, `debug` for per-request paths, `info` for per-operation outcomes, `warn` for recoverable anomalies, `error` for failures.
+- Never log raw PII (IP addresses, user input verbatim), service keys, or full DB row objects.
+
+### 24.6 Commit conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/) enforced by `commitlint` on `commit-msg`. Valid scopes are listed in `commitlint.config.mjs`. Examples:
+
+```
+feat(recommend): add multi-turn preference merging
+fix(ingest): handle empty YouTube transcript body gracefully
+docs(adr): add ADR 0017 ingestion resumability
+test(rate-limit): add window-rollover regression test
+```
+
+Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
+
+### 24.7 Environment hygiene
+
+- Never read `process.env.*` outside `src/env.ts`, scripts, or Next.js config files. ESLint enforces `no-process-env` on `src/**`.
+- All required secrets are listed in `.env.example` with placeholder values and a comment explaining each.
+- `pnpm db:smoke` must pass after every migration.
+
+### 24.8 Security
+
+| Rule                              | Rationale                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| RLS default-deny preserved        | Every `SELECT` on user-visible tables must have an explicit `USING` clause; never grant broad access via migration |
+| No raw IPs or PII in client code  | IP hashing happens server-side in `src/lib/request-ip.ts` + `src/services/rate-limit/ip-hash.ts`                   |
+| No service keys in client bundles | Only `NEXT_PUBLIC_*` vars are safe for the client; everything else lives in `src/env.ts` server-only               |
+| CSP / security headers            | Managed by `next.config.ts`; do not modify without an ADR                                                          |
+| ASCII headers only                | Non-ASCII characters in HTTP headers cause silent failures (see Phase 2 em-dash bug in §23)                        |
+
+### 24.9 Migration discipline
+
+- Forward-only: never drop a column or table in a `drizzle generate` migration without a separate, reviewed "destructive" migration file.
+- Every index creation uses `IF NOT EXISTS` so re-running `db:setup` is always safe.
+- After generating a migration, run `pnpm db:smoke` before committing.
+- RLS policies follow the pattern in `drizzle/rls.sql`; no inline policy SQL in migrations.
+
+---
+
+## 25. Pending Tasks & Refactors
+
+> This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
+
+### P1 — Actionable (high value, next sprint)
+
+#### Missing unit tests
+
+The following modules have no unit test file. Each is a meaningful service with edge cases that should be caught before any refactor:
+
+| Module                                                | Acceptance criteria                                                                                 | Difficulty |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| `src/services/ingest/writer.ts`                       | Test: happy-path insert, idempotent re-insert via `content_hash`, concurrent write safety (mock DB) | Medium     |
+| `src/services/ingest/embedder.ts`                     | Test: batching, concurrency cap, retry on transient failure, skip on existing hash                  | Medium     |
+| `src/services/ingest/scheduler/enqueue.ts`            | Test: hot/warm/cold tier selection, shard filtering, `--resume-failed` flag path                    | Medium     |
+| `src/services/ingest/scheduler/pick-resume-phones.ts` | Test: returns phones with `last_ingest_status = 'quota_error'` or incomplete run, respects limit    | Easy       |
+| `src/services/ingest/agents/alias-loader.ts`          | Test: alias resolution, fallback on empty alias table, schema guard path                            | Easy       |
+| `src/services/ingest/adapters/article.ts`             | Test: discover from URL list, `@mozilla/readability` chunking, null-safety for missing metadata     | Medium     |
+| `src/services/ingest/adapters/youtube.ts`             | Test: transcript fetch, fallback tiers, empty-transcript skip                                       | Hard       |
+| `src/services/retrieval/retriever.ts`                 | Test: RRF merge, MMR selection, source coverage clamp, empty-corpus short-circuit                   | Medium     |
+| `src/services/retrieval/factory.ts`                   | Test: correct retriever returned for each config combination                                        | Easy       |
+| `src/services/retrieval/fts.ts`                       | Test: query normalization, tsvector match, trigram fallback                                         | Medium     |
+| `src/services/retrieval/vector.ts`                    | Test: cosine similarity ordering, HNSW probe count effect                                           | Hard       |
+| `src/services/scorecard/agent.ts`                     | Test: extraction schema validation, aspect coverage, citation validation                            | Medium     |
+| `src/services/scorecard/scheduler.ts`                 | Test: staleness check gating, `--force` bypass, dry-run output                                      | Medium     |
+| `src/services/recommender/session.ts`                 | Test: session create, load, multi-turn history append, anonymous session expiry                     | Medium     |
+| `src/services/internal/pipeline-snapshot.ts`          | Test: fixture-driven shape check, null-safe DB aggregations                                         | Easy       |
+| `src/services/internal/phone-evidence.ts`             | Test: evidence grouping, source coverage by adapter type                                            | Easy       |
+
+#### Route-level and component tests
+
+These require additional test infrastructure (RTL + jsdom Vitest config for components; route-level mocking for API tests):
+
+| Target                           | Notes                                                    |
+| -------------------------------- | -------------------------------------------------------- |
+| `src/app/api/ask/route.ts`       | Needs fetch mocking or a lightweight integration harness |
+| `src/app/api/recommend/route.ts` | Needs session mocking + LLM mock                         |
+| `src/components/AppHeader.tsx`   | RTL + jsdom: navigation links, theme toggle              |
+| `src/components/PhoneImage.tsx`  | RTL: `referrerPolicy`, fallback rendering, lazy loading  |
+| `src/components/Scorecard.tsx`   | RTL: aspect bar rendering, empty-state                   |
+
+### P2 — Documentation cleanup
+
+| Item                                         | Action                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| ADR 0001 Python ingestion row                | Replace with TypeScript ingestion + "see ADR 0003" pointer (tracked in §1d)  |
+| `docs/retrieval/README.md` stale header      | Remove "Phase 3, in progress" references; update to shipped state            |
+| `docs/scorecard/README.md` scheduled-job TBD | Replace with live `scorecard:auto` story per ADR 0015                        |
+| `automated_ingestion_pipeline_1.plan.md`     | Add superseded note or archive under `docs/ImplementationPlans/archive/`     |
+| Implementation plan commit hyperlinks        | Several plan files lack fix-commit links in their "Lessons Learned" sections |
+
+#### Recommended new ADRs
+
+| ADR                          | Decision to capture                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `0018-llm-response-cache.md` | LLM cache persistence semantics, key derivation (model + prompt hash), invalidation policy, bypass for streaming paths    |
+| `0019-api-rate-limiting.md`  | API rate-limiting policy (separate from ingest polite-HTTP): sliding window, per-IP, per-route limits, 429 response shape |
+
+### P3 — Product backlog
+
+| Item                            | Notes                                                                                                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Offline PWA service worker      | Manifest exists; no `sw.js` yet                                                                                                   |
+| Per-route OG cards              | `/p/[slug]` should generate a phone-specific OG image                                                                             |
+| `image_url` backfill            | ~30 phones missing; needs `spec-embed:backfill --with-images` or manual CSV import                                                |
+| Candidate logging in DB         | Log recommender candidates to a `recommendation_events` table for future calibration                                              |
+| Gemini Pro tie-break            | When `scoresTied` and the Pro model is available, use it to break ties with a reasoning summary                                   |
+| Score calibration               | z-score or price-bracket normalization on aspect scores; prevents budget and flagship phones from sharing the same absolute scale |
+| `discover`-time candidate dedup | Cross-adapter dedup at `discover` time to avoid ingesting the same YouTube video via both channel-feed and direct-search paths    |
+
+### P3 — Code-quality refactors
+
+| Item                                    | Notes                                                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import type` consolidation             | Several service files use `import` where `import type` is sufficient; ESLint `@typescript-eslint/consistent-type-imports` could auto-fix           |
+| Non-ASCII HTTP header lint rule         | An ESLint rule banning non-ASCII characters in string literals used as HTTP header values would have caught the Phase 2 em-dash bug at commit time |
+| `getDb()` → `useDb()` rename            | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
+| Recommender `session.ts` session expiry | Anonymous sessions never expire from the DB; add a `created_at < NOW() - interval '7 days'` cleanup cron or a `max_age` column                     |

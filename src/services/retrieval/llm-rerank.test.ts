@@ -1,3 +1,10 @@
+/**
+ * Unit tests for LLM rerank + MMR tail merging (`llm-rerank.ts`).
+ *
+ * Tests cover: LLM-ranked head preserved in order, MMR tail fills
+ * remaining slots, duplicate removal between head and tail, and
+ * correct final slice at `k`. Pure — no LLM or DB.
+ */
 import { describe, expect, it } from 'vitest';
 
 import type { RetrievedChunk } from './types';

@@ -1,3 +1,10 @@
+/**
+ * Unit tests for user requirement extraction (`extract-requirements.ts`).
+ *
+ * Tests cover: LLM structured-output happy path, schema normalization,
+ * clarify threshold detection, and invalid schema rejection. LLM is
+ * mocked — no real Gemini calls.
+ */
 import { describe, expect, it } from 'vitest';
 
 import type { LlmProvider, StructuredResult } from '@/services/llm/types';
