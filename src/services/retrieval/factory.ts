@@ -1,3 +1,16 @@
+/**
+ * Hybrid retriever factory — constructs and caches the `HybridRetriever` singleton.
+ *
+ * `createHybridRetriever(opts?)` wires together `VectorSearch`, `FtsSearch`,
+ * and optional `LlmReranker` into a `HybridRetriever`. On first call, the
+ * retriever is cached at process scope (one postgres pool, one embedder).
+ * Subsequent calls return the cached instance.
+ *
+ * Call `resetHybridRetriever()` in tests to clear the singleton.
+ *
+ * Used by: `src/app/api/ask/route.ts`, `src/services/chat/answer.ts`,
+ *          `src/services/scorecard/agent.ts`, `scripts/retrieval-smoke.ts`.
+ */
 import { env } from '@/env';
 import { getPostgres } from '@/services/db/client';
 import { getLlm } from '@/services/llm';

@@ -8,8 +8,11 @@
 #
 # Why separate from ingest-tiered.yml?
 #   - Different cadence (6h vs daily).
-#   - Much cheaper — no embedding / LLM work.
+#   - Much cheaper — no embedding / LLM work (script never calls Gemini).
 #   - Keeps tiered runtime predictable.
+#
+# GEMINI_API_KEY: env.ts requires a non-empty key even though this job does not
+# call the LLM; we use a harmless placeholder when the secret is unset.
 # =============================================================================
 name: creator-watch
 
@@ -30,8 +33,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check DB secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DB secrets incomplete — skipping (expected for forks / unset repo secrets)."
+          fi
+
   watch:
     name: Poll creator feeds
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -42,7 +68,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       LLM_PROVIDER: gemini
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__CREATOR_WATCH_GEMINI_PLACEHOLDER_NOT_USED__' }}
       LOG_LEVEL: info
       SKIP_ENV_VALIDATION: 'false'
 

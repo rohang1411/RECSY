@@ -135,6 +135,15 @@ export const phones = pgTable(
      * Null => "eligible now".
      */
     nextIngestAt: timestamp('next_ingest_at', { withTimezone: true }),
+    /** When scorecard was last computed for this phone. Null = never scored. */
+    lastScorecardAt: timestamp('last_scorecard_at', { withTimezone: true }),
+    /** When the scheduler should next re-score this phone. Null = eligible now. */
+    nextScorecardAt: timestamp('next_scorecard_at', { withTimezone: true }),
+    /**
+     * Outcome of the most recent ingest attempt:
+     *   'success' | 'partial' | 'quota_exhausted' | 'failed' | null (never attempted).
+     */
+    lastIngestStatus: text('last_ingest_status'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -143,6 +152,8 @@ export const phones = pgTable(
     index('phones_status_idx').on(t.status),
     index('phones_spec_embedding_idx').using('hnsw', t.specEmbedding.op('vector_cosine_ops')),
     index('phones_next_ingest_at_idx').on(t.nextIngestAt),
+    index('phones_next_scorecard_at_idx').on(t.nextScorecardAt),
+    index('phones_last_ingest_status_idx').on(t.lastIngestStatus),
   ],
 );
 
@@ -286,6 +297,34 @@ export const aspects = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// scorecard_runs — Telemetry and caching guard for aspect extraction
+// ---------------------------------------------------------------------------
+
+export const scorecardRuns = pgTable(
+  'scorecard_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id').references(() => phones.id, { onDelete: 'set null' }),
+    aspect: aspectEnum('aspect').notNull(),
+    status: ingestStatusEnum('status').notNull(),
+    skipReason: text('skip_reason'),
+    chunkFingerprint: text('chunk_fingerprint'),
+    score: numeric('score', { precision: 3, scale: 1 }),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    nSources: integer('n_sources'),
+    durationMs: integer('duration_ms'),
+    error: text('error'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('scorecard_runs_phone_idx').on(t.phoneId),
+    index('scorecard_runs_status_idx').on(t.status),
+    index('scorecard_runs_started_at_idx').on(t.startedAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Recommender sessions, turns, feedback.
 // ---------------------------------------------------------------------------
 
@@ -407,6 +446,14 @@ export const ingestRuns = pgTable(
      * the machine-readable reason for auditing false negatives.
      */
     rejectedReason: text('rejected_reason'),
+    /** Pipeline stage that produced this record (discover, fetch, curator, embed, write, …). */
+    stage: text('stage'),
+    /** Machine-readable error category for retry routing. */
+    errorCode: text('error_code'),
+    /** Earliest UTC time this source is eligible for retry. Null = eligible now. */
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    /** Candidate title at failure time — used when resuming without re-discovery. */
+    candidateTitle: text('candidate_title'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     durationMs: integer('duration_ms'),
@@ -416,6 +463,8 @@ export const ingestRuns = pgTable(
     index('ingest_runs_status_idx').on(t.status),
     index('ingest_runs_rejected_reason_idx').on(t.rejectedReason),
     index('ingest_runs_started_at_idx').on(t.startedAt),
+    index('ingest_runs_phone_status_stage_idx').on(t.phoneId, t.status, t.stage),
+    index('ingest_runs_error_code_started_idx').on(t.errorCode, t.startedAt),
   ],
 );
 
@@ -609,6 +658,7 @@ export const phonesRelations = relations(phones, ({ many }) => ({
   aliases: many(phoneAliases),
   sourceLinks: many(sourcePhoneLinks),
   crawlQueue: many(crawlQueue),
+  scorecardRuns: many(scorecardRuns),
 }));
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
@@ -641,6 +691,10 @@ export const aspectsRelations = relations(aspects, ({ one }) => ({
     fields: [aspects.aspectDefinitionId],
     references: [aspectDefinitions.id],
   }),
+}));
+
+export const scorecardRunsRelations = relations(scorecardRuns, ({ one }) => ({
+  phone: one(phones, { fields: [scorecardRuns.phoneId], references: [phones.id] }),
 }));
 
 export const recommendationSessionsRelations = relations(recommendationSessions, ({ many }) => ({

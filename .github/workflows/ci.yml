@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master, main]
 
 # Cancel in-progress runs for the same ref so PR pushes don't stack.
 concurrency:
@@ -106,11 +106,30 @@ jobs:
 
   # Hybrid retrieval `eval:retrieval` needs: Postgres, seeded phones, a tiny
   # ingested chunk (see `ci:retrieval-fixture`) and a real Gemini key for
-  # query embedding. Add repo secret `GEMINI_API_KEY` to enable.
+  # query embedding. Entire job is skipped when `GEMINI_API_KEY` secret is unset.
+  retrieval-gate:
+    name: Check GEMINI for retrieval eval
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "GEMINI_API_KEY unset — skipping optional retrieval eval."
+          fi
+
   retrieval-eval:
     name: eval · retrieval (optional, Gemini)
+    needs: [quality, retrieval-gate]
+    if: needs.retrieval-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
-    needs: [quality]
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -157,9 +176,22 @@ jobs:
         run: pnpm exec tsx scripts/db-setup.ts
 
       - name: Seed minimal retrieval eval corpus
-        if: env.GEMINI_API_KEY != ''
         run: pnpm ci:retrieval-fixture
 
       - name: Run hybrid retrieval eval
-        if: env.GEMINI_API_KEY != ''
         run: pnpm exec tsx scripts/eval-retrieval.ts
+
+  # Single required status check for branch protection (Settings → Branches → master).
+  # Require: "CI / CI success (required)" — do not require optional retrieval-eval.
+  ci-success:
+    name: CI success (required)
+    runs-on: ubuntu-latest
+    needs: [quality, e2e]
+    if: always()
+    steps:
+      - name: Verify required jobs passed
+        run: |
+          echo "quality: ${{ needs.quality.result }}"
+          echo "e2e: ${{ needs.e2e.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.e2e.result }}" = "success"

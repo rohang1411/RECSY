@@ -1,3 +1,11 @@
+/**
+ * Unit tests for the ingestion orchestrator (`orchestrator.ts`).
+ *
+ * Tests cover: adapter protocol (discover → fetch → chunk → curate →
+ * embed → write), idempotency on second run (same content_hash skipped),
+ * curator reject path, embed error recording via `recordFailedRun`, and
+ * orchestrator summary totals. All I/O is mocked.
+ */
 import { describe, expect, it, vi } from 'vitest';
 
 import { NotFoundError } from '@/lib/errors';

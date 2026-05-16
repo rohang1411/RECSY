@@ -1,3 +1,20 @@
+/**
+ * Recommendation pipeline orchestrator — one multi-turn recommendation request.
+ *
+ * `runRecommendationPipeline(input)` handles the full lifecycle of a single
+ * `/api/recommend` call:
+ *   1. Load session context (prior requirements + prior picks).
+ *   2. Detect if the user is refining over prior picks (refine intent).
+ *   3. Extract structured preferences from the user message via LLM.
+ *   4. Load the active phone catalog with aspect scores.
+ *   5. Either refine-rank over prior picks or run a fresh full-catalog rank.
+ *   6. Return `{ kind: 'results', picks, ... }` or `{ kind: 'clarify', ... }`.
+ *
+ * No streaming — returns a fully-resolved result synchronously. All I/O
+ * happens via injected `db` and `llm` parameters (no global singletons).
+ *
+ * Used by: `src/app/api/recommend/route.ts`.
+ */
 import type { Logger } from 'pino';
 
 import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/lib/constants';

@@ -1,3 +1,11 @@
+/**
+ * Unit tests for recommender match/rank/diversity logic (`match.ts`).
+ *
+ * Tests cover: hard filter gates (budget, must-have, deal-breaker),
+ * weighted aspect scoring, spec-semantic bonus, tie detection,
+ * scorecard-missing detection, brand-diversity cap, and `aspectsByWeight`
+ * canonical ordering. All tests are pure — no DB, LLM, or network.
+ */
 import { describe, expect, it } from 'vitest';
 
 import type { AspectName } from '@/lib/constants';

@@ -1,3 +1,10 @@
+/**
+ * Unit tests for `UserRequirements` Zod schema and normalization.
+ *
+ * Tests cover: LLM-tolerant parse (title-case aspect names, 0–100 weights,
+ * synonym mapping), normalization of missing fields to defaults, and
+ * rejection of out-of-range or unknown values. Pure — no external I/O.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { normalizeUserRequirements, userRequirementsSchema } from './requirements-schema';

@@ -1,3 +1,11 @@
+/**
+ * Unit tests for database schema guard (`schema-guard.ts`).
+ *
+ * Tests cover: `describeMissingSchema` output format (table/column names,
+ * actionable `pnpm db:setup` prompt), and `hasMissingDbObjectError`
+ * detection of Postgres "relation does not exist" errors in Drizzle
+ * error chains. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { describeMissingSchema, hasMissingDbObjectError } from './schema-guard';

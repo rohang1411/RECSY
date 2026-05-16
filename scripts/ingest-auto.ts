@@ -21,7 +21,7 @@
 import { getDb } from '../src/services/db/client';
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { phones } from '../src/services/db/schema';
 import {
   ArticleAdapter,
@@ -29,13 +29,18 @@ import {
   IngestOrchestrator,
   RedditAdapter,
   YouTubeChannelAdapter,
+  getFailedCandidatesForPhone,
   makeDbAliasLoader,
   makeDbPhoneLookup,
   makePoliteHttp,
   markIngested,
   pickPhones,
+  pickResumePhones,
   type IngestTier,
   type CreatorChannel,
+  type PickedPhone,
+  type SourceCandidate,
+  type SourceType,
   type SubredditProfile,
 } from '../src/services/ingest';
 import { getLlm } from '../src/services/llm';
@@ -50,6 +55,10 @@ interface CliArgs {
   totalShards: number;
   /** Per-phone, per-adapter discovery limit. */
   perPhoneLimit: number;
+  /** Prioritise phones with recent quota/rate-limit failures. */
+  resumeFailed: boolean;
+  /** Lookback for resume failures (days). Default 7. */
+  resumeWindowDays: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -60,6 +69,8 @@ function parseArgs(argv: readonly string[]): CliArgs {
     shard: 0,
     totalShards: 1,
     perPhoneLimit: 5,
+    resumeFailed: false,
+    resumeWindowDays: 7,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -99,6 +110,15 @@ function parseArgs(argv: readonly string[]): CliArgs {
       case '--dry-run':
         args.dryRun = true;
         break;
+      case '--resume-failed':
+        args.resumeFailed = true;
+        break;
+      case '--resume-window-days':
+        args.resumeWindowDays = Number(argv[++i]);
+        if (!Number.isFinite(args.resumeWindowDays) || args.resumeWindowDays <= 0) {
+          exitWithUsage('Invalid --resume-window-days');
+        }
+        break;
       case '-h':
       case '--help':
         printUsage();
@@ -125,6 +145,8 @@ function printUsage(): void {
       '  --shard K                  Shard index (0-based, default: 0)',
       '  --total-shards N           Total shards (default: 1)',
       '  --dry-run                  Discover + fetch + chunk, skip embed/write',
+      '  --resume-failed            Retry failed / incomplete / empty-corpus phones first',
+      '  --resume-window-days N     Lookback for failure rows (default: 7)',
       '  --help                     Print this message',
     ].join('\n'),
   );
@@ -177,12 +199,23 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const db = getDb();
   const missing = await findMissingPublicSchema(db, [
-    { table: 'phones', columns: ['next_ingest_at', 'last_ingest_at'] },
+    { table: 'phones', columns: ['next_ingest_at', 'last_ingest_at', 'last_ingest_status'] },
     { table: 'phone_aliases' },
     { table: 'creator_profiles' },
     { table: 'subreddit_profiles' },
     { table: 'source_phone_links' },
-    { table: 'ingest_runs', columns: ['tier', 'discovery_strategy', 'rejected_reason'] },
+    {
+      table: 'ingest_runs',
+      columns: [
+        'tier',
+        'discovery_strategy',
+        'rejected_reason',
+        'stage',
+        'error_code',
+        'retry_after',
+        'candidate_title',
+      ],
+    },
   ]);
   if (missing.length > 0) {
     console.warn(describeMissingSchema('ingest:auto', missing));
@@ -230,12 +263,46 @@ async function main(): Promise<void> {
 
   const tiers: IngestTier[] | undefined = args.tier === 'all' ? undefined : [args.tier];
 
-  const picked = await pickPhones(db, {
-    tiers,
-    limit: args.limit,
-    shard: args.shard,
-    totalShards: args.totalShards,
-  });
+  let picked: PickedPhone[];
+  const resumeWindowMs = args.resumeWindowDays * 24 * 60 * 60 * 1000;
+
+  if (args.resumeFailed) {
+    const resumePhones = await pickResumePhones(db, {
+      limit: args.limit,
+      shard: args.shard,
+      totalShards: args.totalShards,
+      windowMs: resumeWindowMs,
+    });
+
+    if (resumePhones.length === 0) {
+      console.log(
+        '[ingest:auto] --resume-failed: no phones with retriable failures, incomplete status, or empty corpus',
+      );
+      console.log(
+        '  Tip: phones may already have chunks, or failures are older than --resume-window-days.',
+      );
+      console.log('  Try: pnpm ingest:report   or   pnpm ingest:auto --limit 20');
+      picked = await pickPhones(db, {
+        tiers,
+        limit: args.limit,
+        shard: args.shard,
+        totalShards: args.totalShards,
+        onlyDue: false,
+      });
+    } else {
+      console.log(
+        `[ingest:auto] --resume-failed: ${resumePhones.length} phones to retry (failures / incomplete / empty corpus)`,
+      );
+      picked = resumePhones;
+    }
+  } else {
+    picked = await pickPhones(db, {
+      tiers,
+      limit: args.limit,
+      shard: args.shard,
+      totalShards: args.totalShards,
+    });
+  }
 
   if (picked.length === 0) {
     console.log('[ingest:auto] no phones due this run');
@@ -243,13 +310,52 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[ingest:auto] picked ${picked.length} phones (tier=${args.tier}, shard=${args.shard}/${args.totalShards})`,
+    `[ingest:auto] picked ${picked.length} phones (tier=${args.tier}, shard=${args.shard}/${args.totalShards}, resume=${args.resumeFailed})`,
   );
 
   let successes = 0;
   let failures = 0;
+  let empty = 0;
   for (const phone of picked) {
     try {
+      let candidatesByType: Partial<Record<SourceType, SourceCandidate[]>> | undefined;
+      let adapterTypes: SourceType[] | undefined;
+      const discoveryStrategy: string = args.resumeFailed ? 'resume' : 'tiered';
+
+      if (args.resumeFailed) {
+        const failed = await getFailedCandidatesForPhone(db, phone.id, {
+          windowMs: resumeWindowMs,
+        });
+        if (failed.length > 0) {
+          candidatesByType = {};
+          const adaptersSeen = new Set<SourceType>();
+          for (const fc of failed) {
+            const type = fc.adapter as SourceType;
+            adaptersSeen.add(type);
+            if (!candidatesByType[type]) candidatesByType[type] = [];
+            candidatesByType[type]!.push({
+              url: fc.sourceUrl,
+              title: fc.title,
+              author: null,
+              channel: null,
+              language: 'en',
+              publishedAt: null,
+              raw: {},
+            });
+          }
+          adapterTypes = [...adaptersSeen];
+          logger.info(
+            { phone: phone.slug, candidates: failed.length, adapters: adapterTypes },
+            'resume: injecting known-failed candidates',
+          );
+        } else {
+          logger.info(
+            { phone: phone.slug },
+            'resume: no failure rows for phone; running full discovery (e.g. empty corpus)',
+          );
+        }
+      }
+
       const summary = await orchestrator.ingestPhone(
         {
           id: phone.id,
@@ -260,19 +366,69 @@ async function main(): Promise<void> {
         },
         {
           discover: { limit: args.perPhoneLimit },
+          candidatesByType,
+          adapterTypes,
           dryRun: args.dryRun,
           tier: phone.tier,
-          discoveryStrategy: 'tiered',
+          discoveryStrategy,
         },
       );
       console.log(
         `  ${phone.slug} (${phone.tier})  sources=${summary.totals.sourcesWritten} ` +
           `chunks=${summary.totals.chunksWritten} errors=${summary.totals.errors}`,
       );
+      const wroteContent = summary.totals.chunksWritten > 0 || summary.totals.sourcesWritten > 0;
+      const hasQuotaFailures = summary.adapters.some((a) =>
+        a.errors.some((e) => /quota|RESOURCE_EXHAUSTED|daily request budget/i.test(e.error)),
+      );
+      const lastIngestStatus =
+        !wroteContent && hasQuotaFailures
+          ? 'quota_exhausted'
+          : !wroteContent && summary.totals.errors > 0
+            ? 'failed'
+            : wroteContent && summary.totals.errors > 0
+              ? 'partial'
+              : wroteContent
+                ? 'success'
+                : 'failed';
+
       if (!args.dryRun) {
-        await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+        await db
+          .update(phones)
+          .set({ lastIngestStatus, updatedAt: sql`now()` })
+          .where(eq(phones.id, phone.id));
+
+        if (wroteContent) {
+          await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+
+          // Nudge scorecard schedule — re-score 24h after fresh ingestion
+          // Only bring forward, never push back a sooner deadline.
+          if (summary.totals.chunksWritten > 0) {
+            const nudgeTarget = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            await db
+              .update(phones)
+              .set({
+                nextScorecardAt: nudgeTarget,
+                updatedAt: sql`now()`,
+              })
+              .where(
+                and(
+                  eq(phones.id, phone.id),
+                  or(isNull(phones.nextScorecardAt), gt(phones.nextScorecardAt, nudgeTarget)),
+                ),
+              );
+          }
+          successes += 1;
+        } else {
+          empty += 1;
+          logger.warn(
+            { phone: phone.slug, tier: phone.tier, errors: summary.totals.errors },
+            'ingest produced no sources or chunks; leaving phone due for retry (not rescheduling)',
+          );
+        }
+      } else {
+        successes += 1;
       }
-      successes += 1;
     } catch (err) {
       failures += 1;
       logger.error(
@@ -283,9 +439,9 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[ingest:auto] done successes=${successes} failures=${failures} total=${picked.length}`,
+    `[ingest:auto] done successes=${successes} empty=${empty} failures=${failures} total=${picked.length}`,
   );
-  process.exit(failures > 0 && successes === 0 ? 1 : 0);
+  process.exit(failures > 0 && successes === 0 && empty === 0 ? 1 : 0);
 }
 
 main().catch((err) => {

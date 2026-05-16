@@ -1,3 +1,16 @@
+/**
+ * `UserRequirements` Zod schema and normalisation.
+ *
+ * Defines the structured output shape that `extractUserRequirements` asks the
+ * LLM to produce: budget range, liked/disliked brands, must-have/deal-breaker
+ * keywords, and per-axis priority weights (0–1).
+ *
+ * `normalizeUserRequirements` coerces LLM output quirks: title-cased aspect
+ * names, synonyms (`"cam"` → `"camera"`), and missing weight fields default to 0.
+ *
+ * Used by: `src/services/recommender/{extract-requirements,session}.ts` and
+ * their test files.
+ */
 import { z } from 'zod';
 
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';

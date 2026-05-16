@@ -1,6 +1,7 @@
 ---
 name: Automated ingestion pipeline
 overview: Automate the existing `pnpm ingest` flow into a freshness-aware, multi-worker pipeline that continuously harvests GSMArena, YouTube (MKBHD/Mrwhosetheboss/TheTechChap/SuperSaf/TheUnlockr/MrMobile), and phone subreddits for every phone in the DB — keeping it polite, free-tier-bound, and filtered by a small LLM Curator so nothing junk lands in `chunks`.
+superseded_by: 'docs/ImplementationPlans/automated-ingestion-pipeline.md — this .plan.md file was the initial todo tracker; the narrative plan is the canonical reference.'
 todos:
   - id: save-plan-doc
     content: Create docs/implementationPlans/automated-ingestion-pipeline.md with the full approved plan contents so it's discoverable alongside other project docs.

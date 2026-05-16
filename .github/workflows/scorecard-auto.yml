@@ -1,0 +1,89 @@
+# Automated scorecards — only runs when repo secrets are configured (skips forks /
+# empty setups so we never install deps to fail env validation or burn Gemini quota).
+name: scorecard (auto)
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max phones to score'
+        required: false
+        default: '20'
+        type: string
+      force:
+        description: 'Ignore staleness guard'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: scorecard-auto
+  cancel-in-progress: false
+
+jobs:
+  # GitHub Actions forbids `secrets` in job-level `if:` — probe in a step instead.
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ] && [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Pipeline secrets incomplete — skipping (expected for forks / unset repo secrets)."
+          fi
+
+  score:
+    name: Compute scorecards
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: production
+      NODE_OPTIONS: --dns-result-order=ipv4first
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run automated scorecard
+        shell: bash
+        run: |
+          LIMIT="${{ github.event.inputs.limit || '20' }}"
+          ARGS="--limit $LIMIT"
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          pnpm exec tsx scripts/scorecard-auto.ts $ARGS

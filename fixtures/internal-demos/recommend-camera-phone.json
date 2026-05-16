@@ -1,0 +1,98 @@
+{
+  "id": "recommend-camera-under-1000",
+  "title": "Camera phone recommendation replay",
+  "userMessage": "I want the best camera phone under $1000 with reliable battery.",
+  "generatedAt": "2026-05-13T18:28:00.000Z",
+  "latencyMs": 1640,
+  "intent": "recommend",
+  "requirements": {
+    "budgetUsd": 1000,
+    "priorities": ["camera", "battery", "software"],
+    "mustHaves": ["Available under budget", "Strong still photos", "All-day battery"],
+    "tradeoffs": [
+      "Gaming performance can be good rather than absolute best",
+      "Large phones are acceptable"
+    ]
+  },
+  "funnel": [
+    {
+      "label": "Catalog phones",
+      "count": 20,
+      "detail": "Active phones with normalized specs."
+    },
+    {
+      "label": "Budget eligible",
+      "count": 14,
+      "detail": "MSRP or known retail price is at or below $1000."
+    },
+    {
+      "label": "Evidence ready",
+      "count": 10,
+      "detail": "Phones with stored sources, chunks, and scorecard rows."
+    },
+    {
+      "label": "Requirement fit",
+      "count": 5,
+      "detail": "Weighted ranker keeps phones with strong camera and battery signals."
+    },
+    {
+      "label": "Final picks",
+      "count": 3,
+      "detail": "The answer returns a ranked, explainable shortlist."
+    }
+  ],
+  "picks": [
+    {
+      "rank": 1,
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "label": "Google Pixel 9 Pro XL",
+      "score": 91,
+      "priceUsd": 999,
+      "explanation": "Best fit when camera reliability and software intelligence matter more than raw gaming headroom.",
+      "contributions": [
+        { "label": "Camera", "value": 36, "color": "var(--chart-1)" },
+        { "label": "Battery", "value": 20, "color": "var(--chart-2)" },
+        { "label": "Software", "value": 18, "color": "var(--chart-3)" },
+        { "label": "Value", "value": 12, "color": "var(--chart-4)" },
+        { "label": "Risk", "value": 5, "color": "var(--accent)" }
+      ],
+      "citations": [
+        "Long-form camera review",
+        "Editorial camera comparison",
+        "Owner discussion thread"
+      ]
+    },
+    {
+      "rank": 2,
+      "phoneSlug": "apple-iphone-16-pro",
+      "label": "Apple iPhone 16 Pro",
+      "score": 87,
+      "priceUsd": 999,
+      "explanation": "Excellent video and app reliability, with a tighter budget margin.",
+      "contributions": [
+        { "label": "Camera", "value": 31, "color": "var(--chart-1)" },
+        { "label": "Battery", "value": 17, "color": "var(--chart-2)" },
+        { "label": "Software", "value": 20, "color": "var(--chart-3)" },
+        { "label": "Value", "value": 10, "color": "var(--chart-4)" },
+        { "label": "Risk", "value": 9, "color": "var(--accent)" }
+      ],
+      "citations": ["Video-focused review", "Long-term owner notes"]
+    },
+    {
+      "rank": 3,
+      "phoneSlug": "samsung-galaxy-s25",
+      "label": "Samsung Galaxy S25",
+      "score": 82,
+      "priceUsd": 799,
+      "explanation": "A stronger value pick that keeps camera quality competitive under the ceiling.",
+      "contributions": [
+        { "label": "Camera", "value": 27, "color": "var(--chart-1)" },
+        { "label": "Battery", "value": 18, "color": "var(--chart-2)" },
+        { "label": "Software", "value": 15, "color": "var(--chart-3)" },
+        { "label": "Value", "value": 18, "color": "var(--chart-4)" },
+        { "label": "Risk", "value": 4, "color": "var(--accent)" }
+      ],
+      "citations": ["Scorecard aspect summary", "Battery endurance review"]
+    }
+  ]
+}

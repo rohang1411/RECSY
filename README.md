@@ -1,178 +1,253 @@
 # RECSY v2
 
-Honest smartphone recommendations, grounded in real-world reviews.
+> Honest smartphone recommendations, grounded in real-world reviews.
 
-RECSY v2 is a rebuild of a 2020 Flutter recommender into a web-first, AI-native
-app that combines a conversational recommender with a consensus engine built
-from YouTube + Reddit + article reviews. Every claim is traceable to the clip,
-thread, or paragraph it came from.
+[![CI](https://github.com/rohang1411/RECSY/actions/workflows/ci.yml/badge.svg)](https://github.com/rohang1411/RECSY/actions/workflows/ci.yml)
+![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
+![License: Internal / Portfolio](https://img.shields.io/badge/license-Internal%20%2F%20Portfolio-lightgrey)
+![Free tier](https://img.shields.io/badge/infra-free%20tier-blue)
 
-- **Landing page** — chat with a recommender that extracts your needs and picks
-  the top 3 phones.
-- **Per-phone pages** — a methodology-backed consensus scorecard across seven
-  aspects, backed by a conversational Q&A grounded in source citations.
-- **Zero budget** — runs entirely on free tiers (Vercel + Supabase + Gemini).
+RECSY v2 is a web-first, AI-native smartphone companion built around one promise: **every claim is traceable to the review clip, thread, or paragraph it came from.**
 
-This is a learning / portfolio project. See `docs/adr/0001-stack.md` for the
-rationale behind the stack choices.
+- **Conversational recommender** — describe your needs in plain English; the pipeline extracts structured requirements, ranks active phones using aspect scores and optional semantic search, and returns your top 3 picks.
+- **Per-phone consensus engine** — a 7-axis scorecard (camera, battery, performance, display, build, software, value) aggregated from YouTube, Reddit, and editorial reviews, backed by grounded Q&A with inline citations.
+- **Internal Pipeline Observatory** — a gated dashboard (`/internal/pipeline`) that visualizes the entire data lifecycle for presentations and demos.
 
-## Stack
-
-- Next.js 16 (App Router) · React 19 · TypeScript strict
-- Tailwind v4 with OKLCH design tokens · shadcn/ui (new-york)
-- Drizzle ORM → Supabase Postgres with `pgvector`
-- Vercel AI SDK · Gemini 2.5 (Flash + Pro) · `text-embedding-004`
-- `pino` structured logging · Sentry (optional)
-- Python 3.12 ingestion pipeline (`ingest/`) — added in Phase 4
-
-## Quickstart
-
-Requirements: Node ≥ 20, pnpm ≥ 9, Python 3.12 (ingestion only).
-
-```bash
-pnpm install
-
-cp .env.example .env.local
-# Fill in DATABASE_URL, GEMINI_API_KEY, Supabase keys.
-
-pnpm dev          # http://localhost:3000
-pnpm typecheck    # strict TS
-pnpm lint         # ESLint + Next rules
-pnpm test         # Vitest
-pnpm format       # Prettier + Tailwind class sort
-```
-
-## Scripts reference
-
-| Script                              | Purpose                                          |
-| ----------------------------------- | ------------------------------------------------ |
-| `pnpm dev`                          | Start Next.js in dev mode.                       |
-| `pnpm build` / `pnpm start`         | Production build and run.                        |
-| `pnpm typecheck`                    | `tsc --noEmit` against the strict config.        |
-| `pnpm lint` / `pnpm lint:fix`       | ESLint flat config (Next + custom rules).        |
-| `pnpm format` / `pnpm format:check` | Prettier with Tailwind class sort.               |
-| `pnpm test` / `pnpm test:watch`     | Vitest unit runner.                              |
-| `pnpm db:generate`                  | Generate SQL migrations from the Drizzle schema. |
-| `pnpm db:migrate`                   | Apply pending migrations against `DATABASE_URL`. |
-| `pnpm db:studio`                    | Drizzle Studio (DB browser).                     |
-
-## Repo layout
-
-Top-level **config** stays at the repo root on purpose (`package.json`, `tsconfig.json`,
-`next.config.ts`, `eslint.config.mjs`, `prettier.config.mjs`, `drizzle.config.ts`,
-`vitest.config.ts`, `playwright.config.ts`, `postcss.config.mjs`) — that is the usual
-convention for Node/Next apps so tools and IDEs discover settings without extra flags.
-
-```
-.
-├── src/                     # Application code (App Router, features, services)
-├── public/                  # Static assets served as-is (favicons, etc.)
-├── fixtures/                # Non-code inputs: eval JSON, future golden files
-├── drizzle/                 # SQL migrations + extension/RLS helpers
-├── scripts/                 # CLI: db-setup, ingest, eval, …
-├── e2e/                     # Playwright specs
-├── test/                    # Vitest global setup (`test/setup.ts`)
-├── docs/                    # ADRs, operator guides, project context
-├── .github/workflows/       # CI
-└── legacy/                  # Pre-rewrite Flutter app (reference only)
-```
-
-```
-src/
-├── app/                     # Routes, layouts, API routes
-├── components/              # Shared UI (AppHeader, ThemeProvider, …)
-├── features/                # Feature slices (phones schema, etc.)
-├── services/                # db, llm, retrieval, chat, recommender, …
-├── lib/                     # Small utilities
-├── styles/                  # Design tokens (theme.css)
-└── env.ts                   # Type-safe environment
-```
-
-### `legacy/`
-
-The original 2020 Flutter incarnation lives under `legacy/` for archaeological
-purposes. It is **not** maintained, wired to CI, or buildable in place — it
-exists so future readers can understand what was replaced and why. Build
-artifacts (`.dart_tool`, `build/`, Gradle caches, Xcode derived data, …) are
-gitignored from that tree.
-
-## Theming
-
-Dark is the default. Tokens are semantic OKLCH values defined in
-`src/styles/theme.css` and exposed to Tailwind via `@theme inline` in
-`globals.css`. Feature code should never hard-code hex — use `bg-primary`,
-`text-muted-foreground`, etc. See `docs/adr/0002-design-tokens.md`.
-
-## Commit conventions
-
-We use [Conventional Commits](https://www.conventionalcommits.org/) enforced by
-commitlint on `commit-msg`. Valid scopes are listed in `commitlint.config.mjs`.
-
-```
-feat(recommend): add multi-turn preference merging
-fix(chat): preserve anchors when reranking citations
-docs(repo): document theme tokens
-```
-
-## Status
-
-Phase 0 (scaffold + design system + service skeletons + CI) is complete.
-Subsequent phases are tracked in the top-level `.cursor/plans` planning
-document. Each phase ends on a green build with updated ADRs.
-
-## Documentation
-
-- **`docs/RECSY_V2_PROJECT_CONTEXT.md`** — live backlog, feature inventory, change log
-- **`docs/RECSY_V2_PROJECT_GUIDE.md`** — one-stop narrative for contributors
-- **Deployment** — [`docs/deployment/README.md`](docs/deployment/README.md) (full runbook, current status, and missing workflow templates)
-- **ADRs** — `docs/adr/`, including PWA/SEO/[`0010`](docs/adr/0010-pwa-seo-analytics-compare.md), phone Q&A / ask trace / [`0011`](docs/adr/0011-phone-qa-scope-images-home-ask-trace.md), and recommender refine / rank UI / empty-corpus / [`0012`](docs/adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md)
-- **Retrieval** — [`docs/retrieval/README.md`](docs/retrieval/README.md) (incl. ask trace §9 and empty-corpus behavior §10)
-- **Recommender** — [`docs/recommender/README.md`](docs/recommender/README.md) (incl. refine-over-prior-picks)
-
-## License
-
-Internal / portfolio. Not licensed for redistribution yet.
+This is a **portfolio / learning project** demonstrating hybrid RAG, structured-output LLM pipelines, automated ingestion curation, and end-to-end production engineering on free tiers. See [`docs/adr/0001-stack.md`](docs/adr/0001-stack.md) for stack rationale.
 
 ---
 
-## V1 Details
+## Tech Stack
 
-_The following details the original Flutter-based V1 application._
+| Layer        | Choice                                                                                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework    | Next.js 16 (App Router) · React 19 · TypeScript strict                                                                                                                        |
+| Styling      | Tailwind CSS v4 · OKLCH semantic tokens · dark-default                                                                                                                        |
+| UI           | `next-themes` · `lucide-react` · `motion` · `sonner`                                                                                                                          |
+| Database     | Supabase Postgres 17 (`pgvector` · `pg_trgm` · `pgcrypto`)                                                                                                                    |
+| ORM / driver | Drizzle ORM · `postgres` (Porsager)                                                                                                                                           |
+| LLM SDK      | Vercel AI SDK · `@ai-sdk/google` → Gemini 2.5 Flash/Pro                                                                                                                       |
+| Embeddings   | `gemini-embedding-001` · 768 dim (Matryoshka-truncated)                                                                                                                       |
+| Ingestion    | TypeScript adapters — `youtubei.js` · `@mozilla/readability` + `linkedom` · Reddit public JSON (Python `yt-dlp` / `youtube-transcript-api` optional transcript fallback only) |
+| Logging      | `pino` structured JSON · optional Sentry                                                                                                                                      |
+| Testing      | Vitest (unit) · Playwright (E2E)                                                                                                                                              |
+| CI / Deploy  | GitHub Actions · Vercel Hobby                                                                                                                                                 |
 
-RECSY is a Flutter-based mobile application designed to help users find the best mobile phone based on their preferences. It provides personalized recommendations, detailed specifications, and a comparison feature to assist in making an informed decision.
+---
+
+## Quickstart
+
+**Requirements:** Node ≥ 20, pnpm ≥ 9.
+
+```bash
+# 1 — install
+pnpm install
+
+# 2 — environment
+cp .env.example .env.local
+# Fill in: DATABASE_URL, DIRECT_URL, SUPABASE_ANON_KEY,
+#          SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY
+
+# 3 — bootstrap the database (extensions → migrations → RLS → seeds)
+pnpm db:setup
+
+# 4 — start
+pnpm dev          # http://localhost:3000
+
+# 5 — quality gates
+pnpm typecheck    # tsc --noEmit (strict)
+pnpm lint         # ESLint flat config
+pnpm test         # Vitest unit suite
+pnpm e2e          # Playwright (needs pnpm dev running or uses webServer)
+pnpm build        # production build check
+```
+
+> **Windows note:** if `pnpm` is not on `PATH` after install, run
+> `iwr https://get.pnpm.io/install.ps1 -useb | iex` and restart your shell.
+
+---
+
+## Scripts Reference
+
+### Development
+
+| Script                              | Purpose                                  |
+| ----------------------------------- | ---------------------------------------- |
+| `pnpm dev`                          | Start Next.js in dev mode on port 3000   |
+| `pnpm build` / `pnpm start`         | Production build and server              |
+| `pnpm typecheck`                    | `tsc --noEmit` — strict TypeScript       |
+| `pnpm lint` / `pnpm lint:fix`       | ESLint flat config (Next + custom rules) |
+| `pnpm format` / `pnpm format:check` | Prettier + Tailwind class sort           |
+| `pnpm test` / `pnpm test:watch`     | Vitest unit runner                       |
+| `pnpm test:coverage`                | Coverage report (v8)                     |
+| `pnpm e2e` / `pnpm e2e:ui`          | Playwright browser tests                 |
+
+### Database
+
+| Script             | Purpose                                               |
+| ------------------ | ----------------------------------------------------- |
+| `pnpm db:setup`    | Full bootstrap: extensions → migrations → RLS → seeds |
+| `pnpm db:generate` | Generate SQL migrations from Drizzle schema           |
+| `pnpm db:migrate`  | Apply pending migrations                              |
+| `pnpm db:studio`   | Drizzle Studio (DB browser)                           |
+| `pnpm db:smoke`    | Sanity checks: extensions, tables, HNSW round-trip    |
+| `pnpm db:ping`     | Quick connection check                                |
+| `pnpm db:reset`    | Destructive reset (requires `RECSY_ALLOW_DB_RESET=1`) |
+
+### Ingestion
+
+| Script                             | Purpose                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `pnpm ingest`                      | Single-phone manual ingestion (`--phone <slug> [--adapter …] [--url …]`)              |
+| `pnpm ingest:auto`                 | Tiered automated ingestion (`--tier hot\|warm\|cold\|all --shard K --total-shards N`) |
+| `pnpm ingest:auto --resume-failed` | Retry quota failures, incomplete runs, and empty-corpus phones                        |
+| `pnpm ingest:report`               | Weekly audit digest (adapter/status counts, quota failures, overdue phones)           |
+| `pnpm ingest:smoke`                | Live article ingestion end-to-end smoke check                                         |
+| `pnpm creator:watch`               | RSS-only poll from `creator_profiles`; enqueues hot-tier candidates                   |
+
+### Scorecard & Embeddings
+
+| Script                     | Purpose                                                            |
+| -------------------------- | ------------------------------------------------------------------ |
+| `pnpm scorecard:run`       | Manual scorecard for a phone (`--phone <slug>` or `--all`)         |
+| `pnpm scorecard:auto`      | Automated batch scorecard (`--limit 20 --force --dry-run`)         |
+| `pnpm spec-embed:backfill` | Populate `phones.spec_embedding` for the semantic recommender bump |
+
+### Evaluation & Retrieval
+
+| Script                      | Purpose                                                             |
+| --------------------------- | ------------------------------------------------------------------- |
+| `pnpm retrieval:smoke`      | Live hybrid retrieval sanity check (needs DB + Gemini key)          |
+| `pnpm eval:retrieval`       | Fixture-driven retrieval evaluation (embedding cost; local/staging) |
+| `pnpm ci:retrieval-fixture` | Seed retrieval eval fixtures for CI                                 |
+
+---
+
+## Repository Layout
+
+```
+.
+├── src/                     # All application + service code
+│   ├── app/                 # App Router pages, layouts, API routes, /internal
+│   ├── components/          # Shared UI (AppHeader, PhoneImage, ThemeProvider, …)
+│   ├── features/            # Feature slices (phones schema, browse state)
+│   ├── services/            # System logic (db, llm, retrieval, chat, recommender,
+│   │                        #   ingest, scorecard, internal, logger, rate-limit)
+│   ├── lib/                 # Utilities, constants, error types, trace builder
+│   ├── styles/              # OKLCH design tokens (theme.css)
+│   └── env.ts               # Type-safe environment contract (@t3-oss/env-nextjs)
+├── scripts/                 # CLI: db-setup, ingest, scorecard, eval, seeds
+├── drizzle/                 # SQL migrations + extension / FTS / RLS helpers
+├── fixtures/                # Eval JSON, pipeline replay fixtures
+├── e2e/                     # Playwright specs
+├── test/                    # Vitest global setup
+├── docs/                    # ADRs, operator guides, project context + guide
+│   ├── adr/                 # Architecture Decision Records (0001–0017)
+│   ├── ImplementationPlans/ # Detailed implementation plans
+│   ├── Walkthroughs/        # Narrative walkthroughs for demos
+│   ├── retrieval/           # Hybrid retrieval operator guide
+│   ├── recommender/         # Recommender operator guide
+│   ├── scorecard/           # Scorecard operator guide
+│   ├── ingest/              # Ingestion operator guide
+│   ├── browse/              # Browse/filter contract
+│   ├── compare/             # Compare behavior
+│   ├── eval/                # Evaluation tiers and commands
+│   └── deployment/          # Deployment runbook
+├── public/                  # Static assets (favicons, PWA icons)
+└── legacy/                  # Original 2020 Flutter app (reference only; not maintained)
+```
+
+Top-level config files stay at the repo root (`package.json`, `tsconfig.json`, `next.config.ts`, `eslint.config.mjs`, `prettier.config.mjs`, `drizzle.config.ts`, `vitest.config.ts`, `playwright.config.ts`, `postcss.config.mjs`) — standard convention so tools and IDEs discover settings without extra flags.
+
+---
+
+## Documentation
+
+| Document                                                               | Purpose                                                                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`docs/RECSY_V2_PROJECT_GUIDE.md`](docs/RECSY_V2_PROJECT_GUIDE.md)     | Explainer-first narrative — what RECSY is, how every subsystem fits together   |
+| [`docs/RECSY_V2_PROJECT_CONTEXT.md`](docs/RECSY_V2_PROJECT_CONTEXT.md) | Living implementation plan, backlog, change log, issues log, development rules |
+| [`docs/adr/`](docs/adr/)                                               | Architecture Decision Records (0001–0017)                                      |
+| [`docs/ImplementationPlans/`](docs/ImplementationPlans/)               | Detailed implementation plans                                                  |
+| [`docs/ingest/README.md`](docs/ingest/README.md)                       | Ingestion operator guide                                                       |
+| [`docs/retrieval/README.md`](docs/retrieval/README.md)                 | Hybrid retrieval tuning + debugging                                            |
+| [`docs/recommender/README.md`](docs/recommender/README.md)             | Recommender pipeline + API contract                                            |
+| [`docs/scorecard/README.md`](docs/scorecard/README.md)                 | Scorecard agent + automation                                                   |
+| [`docs/deployment/README.md`](docs/deployment/README.md)               | Deployment runbook and status                                                  |
+| [`docs/eval/README.md`](docs/eval/README.md)                           | Evaluation tiers and commands                                                  |
+
+**Key ADRs:**
+
+| ADR                                                                          | Decision                                              |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [0001](docs/adr/0001-stack.md)                                               | Stack: Next.js 16, Supabase, Gemini, Drizzle          |
+| [0002](docs/adr/0002-design-tokens.md)                                       | OKLCH semantic design tokens                          |
+| [0003](docs/adr/0003-ingestion-typescript.md)                                | Ingestion is TypeScript-only (no Python sidecar)      |
+| [0004](docs/adr/0004-hybrid-retrieval.md)                                    | Hybrid retrieval: vector + FTS + RRF + MMR            |
+| [0006](docs/adr/0006-aspect-scorecard-mvp.md)                                | Aspect scorecard MVP                                  |
+| [0007](docs/adr/0007-recommender-mvp.md)                                     | Conversational recommender MVP                        |
+| [0011](docs/adr/0011-phone-qa-scope-images-home-ask-trace.md)                | Phone Q&A scope, images, landing cards, ask trace     |
+| [0012](docs/adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) | Recommender refine, rank UI, empty-corpus honesty     |
+| [0013](docs/adr/0013-recommender-summary-context-tie-honesty-settings.md)    | Context-aware summaries, tie honesty, client settings |
+| [0014](docs/adr/0014-automated-ingestion-curation.md)                        | Automated tiered ingestion with LLM curation          |
+| [0015](docs/adr/0015-automated-aspect-scorecard.md)                          | Automated aspect scorecard generation                 |
+| [0016](docs/adr/0016-internal-pipeline-observatory.md)                       | Internal Pipeline Observatory dashboard               |
+| [0017](docs/adr/0017-ingestion-resumability-and-intelligent-retry.md)        | Ingestion resumability + intelligent retry            |
+
+---
+
+## Status
+
+All phases through Phase 7 (polish) are shipped. Current work: ingestion automation hardening, scorecard automation, and documentation parity. See [`docs/RECSY_V2_PROJECT_CONTEXT.md`](docs/RECSY_V2_PROJECT_CONTEXT.md) for the live backlog, change log, and issues log.
+
+---
+
+## Theming
+
+Dark is the default. Tokens are semantic OKLCH values in `src/styles/theme.css`, exposed via `@theme inline` in `globals.css`. Feature code must never hard-code hex values — use `bg-primary`, `text-muted-foreground`, etc. See [ADR 0002](docs/adr/0002-design-tokens.md).
+
+---
+
+## Commit Conventions
+
+We use [Conventional Commits](https://www.conventionalcommits.org/) enforced by `commitlint` on `commit-msg`. Valid scopes are listed in `commitlint.config.mjs`.
+
+```
+feat(recommend): add multi-turn preference merging
+fix(ingest): handle empty YouTube transcript body gracefully
+docs(adr): add ADR 0017 ingestion resumability
+```
+
+---
+
+## V1 — Original Flutter Application
+
+_The following documents the original 2020 Flutter-based RECSY application. It lives under [`legacy/`](legacy/) for reference only and is not maintained, wired to CI, or buildable in place._
+
+RECSY was a Flutter mobile app that asked users 6–8 preference questions, fed them to a bespoke Keras / TensorFlow Lite model, and returned a recommended smartphone from a hand-curated ~100-phone CSV. The app was published on the Google Play Store and is available on [APKPure](https://apkpure.com/recsy-ai-smartphone-recommend/com.recsy.mobile_recommender).
 
 ### Demo Video
 
 [![Watch the demo](https://img.youtube.com/vi/hhJCmkwLen8/maxresdefault.jpg)](https://www.youtube.com/watch?v=hhJCmkwLen8)
 
 <details>
-<summary>Alternatively, watch via Embedded Iframe</summary>
+<summary>Watch via embedded iframe</summary>
 
 <iframe width="560" height="315" src="https://www.youtube.com/embed/hhJCmkwLen8?si=-7wcjBbUngRndcaF" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </details>
 
-### ✨ Features
+### Features
 
-- **Personalized Recommendations**: Get phone recommendations tailored to your needs.
-- **Detailed Phone Specifications**: View in-depth details for each mobile phone, including display, processor, camera, and battery information.
-- **Compare Phones**: Compare the specifications of multiple phones side-by-side.
-- **Favorites**: Save your favorite phones for quick access later.
-- **User Authentication**: Sign in to sync your favorites and preferences across devices.
-- **Web & Mobile Support**: Built with Flutter, the app was initially built for android and the support for web platforms is in development. The app was previuosly deployed on the Google Play Store and now it is available on APKPure (Link: https://apkpure.com/recsy-ai-smartphone-recommend/com.recsy.mobile_recommender).
+- **Personalized Recommendations** — preference questions fed to an on-device TFLite model.
+- **Detailed Phone Specifications** — display, processor, camera, battery.
+- **Side-by-side Compare** — compare multiple phones' specs.
+- **Favorites** — save phones synced via Firebase.
+- **User Authentication** — Firebase Auth + Google Sign-In.
 
-### 🛠️ Tech Stack & Dependencies
+### Tech Stack
 
-- **Framework**: [Flutter](https://flutter.dev/)
-- **Backend & Database**: [Firebase](https://firebase.google.com/)
-  - **Authentication**: `firebase_auth`, `google_sign_in`
-  - **Database**: `firebase_database`, `cloud_firestore`
-  - **Storage**: Used for hosting phone images.
-- **State Management**: [Provider](https://pub.dev/packages/provider)
-- **UI Components**:
-  - `carousel_slider`: For image carousels.
-  - `dots_indicator`: To display progress for carousels.
-  - `fluttertoast`: For simple user notifications.
-- **Utilities**:
-  - `url_launcher`: To open external links (e.g., 'Buy Now').
-  - `http`, `html`, `xml`, `csv`: For data fetching and parsing.
-  - `logger`: For application logging and debugging.
+- **Framework:** Flutter
+- **Backend / Database:** Firebase (Firestore, Realtime DB, Auth, Storage)
+- **State Management:** Provider
+- **UI:** `carousel_slider`, `dots_indicator`, `fluttertoast`
+- **Utilities:** `url_launcher`, `http`, `html`, `xml`, `csv`, `logger`

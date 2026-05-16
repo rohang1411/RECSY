@@ -2,7 +2,7 @@
 
 import { ArrowRight, Loader2, Scale } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import {
@@ -11,6 +11,11 @@ import {
   useClientSetting,
 } from '@/lib/client-settings';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
+import {
+  clearRecommendSession,
+  readRecommendSession,
+  writeRecommendSession,
+} from '@/lib/recommend-session';
 import { cn } from '@/lib/utils';
 
 type ApiPick = {
@@ -29,6 +34,13 @@ interface ChatLine {
   readonly text: string;
 }
 
+const INITIAL_LINES: ChatLine[] = [
+  {
+    role: 'assistant',
+    text: 'What kind of phone are you looking for? Mention budget, must-haves, and what matters most (camera, battery, gaming, etc.).',
+  },
+];
+
 function rankLabel(index: number): string {
   if (index === 0) return 'Rank 1';
   if (index === 1) return 'Rank 2';
@@ -36,7 +48,42 @@ function rankLabel(index: number): string {
   return `Rank ${index + 1}`;
 }
 
+function formatSavedAt(savedAt: number): string {
+  const diffMs = Date.now() - savedAt;
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return 'earlier this session';
+  if (diffH === 1) return '1 hour ago';
+  return `${diffH} hours ago`;
+}
+
+/** SSR-safe client mount gate (same pattern as `useClientSetting`). */
+function useClientMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 export function RecommendClient() {
+  const mounted = useClientMounted();
+  if (!mounted) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+        <div className="border-border/80 bg-card/40 rounded-xl border p-4 shadow-sm sm:p-6">
+          <div className="text-muted-foreground flex items-center justify-center py-16 text-sm">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
+            Loading…
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <RecommendClientLoaded />;
+}
+
+function RecommendClientLoaded() {
+  const session = readRecommendSession();
   const [input, setInput] = useState('');
   const [lines, setLines] = useState<ChatLine[]>([
     {
@@ -52,10 +99,44 @@ export function RecommendClient() {
   const [topAspects, setTopAspects] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Timestamp (ms) of the restored session, or null if this is a live session. */
+  const [restoredAt, setRestoredAt] = useState<number | null>(() => session?.savedAt ?? null);
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
   );
+
+  const skipNextWriteRef = useRef(true);
+
+  useEffect(() => {
+    if (skipNextWriteRef.current) {
+      skipNextWriteRef.current = false;
+      return;
+    }
+    writeRecommendSession({
+      savedAt: Date.now(),
+      lines,
+      picks,
+      relaxed,
+      refined,
+      scoresTied,
+      scorecardMissing,
+      topAspects,
+    });
+  }, [lines, picks, relaxed, refined, scoresTied, scorecardMissing, topAspects]);
+
+  const clearRestoredSession = useCallback(() => {
+    clearRecommendSession();
+    setLines(INITIAL_LINES);
+    setPicks(null);
+    setRelaxed(null);
+    setRefined(false);
+    setScoresTied(false);
+    setScorecardMissing(false);
+    setTopAspects([]);
+    setRestoredAt(null);
+    setError(null);
+  }, []);
 
   const send = useCallback(async () => {
     const message = input.trim();
@@ -68,6 +149,9 @@ export function RecommendClient() {
     setScoresTied(false);
     setScorecardMissing(false);
     setTopAspects([]);
+    setRestoredAt(null);
+    // Clear any restored session so the new query owns the slot from scratch.
+    clearRecommendSession();
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
     try {

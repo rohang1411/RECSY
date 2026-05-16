@@ -46,12 +46,13 @@ around one promise:
 > Ask what matters, get phone guidance grounded in real reviews, and be able to
 > trace claims back to the source.
 
-The product has two main experiences:
+The product has two main user experiences, plus an internal presentation layer:
 
-| Experience                 | What it does                                                                                                    | Why it matters                                                      |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Conversational recommender | Takes plain-English user preferences, extracts structured requirements, ranks phones, and returns up to 3 picks | Helps overwhelmed buyers get to a shortlist quickly                 |
-| Per-phone consensus engine | Shows key specs, a 7-axis scorecard, and a cited Q-and-A for a specific phone                                   | Helps skeptical users verify trade-offs and ask follow-up questions |
+| Experience                    | What it does                                                                                                    | Why it matters                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Conversational recommender    | Takes plain-English user preferences, extracts structured requirements, ranks phones, and returns up to 3 picks | Helps overwhelmed buyers get to a shortlist quickly                  |
+| Per-phone consensus engine    | Shows key specs, a 7-axis scorecard, and a cited Q-and-A for a specific phone                                   | Helps skeptical users verify trade-offs and ask follow-up questions  |
+| Internal Pipeline Observatory | An internal dashboard visualizing the entire data lifecycle via live metrics and pipeline replays               | Helps reviewers and collaborators understand the system architecture |
 
 The 7 scorecard aspects are:
 
@@ -139,11 +140,12 @@ The safest mental model is:
 
 ### Primary users
 
-| Persona              | What they need                                                           | Best RECSY entry point |
-| -------------------- | ------------------------------------------------------------------------ | ---------------------- |
-| Overwhelmed buyer    | "I know my budget and priorities, but I do not want to read 20 reviews." | `/recommend`           |
-| Skeptical researcher | "I already have a shortlist. Show me grounded evidence and trade-offs."  | `/p/[slug]`            |
-| Casual browser       | "Let me browse the catalog by price, brand, or form factor."             | `/browse`              |
+| Persona               | What they need                                                           | Best RECSY entry point |
+| --------------------- | ------------------------------------------------------------------------ | ---------------------- |
+| Overwhelmed buyer     | "I know my budget and priorities, but I do not want to read 20 reviews." | `/recommend`           |
+| Skeptical researcher  | "I already have a shortlist. Show me grounded evidence and trade-offs."  | `/p/[slug]`            |
+| Casual browser        | "Let me browse the catalog by price, brand, or form factor."             | `/browse`              |
+| Reviewer/Collaborator | "I want to inspect the system architecture and data pipelines."          | `/internal/pipeline`   |
 
 ### Non-users RECSY explicitly declines to serve
 
@@ -162,15 +164,17 @@ The safest mental model is:
 
 ### User-facing routes
 
-| Route         | Purpose                                                                | Depends on                                                        |
-| ------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `/`           | Landing hero, “What you can do” cards, and navigation into the product | static UI                                                         |
-| `/recommend`  | Conversational intake and result cards                                 | `POST /api/recommend`, phones, aspects, optional `spec_embedding` |
-| `/browse`     | Server-rendered catalog list with filters                              | `phones` table and parsed `spec_json`                             |
-| `/p/[slug]`   | Phone detail page with image, specs, scorecard, and Q-and-A            | `phones`, `aspects`, `POST /api/ask`                              |
-| `/compare`    | Side-by-side compare for two active phones                             | `phones.spec_json`, `phones.image_url`, `phones.msrp_usd`         |
-| `/about`      | Product framing and guided links into the main flows                   | static UI                                                         |
-| `/api/health` | Liveness/config probe                                                  | env validation only                                               |
+| Route                | Purpose                                                                | Depends on                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/`                  | Landing hero, “What you can do” cards, and navigation into the product | static UI                                                                                                          |
+| `/recommend`         | Conversational intake and result cards                                 | `POST /api/recommend`, phones, aspects, optional `spec_embedding`                                                  |
+| `/browse`            | Server-rendered catalog list with filters                              | `phones` table and parsed `spec_json`                                                                              |
+| `/p/[slug]`          | Phone detail page with image, specs, scorecard, and Q-and-A            | `phones`, `aspects`, `POST /api/ask`                                                                               |
+| `/compare`           | Side-by-side compare for two active phones                             | `phones.spec_json`, `phones.image_url`, `phones.msrp_usd`                                                          |
+| `/about`             | Product framing and guided links into the main flows                   | static UI                                                                                                          |
+| `/settings`          | Client-side preference toggles (e.g. Enter-to-send)                    | `localStorage` via `useClientSetting`; [ADR 0013](adr/0013-recommender-summary-context-tie-honesty-settings.md)    |
+| `/api/health`        | Liveness/config probe                                                  | env validation only                                                                                                |
+| `/internal/pipeline` | Internal dashboard visualizing data lifecycle and pipeline metrics     | `INTERNAL_DASHBOARD_ENABLED` env, DB metrics, mock fixtures; [ADR 0016](adr/0016-internal-pipeline-observatory.md) |
 
 ### API routes
 
@@ -194,6 +198,9 @@ The safest mental model is:
    User filters the catalog on `/browse`, opens a phone, or compares two phones
    through `/compare`.
 
+4. System architecture presentation
+   A reviewer or collaborator opens `/internal/pipeline`, views live DB metrics, inspects phone evidence, and uses the guided walkthrough to understand the retrieval and recommender pipelines.
+
 ### Feature Inventory
 
 | Feature                                     | State      | Notes                                                                                                                                                                        |
@@ -211,6 +218,7 @@ The safest mental model is:
 | Offline PWA behavior                        | planned    | no service worker yet                                                                                                                                                        |
 | Retrieval eval in CI                        | optional   | gated on a real Gemini key                                                                                                                                                   |
 | Feedback loop training                      | scaffolded | table exists, UI is not wired                                                                                                                                                |
+| Internal Pipeline Observatory               | shipped    | gated by `INTERNAL_DASHBOARD_ENABLED`, features live DB metrics, mock replays, and a guided walkthrough                                                                      |
 
 ## 5. System Overview
 
@@ -236,7 +244,7 @@ flowchart TD
   Hybrid --> Answer["Grounded answer with validated citations"]
 
   Ingest["pnpm ingest / ingest workflow"] --> Sources["sources + chunks"]
-  Scorecard["pnpm scorecard:run"] --> Aspects["aspects"]
+  Scorecard["scorecard runs"] --> Aspects["aspects"]
   SpecEmbed["pnpm spec-embed:backfill"] --> Phones["phones + spec_embedding"]
 
   Sources --> Hybrid
@@ -258,6 +266,7 @@ flowchart TD
   DB --> Scorecard
   DB --> Ingest
   DB --> SpecEmbed
+  DB --> PipelineDash["/internal/pipeline"]
 ```
 
 ### Runtime boundaries
@@ -288,7 +297,7 @@ flowchart TD
 | `docs/`     | ADRs, operator guides, project context, and this guide                             |
 | `scripts/`  | Operational CLIs for setup, ingestion, scorecard runs, evaluation, and smoke tests |
 | `drizzle/`  | SQL migrations plus extension, FTS, and RLS helpers                                |
-| `fixtures/` | Evaluation fixtures and seed-like helper data                                      |
+| `fixtures/` | Evaluation fixtures, seed-like helper data, and internal dashboard mock replays    |
 | `e2e/`      | Playwright tests                                                                   |
 | `test/`     | Test setup                                                                         |
 | `public/`   | Static assets                                                                      |
@@ -296,15 +305,16 @@ flowchart TD
 
 ### `src/` structure
 
-| Path              | Role                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------- |
-| `src/app/`        | App Router pages, layouts, metadata, and API routes                                             |
-| `src/components/` | Shared UI components                                                                            |
-| `src/features/`   | Feature-specific code such as phone spec schemas and browse state parsing                       |
-| `src/services/`   | System logic: DB, LLMs, retrieval, chat, recommender, ingest, scorecard, logging, rate limiting |
-| `src/lib/`        | Shared constants, helpers, error types, and the ask **retrieval trace** builder for `/api/ask`  |
-| `src/styles/`     | Theme tokens                                                                                    |
-| `src/env.ts`      | Type-safe environment contract                                                                  |
+| Path                     | Role                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------- |
+| `src/app/`               | App Router pages, layouts, metadata, and API routes (including `/internal`)                       |
+| `src/components/`        | Shared UI components                                                                              |
+| `src/features/`          | Feature-specific code such as phone spec schemas and browse state parsing                         |
+| `src/services/`          | System logic: DB, LLMs, retrieval, chat, recommender, ingest, scorecard, logging, rate limiting   |
+| `src/services/internal/` | Pipeline Observatory data helpers: snapshot, phone-evidence, retrieval-explain, recommend-explain |
+| `src/lib/`               | Shared constants, helpers, error types, and the ask **retrieval trace** builder for `/api/ask`    |
+| `src/styles/`            | Theme tokens                                                                                      |
+| `src/env.ts`             | Type-safe environment contract                                                                    |
 
 ### Most important code locations by subsystem
 
@@ -313,7 +323,7 @@ flowchart TD
 | Recommender   | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*`  |
 | Retrieval     | `src/services/retrieval/*`                                                             |
 | Phone Q-and-A | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`                |
-| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-run.ts`                                 |
+| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-auto.ts`, `scripts/scorecard-run.ts`    |
 | Ingestion     | `src/services/ingest/*`, `scripts/{ingest,ingest-auto,creator-watch,ingest-report}.ts` |
 | Database      | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                  |
 | Seeds         | `scripts/seed/*`                                                                       |
@@ -1255,16 +1265,16 @@ The DB bootstrap script is intentionally more than just "run migrations". It:
 
 ### Phase/status snapshot
 
-| Phase | Scope                                               | Current state                                  |
-| ----- | --------------------------------------------------- | ---------------------------------------------- |
-| 0     | scaffold, strict TS, design system, CI skeleton     | shipped                                        |
-| 1     | DB schema, migrations, RLS, seeds                   | shipped                                        |
-| 2     | ingestion adapters and workflows                    | shipped                                        |
-| 3     | retrieval and phone-page Q-and-A                    | shipped                                        |
-| 4     | aspect scorecard                                    | shipped                                        |
-| 5     | conversational recommender                          | shipped                                        |
-| 6     | browse and filters                                  | shipped                                        |
-| 7     | polish: compare, about, images, PWA, SEO, analytics | mostly shipped, with follow-up items remaining |
+| Phase | Scope                                               | Current state                                                                                              |
+| ----- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 0     | scaffold, strict TS, design system, CI skeleton     | shipped                                                                                                    |
+| 1     | DB schema, migrations, RLS, seeds                   | shipped                                                                                                    |
+| 2     | ingestion adapters and workflows                    | shipped; hardened with tiered automation (ADR 0014) and resumability (ADR 0017)                            |
+| 3     | retrieval and phone-page Q-and-A                    | shipped                                                                                                    |
+| 4     | aspect scorecard                                    | shipped; automated daily batch (ADR 0015)                                                                  |
+| 5     | conversational recommender                          | shipped                                                                                                    |
+| 6     | browse and filters                                  | shipped                                                                                                    |
+| 7     | polish: compare, about, images, PWA, SEO, analytics | mostly shipped; Internal Pipeline Observatory (ADR 0016) shipped; offline PWA service worker still pending |
 
 ### Biggest open questions
 
@@ -1343,6 +1353,9 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
    - `0012` for recommender refine-over-prior-picks, rank UI, and empty-corpus honesty
    - `0013` for context-aware recommender summaries, tie/no-data honesty, and the client settings surface
    - `0014` for automated tiered ingestion with Curator + Disambiguator agents, polite HTTP, GSMArena + YouTube-channel adapters, and the time-aware empty-corpus message
+   - `0015` for automated aspect scorecard generation with staleness guards and telemetry
+   - `0016` for the Internal Pipeline Observatory dashboard
+   - `0017` for ingestion resumability and intelligent retry
 5. Open the corresponding service code in `src/services/`.
 
 ### One-sentence mental model

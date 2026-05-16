@@ -1,3 +1,13 @@
+/**
+ * Recommender pipeline constants.
+ *
+ * Centralises all numeric and flag constants used by the matching,
+ * ranking, and diversity logic so they can be tuned in one place
+ * without touching algorithm code.
+ *
+ * Used by: `src/services/recommender/{match,run-recommendation}.ts`
+ * and their test files.
+ */
 /** How many phones we surface after ranking (Stage C MVP — no Pro tie-break). */
 export const RECOMMEND_TOP_PICKS = 3;
 

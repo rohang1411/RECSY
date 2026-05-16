@@ -1,3 +1,13 @@
+/**
+ * Unit tests for citation extraction and validation (`citations.ts`).
+ *
+ * Tests cover: extracting UUIDs from inline `[c:<uuid>]` tags,
+ * resolving citations against retrieved chunks, stripping orphaned
+ * tags, and the full validation pipeline (no hallucinated sources
+ * survive).
+ *
+ * All tests are pure — no network, DB, or LLM calls.
+ */
 import { describe, expect, it } from 'vitest';
 
 import type { RetrievedChunk } from '@/services/retrieval/types';

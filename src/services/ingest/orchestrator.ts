@@ -19,10 +19,10 @@
  *   - Different adapters for the same phone run serially too. Parallelising
  *     them would ~double peak network pressure for small gains.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { NotFoundError } from '@/lib/errors';
-import { phones } from '@/services/db/schema';
+import { phones, sources } from '@/services/db/schema';
 import { logger } from '@/services/logger';
 
 import type { LlmProvider } from '../llm/types';
@@ -30,6 +30,7 @@ import type { AliasMatch, AliasRow } from './agents/alias-match';
 import { matchAliases } from './agents/alias-match';
 import { CuratorAgent, type CuratorDecisionOptions } from './agents/curator';
 import { DisambiguatorAgent } from './agents/disambiguator';
+import { classifyIngestError, computeRetryAfter } from './error-classify';
 import { ChunkEmbedder, type EmbedderOptions } from './embedder';
 import type {
   AdapterRunSummary,
@@ -251,68 +252,71 @@ export class IngestOrchestrator {
         let primaryRelevance: number | null = null;
 
         if (this.disambiguator) {
-          const aliases = await this.loadAliases();
-          const text = [
-            candidate.title,
-            (candidate.raw as Record<string, unknown>)?.description ?? '',
-          ]
-            .filter(Boolean)
-            .join('\n');
-          const matches: AliasMatch[] = aliases.length > 0 ? matchAliases(text, aliases) : [];
-          if (matches.length >= 2) {
-            const decision = await this.disambiguator.resolve({
-              sourceType: adapter.type,
-              title: candidate.title,
-              description: (candidate.raw as Record<string, unknown>)?.description as
-                | string
-                | undefined,
-              channel: candidate.channel,
-              author: candidate.author,
-              candidates: matches,
-            });
-            primaryRelevance = decision.primaryConfidence;
-            // If the resolved primary slug is NOT the ingesting phone, try
-            // to reassign using phoneLookup. If we can't, stick with the
-            // ingesting phone as primary but still record secondaries.
-            if (decision.primary.slug !== phone.slug) {
-              if (this.opts.phoneLookup) {
-                try {
-                  const resolved = await this.opts.phoneLookup(decision.primary.slug);
-                  if (resolved) {
-                    log.info(
-                      {
-                        url: candidate.url,
-                        from: phone.slug,
-                        to: resolved.slug,
-                        confidence: decision.primaryConfidence,
-                      },
-                      'disambiguator reassigned primary phone',
+          try {
+            const aliases = await this.loadAliases();
+            const text = [
+              candidate.title,
+              (candidate.raw as Record<string, unknown>)?.description ?? '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+            const matches: AliasMatch[] = aliases.length > 0 ? matchAliases(text, aliases) : [];
+            if (matches.length >= 2) {
+              const decision = await this.disambiguator.resolve({
+                sourceType: adapter.type,
+                title: candidate.title,
+                description: (candidate.raw as Record<string, unknown>)?.description as
+                  | string
+                  | undefined,
+                channel: candidate.channel,
+                author: candidate.author,
+                candidates: matches,
+              });
+              primaryRelevance = decision.primaryConfidence;
+              if (decision.primary.slug !== phone.slug) {
+                if (this.opts.phoneLookup) {
+                  try {
+                    const resolved = await this.opts.phoneLookup(decision.primary.slug);
+                    if (resolved) {
+                      log.info(
+                        {
+                          url: candidate.url,
+                          from: phone.slug,
+                          to: resolved.slug,
+                          confidence: decision.primaryConfidence,
+                        },
+                        'disambiguator reassigned primary phone',
+                      );
+                      primaryPhone = {
+                        id: resolved.id,
+                        slug: resolved.slug,
+                        brand: resolved.brand,
+                        model: resolved.model,
+                        launchDate: phone.launchDate,
+                      };
+                      secondaryLinks = [
+                        { phoneId: phone.id, relevance: 0.5 },
+                        ...decision.secondary
+                          .filter((s) => s.match.slug !== resolved.slug)
+                          .map((s) => ({ phoneId: s.match.phoneId, relevance: s.relevance })),
+                      ];
+                    } else {
+                      secondaryLinks = decision.secondary.map((s) => ({
+                        phoneId: s.match.phoneId,
+                        relevance: s.relevance,
+                      }));
+                    }
+                  } catch (err) {
+                    log.warn(
+                      { err: errMsg(err) },
+                      'phoneLookup failed; keeping ingesting phone as primary',
                     );
-                    primaryPhone = {
-                      id: resolved.id,
-                      slug: resolved.slug,
-                      brand: resolved.brand,
-                      model: resolved.model,
-                      launchDate: phone.launchDate,
-                    };
-                    // Original ingesting phone becomes a secondary link.
-                    secondaryLinks = [
-                      { phoneId: phone.id, relevance: 0.5 },
-                      ...decision.secondary
-                        .filter((s) => s.match.slug !== resolved.slug)
-                        .map((s) => ({ phoneId: s.match.phoneId, relevance: s.relevance })),
-                    ];
-                  } else {
-                    secondaryLinks = decision.secondary.map((s) => ({
-                      phoneId: s.match.phoneId,
-                      relevance: s.relevance,
-                    }));
                   }
-                } catch (err) {
-                  log.warn(
-                    { err: errMsg(err) },
-                    'phoneLookup failed; keeping ingesting phone as primary',
-                  );
+                } else {
+                  secondaryLinks = decision.secondary.map((s) => ({
+                    phoneId: s.match.phoneId,
+                    relevance: s.relevance,
+                  }));
                 }
               } else {
                 secondaryLinks = decision.secondary.map((s) => ({
@@ -320,17 +324,56 @@ export class IngestOrchestrator {
                   relevance: s.relevance,
                 }));
               }
-            } else {
-              secondaryLinks = decision.secondary.map((s) => ({
-                phoneId: s.match.phoneId,
-                relevance: s.relevance,
-              }));
             }
+          } catch (disambigErr) {
+            const code = classifyIngestError(disambigErr);
+            await this.writer.recordFailedRun({
+              adapterName: adapter.type,
+              phoneId: phone.id,
+              sourceUrl: candidate.url,
+              candidateTitle: candidate.title,
+              stage: 'fetch',
+              errorCode: code,
+              error: errMsg(disambigErr),
+              retryAfter: computeRetryAfter(code),
+              tier: options.tier ?? null,
+              discoveryStrategy: options.discoveryStrategy ?? null,
+            });
+            errors.push({ url: candidate.url, error: errMsg(disambigErr) });
+            log.error({ url: candidate.url, err: errMsg(disambigErr) }, 'disambiguator failed');
+            continue;
           }
         }
 
-        // Curator: gatekeeper before spending on embeddings. If curator is
-        // disabled (null), skip this step.
+        // Hash pre-check: skip curator + embed when content is unchanged.
+        const existingSource = await this.opts.db
+          .select({ id: sources.id, contentHash: sources.contentHash })
+          .from(sources)
+          .where(sql`${sources.phoneId} = ${primaryPhone.id} and ${sources.url} = ${candidate.url}`)
+          .limit(1);
+
+        if (existingSource[0]?.contentHash === raw.contentHash) {
+          const result = await this.writer.writeSource({
+            phoneId: primaryPhone.id,
+            type: adapter.type,
+            raw,
+            preparedChunks: [],
+            embeddingModel: 'unchanged',
+            adapterName: adapter.type,
+            tier: options.tier ?? null,
+            discoveryStrategy: options.discoveryStrategy ?? null,
+            secondaryPhoneLinks: secondaryLinks,
+            primaryRelevance,
+          });
+          skippedDuplicate += 1;
+          log.debug(
+            { url: candidate.url, skipped: result.skipped },
+            'hash unchanged — skipped curator + embed',
+          );
+          continue;
+        }
+
+        // Curator: gatekeeper before spending on embeddings.
         let enrichment:
           | {
               relevance?: number;
@@ -340,48 +383,89 @@ export class IngestOrchestrator {
             }
           | undefined;
         if (this.curator) {
-          const decision = await this.curator.decide({
-            phone: {
-              slug: primaryPhone.slug,
-              brand: primaryPhone.brand,
-              model: primaryPhone.model,
-            },
-            sourceType: adapter.type,
-            raw,
-            sampleChunks: rawChunks.slice(0, 3),
-          });
-          enrichment = {
-            relevance: decision.verdict.relevance,
-            quality: decision.verdict.quality,
-            sentimentSummary: decision.verdict.sentimentSummary,
-            aspectsCovered: decision.verdict.aspectsCovered,
-          };
-          if (!decision.keep) {
-            skippedDuplicate += 0; // distinct counter isn't tracked separately
-            log.info(
-              {
-                url: candidate.url,
-                rejectedReason: decision.rejectedReason,
-                relevance: decision.verdict.relevance,
-                quality: decision.verdict.quality,
+          try {
+            const decision = await this.curator.decide({
+              phone: {
+                slug: primaryPhone.slug,
+                brand: primaryPhone.brand,
+                model: primaryPhone.model,
               },
-              'curator rejected source; skipping embed + write',
-            );
-            await this.writer.recordRejectedRun({
+              sourceType: adapter.type,
+              raw,
+              sampleChunks: rawChunks.slice(0, 3),
+            });
+            enrichment = {
+              relevance: decision.verdict.relevance,
+              quality: decision.verdict.quality,
+              sentimentSummary: decision.verdict.sentimentSummary,
+              aspectsCovered: decision.verdict.aspectsCovered,
+            };
+            if (!decision.keep) {
+              log.info(
+                {
+                  url: candidate.url,
+                  rejectedReason: decision.rejectedReason,
+                  relevance: decision.verdict.relevance,
+                  quality: decision.verdict.quality,
+                },
+                'curator rejected source; skipping embed + write',
+              );
+              await this.writer.recordRejectedRun({
+                adapterName: adapter.type,
+                phoneId: primaryPhone.id,
+                sourceUrl: candidate.url,
+                candidateTitle: candidate.title,
+                rejectedReason: decision.rejectedReason ?? 'curator-rejected',
+                stage: 'curator',
+                tier: options.tier ?? null,
+                discoveryStrategy: options.discoveryStrategy ?? null,
+              });
+              continue;
+            }
+          } catch (curatorErr) {
+            const code = classifyIngestError(curatorErr);
+            await this.writer.recordFailedRun({
               adapterName: adapter.type,
               phoneId: primaryPhone.id,
               sourceUrl: candidate.url,
-              rejectedReason: decision.rejectedReason ?? 'curator-rejected',
+              candidateTitle: candidate.title,
+              stage: 'curator',
+              errorCode: code,
+              error: errMsg(curatorErr),
+              retryAfter: computeRetryAfter(code),
               tier: options.tier ?? null,
               discoveryStrategy: options.discoveryStrategy ?? null,
             });
+            errors.push({ url: candidate.url, error: errMsg(curatorErr) });
+            log.error({ url: candidate.url, err: errMsg(curatorErr) }, 'curator failed');
             continue;
           }
         }
 
-        const { embeddings, model: embeddingModel } = await this.embedder.embedAll(
-          rawChunks.map((c) => c.text),
-        );
+        let embeddingModel: string;
+        let embeddings: number[][];
+        try {
+          const embedResult = await this.embedder.embedAll(rawChunks.map((c) => c.text));
+          embeddings = embedResult.embeddings;
+          embeddingModel = embedResult.model;
+        } catch (embedErr) {
+          const code = classifyIngestError(embedErr);
+          await this.writer.recordFailedRun({
+            adapterName: adapter.type,
+            phoneId: primaryPhone.id,
+            sourceUrl: candidate.url,
+            candidateTitle: candidate.title,
+            stage: 'embed',
+            errorCode: code,
+            error: errMsg(embedErr),
+            retryAfter: computeRetryAfter(code),
+            tier: options.tier ?? null,
+            discoveryStrategy: options.discoveryStrategy ?? null,
+          });
+          errors.push({ url: candidate.url, error: errMsg(embedErr) });
+          log.error({ url: candidate.url, err: errMsg(embedErr) }, 'embed failed');
+          continue;
+        }
 
         const prepared = rawChunks.map((rc, i) => ({ raw: rc, embedding: embeddings[i]! }));
         const result = await this.writer.writeSource({
@@ -418,6 +502,19 @@ export class IngestOrchestrator {
             'source skipped (not found / unusable)',
           );
         } else {
+          const code = classifyIngestError(err);
+          await this.writer.recordFailedRun({
+            adapterName: adapter.type,
+            phoneId: phone.id,
+            sourceUrl: candidate.url,
+            candidateTitle: candidate.title,
+            stage: 'fetch',
+            errorCode: code,
+            error: message,
+            retryAfter: computeRetryAfter(code),
+            tier: options.tier ?? null,
+            discoveryStrategy: options.discoveryStrategy ?? null,
+          });
           errors.push({ url: candidate.url, error: message });
           log.error({ url: candidate.url, err: message }, 'source failed');
         }

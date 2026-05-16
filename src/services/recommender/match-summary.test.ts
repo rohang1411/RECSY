@@ -1,3 +1,12 @@
+/**
+ * Unit tests for recommender pick summary line generation.
+ *
+ * Tests cover the four summary branches: refined+data, refined+no-data,
+ * fresh+data, fresh+no-data. Also tests `hasRealAspectData`, tie/missing
+ * flag propagation, and canonical aspect ordering stability.
+ *
+ * All tests are pure — no DB, LLM, or network.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';

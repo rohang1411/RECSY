@@ -1,3 +1,17 @@
+/**
+ * POST /api/ask — phone-scoped grounded Q&A with NDJSON streaming.
+ *
+ * Accepts `{ phoneSlug, query, sessionId? }`. Runs hybrid retrieval
+ * (vector + FTS + RRF + MMR) scoped to the requested phone, validates
+ * retrieved citations, then streams Gemini's grounded answer back as
+ * NDJSON. A terminal `done` chunk includes the optional `retrievalTrace`
+ * for the in-UI collapsible trace panel (controlled by `traceId`).
+ *
+ * Rate-limited by IP hash (server-side rate_limits table). Logs every
+ * request with a `traceId` so ops can correlate NDJSON stream events.
+ *
+ * Used by: `src/app/p/[slug]/page.tsx` (phone detail chat panel).
+ */
 import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';

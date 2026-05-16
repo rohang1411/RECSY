@@ -1,3 +1,13 @@
+/**
+ * Scorecard pipeline constants.
+ *
+ * Centralises retrieval knobs, confidence thresholds, and recency windows
+ * for the scorecard extraction pipeline. Changing these values adjusts
+ * behaviour across `agent.ts`, `query-build.ts`, and `recency.ts` without
+ * touching algorithm code.
+ *
+ * Used by: `src/services/scorecard/{agent,query-build,recency,staleness}.ts`.
+ */
 /** Byte cap on the combined retrieval query built from `query_prompts`. */
 export const SCORECARD_COMBINED_QUERY_MAX_BYTES = 2_048;
 

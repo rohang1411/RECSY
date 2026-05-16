@@ -23,8 +23,20 @@ export const env = createEnv({
 
     LLM_PROVIDER: z.enum(['gemini', 'groq']).default('gemini'),
     GEMINI_API_KEY: z.string().min(1),
+    /** Optional backup Google AI Studio keys (separate projects). Rotated when a prior key hits quota (429 / daily cap). */
+    GEMINI_API_KEY_2: z.string().optional(),
+    GEMINI_API_KEY_3: z.string().optional(),
+    /**
+     * When `google_ai_studio_free`, the Gemini client paces requests per key using
+     * GEMINI_FREE_RPM / GEMINI_FREE_TPM_INPUT / GEMINI_FREE_RPD (see Google AI Studio docs).
+     * Use `off` for paid tiers or serverless fleets where in-process counters are misleading.
+     */
+    GEMINI_RATE_LIMIT_PROFILE: z.enum(['off', 'google_ai_studio_free']).default('off'),
+    GEMINI_FREE_RPM: z.coerce.number().int().positive().default(5),
+    GEMINI_FREE_TPM_INPUT: z.coerce.number().int().positive().default(250_000),
+    GEMINI_FREE_RPD: z.coerce.number().int().positive().default(20),
     GROQ_API_KEY: z.string().optional(),
-    LLM_CHAT_MODEL: z.string().default('gemini-2.5-flash'),
+    LLM_CHAT_MODEL: z.string().default('gemini-3-flash-preview'),
     LLM_REASONING_MODEL: z.string().default('gemini-2.5-pro'),
     // `gemini-embedding-001` is Google's current GA embedding model; the
     // former `text-embedding-004` was retired on the v1beta endpoint in
@@ -70,6 +82,10 @@ export const env = createEnv({
       .string()
       .default('false')
       .transform((v) => v.toLowerCase() === 'true'),
+    INTERNAL_DASHBOARD_ENABLED: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
 
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
@@ -100,8 +116,14 @@ export const env = createEnv({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
+    GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
+    GEMINI_RATE_LIMIT_PROFILE: process.env.GEMINI_RATE_LIMIT_PROFILE ?? 'off',
+    GEMINI_FREE_RPM: process.env.GEMINI_FREE_RPM ?? '5',
+    GEMINI_FREE_TPM_INPUT: process.env.GEMINI_FREE_TPM_INPUT ?? '250000',
+    GEMINI_FREE_RPD: process.env.GEMINI_FREE_RPD ?? '20',
     GROQ_API_KEY: process.env.GROQ_API_KEY,
-    LLM_CHAT_MODEL: process.env.LLM_CHAT_MODEL ?? 'gemini-2.5-flash',
+    LLM_CHAT_MODEL: process.env.LLM_CHAT_MODEL ?? 'gemini-3-flash-preview',
     LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL ?? 'gemini-2.5-pro',
     LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL ?? 'gemini-embedding-001',
     LLM_CACHE_ENABLED: process.env.LLM_CACHE_ENABLED ?? 'true',
@@ -120,6 +142,7 @@ export const env = createEnv({
     YOUTUBE_TRANSCRIPT_API_ENABLED: process.env.YOUTUBE_TRANSCRIPT_API_ENABLED ?? 'true',
     YOUTUBE_TRANSCRIPT_PYTHON: process.env.YOUTUBE_TRANSCRIPT_PYTHON ?? 'python',
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
+    INTERNAL_DASHBOARD_ENABLED: process.env.INTERNAL_DASHBOARD_ENABLED ?? 'false',
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
     SENTRY_DSN: process.env.SENTRY_DSN ?? '',
 

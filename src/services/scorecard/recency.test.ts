@@ -1,3 +1,10 @@
+/**
+ * Unit tests for scorecard recency confidence boost (`recency.ts`).
+ *
+ * Tests cover: boost applied when majority of evidence is recent, no
+ * boost for old evidence, correct bump magnitude, and edge cases
+ * (no evidence, all evidence at boundary). Uses fake timers.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RetrievedChunk } from '@/services/retrieval/types';

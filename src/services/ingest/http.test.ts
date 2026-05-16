@@ -1,3 +1,11 @@
+/**
+ * Unit tests for polite HTTP module (`http.ts`).
+ *
+ * Tests cover: `makePoliteHttp` — rate limiting, jitter, Retry-After
+ * handling, `NotFoundError` on 404, `robots.txt` Disallow enforcement,
+ * and `IGNORE_ROBOTS` escape hatch. `parseRobotsDisallow` — path
+ * matching for User-Agent * rules. Fetch is mocked.
+ */
 import { describe, expect, it, vi } from 'vitest';
 
 import { NotFoundError } from '@/lib/errors';

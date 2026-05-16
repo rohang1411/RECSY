@@ -22,7 +22,7 @@ filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
 and [`docs/recommender/README.md`](./recommender/README.md).
 Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
-extraction with chunk-id validation + one retry, `pnpm scorecard:run`, neutral
+extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto` (scheduler + chunk fingerprint + `scorecard_runs` telemetry; **2026-05-15** hardening: reschedule only after `updated > 0`, per-aspect skip rows — see [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md)), neutral
 rows when retrieval is empty, recency as a **confidence** bump only, and
 `ScorecardSection` on `/p/[slug]` when aspects exist. **Calibration** (z-score /
 price bracket) and **multi-query fusion** per aspect are explicitly deferred;
@@ -44,6 +44,8 @@ ranked caption tracks until one yields segments; failures degrade
 gracefully to a skipped-source telemetry row. Phase 1 (DB, data
 model, seed corpus) and Phase 0 (scaffold, design system, service
 skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
+
+**Ops / automation (2026-05-14—15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an all–cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text — see [§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip — full detail in [§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ---
 
@@ -72,6 +74,8 @@ skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 21. [Glossary](#21-glossary)
 22. [Change Log](#22-change-log)
 23. [Issues Log](#23-issues-log)
+24. [Development & Documentation Rules](#24-development--documentation-rules)
+25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
 
 ---
 
@@ -90,6 +94,7 @@ experiences on one site:
   software, value) aggregated from YouTube, Reddit, and editorial reviews —
   and a chat Q&A where every answer is grounded in cited source excerpts
   (YouTube deep-links include timestamps).
+- **Internal Pipeline Observatory.** An internal-only, narrative-driven dashboard (`/internal/pipeline`) that visualizes the entire RECSY data lifecycle for presentations, featuring live database metrics and pre-computed pipeline replays.
 
 **Stack summary.** Next.js 16 · Drizzle ORM → Supabase Postgres + pgvector ·
 Gemini 2.5 Flash/Pro via Vercel AI SDK · TypeScript ingestion adapters
@@ -202,6 +207,10 @@ struggle at night?", "is the battery really that good?").
 
 Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
+### Quaternary — "reviewers and collaborators"
+
+Lands on `/internal/pipeline` to inspect the system architecture, live corpus metrics, and data pipeline walkthroughs without reading the codebase.
+
 ### Core user flows
 
 | #   | Flow                     | Entry                            | Exit                                       |
@@ -210,6 +219,7 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 | U2  | Consensus & Q&A          | `/p/<slug>`                      | Answer with citations → buy-link / browse  |
 | U3  | Browse & filter          | `/browse` (Phase 3+)             | Phone page                                 |
 | U4  | Compare two phones       | `/compare/<a>-vs-<b>` (Phase 5+) | Phone page                                 |
+| U5  | System architecture demo | `/internal/pipeline`             | Pipeline walkthrough                       |
 
 ### Non-users we explicitly decline to serve
 
@@ -224,51 +234,53 @@ Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
 **Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
 
-| Feature                                    | Status | Phase | Notes                                                                                                                                   |
-| ------------------------------------------ | ------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Landing hero + CTA                         | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                               |
-| Dark/light theme (OKLCH tokens)            | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                                |
-| `/api/health` liveness probe               | ✓      | 0     |                                                                                                                                         |
-| Typed env validation                       | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                              |
-| LLM provider abstraction                   | ✓      | 0     | Gemini impl + cache decorator                                                                                                           |
-| Drizzle schema (12 tables, 8 enums)        | ✓      | 0     |                                                                                                                                         |
-| Postgres extensions bootstrapped           | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                          |
-| Initial migration applied                  | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                      |
-| RLS policies                               | ✓      | 1     | default-deny + anon read on public tables                                                                                               |
-| `PhoneSpec` Zod schema                     | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                         |
-| Aspect definitions seeded                  | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                           |
-| Starter phone corpus (20 phones)           | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                                   |
-| `db:setup` orchestrator + `db:smoke`       | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                  |
-| MCP-style ingestion adapters               | ✓      | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                         |
-| `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents                  |
-| Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                 |
-| Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)             |
-| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; CLI `scorecard:run`; UI when rows exist                                                                                  |
-| Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                           |
-| Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                 |
-| Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                               |
-| About page                                 | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                               |
-| Compare (two phones)                       | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                     |
-| Phone page: spec grid + MSRP + image       | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                        |
-| Browse + rec cards: product imagery        | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                        |
-| Recommender: price + image on pick cards   | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                    |
-| PWA manifest + icons (installable)         | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                       |
-| SEO + default OG (sitemap, robots)         | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                    |
-| Product analytics (Vercel)                 | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                           |
-| Compare: catalog pickers + slug form       | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                             |
-| Starter corpus: sample `image_url`         | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                    |
-| Hybrid `eval:retrieval` in CI              | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)     |
-| PWA **offline** shell (service worker)     | ◯      | 7+    | Deferred; ADR 0010                                                                                                                      |
-| Phone Q&A: cross-scope guidance + trace UI | ✓      | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI  |
-| Landing: “What you can do” cards           | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `/` below hero                                                         |
-| `PhoneImage` remote delivery               | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `<img>` + `referrerPolicy="no-referrer"`                               |
-| Recommender: refine-over-prior-picks       | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — re-ranks prior picks on conversational follow-ups       |
-| Recommender: tie + no-data honesty         | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `scoresTied`, `scorecardMissing`, `topAspects`, banner     |
-| Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects        |
-| Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL` |
-| Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link      |
+| Feature                                    | Status | Phase | Notes                                                                                                                                                                                                |
+| ------------------------------------------ | ------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing hero + CTA                         | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                                                                                            |
+| Dark/light theme (OKLCH tokens)            | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                                                                                             |
+| `/api/health` liveness probe               | ✓      | 0     |                                                                                                                                                                                                      |
+| Typed env validation                       | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                                                                                           |
+| LLM provider abstraction                   | ✓      | 0     | Gemini impl + cache decorator                                                                                                                                                                        |
+| Drizzle schema (12 tables, 8 enums)        | ✓      | 0     |                                                                                                                                                                                                      |
+| Postgres extensions bootstrapped           | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                                                                                       |
+| Initial migration applied                  | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                                                                                   |
+| RLS policies                               | ✓      | 1     | default-deny + anon read on public tables                                                                                                                                                            |
+| `PhoneSpec` Zod schema                     | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                                                                                      |
+| Aspect definitions seeded                  | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                                                                                        |
+| Starter phone corpus (20 phones)           | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                                                                                                |
+| `db:setup` orchestrator + `db:smoke`       | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                                                                               |
+| MCP-style ingestion adapters               | ✓      | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                                                                                      |
+| `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see §22)   |
+| Ingestion resumability + audit telemetry   | ✓      | 2     | `ingest_runs.{stage,error_code,retry_after,candidate_title}`; `phones.last_ingest_status`; `--resume-failed`; `ingest-resume.yml`; hash pre-check — [§13](#13-ingestion-pipeline-mcp-style-adapters) |
+| Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                                                                              |
+| Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                                          |
+| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto` — daily 02:17 UTC, 20 phones/run, per-phone queue ([§12](#automated-batch-scheduling-scorecardauto)); UI when rows exist                               |
+| Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                                                                                        |
+| Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                                                                              |
+| Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                                                                                            |
+| About page                                 | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                                                                                            |
+| Compare (two phones)                       | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                                                                                  |
+| Phone page: spec grid + MSRP + image       | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                                                                                     |
+| Browse + rec cards: product imagery        | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                                                                                     |
+| Recommender: price + image on pick cards   | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                                                                                 |
+| PWA manifest + icons (installable)         | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                                                                                    |
+| SEO + default OG (sitemap, robots)         | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                                                                                 |
+| Product analytics (Vercel)                 | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                                                                                        |
+| Compare: catalog pickers + slug form       | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                                                                                          |
+| Starter corpus: sample `image_url`         | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                                                                                 |
+| Hybrid `eval:retrieval` in CI              | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)                                                                  |
+| PWA **offline** shell (service worker)     | ◯      | 7+    | Deferred; ADR 0010                                                                                                                                                                                   |
+| Phone Q&A: cross-scope guidance + trace UI | ✓      | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI                                                               |
+| Landing: “What you can do” cards           | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `/` below hero                                                                                                                      |
+| `PhoneImage` remote delivery               | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `<img>` + `referrerPolicy="no-referrer"`                                                                                            |
+| Recommender: refine-over-prior-picks       | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — re-ranks prior picks on conversational follow-ups                                                                    |
+| Recommender: tie + no-data honesty         | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `scoresTied`, `scorecardMissing`, `topAspects`, banner                                                                  |
+| Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects                                                                     |
+| Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL`                                                              |
+| Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link                                                                   |
+| Internal Pipeline Observatory              | ✓      | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                                                                                |
 
-> **Backlog check (2026-04-22).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev.
+> **Backlog check (2026-05-15).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev, discover-time candidate logging in DB. **Shipped this week:** tiered ingest cron alignment, `scorecard:auto` hardening, **ingestion resumability + audit telemetry** ([§13](#13-ingestion-pipeline-mcp-style-adapters), [§22](#22-change-log)).
 
 ---
 
@@ -286,7 +298,7 @@ flowchart LR
     Embedder --> PG[("Supabase<br/>Postgres + pgvector + pg_trgm")]
   end
 
-  subgraph Batch["Scorecard (weekly cron)"]
+  subgraph Batch["Scorecard (daily cron)"]
     PG --> AgentGraph["Aspect agent graph<br/>retrieve → extract → aggregate → calibrate"]
     AgentGraph --> PG
   end
@@ -307,6 +319,7 @@ flowchart LR
     Extractor --> Gemini
     Ranker --> Gemini
     Retriever --> PG
+    PipelineDash["/internal/pipeline dashboard"] --> PG
   end
 ```
 
@@ -409,20 +422,21 @@ Conventions enforced in review:
 
 ### Tables (Phase 1)
 
-| Table                     | Purpose                                     | Key columns                                                                              |
-| ------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `phones`                  | Canonical phone entities                    | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability` |
-| `sources`                 | Ingested artefacts (video, thread, article) | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                      |
-| `chunks`                  | Retrievable text chunks                     | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`             |
-| `aspect_definitions`      | Methodology — aspects are data              | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                    |
-| `aspects`                 | Current score per phone × aspect            | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes  |
-| `recommendation_sessions` | One per browser session (hashed)            | `session_cookie`, `ip_hash`, `status`                                                    |
-| `recommendation_turns`    | Per-message state in a session              | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                 |
-| `recommendation_feedback` | User signals on picks                       | `turn_id`, `phone_id`, `event`                                                           |
-| `chat_queries`            | Per-phone Q&A log (analytics)               | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                        |
-| `llm_cache`               | LLM response cache (sha256 prompt key)      | `prompt_hash`, `model`, `response`, `hits`                                               |
-| `ingest_runs`             | Ingestion telemetry                         | `adapter`, `status`, `chunks_created`, `error`                                           |
-| `rate_limits`             | IP-window counters                          | `key`, `window_start`, `count`                                                           |
+| Table                     | Purpose                                        | Key columns                                                                                                                                                                                                                                                                                                                              |
+| ------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phones`                  | Canonical phone entities                       | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler — [§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`) |
+| `sources`                 | Ingested artefacts (video, thread, article)    | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                      |
+| `chunks`                  | Retrievable text chunks                        | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                             |
+| `aspect_definitions`      | Methodology — aspects are data                 | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                    |
+| `aspects`                 | Current score per phone × aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                  |
+| `recommendation_sessions` | One per browser session (hashed)               | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                    |
+| `recommendation_turns`    | Per-message state in a session                 | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                 |
+| `recommendation_feedback` | User signals on picks                          | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                           |
+| `chat_queries`            | Per-phone Q&A log (analytics)                  | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                        |
+| `llm_cache`               | LLM response cache (sha256 prompt key)         | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                               |
+| `ingest_runs`             | Ingestion telemetry (per source attempt)       | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** — see [§13 Ingestion audit trail](#ingestion-audit-trail-database)                                 |
+| `scorecard_runs`          | Scorecard batch telemetry (per phone × aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                 |
+| `rate_limits`             | IP-window counters                             | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                           |
 
 ### Enums
 
@@ -432,7 +446,7 @@ Conventions enforced in review:
 ### Indexing strategy
 
 - **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` — vector search.
-- **B-tree** on `phones.brand`, `phones.status`, `chunks.phone_id`, `chunks.source_id`.
+- **B-tree** on `phones.brand`, `phones.status`, `phones.next_scorecard_at`, `phones.next_ingest_at`, `chunks.phone_id`, `chunks.source_id`.
 - **tsvector** FTS index on `chunks.text` (added Phase 3 when hybrid retrieval lands).
 - **Unique constraints** on `phones.slug`, `(sources.phone_id, sources.url)`,
   `(aspects.phone_id, aspects.aspect_definition_id)`.
@@ -584,10 +598,12 @@ cannot support it — honest relaxation beats silent failure.
 
 ## 12. Aspect Scorecard Agent
 
-Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md)
-and [`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
-from hybrid retrieval + structured LLM extraction. **`pg_cron` / weekly batch**
-is documented for later; today the operator entrypoint is **`pnpm scorecard:run`**.
+Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md),
+[ADR 0015](./adr/0015-automated-aspect-scorecard.md), and
+[`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
+from hybrid retrieval + structured LLM extraction. **Automated daily batch**
+runs via GitHub Actions (`pnpm scorecard:auto`); manual CLI remains as
+`pnpm scorecard:run`.
 
 ### Agent graph (MVP pseudocode)
 
@@ -604,6 +620,136 @@ for each phone × latest aspect_definition (seven axes):
   upsert aspects (score = raw = overallScore, quotes, n_supporting, n_dissenting, ...)
 ```
 
+### Automated batch scheduling (`scorecard:auto`)
+
+The automated pipeline is **not** “score every phone on every run.” It is a
+**per-phone queue** in Postgres: each row in `phones` carries
+`last_scorecard_at` and `next_scorecard_at`. A daily cron drains phones that
+are **due**, up to a fixed batch size, then reschedules each processed phone
+for a future run. Over multiple days the full catalog cycles through without
+burning Gemini quota on unchanged evidence.
+
+#### When it runs
+
+| Trigger              | Schedule / entrypoint                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **GitHub Actions**   | **Daily at 02:17 UTC** — `.github/workflows/scorecard-auto.yml` cron (`17 2 * * *`)                               |
+| **Manual (Actions)** | `workflow_dispatch` with optional `limit` (default **20**) and `force` (ignore staleness)                         |
+| **Local / operator** | `pnpm scorecard:auto` — same flags as the script (`--limit`, `--shard`, `--total-shards`, `--force`, `--dry-run`) |
+
+The workflow uses a **`secrets-gate`** job (see [§18](#18-cicd--deployment)): if
+`GEMINI_API_KEY`, `DATABASE_URL`, or Supabase secrets are unset (e.g. forks),
+the heavy job is **skipped** instead of failing env validation or calling Gemini
+with empty keys.
+
+#### How many phones per run
+
+- Default **`--limit 20`** — at most **20 phones** per cron execution.
+- The workflow passes `limit` from `workflow_dispatch` input or defaults to 20.
+- Phones beyond the limit stay in the queue for the next day (or the next shard,
+  if sharding is enabled).
+
+This caps daily LLM usage: a full 7-aspect scorecard takes ~35–40 seconds per
+phone (4.5 s pacing between aspects) plus retrieval/embed calls.
+
+#### Which phones are picked (`pickScorecardPhones`)
+
+Implemented in `src/services/scorecard/scheduler.ts`. On each run the orchestrator
+(`scripts/scorecard-auto.ts`) calls `pickScorecardPhones` with `onlyDue: true`
+(default):
+
+1. **Status** — `phones.status` in `('active', 'upcoming')` only.
+2. **Due** — `next_scorecard_at IS NULL` **or** `next_scorecard_at <= now()`.
+   (`NULL` means “eligible immediately,” e.g. never scheduled or bootstrapped.)
+3. **Order** — ascending `coalesce(last_scorecard_at, epoch)` — phones scored
+   longest ago (or never) first.
+4. **Sharding (optional)** — `shardIndex(phone.id, totalShards) === shard` so
+   multiple workers can partition the due-set deterministically (default:
+   `shard=0`, `totalShards=1`).
+5. **Cap** — `slice(0, limit)`.
+
+**Not all phones every day:** if the catalog has 100 active phones and
+`limit=20`, it takes ~5 daily runs to touch everyone once, assuming all are
+due. In practice, rescheduling (+3 / +7 days below) spreads work so only a
+subset is due each morning.
+
+#### After a phone is processed (`markScorecardComplete`)
+
+When a run **succeeds** (`runScorecardForPhone` returns `updated > 0`) or is
+**staleness-skipped** (`chunks_unchanged`), `markScorecardComplete` sets:
+
+| Condition                                                    | Next `next_scorecard_at`         |
+| ------------------------------------------------------------ | -------------------------------- |
+| Phone **ingested within the last 7 days** (`last_ingest_at`) | **+3 days** from completion time |
+| Otherwise                                                    | **+7 days**                      |
+
+Also sets `last_scorecard_at` to the completion timestamp.
+
+**Failures stay due:** if **every** aspect fails (`updated === 0`), the phone is
+**not** rescheduled — it remains due for the next cron so operators can retry
+after fixing quota/schema issues. A **warn** is logged and `failures` counts
+toward a non-zero exit code when nothing succeeded.
+
+**Bootstrap:** `bootstrapNextScorecardAt` assigns a jittered first deadline
+(~3 days, spread randomly) to phones with `next_scorecard_at IS NULL` so new
+catalog rows don’t all hit the same cron.
+
+#### Staleness guard (skip LLM when evidence unchanged)
+
+Before calling the agent, `computeChunkFingerprint` hashes the phone’s chunk IDs
+in Postgres (`md5(string_agg(id::text, ',' ORDER BY id))` over `chunks`). If
+the fingerprint matches the last successful run in `scorecard_runs` and
+`--force` is not set:
+
+- **No Gemini calls** for that phone.
+- Logs `skipped (chunks_unchanged)`.
+- Inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) with
+  `status: skipped`, `skip_reason: chunks_unchanged`.
+- Still calls `markScorecardComplete` (reschedules on the normal +3 / +7 cadence).
+
+Use `--force` (workflow input or CLI) to re-extract despite an unchanged corpus.
+
+#### Cooperation with ingestion (24 h nudge)
+
+Scorecard and ingest are **decoupled crons** but share schedule columns on
+`phones`. After `ingest-auto` **writes new chunks** for a phone
+(`chunksWritten > 0`), it **pulls forward** `next_scorecard_at` to
+**now + 24 hours** — but only if that is **sooner** than the existing deadline
+(`next_scorecard_at IS NULL` or `next_scorecard_at > nudgeTarget`). Ingest never
+pushes a deadline **later**.
+
+Effect: fresh review evidence is reflected in aspect scores within ~24 h
+without waiting for the default +3 / +7 day scorecard cycle. The daily
+scorecard cron at 02:17 UTC may still run earlier if the phone was already due.
+
+#### End-to-end flow
+
+```mermaid
+flowchart TD
+  Cron["scorecard-auto.yml<br/>02:17 UTC daily"] --> Gate{"secrets-gate<br/>configured?"}
+  Gate -->|no| SkipWF["Skip job"]
+  Gate -->|yes| Auto["scripts/scorecard-auto.ts"]
+  Auto --> Pick["pickScorecardPhones<br/>due phones, max limit"]
+  Pick --> Empty{"any picks?"}
+  Empty -->|no| Done0["exit 0: no phones due"]
+  Empty -->|yes| Loop["for each phone"]
+  Loop --> FP{"chunk fingerprint<br/>changed?"}
+  FP -->|no| Skip["skip LLM<br/>7× scorecard_runs skipped"]
+  FP -->|yes| Agent["runScorecardForPhone<br/>7 aspects × ~4.5s"]
+  Agent --> OK{"updated > 0?"}
+  OK -->|yes| Mark["markScorecardComplete<br/>+3d or +7d"]
+  OK -->|no| Retry["stay due<br/>warn + failures++"]
+  Skip --> Mark
+  Ingest["ingest-auto<br/>chunksWritten > 0"] --> Nudge["next_scorecard_at<br/>= now + 24h<br/>(only if sooner)"]
+  Nudge --> Pick
+```
+
+#### Telemetry
+
+- **`scorecard_runs`** — per phone × aspect (or skip): `status`, `duration_ms`,
+  `score`, `confidence`, `chunk_fingerprint`, `skip_reason`, timestamps.
+- Operator deep-dive: [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
+
 ### Full vision (deferred)
 
 - **Multi-query retrieval** — several embeds per aspect (e.g. battery life vs
@@ -613,8 +759,6 @@ for each phone × latest aspect_definition (seven axes):
 - **Z-score calibration within price bracket** — peer-normalised scores using
   `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
   identical.
-- **Automation** — `pg_cron` per phone, same operational pattern as ingestion
-  when we schedule it.
 
 ### Key properties (unchanged intent)
 
@@ -629,14 +773,17 @@ for each phone × latest aspect_definition (seven axes):
 
 ## 13. Ingestion Pipeline (MCP-style adapters)
 
-> **Phase 2 status.** Shipped. End-to-end verified against a live
+> **Phase 2 status.** Shipped and hardened. End-to-end verified against a live
 > article (10/10 smoke checks, idempotent re-run). YouTube ingestion
 > has a three-tier transcript fallback chain; the known YouTube
 > datacenter-IP throttling (see "Known issues") is handled by graceful
-> per-source skips. See [ADR 0003](./adr/0003-ingestion-typescript.md)
-> for the TypeScript pivot rationale and
-> [`docs/ingest/README.md`](./ingest/README.md) for the operator's
-> guide.
+> per-source skips. Automated tiered scheduling (hot/warm/cold) live per
+> [ADR 0014](./adr/0014-automated-ingestion-curation.md). Quota-failure
+> resumability and durable per-source failure records added per
+> [ADR 0017](./adr/0017-ingestion-resumability-and-intelligent-retry.md).
+> See [ADR 0003](./adr/0003-ingestion-typescript.md) for the TypeScript
+> pivot rationale and [`docs/ingest/README.md`](./ingest/README.md) for
+> the operator's guide.
 
 The ingestion layer lives at `src/services/ingest/` and is **TypeScript-
 native**. Earlier drafts of this doc called for a Python sidecar; ADR 0003
@@ -698,21 +845,78 @@ write` per phone × adapter. Candidates fetched serially per adapter (be
 - Embedding: `ChunkEmbedder` batches 50 texts/call, concurrency 1,
   exponential backoff via `p-retry`.
 - Writing: single transaction per source replaces chunks atomically.
-- Telemetry: one `ingest_runs` row per source-write attempt
-  (`status` ∈ `started | success | skipped | failed`).
+- Telemetry: one `ingest_runs` row per **terminal** source attempt
+  (`status` ∈ `success | skipped | failed`). Since 2026-05-15, curator /
+  embed / disambiguator / fetch failures also call `recordFailedRun` with
+  `stage` + `error_code` + optional `retry_after` (not only the writer's
+  success/skip path). Hash pre-check against `sources.content_hash` runs
+  **before** curator + embed so re-runs do not re-spend quota on unchanged
+  URLs.
+- Phone-level outcome: `phones.last_ingest_status` set by `ingest:auto`
+  (`success` | `partial` | `quota_exhausted` | `failed`).
 - Scheduling:
-  [`.github/workflows/ingest.yml`](../.github/workflows/ingest.yml)
-  provides manual dispatch + nightly cron at 03:17 UTC.
+  [`.github/workflows/ingest-tiered.yml`](../.github/workflows/ingest-tiered.yml)
+  — daily 02:17 UTC, four shards, `--tier all` on schedule.
+  [`.github/workflows/ingest-resume.yml`](../.github/workflows/ingest-resume.yml)
+  — daily 03:20 UTC, `--resume-failed` for quota / incomplete / empty-corpus
+  retries (see [Implementation plan](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md)).
+
+### Ingestion audit trail (database)
+
+**What we persist today** — useful for “what was ingested, kept, rejected,
+and why” without reading raw CI logs:
+
+| Store                                          | What it answers                                                                                                                                                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`sources`**                                  | Everything **kept** in the corpus: URL, title, type, `content_hash`, curator fields (`relevance`, `quality`, `sentiment_summary`, `aspects_covered`), `last_fetched_at`. Join `chunks` for embedded text.                                    |
+| **`ingest_runs`**                              | Per-URL **attempt** outcomes: `success` (chunks written), `skipped` (`rejected_reason` e.g. curator reject or `unchanged-content`), `failed` (`error`, `error_code`, `stage`). Also `tier`, `discovery_strategy`, timestamps, `duration_ms`. |
+| **`phones.last_ingest_at` / `next_ingest_at`** | When the phone was last processed and when the scheduler will pick it again.                                                                                                                                                                 |
+| **`phones.last_ingest_status`**                | Last phone-level run: all clean, partial success + errors, all quota-failed, etc.                                                                                                                                                            |
+| **`scorecard_runs`**                           | Separate telemetry for aspect scoring (not ingestion).                                                                                                                                                                                       |
+
+**How to inspect**
+
+- `pnpm ingest:report` — CLI digest (counts by adapter/status, top
+  `rejected_reason`, quota failures, `last_ingest_status` distribution, overdue phones).
+- `pnpm db:studio` — browse `ingest_runs`, `sources`, `chunks` directly.
+- **`/internal/pipeline`** (when `INTERNAL_DASHBOARD_ENABLED`) — per-phone
+  sources, chunks, and `ingest_runs` via `phone-evidence.ts`.
+- **SQL** (Supabase): e.g. `SELECT status, rejected_reason, error_code, stage, count(*) FROM ingest_runs WHERE started_at > now() - interval '7 days' GROUP BY 1,2,3,4`.
+
+**Gaps (not in DB yet)** — still only in **pino** stdout / GitHub Actions logs:
+
+- Candidates **discovered** but never fetched (e.g. adapter returned 0 URLs).
+- **Not-found / unusable** skips after fetch (e.g. no YouTube transcript) —
+  counted in run summary, usually **no** `ingest_runs` row.
+- Full discover list before curator — only per-URL outcomes once fetch starts.
+
+**Future improvement (planned, not shipped):** log every discovered candidate
+at discover time (e.g. `ingest_candidates` table or `ingest_runs` row at
+`stage='discover'`) so false negatives and “never tried” URLs are queryable.
+Tracked in [§20](#20-open-questions--future-work).
 
 ### CLI
 
 ```
 pnpm ingest --phone <slug> [--adapter youtube|reddit|article]
                            [--url <url>] [--limit N] [--dry-run]
+
+pnpm ingest:auto [--tier hot|warm|cold|all] [--limit N]
+                 [--shard K] [--total-shards N]
+                 [--resume-failed] [--resume-window-days N]
+                 [--per-phone-limit N] [--dry-run]
+
+pnpm ingest:report [--days N]
 ```
 
 `--dry-run` runs discover + fetch + chunk, but skips embedding and DB
 writes — useful for validating a new adapter end-to-end without cost.
+
+`--resume-failed` prioritises phones with recent retriable `ingest_runs`
+(quota / rate-limit, including legacy rows matched by error text),
+`last_ingest_status` in (`partial`, `quota_exhausted`, `failed`), or
+**zero chunks** (empty corpus, ignores `next_ingest_at`). Injects known-failed
+URLs when failure rows exist; otherwise runs full discovery for that phone.
 
 ### Known issues
 
@@ -735,6 +939,29 @@ writes — useful for validating a new adapter end-to-end without cost.
 - **`youtubei.js` parser warnings** for novel UI nodes
   (`ShoppingTimelyShelfView`, etc.) spam stdout — non-fatal; a future
   PR may silence them by redirecting the library's logger.
+- **Ingestion resumability after Gemini quota exhaustion — mitigated
+  (2026-05-15).** Shipped:
+  [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md)
+  (migration `0004_equal_sauron.sql`). Embed/curator/disambiguator/fetch
+  failures write `ingest_runs` with `status='failed'`, `stage`, `error_code`
+  (`quota_exceeded`, `rate_limit`, …), and `retry_after` for quota. Hash
+  pre-check skips curator + embed when `sources.content_hash` is unchanged.
+  `pnpm ingest:auto --resume-failed` + `ingest-resume.yml` (03:20 UTC) retry
+  failed / incomplete / empty-corpus phones. **Residual:** runs **before**
+  this deploy have no tagged failure rows — use `--resume-failed` (includes
+  empty corpus + legacy error-text match) or `pnpm ingest --phone <slug>`.
+  Multiple API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`) still help avoid
+  hitting the daily cap.
+- **Ingestion audit trail incomplete for early pipeline stages.** We do
+  **not** persist every discovered URL or every not-found skip in
+  `ingest_runs` (see [Ingestion audit trail](#ingestion-audit-trail-database)).
+  Operational detail for those cases lives in **pino** logs (local terminal or
+  GitHub Actions job output), not Postgres. Planned: discover-time candidate
+  logging.
+- **No long-term central log store for the app.** Structured logs (`pino`) go
+  to stdout only — not written to the database. Vercel deployment logs (if
+  hosted) and GitHub Actions retention apply; there is no built-in Datadog/Loki
+  pipeline unless configured separately. See [§16 Logging](#logging-pino).
 
 ---
 
@@ -817,6 +1044,23 @@ See [ADR 0002](./adr/0002-design-tokens.md).
 - Redacted paths: `password`, `apiKey`, `token`, `authorization`, `cookie`,
   `headers.authorization`.
 - Dev runs through `pino-pretty`; prod emits raw JSON (Vercel drains).
+- Level controlled by `LOG_LEVEL` (e.g. `debug` for per-adapter discovery,
+  embed retries, hash pre-check skips).
+
+**Where logs go (nothing is saved in Postgres by default)**
+
+| Context                                                               | Where to look                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Local scripts** (`pnpm ingest:auto`, `pnpm dev`)                    | Terminal stdout                                                     |
+| **GitHub Actions** (ingest-tiered, ingest-resume, scorecard-auto, CI) | Repo → Actions → workflow run → job log (~90 day retention)         |
+| **Vercel** (deployed Next.js)                                         | Project → Logs / Observability (per-request API routes)             |
+| **Errors only**                                                       | Optional Sentry (`SENTRY_DSN`) — exceptions, not full ingest traces |
+
+**Ingestion vs database audit:** Use **`ingest_runs` + `sources`** for durable
+“what was kept / rejected / failed and why” (see [§13 Ingestion audit trail](#ingestion-audit-trail-database)).
+Use **logs** for step-by-step narrative: discovery counts, dry-run lines,
+per-URL curator decisions before they hit the DB, and adapter warnings
+(e.g. YouTube `timedtext` empty body).
 
 ### Error reporting
 
@@ -921,6 +1165,20 @@ inline. `NEXT_PUBLIC_COMMIT_SHA` is injected from `github.sha` where applicable.
 We run one Supabase project in MVP. Will split when cost/complexity
 justifies it.
 
+### Scheduled automation (GitHub Actions)
+
+Beyond `ci.yml`, production-adjacent cron jobs include:
+
+- **`ingest-tiered.yml`** — daily 02:17 UTC: four parallel shards call `pnpm exec tsx scripts/ingest-auto.ts` with **`--tier all`** on `schedule` (manual dispatch may pass `--tier hot|warm|cold|all`). Tier priority (hot → warm → cold) remains inside `pickPhones`; the workflow no longer gates **cold** to Sundays only (that pattern starved cold-tier catalogs on weekdays).
+- **`ingest-resume.yml`** — daily **03:20 UTC** (1h after tiered ingest): four shards, `pnpm ingest:auto --resume-failed` to retry quota failures, incomplete `last_ingest_status`, and empty-corpus phones. Manual `workflow_dispatch` with optional `limit`.
+- **`scorecard-auto.yml`** — **daily 02:17 UTC**; `secrets-gate` then `pnpm exec tsx scripts/scorecard-auto.ts` (default **`--limit 20`**). Does **not** score the full catalog each run — see [§12 Automated batch scheduling](#automated-batch-scheduling-scorecardauto). Optional `workflow_dispatch`: `limit`, `force`.
+- **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** — per ADR 0014 / operator docs.
+
+**DB migrations locally:** `pnpm db:migrate` / `db:generate` / `db:studio` load
+`DATABASE_URL` from `.env.local` via `node --env-file=.env.local` and a
+fallback reader in `drizzle.config.ts` (plain `drizzle-kit migrate` without env
+used to fail with an empty URL).
+
 ---
 
 ## 19. Project Phases & Progress
@@ -931,7 +1189,7 @@ justifies it.
 | 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                                                               |
 | 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                                                              |
 | 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups                                         |
-| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred                                                                        |
+| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred; automation hardened 2026-05-15 (see §22)                              |
 | 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                                                                   |
 | 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                                                         |
 | 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | ADR 0009 + 0010: manifest, SEO, OG, analytics, compare pickers, sample images; SW offline + optional eval job follow-ups |
@@ -1005,8 +1263,14 @@ consequences: [ADR 0003](./adr/0003-ingestion-typescript.md).
   an advanced `last_fetched_at`, and `ingest_runs` logs both passes.
 - ✅ **Graceful YouTube degradation.** Where YouTube refuses captions
   (datacenter-IP throttling — see §13 Known Issues), the adapter skips
-  the source cleanly; the orchestrator records a `NotFoundError`
-  telemetry row and continues. No hangs, no data corruption.
+  the source cleanly; the orchestrator counts `skippedUnusable` and
+  continues (usually **no** `ingest_runs` row for not-found — see audit
+  trail gaps). No hangs, no data corruption.
+- ✅ **Ingestion resumability (2026-05-15).** `ingest_runs` gains
+  `stage`, `error_code`, `retry_after`, `candidate_title`; `phones.last_ingest_status`;
+  `recordFailedRun` + hash pre-check; `pickResumePhones` / `--resume-failed`;
+  `ingest-resume.yml`; `pnpm ingest:report` quota + status sections.
+  Plan: [`ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md).
 - ✅ **Unit tests.** 42/42 green across 4 ingestion test files.
 - ✅ **`pnpm typecheck`** green (`gemini-embedding-001` migration
   surfaced a `p-retry` v8 `RetryContext` API change — fixed).
@@ -1130,6 +1394,9 @@ rows are not deleted so history stays visible in the “Notes” column.
 | Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
 | Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
 | Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
+| Ingestion             | Quota mid-run left no DB audit / wasted LLM on re-run                               | **Mitigated (2026-05-15)**     | `ingest_runs` failure rows, hash pre-check, `--resume-failed`, `ingest-resume.yml`. Pre-deploy runs still lack `error_code`.                                                                                                                            |
+| Ingestion             | Discover list and not-found skips not in `ingest_runs`                              | **Open**                       | Kept/rejected/failed **after fetch** are in DB; early drops are log-only. Future: discover-time rows.                                                                                                                                                   |
+| Observability         | No durable log aggregation (ingest traces only in CI/local stdout)                  | **Open**                       | `pino` → stdout; Vercel/GH retention only. DB audit for ingest outcomes in §13. Optional Sentry for errors.                                                                                                                                             |
 | DB / RLS              | Service-role routes bypass RLS; anon read scope must stay aligned with product      | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
 | Browse                | Untrusted query params; risk of log noise or injection if filter values hit raw SQL | **Mitigated (MVP)**            | Parsers map to `BrowseFilterState` (int bounds, brand list); Drizzle parameterises values; foldable filter uses a fixed JSON path expression. See ADR 0008. Do not ship raw full-query logging as analytics without redaction.                          |
 
@@ -1162,6 +1429,40 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-05-15 — CI success gate, secrets-gate hardening, recommend state persistence, Gemini rotation
+
+- **Required CI success gate** ([`59edc99`](https://github.com/rohang1411/RECSY/commit/59edc99)) — `ci.yml` gains a `required` job that acts as a single merge gate, aggregating all lanes (`quality`, `e2e`, `retrieval-eval`). Workflows now also run on `master` pushes so the gate fires on direct merges.
+- **Secrets-gate for ingestion / scorecard workflows** ([`c4724d8`](https://github.com/rohang1411/RECSY/commit/c4724d8), [`18cdd6d`](https://github.com/rohang1411/RECSY/commit/18cdd6d)) — A reusable `secrets-gate` job checks for `GEMINI_API_KEY`, `DATABASE_URL`, and Supabase secrets before running the heavy jobs. On forks or environments without secrets, workflows skip cleanly instead of failing env validation or making unauthenticated LLM calls.
+- **Recommend page state persisted in `sessionStorage`** ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02)) — `RecommendClient` now serializes the conversation history to `sessionStorage` on every update and hydrates from it on mount. A full browser refresh no longer wipes the pick cards and chat turns.
+- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) — `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
+- **Scorecard chunk-id UUID validation regression fix** ([`3eee6f9`](https://github.com/rohang1411/RECSY/commit/3eee6f9)) — The scorecard extraction schema had lost its UUID format check on evidence `chunkId` fields. This allowed non-UUID strings to pass validation and produced silent evidence mismatches downstream. Restored strict `z.string().uuid()` validation.
+
+### 2026-05-14 — Internal Pipeline Observatory dashboard
+
+- **Initial dashboard** ([`d11c7ab`](https://github.com/rohang1411/RECSY/commit/d11c7ab)) — `/internal/pipeline` ships behind `INTERNAL_DASHBOARD_ENABLED`. Features: live DB stats (phone count, source count, chunk count, aspect coverage), corpus overview, metric cards.
+- **Phone evidence + retrieval pipeline components** ([`c225079`](https://github.com/rohang1411/RECSY/commit/c225079)) — `PhoneEvidenceSection`, `RetrievalFunnel`, `RetrievalSection`, `RecommendSection`, `GuidedWalkthrough`, `EvidenceTimeline`, `ScoreBreakdown`, `ScorecardRadar`, `RequirementsViewer`, `ChunkViewer`, `SourceCard`, `DatabaseMap` — all backed by `src/services/internal/{pipeline-snapshot,phone-evidence,retrieval-explain,recommend-explain}.ts`. Full ADR: [0016](./adr/0016-internal-pipeline-observatory.md).
+
+### 2026-05-14 — Automated scorecard generation (ADR 0015)
+
+- **Initial roll-out** ([`7082ee0`](https://github.com/rohang1411/RECSY/commit/7082ee0)) — `scripts/scorecard-auto.ts`, `src/services/scorecard/scheduler.ts`, `staleness.ts`; `phones.{last,next}_scorecard_at`; `scorecard_runs` telemetry table; `scorecard-auto.yml` cron (daily 02:17 UTC). Full ADR: [0015](./adr/0015-automated-aspect-scorecard.md).
+- **Telemetry + scheduling improvements** ([`a73a484`](https://github.com/rohang1411/RECSY/commit/a73a484)) — `markScorecardComplete` only fires when `updated > 0`; staleness skip writes seven `scorecard_runs` rows (one per aspect); GeminiProvider schema/API error differentiation; debug logging for validation errors ([`281be83`](https://github.com/rohang1411/RECSY/commit/281be83), [`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79)).
+
+### 2026-05-15 — Tiered ingest cron + automated scorecard hardening
+
+- **`.github/workflows/ingest-tiered.yml`** — Removed the `plan` job that selected tiers by day-of-week and matrixed `tier × shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes “cron runs but picks zero phones” when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
+- **`scripts/scorecard-auto.ts`** — **`markScorecardComplete`** runs only when **`runScorecardForPhone` returns `updated > 0`**; if every aspect fails, the phone stays due, a **warn** is logged, and **`failures`** increments for exit-code semantics. Staleness path (`chunks_unchanged`) inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) instead of a single `aspect: 'camera'` sentinel.
+- **Documentation** — [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations). **[§12](#12-aspect-scorecard-agent)** now documents automated scorecard **frequency**, **batch limit**, **due-phone selection**, **+3 / +7 d** rescheduling, **staleness fingerprint**, and **ingest 24 h nudge** in full.
+
+### 2026-05-15 — Ingestion resumability, audit telemetry, and operator tooling
+
+- **Schema** (`drizzle/migrations/0004_equal_sauron.sql`) — `ingest_runs`: `stage`, `error_code`, `retry_after`, `candidate_title`; `phones.last_ingest_status`; indexes for resume queries.
+- **Orchestrator** — Hash pre-check before curator/embed; `recordFailedRun` for curator, embed, disambiguator, and fetch failures with classified `error_code`.
+- **Scheduler** — `pickResumePhones`, `pickPhonesEmptyCorpus`, `getFailedCandidatesForPhone`; legacy quota errors matched via `error` text when `error_code` is null.
+- **CLI** — `pnpm ingest:auto --resume-failed`, `--resume-window-days`; `ingest:report` sections for quota failures and `last_ingest_status`.
+- **CI** — [`.github/workflows/ingest-resume.yml`](../.github/workflows/ingest-resume.yml) at 03:20 UTC.
+- **DX** — `pnpm db:migrate` / `db:generate` / `db:studio` load `.env.local` for `DATABASE_URL`.
+- **Documentation** — [`ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md) (implemented); **[§13](#13-ingestion-pipeline-mcp-style-adapters)** audit trail + **[§16](#16-observability-ops--security)** log locations.
 
 ### 2026-05-13 - YouTube transcript fallback chain hardening
 
@@ -1221,7 +1522,7 @@ dissenting_quotes)`.
   - `scripts/creator-watch.ts` (`pnpm creator:watch`) — RSS-only poll. Enqueues hot-tier rows into `crawl_queue` with alias-matched URLs. No embedding. Cheap enough for 4×/day.
   - `scripts/ingest-report.ts` (`pnpm ingest:report [--days N]`) — weekly audit: runs by adapter×status, by tier, top `rejected_reason`, avg relevance/quality on new sources, phones overdue relative to 2× their tier's interval.
   - `.github/workflows/ingest.yml` — retired the hand-coded nightly roster; now only a manual `workflow_dispatch` entrypoint.
-  - `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC. A `plan` job picks tiers by day-of-week (hot every day, warm Mon/Wed/Fri/Sat, cold Sun). Matrix `tier × shard[0..3]`, `max-parallel: 4`.
+  - `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC, four-shard matrix calling `ingest-auto.ts` (**as of 2026-05-14**: `schedule` uses `--tier all`; earlier revision used a `plan` job + day-of-week tier matrix, which skipped cold-tier phones on non-Sundays). `max-parallel: 4`.
   - `.github/workflows/creator-watch.yml` — every 6h, 23 minutes past the hour.
   - `.github/workflows/ingest-on-new-phone.yml` — `workflow_dispatch` bootstrap for admin-added phones.
 - **Empty-corpus UX, time-aware** (`src/services/chat/answer.ts`) — `buildNoContextMessage(phoneMeta)` names brand + model, mentions days-since-last-ingest, and surfaces the next scheduled refresh window (e.g. "Next refresh is scheduled in about 12h"). `POST /api/ask` passes `{brand, model, lastIngestAt, nextIngestAt}` from the same row it already fetches. No more developer-oriented `pnpm ingest --phone <slug>` in user-facing text. ADR 0012's short-circuit + `NO_CONTEXT_MODEL='no-context@v1'` sentinel stay.
@@ -1327,7 +1628,8 @@ dissenting_quotes)`.
 - **`src/services/scorecard/`** — combined-query retrieval per aspect, Zod
   extraction schema, chunk-id validation with one retry + strip, recency
   confidence bump, upsert into `aspects`.
-- **`pnpm scorecard:run`** — `scripts/scorecard-run.ts`; `--phone <slug>` or
+- **`pnpm scorecard:auto`** — automated daily pipeline (`scripts/scorecard-auto.ts`).
+- **`pnpm scorecard:run`** — manual CLI `scripts/scorecard-run.ts`; `--phone <slug>` or
   `--all` (active phones only).
 - **`ScorecardSection`** on `/p/[slug]` — renders when at least one aspect row
   exists; seven-axis list with score, confidence, evidence counts, summary.
@@ -1589,6 +1891,7 @@ dissenting_quotes)`.
   migrations lagged the code rollout, they could die immediately on tables like
   `phone_aliases` or `creator_profiles`, and Drizzle often surfaced only the
   outer `Failed query` message unless you inspected the nested cause chain.
+  ([`244810e`](https://github.com/rohang1411/RECSY/commit/244810e))
   - **Fix.** Added a shared schema guard that checks required public tables /
     columns before these scripts proceed. When the ingestion schema is missing,
     the scripts now log an actionable message telling the operator to run
@@ -1605,6 +1908,7 @@ dissenting_quotes)`.
   Shorts). Because `creator_profiles` upserts on `(platform, external_id)`,
   corrected IDs did not retire old active rows for the same handle; every phone
   then re-fetched the same broken feeds and emitted repeated HTTP 404 warnings.
+  ([`25c7e77`](https://github.com/rohang1411/RECSY/commit/25c7e77))
   - **Fix.** Corrected the seeded creator channel IDs, made `db:setup` disable
     stale active `creator_profiles` rows with the same `(platform, handle)` but
     a superseded `external_id`, updated the implementation-plan tables, and
@@ -1617,6 +1921,7 @@ dissenting_quotes)`.
   service used in CI has neither role. Step 4/5 then failed with
   `role "anon" does not exist`, even though the schema and seed steps were
   otherwise portable.
+  ([`7ca2e53`](https://github.com/rohang1411/RECSY/commit/7ca2e53))
   - **Fix.** `drizzle/rls.sql` now discovers which of `anon` /
     `authenticated` actually exist and only creates public-read policies when
     at least one is present. On vanilla Postgres it logs a notice and skips
@@ -1631,6 +1936,7 @@ dissenting_quotes)`.
   step 1, emit soft warnings, and continue into Drizzle migrations without
   `vector`, `pg_trgm`, or `pgcrypto` actually installed. The visible failure
   then appeared later at `CREATE TABLE "chunks" ... "embedding" vector(768)`.
+  ([`9de9a54`](https://github.com/rohang1411/RECSY/commit/9de9a54))
   - **Fix.** `scripts/db-setup.ts` now installs required extensions with
     explicit statements that fail fast, and only treats `pg_cron` as optional.
   - **Hardening.** Bootstrap no longer depends on comment-sensitive SQL
@@ -1645,6 +1951,7 @@ dissenting_quotes)`.
   `env.LLM_PROVIDER` undefined; `getLlm()` then threw during startup before
   the scheduler could pick any phones. The production ingestion workflows also
   relied on the code default instead of declaring a provider explicitly.
+  ([`2b63745`](https://github.com/rohang1411/RECSY/commit/2b63745))
   - **Fix.** `src/env.ts` now skips validation only when
     `SKIP_ENV_VALIDATION === 'true'`. The ingestion and creator-watch GitHub
     Actions workflows now export `LLM_PROVIDER: gemini` explicitly.
@@ -1653,6 +1960,63 @@ dissenting_quotes)`.
     `LLM_PROVIDER` default. Production workflows keep validation enabled, so
     missing required secrets fail fast instead of producing undefined runtime
     config.
+
+### Ops — Automated scorecard + ingestion hardening (2026-05-14 – 2026-05-15)
+
+#### HIGH
+
+- **GeminiProvider could not differentiate schema violations from API-level errors, causing wrong retry path and excessive debug noise.**
+  A schema-validation failure (model returned malformed JSON) and a network/API error both triggered the same generic retry logic. Operators saw confusing log output and retries that could not succeed (e.g. retrying a schema error with no prompt adjustment). ([`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79), debug logging [`281be83`](https://github.com/rohang1411/RECSY/commit/281be83))
+  - **Fix.** `GeminiProvider` now catches `AISDKError` subtypes separately: schema violations → single retry with error-feedback nudge; API / network errors → jittered backoff. Debug-level logging for validation errors added to aid diagnosis without spamming production.
+  - **Hardening.** `GeminiProvider` type narrowing covers the two error paths so a future SDK upgrade that changes the error hierarchy is caught by typecheck.
+
+- **Scorecard agent missing type imports caused build failure on automated roll-out.**
+  `src/services/scorecard/agent.ts` used types from `@/services/db/schema` that were referenced but not imported. The error only surfaced during the automated scorecard CI run, not local dev, because local builds had cached output. ([`5f96a9c`](https://github.com/rohang1411/RECSY/commit/5f96a9c))
+  - **Fix.** Added the missing `import type` statements.
+  - **Hardening.** `pnpm typecheck` in the `quality` CI job catches this class of error before automated workflows run.
+
+- **Vercel transaction pooler (Supavisor) URL params crashed Drizzle; phone image wrapper caused layout regression.**
+  Vercel injects `?pgbouncer=true&connection_limit=1` into `DATABASE_URL`. The Porsager `postgres` driver does not recognise those params and throws on connect. Separately, `PhoneImage`'s wrapper `<div>` was unconstrained in height, causing card layout breaks on the recommendations page. ([`1d4e3a4`](https://github.com/rohang1411/RECSY/commit/1d4e3a4), troubleshooting [`7d79673`](https://github.com/rohang1411/RECSY/commit/7d79673))
+  - **Fix.** `src/services/db/connection.ts` auto-strips Supavisor-only query params before passing the URL to the driver. `PhoneImage` wrapper gains explicit `aspect-ratio` and `overflow-hidden`.
+  - **Hardening.** `db:ping` verifies the stripped URL connects cleanly. Troubleshooting note added to `docs/deployment/README.md`.
+
+- **Migration `0001` was not idempotent: re-running `db:setup` on an existing DB failed with "index already exists" on `rate_limits`.**
+  The initial migration created a btree index on `(key, window_start)` without `IF NOT EXISTS`, so idempotent re-runs threw a Postgres error and aborted `db:setup`. ([`5378fcc`](https://github.com/rohang1411/RECSY/commit/5378fcc))
+  - **Fix.** Wrapped the index creation with `IF NOT EXISTS`. Added `db:smoke` assertion that the index exists post-setup.
+  - **Hardening.** Migration convention now requires `IF NOT EXISTS` on all standalone index statements.
+
+#### MEDIUM
+
+- **Recommend page lost all conversation state on browser refresh.**
+  `/recommend` held chat turns and pick cards in React state only. A full page refresh cleared everything. ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02))
+  - **Fix.** `RecommendClient` serializes conversation state to `sessionStorage` on every update and hydrates on mount.
+  - **Hardening.** No PII stored — only UI state (chat messages, pick slugs). State clears when the browser session ends.
+
+- **GSMArena Cloudflare Turnstile blocked automated discovery; broken creator channel IDs re-ingested stale feeds.**
+  The GSMArena adapter hit a Cloudflare Turnstile challenge on discovery. Separately, several `creator_profiles` seed rows had wrong YouTube channel IDs; corrected IDs did not retire old active rows due to upsert keying on `(platform, external_id)`. ([`2f18ff1`](https://github.com/rohang1411/RECSY/commit/2f18ff1))
+  - **Fix.** GSMArena adapter falls back to `raw_json.gsmarenaUrl` direct URL override. `db:setup` deactivates stale `creator_profiles` rows with a superseded `external_id` for the same `(platform, handle)`.
+
+- **`IGNORE_ROBOTS` missing: `robots.txt` strict adherence silently blocked valid editorial sources.**
+  The polite HTTP layer respected Disallow rules for sources that are publicly browseable. Valid editorial review domains were blocked. ([`e7e5ce6`](https://github.com/rohang1411/RECSY/commit/e7e5ce6))
+  - **Fix.** Added `IGNORE_ROBOTS=true` env escape hatch and per-domain `ignoreRobots` flag on `domain_profiles`.
+
+- **ArticleAdapter `discover()` TypeScript type errors: `null` vs `undefined`, missing required `SourceCandidate` fields.**
+  Returned `null` for optional fields that `SourceCandidate` requires as `string`. Surfaced as typecheck failures after automation rollout. ([`c14ea54`](https://github.com/rohang1411/RECSY/commit/c14ea54), [`2329f2d`](https://github.com/rohang1411/RECSY/commit/2329f2d), [`6f185a8`](https://github.com/rohang1411/RECSY/commit/6f185a8))
+  - **Fix.** All required `SourceCandidate` fields now have non-null fallbacks; `title` defaults to page hostname; missing dates default to discovery timestamp.
+
+- **TypeScript compilation errors across scripts and tests after ingestion automation rollout.**
+  Multiple files had stale type references to the old adapter API surface after the ADR 0014 rewrite. ([`25f19c5`](https://github.com/rohang1411/RECSY/commit/25f19c5))
+  - **Fix.** Updated all affected files to the new types (`IngestRunRow`, `SourceCandidateWithAdapter`, etc.).
+
+#### LOW
+
+- **GitHub Actions `secrets` context was invalid in job-level `if:` conditionals.**
+  `secrets.*` is unavailable in `job.if:` expressions — only in step-level conditions. Workflows silently skipped instead of failing with a clear error. ([`a7af86f`](https://github.com/rohang1411/RECSY/commit/a7af86f))
+  - **Fix.** Replaced inline secret checks with the `secrets-gate` reusable job pattern; downstream jobs key off the boolean output.
+
+- **CI workflows declared an explicit pnpm version that drifted from `package.json`'s `packageManager` field.**
+  Pinned `pnpm@10.x` in workflows drifted when `package.json` bumped the patch version. ([`8cce9ac`](https://github.com/rohang1411/RECSY/commit/8cce9ac))
+  - **Fix.** Removed all explicit `pnpm-version:` from workflow steps; Corepack reads `packageManager` automatically.
 
 ### Phase 7 polish — Context-aware summaries, tie honesty, client settings (2026-04-22)
 
@@ -1706,6 +2070,7 @@ dissenting_quotes)`.
   The table only carried a non-unique btree on `(key, window_start)`, so
   Drizzle could not atomically increment per-window counts; duplicate rows
   were possible under concurrency.
+  ([`5378fcc`](https://github.com/rohang1411/RECSY/commit/5378fcc))
   - **Fix.** Added `rate_limits_key_window_uniq` via `drizzle/fts.sql`
     (`CREATE UNIQUE INDEX IF NOT EXISTS`) and `uniqueIndex` in
     `schema.ts`. `db:smoke` asserts the index exists.
@@ -1726,6 +2091,7 @@ dissenting_quotes)`.
 - **Gemini `text-embedding-004` returning 404.**
   `ingest:smoke` failed with `models/text-embedding-004 is not found for
 API version v1beta`. Google retired the model on `v1beta` in early 2026.
+  ([`c95c4e2`](https://github.com/rohang1411/RECSY/commit/c95c4e2))
   - **Fix.** Migrated to `gemini-embedding-001` in `src/env.ts` (default)
     and `src/services/llm/gemini.ts`. Switched to `google.embedding(...)`
     with `providerOptions.google.outputDimensionality = 768` and
@@ -1745,6 +2111,7 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
   endpoint was reachable with an ASCII header. The failure happened before any
   outbound request left the process, so the adapter looked like a network or
   Reddit-side outage even though the root cause was local header validation.
+  ([`d850c30`](https://github.com/rohang1411/RECSY/commit/d850c30))
   - **Fix.** Replaced the Unicode dash with an ASCII hyphen in
     `src/services/ingest/adapters/reddit.ts`, restoring valid request headers
     for both `/search.json` and `/new.json` discovery calls.
@@ -1755,7 +2122,8 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
 - **YouTube caption metadata exists but caption bodies are withheld.** Local
   probes showed the watch page exposes valid `captionTracks` for Pixel review
   videos and control videos, but `timedtext` returns HTTP 200 with a zero-byte
-  body from Node, curl, and Chromium. In the same runs, `youtubei.js`
+  body from Node, curl, and Chromium.
+  ([`c9927fa`](https://github.com/rohang1411/RECSY/commit/c9927fa)) In the same runs, `youtubei.js`
   `getTranscript()` was often returning HTTP 400, and the in-process fallback
   tiers based on the `Info` object and watch-page scrape were finding caption
   metadata but still getting empty transcript bodies. This is YouTube subtitle
@@ -1935,6 +2303,7 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
   wrapped as a generic Drizzle "Failed query" error. The underlying runner
   had no route to the chosen AAAA record even though the same hostname had a
   reachable IPv4 address.
+  ([`a57f3ac`](https://github.com/rohang1411/RECSY/commit/a57f3ac), [`dbe1f48`](https://github.com/rohang1411/RECSY/commit/dbe1f48))
   - **Fix.** Added a shared DB connection helper in
     `src/services/db/connection.ts` that strips Supavisor-only query params
     and forces Node to prefer IPv4 DNS answers for Supabase hosts before
@@ -2027,3 +2396,181 @@ entry to §23 if anything non-trivial broke, bump status markers in §6
 and §19, update the living **§20 risk register** (status/notes) when a
 known limitation is mitigated or a new one appears — do not remove rows,
 and keep the ToC in sync._
+
+---
+
+## 24. Development & Documentation Rules
+
+> These rules are mandatory for every human or AI agent contributing to RECSY v2. They exist so that the codebase, documentation, and tests remain internally consistent and collectively trustworthy as the project grows.
+
+### 24.1 Documentation-first
+
+Every feature, decision, or significant fix must be reflected in documentation **in the same PR** as the code change:
+
+| Document                           | What to update                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/RECSY_V2_PROJECT_CONTEXT.md` | §6 Feature Inventory status, §22 Change Log entry, §23 Issues Log entry (if something broke), §25 Pending Tasks (if deferred)               |
+| `docs/RECSY_V2_PROJECT_GUIDE.md`   | Routes table, `src/` structure, reading order, phase snapshot — if any of these change                                                      |
+| ADR (`docs/adr/*.md`)              | Write a new ADR for every non-obvious technical decision; superseded ADRs must say so with a forward link                                   |
+| Subsystem README                   | Operating notes, status, and command references in `docs/{ingest,retrieval,scorecard,recommender,deployment,browse,compare,eval}/README.md` |
+| Implementation plan                | If a task has an implementation plan, flip its status marker and cross-link the ADR once accepted                                           |
+
+All status flags across §6, §19, §22, §23, and §25 must agree. A feature cannot be "shipped" in §6 and "planned" in the guide.
+
+### 24.2 ADR coverage
+
+Every non-obvious technical decision gets an ADR. Criteria for "non-obvious":
+
+- Changes an external contract (API shape, DB schema, auth model)
+- Selects one of several viable approaches (e.g. hybrid vs. sparse-only retrieval)
+- Accepts a limitation that will surprise a new engineer
+- Reverses or supersedes a prior ADR
+
+Superseded ADRs must link forward: `**Status: Superseded by [ADR NNNN](./NNNN-…).**` at the top of the status block.
+
+### 24.3 File-header comments
+
+Every `.ts` / `.tsx` file must open with a `/** … */` JSDoc block that states:
+
+1. **Purpose** — one sentence: what this file does and why it exists.
+2. **Contents** — key exports or components in the file.
+3. **Implementation notes** — non-obvious design choices (skip for trivial files).
+4. **Used by** — which callers depend on this file.
+
+Model the template on `src/app/api/health/route.ts` and `src/services/llm/gemini.ts`.
+
+### 24.4 Tests
+
+| Rule                 | Detail                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| Every new module     | ships with at least one `*.test.ts` covering the happy path                               |
+| Bug fixes            | ship with a regression test that would have caught the bug                                |
+| Coverage target      | 80 % statement coverage on `src/services/`                                                |
+| Test environment     | Vitest, Node env; use `vi.mock` / `vi.useFakeTimers` — never live DB or LLM in unit tests |
+| High-value test list | see §25 for modules that are missing tests                                                |
+| E2E                  | Playwright specs in `e2e/`; gate on `pnpm build` succeeding                               |
+
+### 24.5 Logging
+
+- Every service module uses a **request-scoped `pino` logger** obtained from `src/services/logger/index.ts`.
+- Bind context fields at child creation: `traceId`, `route`, plus domain bindings as appropriate (`phoneSlug`, `sessionId`, `adapter`, `aspect`, `tier`).
+- No `console.log` in production code (ESLint rule enforced).
+- Log levels: `trace` for per-chunk detail, `debug` for per-request paths, `info` for per-operation outcomes, `warn` for recoverable anomalies, `error` for failures.
+- Never log raw PII (IP addresses, user input verbatim), service keys, or full DB row objects.
+
+### 24.6 Commit conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/) enforced by `commitlint` on `commit-msg`. Valid scopes are listed in `commitlint.config.mjs`. Examples:
+
+```
+feat(recommend): add multi-turn preference merging
+fix(ingest): handle empty YouTube transcript body gracefully
+docs(adr): add ADR 0017 ingestion resumability
+test(rate-limit): add window-rollover regression test
+```
+
+Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
+
+### 24.7 Environment hygiene
+
+- Never read `process.env.*` outside `src/env.ts`, scripts, or Next.js config files. ESLint enforces `no-process-env` on `src/**`.
+- All required secrets are listed in `.env.example` with placeholder values and a comment explaining each.
+- `pnpm db:smoke` must pass after every migration.
+
+### 24.8 Security
+
+| Rule                              | Rationale                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| RLS default-deny preserved        | Every `SELECT` on user-visible tables must have an explicit `USING` clause; never grant broad access via migration |
+| No raw IPs or PII in client code  | IP hashing happens server-side in `src/lib/request-ip.ts` + `src/services/rate-limit/ip-hash.ts`                   |
+| No service keys in client bundles | Only `NEXT_PUBLIC_*` vars are safe for the client; everything else lives in `src/env.ts` server-only               |
+| CSP / security headers            | Managed by `next.config.ts`; do not modify without an ADR                                                          |
+| ASCII headers only                | Non-ASCII characters in HTTP headers cause silent failures (see Phase 2 em-dash bug in §23)                        |
+
+### 24.9 Migration discipline
+
+- Forward-only: never drop a column or table in a `drizzle generate` migration without a separate, reviewed "destructive" migration file.
+- Every index creation uses `IF NOT EXISTS` so re-running `db:setup` is always safe.
+- After generating a migration, run `pnpm db:smoke` before committing.
+- RLS policies follow the pattern in `drizzle/rls.sql`; no inline policy SQL in migrations.
+
+---
+
+## 25. Pending Tasks & Refactors
+
+> This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
+
+### P1 — Actionable (high value, next sprint)
+
+#### Missing unit tests
+
+The following modules have no unit test file. Each is a meaningful service with edge cases that should be caught before any refactor:
+
+| Module                                                | Acceptance criteria                                                                                 | Difficulty |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------- |
+| `src/services/ingest/writer.ts`                       | Test: happy-path insert, idempotent re-insert via `content_hash`, concurrent write safety (mock DB) | Medium     |
+| `src/services/ingest/embedder.ts`                     | Test: batching, concurrency cap, retry on transient failure, skip on existing hash                  | Medium     |
+| `src/services/ingest/scheduler/enqueue.ts`            | Test: hot/warm/cold tier selection, shard filtering, `--resume-failed` flag path                    | Medium     |
+| `src/services/ingest/scheduler/pick-resume-phones.ts` | Test: returns phones with `last_ingest_status = 'quota_error'` or incomplete run, respects limit    | Easy       |
+| `src/services/ingest/agents/alias-loader.ts`          | Test: alias resolution, fallback on empty alias table, schema guard path                            | Easy       |
+| `src/services/ingest/adapters/article.ts`             | Test: discover from URL list, `@mozilla/readability` chunking, null-safety for missing metadata     | Medium     |
+| `src/services/ingest/adapters/youtube.ts`             | Test: transcript fetch, fallback tiers, empty-transcript skip                                       | Hard       |
+| `src/services/retrieval/retriever.ts`                 | Test: RRF merge, MMR selection, source coverage clamp, empty-corpus short-circuit                   | Medium     |
+| `src/services/retrieval/factory.ts`                   | Test: correct retriever returned for each config combination                                        | Easy       |
+| `src/services/retrieval/fts.ts`                       | Test: query normalization, tsvector match, trigram fallback                                         | Medium     |
+| `src/services/retrieval/vector.ts`                    | Test: cosine similarity ordering, HNSW probe count effect                                           | Hard       |
+| `src/services/scorecard/agent.ts`                     | Test: extraction schema validation, aspect coverage, citation validation                            | Medium     |
+| `src/services/scorecard/scheduler.ts`                 | Test: staleness check gating, `--force` bypass, dry-run output                                      | Medium     |
+| `src/services/recommender/session.ts`                 | Test: session create, load, multi-turn history append, anonymous session expiry                     | Medium     |
+| `src/services/internal/pipeline-snapshot.ts`          | Test: fixture-driven shape check, null-safe DB aggregations                                         | Easy       |
+| `src/services/internal/phone-evidence.ts`             | Test: evidence grouping, source coverage by adapter type                                            | Easy       |
+
+#### Route-level and component tests
+
+These require additional test infrastructure (RTL + jsdom Vitest config for components; route-level mocking for API tests):
+
+| Target                           | Notes                                                    |
+| -------------------------------- | -------------------------------------------------------- |
+| `src/app/api/ask/route.ts`       | Needs fetch mocking or a lightweight integration harness |
+| `src/app/api/recommend/route.ts` | Needs session mocking + LLM mock                         |
+| `src/components/AppHeader.tsx`   | RTL + jsdom: navigation links, theme toggle              |
+| `src/components/PhoneImage.tsx`  | RTL: `referrerPolicy`, fallback rendering, lazy loading  |
+| `src/components/Scorecard.tsx`   | RTL: aspect bar rendering, empty-state                   |
+
+### P2 — Documentation cleanup
+
+| Item                                         | Action                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| ADR 0001 Python ingestion row                | Replace with TypeScript ingestion + "see ADR 0003" pointer (tracked in §1d)  |
+| `docs/retrieval/README.md` stale header      | Remove "Phase 3, in progress" references; update to shipped state            |
+| `docs/scorecard/README.md` scheduled-job TBD | Replace with live `scorecard:auto` story per ADR 0015                        |
+| `automated_ingestion_pipeline_1.plan.md`     | Add superseded note or archive under `docs/ImplementationPlans/archive/`     |
+| Implementation plan commit hyperlinks        | Several plan files lack fix-commit links in their "Lessons Learned" sections |
+
+#### Recommended new ADRs
+
+| ADR                          | Decision to capture                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `0018-llm-response-cache.md` | LLM cache persistence semantics, key derivation (model + prompt hash), invalidation policy, bypass for streaming paths    |
+| `0019-api-rate-limiting.md`  | API rate-limiting policy (separate from ingest polite-HTTP): sliding window, per-IP, per-route limits, 429 response shape |
+
+### P3 — Product backlog
+
+| Item                            | Notes                                                                                                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Offline PWA service worker      | Manifest exists; no `sw.js` yet                                                                                                   |
+| Per-route OG cards              | `/p/[slug]` should generate a phone-specific OG image                                                                             |
+| `image_url` backfill            | ~30 phones missing; needs `spec-embed:backfill --with-images` or manual CSV import                                                |
+| Candidate logging in DB         | Log recommender candidates to a `recommendation_events` table for future calibration                                              |
+| Gemini Pro tie-break            | When `scoresTied` and the Pro model is available, use it to break ties with a reasoning summary                                   |
+| Score calibration               | z-score or price-bracket normalization on aspect scores; prevents budget and flagship phones from sharing the same absolute scale |
+| `discover`-time candidate dedup | Cross-adapter dedup at `discover` time to avoid ingesting the same YouTube video via both channel-feed and direct-search paths    |
+
+### P3 — Code-quality refactors
+
+| Item                                    | Notes                                                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import type` consolidation             | Several service files use `import` where `import type` is sufficient; ESLint `@typescript-eslint/consistent-type-imports` could auto-fix           |
+| Non-ASCII HTTP header lint rule         | An ESLint rule banning non-ASCII characters in string literals used as HTTP header values would have caught the Phase 2 em-dash bug at commit time |
+| `getDb()` → `useDb()` rename            | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
+| Recommender `session.ts` session expiry | Anonymous sessions never expire from the DB; add a `created_at < NOW() - interval '7 days'` cleanup cron or a `max_age` column                     |

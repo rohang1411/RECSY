@@ -1,6 +1,9 @@
 # =============================================================================
 # Tiered, automated ingestion.
 #
+# The `ingest` matrix job is skipped via `secrets-gate` when GEMINI / DB secrets
+# are unset (forks, misconfigured repos) so ingest-auto does not run on empty keys.
+#
 # Daily cron that picks phones that are due for a refresh based on their
 # freshness tier (hot / warm / cold) and shards the work across a 4-job
 # matrix. Each shard pulls a deterministic slice of the due-set using a hash
@@ -57,6 +60,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ] && [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Pipeline secrets incomplete — skipping ingest matrix (expected for forks / unset repo secrets)."
+          fi
+
   plan:
     name: Plan shards / tiers
     runs-on: ubuntu-latest
@@ -96,7 +121,8 @@ jobs:
 
   ingest:
     name: ingest tier=${{ matrix.tier }} shard=${{ matrix.shard }}
-    needs: plan
+    needs: [plan, secrets-gate]
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -114,6 +140,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       LLM_PROVIDER: gemini
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
       YTDLP_COOKIES_BASE64: ${{ secrets.YTDLP_COOKIES_BASE64 }}
       YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
       YTDLP_EXTRACTOR_ARGS: ${{ secrets.YTDLP_EXTRACTOR_ARGS }}

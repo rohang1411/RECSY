@@ -1,3 +1,18 @@
+/**
+ * POST /api/recommend — conversational recommender pipeline.
+ *
+ * Accepts `{ message, sessionId? }`. Creates or loads an anonymous
+ * recommendation session, rate-limits by IP hash, then runs the full
+ * recommender pipeline: preference extraction → hard/soft filtering →
+ * aspect-weighted ranking → pick diversification. Returns structured
+ * `{ type: 'picks' | 'clarify' | 'error', picks?, question? }`.
+ *
+ * Session cookie (`recsy_rec_session`) ties multi-turn conversations to
+ * prior picks without requiring authentication. Sessions are anonymous;
+ * no PII is stored.
+ *
+ * Used by: `src/app/recommend/RecommendClient.tsx`.
+ */
 import { randomBytes } from 'node:crypto';
 
 import type { NextRequest } from 'next/server';
