@@ -5,6 +5,8 @@ interface PhoneImageProps {
   readonly className?: string;
   /** Square side in CSS px */
   readonly size?: number;
+  readonly fill?: boolean;
+  readonly fit?: 'contain' | 'cover';
 }
 
 /**
@@ -13,11 +15,19 @@ interface PhoneImageProps {
  * (e.g. Wikimedia) that are picky about referrers or optimizers still render;
  * `referrerPolicy="no-referrer"` avoids common hotlink blocks.
  */
-export function PhoneImage({ src, label, className, size = 200 }: PhoneImageProps) {
+export function PhoneImage({
+  src,
+  label,
+  className,
+  size = 200,
+  fill = false,
+  fit = 'contain',
+}: PhoneImageProps) {
   const initial = label.trim().charAt(0).toUpperCase() || '?';
+  const wrapperStyle = fill ? undefined : { width: size, height: size };
   if (src && src.length > 0) {
     return (
-      <div className={className} style={{ width: size, height: size }}>
+      <div className={className} style={wrapperStyle}>
         {/* eslint-disable-next-line @next/next/no-img-element -- remote product art; see module docstring */}
         <img
           src={src}
@@ -27,7 +37,9 @@ export function PhoneImage({ src, label, className, size = 200 }: PhoneImageProp
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="bg-muted/50 h-full w-full rounded-xl object-contain"
+          className={`bg-surface-container h-full w-full contrast-125 grayscale transition duration-150 group-hover:grayscale-0 hover:grayscale-0 ${
+            fit === 'cover' ? 'object-cover' : 'object-contain p-2'
+          }`}
         />
       </div>
     );
@@ -36,8 +48,8 @@ export function PhoneImage({ src, label, className, size = 200 }: PhoneImageProp
     <div
       role="img"
       aria-label={label}
-      className={`bg-muted/60 text-muted-foreground flex items-center justify-center rounded-xl text-4xl font-semibold ${className ?? ''}`}
-      style={{ width: size, height: size }}
+      className={`border-outline-variant bg-surface-container text-muted-foreground font-display flex items-center justify-center border text-4xl font-extrabold ${className ?? ''}`}
+      style={wrapperStyle}
     >
       {initial}
     </div>

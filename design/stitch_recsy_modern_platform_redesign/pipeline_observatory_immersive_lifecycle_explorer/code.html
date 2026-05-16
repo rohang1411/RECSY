@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RECSY v2 Pipeline Observatory</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=Inter:wght@100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#1b1c1c",
+                        "on-tertiary": "#303030",
+                        "surface-container": "#1f1f1f",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "tertiary": "#ffffff",
+                        "primary": "#ffffff",
+                        "surface": "#131313",
+                        "primary-container": "#e2e2e2",
+                        "on-surface-variant": "#c4c7c8",
+                        "on-error": "#690005",
+                        "surface-container-lowest": "#0e0e0e",
+                        "outline-variant": "#444748",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#303030",
+                        "primary-fixed": "#e2e2e2",
+                        "surface-container-high": "#2a2a2a",
+                        "surface-variant": "#353535",
+                        "inverse-surface": "#e2e2e2",
+                        "inverse-primary": "#5d5f5f",
+                        "secondary-fixed": "#e5e2e1",
+                        "tertiary-container": "#e4e2e1",
+                        "on-secondary-fixed-variant": "#474746",
+                        "on-primary-fixed": "#1a1c1c",
+                        "on-primary-container": "#636565",
+                        "secondary-container": "#474746",
+                        "on-secondary": "#313030",
+                        "background": "#000000",
+                        "on-background": "#e2e2e2",
+                        "surface-tint": "#c6c6c7",
+                        "on-surface": "#e2e2e2",
+                        "surface-dim": "#131313",
+                        "tertiary-fixed-dim": "#c8c6c6",
+                        "surface-bright": "#393939",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#b7b5b4",
+                        "on-primary-fixed-variant": "#454747",
+                        "outline": "#8e9192",
+                        "on-tertiary-container": "#656464",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "surface-container-highest": "#353535",
+                        "surface-container-low": "#1b1b1b",
+                        "secondary": "#c8c6c5",
+                        "on-tertiary-fixed-variant": "#474747",
+                        "on-primary": "#2f3131",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "tertiary-fixed": "#e4e2e1",
+                        "error-container": "#93000a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "gutter": "1px",
+                        "grid-margin": "4vw",
+                        "section-gap": "160px",
+                        "stack-lg": "48px",
+                        "stack-md": "24px"
+                    },
+                    "fontFamily": {
+                        "display-xl": ["Hanken Grotesk"],
+                        "meta-mono": ["JetBrains Mono"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "display-xl-mobile": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-xl": ["120px", { "lineHeight": "110px", "letterSpacing": "-0.04em", "fontWeight": "800" }],
+                        "meta-mono": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "400" }],
+                        "headline-lg": ["48px", { "lineHeight": "52px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "display-xl-mobile": ["64px", { "lineHeight": "60px", "letterSpacing": "-0.03em", "fontWeight": "800" }],
+                        "headline-lg-mobile": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .tech-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(142, 145, 146, 0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(142, 145, 146, 0.1) 1px, transparent 1px);
+        }
+        .tech-border {
+            border: 1px solid theme('colors.primary');
+        }
+        .hover-invert:hover {
+            background-color: theme('colors.on-background');
+            color: theme('colors.background');
+        }
+        /* Custom scrollbar for data tables */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.surface-container-lowest');
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.primary');
+        }
+
+        /* Device Lifecycle Explorer Animation Styles */
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        }
+        @keyframes flow {
+            0% { left: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { left: 100%; opacity: 0; }
+        }
+        
+        .particle {
+            animation: float 6s ease-in-out infinite;
+            transition: all 0.3s ease;
+        }
+        .particle:nth-child(2) { animation-delay: -2s; }
+        .particle:nth-child(3) { animation-delay: -4s; }
+        
+        .particle:hover {
+            transform: scale(1.1);
+            z-index: 20;
+        }
+        
+        .synthesis-hub {
+            animation: pulse-ring 3s infinite;
+        }
+        
+        .chunk-flow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .flow-active .chunk-flow {
+            animation: flow 2s linear infinite;
+        }
+        .flow-active .chunk-flow:nth-child(2) { animation-delay: 0.6s; }
+        .flow-active .chunk-flow:nth-child(3) { animation-delay: 1.2s; }
+
+        .pipeline-track {
+            position: relative;
+            height: 2px;
+            background: repeating-linear-gradient(90deg, #fff 0, #fff 4px, transparent 4px, transparent 8px);
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body class="bg-[#000000] text-on-background font-body-md antialiased tech-grid min-h-screen flex flex-col md:flex-row overflow-x-hidden selection:bg-primary selection:text-[#000000]">
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden lg:flex flex-col h-screen border-r border-primary bg-[#000000] docked left-0 w-64 flex-shrink-0 z-50 sticky top-0">
+<div class="p-6 border-b border-primary flex items-center gap-4">
+<span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
+<div>
+<div class="font-meta-mono text-primary font-bold">SYSTEM_STATUS</div>
+<div class="font-meta-mono text-meta-mono text-on-surface-variant">OPERATIONAL // V2.0.4</div>
+</div>
+</div>
+<div class="flex-1 py-4 overflow-y-auto">
+<a class="flex items-center gap-4 px-6 py-3 bg-primary text-[#000000] font-bold font-meta-mono text-meta-mono transition-all duration-75" href="#">
+<span class="material-symbols-outlined">terminal</span>
+                Engine
+            </a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:text-primary hover:bg-[#111] transition-all duration-75 font-meta-mono text-meta-mono" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+                Specs
+            </a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:text-primary hover:bg-[#111] transition-all duration-75 font-meta-mono text-meta-mono" href="#">
+<span class="material-symbols-outlined">difference</span>
+                Compare
+            </a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:text-primary hover:bg-[#111] transition-all duration-75 font-meta-mono text-meta-mono" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Market
+            </a>
+</div>
+<div class="p-6 border-t border-primary">
+<button class="w-full py-3 border border-primary font-meta-mono text-meta-mono hover-invert transition-colors uppercase mb-6">
+                NEW SEARCH
+            </button>
+<div class="flex flex-col gap-3">
+<a class="flex items-center gap-3 text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono" href="#">
+<span class="material-symbols-outlined text-lg">menu_book</span>
+                    Documentation
+                </a>
+<a class="flex items-center gap-3 text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono" href="#">
+<span class="material-symbols-outlined text-lg">contact_support</span>
+                    Support
+                </a>
+</div>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col min-h-screen">
+<!-- Mobile Top Nav (Fallback) -->
+<header class="lg:hidden flex justify-between items-center w-full px-grid-margin py-4 bg-[#000000] border-b border-primary z-40 sticky top-0">
+<div class="font-display-xl-mobile text-[24px] tracking-tighter text-primary font-bold">RECSY_v2</div>
+<button class="material-symbols-outlined text-primary">menu</button>
+</header>
+<!-- Observatory Content -->
+<div class="px-grid-margin py-stack-lg flex-1">
+<!-- Page Header -->
+<header class="mb-stack-lg border-b border-primary pb-stack-sm flex flex-col md:flex-row justify-between items-end gap-stack-sm">
+<div>
+<h1 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary tracking-tighter uppercase">Pipeline Observatory</h1>
+<p class="font-meta-mono text-meta-mono text-on-surface-variant mt-2">REAL-TIME DATA LIFECYCLE MONITOR // SCHEMATIC VIEW</p>
+</div>
+<div class="font-meta-mono text-meta-mono text-primary flex items-center gap-2">
+<span class="w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+                    SYNCING: ACTIVE
+                </div>
+</header>
+<!-- Metrics Row (Bento Style) -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-gutter bg-primary border border-primary mb-stack-lg">
+<div class="bg-[#000000] p-6 flex flex-col gap-2 relative overflow-hidden group">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant uppercase z-10">Phones Active</div>
+<div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">20</div>
+<span class="material-symbols-outlined absolute -right-4 -bottom-4 text-[120px] text-[#222] opacity-50 group-hover:opacity-100 transition-opacity z-0">smartphone</span>
+</div>
+<div class="bg-[#000000] p-6 flex flex-col gap-2 relative overflow-hidden group">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant uppercase z-10">Data Sources</div>
+<div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">126</div>
+<span class="material-symbols-outlined absolute -right-4 -bottom-4 text-[120px] text-[#222] opacity-50 group-hover:opacity-100 transition-opacity z-0">database</span>
+</div>
+<div class="bg-[#000000] p-6 flex flex-col gap-2 relative overflow-hidden group">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant uppercase z-10">Total Chunks</div>
+<div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">1,470</div>
+<span class="material-symbols-outlined absolute -right-4 -bottom-4 text-[120px] text-[#222] opacity-50 group-hover:opacity-100 transition-opacity z-0">memory</span>
+</div>
+</section>
+<!-- Lifecycle Pipeline Visualization -->
+<section class="mb-stack-lg">
+<div class="font-meta-mono text-meta-mono text-primary uppercase mb-4 border-b border-primary pb-2">Lifecycle Schematic</div>
+<div class="border border-primary bg-[#000000] p-stack-md flex flex-col md:flex-row items-stretch gap-stack-md relative">
+<!-- Flow Line -->
+<div class="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-primary -z-0"></div>
+<!-- INGEST -->
+<div class="flex-1 bg-[#000000] border border-primary p-6 z-10 flex flex-col gap-4 group hover:bg-[#111] transition-colors">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">Ingest</h3>
+<span class="material-symbols-outlined text-primary">input</span>
+</div>
+<p class="font-meta-mono text-meta-mono text-on-surface-variant">Raw capture from 20 endpoints. Audio &amp; Metadata stream parsing.</p>
+<div class="mt-auto pt-4 border-t border-primary">
+<div class="flex justify-between font-meta-mono text-meta-mono">
+<span>RATE:</span>
+<span class="text-primary">450MB/s</span>
+</div>
+</div>
+</div>
+<!-- Process Arrow Mobile -->
+<div class="md:hidden flex justify-center text-primary"><span class="material-symbols-outlined">arrow_downward</span></div>
+<!-- PROCESS -->
+<div class="flex-1 bg-[#000000] border border-primary p-6 z-10 flex flex-col gap-4 group hover:bg-[#111] transition-colors">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">Process</h3>
+<span class="material-symbols-outlined text-primary animate-spin-slow" style="animation: spin 8s linear infinite;">settings</span>
+</div>
+<p class="font-meta-mono text-meta-mono text-on-surface-variant">Chunking, embedding generation, and vector alignment.</p>
+<div class="mt-auto pt-4 border-t border-primary">
+<div class="flex justify-between font-meta-mono text-meta-mono">
+<span>LATENCY:</span>
+<span class="text-primary">12ms</span>
+</div>
+</div>
+</div>
+<!-- Process Arrow Mobile -->
+<div class="md:hidden flex justify-center text-primary"><span class="material-symbols-outlined">arrow_downward</span></div>
+<!-- ARCHIVE -->
+<div class="flex-1 bg-[#000000] border border-primary p-6 z-10 flex flex-col gap-4 group hover:bg-[#111] transition-colors">
+<div class="flex justify-between items-center">
+<h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">Archive</h3>
+<span class="material-symbols-outlined text-primary">archive</span>
+</div>
+<p class="font-meta-mono text-meta-mono text-on-surface-variant">Tiered storage allocation. Indexing for semantic retrieval.</p>
+<div class="mt-auto pt-4 border-t border-primary">
+<div class="flex justify-between font-meta-mono text-meta-mono">
+<span>CAPACITY:</span>
+<span class="text-primary">78%</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Device Lifecycle Explorer -->
+<section class="mb-section-gap">
+<div class="flex justify-between items-end mb-4 border-b border-primary pb-2">
+<div class="font-meta-mono text-meta-mono text-primary uppercase">Device Lifecycle Explorer</div>
+<div class="flex items-center gap-2">
+<label class="font-meta-mono text-meta-mono text-on-surface-variant" for="device-select">PROBE:</label>
+<select class="bg-[#000000] border border-primary text-primary font-meta-mono text-meta-mono py-1 px-2 focus:ring-0 focus:border-primary outline-none" id="device-select">
+<option value="pixel-9">PIXEL 9 PRO XL [ID: 0xFA89]</option>
+<option value="iphone-16">IPHONE 16 PRO [ID: 0x9B12]</option>
+</select>
+</div>
+</div>
+<div class="border border-primary bg-[#000000] p-8 relative overflow-hidden flex flex-col lg:flex-row gap-8 min-h-[500px]" id="lifecycle-container">
+<!-- Background Grid Pattern Specific to Explorer -->
+<div class="absolute inset-0 opacity-20" style="background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 20px 20px;"></div>
+<!-- 1. Discovery Layer -->
+<div class="flex-1 z-10 flex flex-col justify-center gap-8 relative border-r border-primary/30 pr-8">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-0">STAGE 01: DISCOVERY</div>
+<div class="flex flex-col gap-6" id="discovery-layer">
+<!-- Source Particle 1 -->
+<div class="particle border border-primary p-4 rounded-full flex items-center gap-3 cursor-pointer hover:bg-primary hover:text-[#000000] group w-max" onclick="activateFlow('flow-1')">
+<span class="material-symbols-outlined">play_circle</span>
+<div class="hidden group-hover:block font-meta-mono text-meta-mono pr-2">MKBHD Review</div>
+</div>
+<!-- Source Particle 2 -->
+<div class="particle border border-primary p-4 rounded-full flex items-center gap-3 cursor-pointer hover:bg-primary hover:text-[#000000] group w-max ml-8" onclick="activateFlow('flow-2')">
+<span class="material-symbols-outlined">article</span>
+<div class="hidden group-hover:block font-meta-mono text-meta-mono pr-2">The Verge Specs</div>
+</div>
+<!-- Source Particle 3 -->
+<div class="particle border border-primary p-4 rounded-full flex items-center gap-3 cursor-pointer hover:bg-primary hover:text-[#000000] group w-max ml-4" onclick="activateFlow('flow-3')">
+<span class="material-symbols-outlined">forum</span>
+<div class="hidden group-hover:block font-meta-mono text-meta-mono pr-2">r/Android Thread</div>
+</div>
+</div>
+</div>
+<!-- Connection Tracks -->
+<div class="hidden lg:block absolute left-[25%] top-1/2 -translate-y-1/2 w-[25%] h-full pointer-events-none" id="flow-container">
+<div class="pipeline-track absolute top-[30%] w-full" id="track-1">
+<div class="chunk-flow"></div><div class="chunk-flow"></div><div class="chunk-flow"></div>
+</div>
+<div class="pipeline-track absolute top-[50%] w-full" id="track-2">
+<div class="chunk-flow"></div><div class="chunk-flow"></div><div class="chunk-flow"></div>
+</div>
+<div class="pipeline-track absolute top-[70%] w-full" id="track-3">
+<div class="chunk-flow"></div><div class="chunk-flow"></div><div class="chunk-flow"></div>
+</div>
+</div>
+<!-- 2. Synthesis Layer -->
+<div class="flex-1 z-10 flex flex-col justify-center items-center relative border-r border-primary/30 px-8">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-8">STAGE 02: SYNTHESIS</div>
+<div class="synthesis-hub w-32 h-32 border-2 border-primary rounded-full flex items-center justify-center cursor-pointer hover:bg-[#111] transition-colors" onclick="toggleModal('synthesis-modal')">
+<span class="material-symbols-outlined text-4xl text-primary">hub</span>
+</div>
+<div class="mt-4 font-meta-mono text-meta-mono text-primary text-center">LLM_HUB<br/><span class="text-[10px] opacity-70">AWAITING_CHUNKS</span></div>
+</div>
+<!-- Connection Track to RAG -->
+<div class="hidden lg:block absolute left-[75%] top-[50%] w-[10%] h-px bg-primary/30 pointer-events-none"></div>
+<!-- 3. RAG/Retrieval Layer -->
+<div class="flex-1 z-10 flex flex-col justify-center pl-8 relative">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-8">STAGE 03: RETRIEVAL EVENT</div>
+<div class="border border-primary p-6 bg-[#000000] relative group hover:border-white transition-all duration-300">
+<div class="absolute -top-3 -right-3 bg-primary text-[#000000] font-meta-mono text-[10px] px-2 py-1">QUERY_MATCH</div>
+<div class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">SAMPLE USER QUERY:</div>
+<div class="font-headline-lg-mobile text-[20px] mb-6 tracking-tight">"Best camera phone under $1000"</div>
+<div class="flex justify-between items-end border-t border-primary/30 pt-4">
+<div>
+<div class="font-meta-mono text-[10px] text-on-surface-variant">RETRIEVAL SCORE</div>
+<div class="font-meta-mono text-primary">0.942</div>
+</div>
+<span class="material-symbols-outlined text-primary">arrow_forward</span>
+</div>
+</div>
+</div>
+<!-- Modal Overlays -->
+<!-- Source Modal -->
+<div class="hidden absolute right-0 top-0 w-80 h-full bg-[#000000] border-l border-primary p-6 z-50 flex flex-col" id="source-modal">
+<div class="flex justify-between items-center mb-6 pb-2 border-b border-primary">
+<span class="font-meta-mono text-primary uppercase">Source Detail</span>
+<button class="material-symbols-outlined text-primary hover:text-white" onclick="closeModals()">close</button>
+</div>
+<div class="font-meta-mono text-[10px] text-on-surface-variant mb-1">RAW_METADATA</div>
+<div class="border border-primary p-3 font-meta-mono text-[10px] text-primary opacity-80 mb-6 bg-[#111]">
+                    {<br/>
+                      "id": "yt_mkbhd_01",<br/>
+                      "type": "video_transcript",<br/>
+                      "confidence": 0.98<br/>
+                    }
+                </div>
+<div class="font-meta-mono text-[10px] text-on-surface-variant mb-1">EXTRACTED_CHUNKS</div>
+<div class="flex flex-col gap-2 flex-1 overflow-y-auto pr-2">
+<div class="border border-primary/50 p-2 font-meta-mono text-[11px] hover:border-primary cursor-pointer">...the primary sensor is massive, capturing way more light in dark scenes...</div>
+<div class="border border-primary/50 p-2 font-meta-mono text-[11px] hover:border-primary cursor-pointer">...pricing starts at $999, putting it right against the Pro models...</div>
+</div>
+</div>
+<!-- Synthesis Modal -->
+<div class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] bg-[#000000] border border-primary p-6 z-50 shadow-[0_0_50px_rgba(255,255,255,0.1)]" id="synthesis-modal">
+<div class="flex justify-between items-center mb-6 pb-2 border-b border-primary">
+<span class="font-meta-mono text-primary uppercase">Synthesis Profile</span>
+<button class="material-symbols-outlined text-primary hover:text-white" onclick="closeModals()">close</button>
+</div>
+<div class="space-y-4">
+<div>
+<div class="flex justify-between font-meta-mono text-[10px] mb-1"><span>CAMERA_SCORE</span><span class="text-primary">9.5/10</span></div>
+<div class="h-1 w-full bg-[#111]"><div class="h-full bg-primary w-[95%]"></div></div>
+</div>
+<div>
+<div class="flex justify-between font-meta-mono text-[10px] mb-1"><span>VALUE_SCORE</span><span class="text-primary">8.2/10</span></div>
+<div class="h-1 w-full bg-[#111]"><div class="h-full bg-primary w-[82%]"></div></div>
+</div>
+<div class="mt-6 border border-primary p-3 font-meta-mono text-[11px] text-on-surface-variant bg-[#111]">
+                        LLM_SUMMARY: Device excels in low-light photography. Positions competitively at $999 price point. Strong indicator for 'best camera' queries.
+                    </div>
+</div>
+</div>
+</div>
+</section>
+<!-- Lower Layout: Corpus & Device Probe -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-stack-md mb-stack-lg">
+<!-- Corpus Overview (Col 1-5) -->
+<section class="lg:col-span-5 flex flex-col gap-stack-md">
+<div class="font-meta-mono text-meta-mono text-primary uppercase border-b border-primary pb-2">Corpus Overview: Tier Dist</div>
+<div class="border border-primary bg-[#000000] p-6 flex-1 flex flex-col justify-center">
+<!-- Bar Chart Simulation -->
+<div class="flex flex-col gap-6 w-full">
+<!-- HOT -->
+<div class="flex items-center gap-4 group">
+<div class="w-16 font-meta-mono text-meta-mono text-right text-on-surface-variant">HOT</div>
+<div class="flex-1 h-6 bg-[#111] relative overflow-hidden">
+<div class="absolute top-0 left-0 h-full bg-primary w-[75%] transition-all duration-1000"></div>
+</div>
+<div class="w-16 font-meta-mono text-meta-mono">75%</div>
+</div>
+<!-- WARM -->
+<div class="flex items-center gap-4 group">
+<div class="w-16 font-meta-mono text-meta-mono text-right text-on-surface-variant">WARM</div>
+<div class="flex-1 h-6 bg-[#111] relative overflow-hidden">
+<div class="absolute top-0 left-0 h-full bg-surface-tint w-[40%] transition-all duration-1000"></div>
+</div>
+<div class="w-16 font-meta-mono text-meta-mono">40%</div>
+</div>
+<!-- COLD -->
+<div class="flex items-center gap-4 group">
+<div class="w-16 font-meta-mono text-meta-mono text-right text-on-surface-variant">COLD</div>
+<div class="flex-1 h-6 bg-[#111] relative overflow-hidden">
+<div class="absolute top-0 left-0 h-full bg-outline-variant w-[85%] transition-all duration-1000"></div>
+</div>
+<div class="w-16 font-meta-mono text-meta-mono">85%</div>
+</div>
+</div>
+<div class="mt-8 pt-4 border-t border-primary font-meta-mono text-meta-mono text-on-surface-variant text-center">
+                            TOTAL CORPUS VOLUME: 4.2 TB
+                        </div>
+</div>
+</section>
+<!-- Device Probe (Col 6-12) -->
+<section class="lg:col-span-7 flex flex-col gap-stack-md">
+<div class="font-meta-mono text-meta-mono text-primary uppercase border-b border-primary pb-2">Device Probe: Chunk Viewer</div>
+<div class="border border-primary bg-[#000000] flex-1 overflow-hidden flex flex-col">
+<!-- Table Header -->
+<div class="grid grid-cols-12 gap-4 p-4 border-b border-primary bg-[#111] font-meta-mono text-meta-mono text-on-surface-variant">
+<div class="col-span-3">CHUNK_ID</div>
+<div class="col-span-4">SOURCE_DEVICE</div>
+<div class="col-span-3">VECTOR_DIM</div>
+<div class="col-span-2 text-right">STATUS</div>
+</div>
+<!-- Table Body (Scrollable) -->
+<div class="flex-1 overflow-y-auto max-h-[300px] flex flex-col">
+<!-- Row 1 -->
+<div class="grid grid-cols-12 gap-4 p-4 border-b border-primary hover:bg-[#111] transition-colors font-meta-mono text-meta-mono text-primary cursor-crosshair">
+<div class="col-span-3 truncate">0xFA89...2B</div>
+<div class="col-span-4 truncate text-on-surface-variant">PHONE_NEXUS_01</div>
+<div class="col-span-3">1536</div>
+<div class="col-span-2 text-right text-primary">INDEXED</div>
+</div>
+<!-- Row 2 -->
+<div class="grid grid-cols-12 gap-4 p-4 border-b border-primary hover:bg-[#111] transition-colors font-meta-mono text-meta-mono text-primary cursor-crosshair">
+<div class="col-span-3 truncate">0x9B12...4F</div>
+<div class="col-span-4 truncate text-on-surface-variant">PHONE_NEXUS_04</div>
+<div class="col-span-3">1536</div>
+<div class="col-span-2 text-right text-primary">INDEXED</div>
+</div>
+<!-- Row 3 -->
+<div class="grid grid-cols-12 gap-4 p-4 border-b border-primary hover:bg-[#111] transition-colors font-meta-mono text-meta-mono text-primary cursor-crosshair">
+<div class="col-span-3 truncate">0x1C44...9A</div>
+<div class="col-span-4 truncate text-on-surface-variant">TABLET_CORE_02</div>
+<div class="col-span-3">1536</div>
+<div class="col-span-2 text-right text-on-surface-variant opacity-50">QUEUED</div>
+</div>
+<!-- Row 4 -->
+<div class="grid grid-cols-12 gap-4 p-4 border-b border-primary hover:bg-[#111] transition-colors font-meta-mono text-meta-mono text-primary cursor-crosshair">
+<div class="col-span-3 truncate">0x7D31...8E</div>
+<div class="col-span-4 truncate text-on-surface-variant">PHONE_NEXUS_12</div>
+<div class="col-span-3">1536</div>
+<div class="col-span-2 text-right text-error">FAILED</div>
+</div>
+</div>
+<!-- Viewer Context Panel -->
+<div class="p-4 bg-[#000000] border-t border-primary">
+<div class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">RAW_PREVIEW_BUFFER</div>
+<div class="border border-primary p-3 font-meta-mono text-[10px] text-primary opacity-70 leading-tight bg-[#111] h-24 overflow-hidden relative">
+                                {"timestamp":"2024-05-12T14:32:01Z","payload_type":"audio_features","mfcc":[0.12,-0.45,0.88,1.2],"confidence":0.94,"ambient_noise_level_db":42.1,"speaker_id":"UNKNOWN","geo_fuzz":true}
+                                <div class="absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-[#111] to-transparent"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Footer -->
+<footer class="w-full px-grid-margin py-stack-lg flex flex-col gap-stack-md border-t border-primary mt-auto bg-[#000000]">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+<div class="font-meta-mono text-tertiary text-meta-mono uppercase">
+                    ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+                </div>
+<div class="flex flex-wrap gap-6 text-on-surface-variant font-meta-mono text-meta-mono">
+<a class="hover:underline hover:text-primary transition-colors" href="#">TERMINAL_LOGS</a>
+<a class="hover:underline hover:text-primary transition-colors" href="#">SYSTEM_PREFERENCES</a>
+<a class="hover:underline hover:text-primary transition-colors" href="#">PRIVACY_PROTOCOL</a>
+<a class="hover:underline hover:text-primary transition-colors" href="#">LICENSE_AGREEMENT</a>
+</div>
+</div>
+</footer>
+</main>
+<script>
+    function activateFlow(flowId) {
+        closeModals();
+        
+        // Remove active class from all tracks
+        document.getElementById('track-1').classList.remove('flow-active');
+        document.getElementById('track-2').classList.remove('flow-active');
+        document.getElementById('track-3').classList.remove('flow-active');
+        
+        // Add active class to target track based on particle clicked
+        let trackNum = flowId.split('-')[1];
+        document.getElementById('track-' + trackNum).classList.add('flow-active');
+        
+        // Show Source Modal after short delay to simulate extraction
+        setTimeout(() => {
+            document.getElementById('source-modal').classList.remove('hidden');
+        }, 1500);
+    }
+
+    function toggleModal(modalId) {
+        closeModals();
+        document.getElementById(modalId).classList.remove('hidden');
+    }
+
+    function closeModals() {
+        document.getElementById('source-modal').classList.add('hidden');
+        document.getElementById('synthesis-modal').classList.add('hidden');
+    }
+</script>
+</body></html>

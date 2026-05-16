@@ -40,19 +40,37 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-surface: var(--surface);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+
+  --spacing-gutter: 1px;
+  --spacing-stack-sm: 8px;
+  --spacing-stack-md: 24px;
+  --spacing-stack-lg: 48px;
+  --spacing-section-gap: 160px;
+  --spacing-grid-margin: 4vw;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-hanken), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
 @layer base {
   * {
     @apply border-border;
+    border-radius: 0 !important;
   }
 
   html,
@@ -64,6 +82,14 @@
       'ss01' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-image:
+      linear-gradient(to right, rgb(68 71 72 / 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(68 71 72 / 0.28) 1px, transparent 1px);
+    background-position: center top;
+    background-size: 40px 40px;
   }
 
   /* Respect reduced-motion user preference. */
@@ -83,16 +109,139 @@
     @apply outline-ring ring-ring ring-2 outline-2 outline-offset-2;
   }
 
+  ::selection {
+    background: rgb(216 107 56 / 0.35);
+    color: var(--foreground);
+  }
+
   /* Prevent SSR flash: default to dark surfaces before hydration completes. */
   html:not([data-theme]) {
     color-scheme: dark;
   }
 
-  [data-theme='light'] {
-    color-scheme: light;
-  }
-
+  [data-theme='light'],
   [data-theme='dark'] {
     color-scheme: dark;
+  }
+}
+
+@layer components {
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgb(68 71 72 / 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(68 71 72 / 0.28) 1px, transparent 1px);
+    background-position: center top;
+    background-size: 40px 40px;
+  }
+
+  .brutalist-border {
+    @apply border-outline-variant border;
+  }
+
+  .brutalist-hover {
+    @apply hover:border-primary hover:bg-primary/[0.02] transition-colors duration-150;
+  }
+
+  .meta-label {
+    @apply text-muted-foreground font-mono text-[11px] leading-4 tracking-[0.16em] uppercase;
+  }
+
+  .display-heading {
+    @apply font-display text-primary text-5xl leading-[0.92] font-extrabold tracking-normal uppercase sm:text-7xl lg:text-[120px];
+  }
+
+  .accent-hairline {
+    @apply relative;
+  }
+
+  .accent-hairline::after {
+    background: linear-gradient(90deg, rgb(216 107 56 / 0.8), transparent);
+    bottom: -1px;
+    content: '';
+    height: 1px;
+    left: 0;
+    position: absolute;
+    width: min(180px, 45%);
+  }
+
+  .pipeline-grid {
+    background-image:
+      linear-gradient(to right, rgb(142 145 146 / 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(142 145 146 / 0.18) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .source-orbit {
+    animation: source-float 6s ease-in-out infinite;
+  }
+
+  .source-orbit:nth-child(2) {
+    animation-delay: -1.4s;
+  }
+
+  .source-orbit:nth-child(3) {
+    animation-delay: -2.8s;
+  }
+
+  .source-orbit:nth-child(4) {
+    animation-delay: -4.2s;
+  }
+
+  .pipeline-pulse {
+    animation: pipeline-pulse 3s ease-in-out infinite;
+  }
+
+  .flow-dot {
+    animation: flow-dot 2.8s linear infinite;
+  }
+
+  .flow-dot:nth-child(2) {
+    animation-delay: 0.7s;
+  }
+
+  .flow-dot:nth-child(3) {
+    animation-delay: 1.4s;
+  }
+}
+
+@keyframes source-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pipeline-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(216 107 56 / 0.28);
+  }
+
+  50% {
+    box-shadow: 0 0 0 14px rgb(216 107 56 / 0);
+  }
+}
+
+@keyframes flow-dot {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  88% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
   }
 }

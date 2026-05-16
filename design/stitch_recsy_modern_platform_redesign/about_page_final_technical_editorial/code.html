@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RECSY v2 About</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-fixed": "#1b1c1c",
+                      "on-tertiary": "#303030",
+                      "surface-container": "#1f1f1f",
+                      "secondary-fixed-dim": "#c8c6c5",
+                      "tertiary": "#ffffff",
+                      "primary": "#ffffff",
+                      "surface": "#131313",
+                      "primary-container": "#e2e2e2",
+                      "on-surface-variant": "#c4c7c8",
+                      "on-error": "#690005",
+                      "surface-container-lowest": "#0e0e0e",
+                      "outline-variant": "#444748",
+                      "on-error-container": "#ffdad6",
+                      "inverse-on-surface": "#303030",
+                      "primary-fixed": "#e2e2e2",
+                      "surface-container-high": "#2a2a2a",
+                      "surface-variant": "#353535",
+                      "inverse-surface": "#e2e2e2",
+                      "inverse-primary": "#5d5f5f",
+                      "secondary-fixed": "#e5e2e1",
+                      "tertiary-container": "#e4e2e1",
+                      "on-secondary-fixed-variant": "#474746",
+                      "on-primary-fixed": "#1a1c1c",
+                      "on-primary-container": "#636565",
+                      "secondary-container": "#474746",
+                      "on-secondary": "#313030",
+                      "background": "#131313",
+                      "on-background": "#e2e2e2",
+                      "surface-tint": "#c6c6c7",
+                      "on-surface": "#e2e2e2",
+                      "surface-dim": "#131313",
+                      "tertiary-fixed-dim": "#c8c6c6",
+                      "surface-bright": "#393939",
+                      "error": "#ffb4ab",
+                      "on-secondary-container": "#b7b5b4",
+                      "on-primary-fixed-variant": "#454747",
+                      "outline": "#8e9192",
+                      "on-tertiary-container": "#656464",
+                      "on-secondary-fixed": "#1c1b1b",
+                      "surface-container-highest": "#353535",
+                      "surface-container-low": "#1b1b1b",
+                      "secondary": "#c8c6c5",
+                      "on-tertiary-fixed-variant": "#474747",
+                      "on-primary": "#2f3131",
+                      "primary-fixed-dim": "#c6c6c7",
+                      "tertiary-fixed": "#e4e2e1",
+                      "error-container": "#93000a"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "stack-sm": "8px",
+                      "gutter": "1px",
+                      "grid-margin": "4vw",
+                      "section-gap": "160px",
+                      "stack-lg": "48px",
+                      "stack-md": "24px"
+              },
+              "fontFamily": {
+                      "display-xl": [
+                              "Hanken Grotesk"
+                      ],
+                      "meta-mono": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "display-xl-mobile": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg-mobile": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "display-xl": [
+                              "120px",
+                              {
+                                      "lineHeight": "110px",
+                                      "letterSpacing": "-0.04em",
+                                      "fontWeight": "800"
+                              }
+                      ],
+                      "meta-mono": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "52px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "display-xl-mobile": [
+                              "64px",
+                              {
+                                      "lineHeight": "60px",
+                                      "letterSpacing": "-0.03em",
+                                      "fontWeight": "800"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "32px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .grid-bg {
+            background-image: linear-gradient(to right, #353535 1px, transparent 1px), linear-gradient(to bottom, #353535 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col antialiased selection:bg-primary selection:text-on-primary">
+<!-- TopNavBar -->
+<nav class="hidden md:flex justify-between items-center w-full px-grid-margin py-4 docked full-width top-0 border-b border-outline dark:border-outline-variant bg-background dark:bg-background text-on-background dark:text-on-background flat no shadows z-50 fixed">
+<div class="font-display-xl-mobile text-[24px] tracking-tighter text-on-background dark:text-on-background">
+            RECSY_v2
+        </div>
+<div class="flex gap-8">
+<a class="font-meta-mono text-meta-mono text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background transition-colors duration-100 uppercase py-2 px-4 border border-transparent" href="#">RESEARCH</a>
+<a class="font-meta-mono text-meta-mono text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background transition-colors duration-100 uppercase py-2 px-4 border border-transparent" href="#">ARCHIVE</a>
+<a class="font-meta-mono text-meta-mono text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background transition-colors duration-100 uppercase py-2 px-4 border border-transparent" href="#">LABS</a>
+<a class="font-meta-mono text-meta-mono text-primary dark:text-primary-fixed border-b border-primary hover:bg-on-background hover:text-background transition-colors duration-100 uppercase py-2 px-4" href="#">ABOUT</a>
+</div>
+<div>
+<button class="font-meta-mono text-meta-mono uppercase border border-outline px-4 py-2 hover:bg-on-background hover:text-background transition-colors duration-100">COMMAND</button>
+</div>
+</nav>
+<!-- SideNavBar (Mobile) -->
+<nav class="md:hidden flex flex-col h-full border-r border-gutter bg-surface-container-lowest dark:bg-surface-container-lowest text-on-background dark:text-on-background docked h-screen left-0 w-64 border-r border-outline-variant flat no shadows fixed z-50">
+<div class="p-6 border-b border-outline-variant">
+<div class="flex items-center gap-4 mb-4">
+<span class="material-symbols-outlined text-4xl">memory</span>
+<div>
+<h2 class="font-meta-mono text-meta-mono text-primary">SYSTEM_STATUS</h2>
+<p class="font-meta-mono text-[10px] text-on-surface-variant">OPERATIONAL // V2.0.4</p>
+</div>
+</div>
+<button class="w-full border border-outline px-4 py-2 font-meta-mono text-meta-mono uppercase hover:bg-on-background hover:text-background transition-colors duration-100">NEW SEARCH</button>
+</div>
+<div class="flex-1 overflow-y-auto py-4">
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:text-on-background hover:bg-surface-container-high transition-all duration-75" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-meta-mono text-meta-mono">Engine</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 bg-on-background text-background font-bold transition-all duration-75" href="#">
+<span class="material-symbols-outlined">info</span>
+<span class="font-meta-mono text-meta-mono">About</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-on-surface-variant hover:text-on-background hover:bg-surface-container-high transition-all duration-75" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-meta-mono text-meta-mono">Specs</span>
+</a>
+</div>
+<div class="border-t border-outline-variant p-4">
+<a class="flex items-center gap-4 px-4 py-2 text-on-surface-variant hover:text-on-background hover:bg-surface-container-high transition-all duration-75" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-meta-mono text-[10px]">Documentation</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-2 text-on-surface-variant hover:text-on-background hover:bg-surface-container-high transition-all duration-75" href="#">
+<span class="material-symbols-outlined">contact_support</span>
+<span class="font-meta-mono text-[10px]">Support</span>
+</a>
+</div>
+</nav>
+<!-- Main Canvas -->
+<main class="flex-1 w-full max-w-[1920px] mx-auto md:pl-0 pt-24 md:pt-28 pb-section-gap px-grid-margin relative md:ml-0 md:w-full lg:w-full xl:w-full 2xl:w-full pl-64 hidden md:block">
+<!-- Hero Section -->
+<section class="mb-section-gap border-b border-outline-variant pb-stack-lg relative overflow-hidden">
+<div class="absolute inset-0 grid-bg opacity-20 pointer-events-none"></div>
+<h1 class="font-display-xl-mobile md:font-display-xl text-display-xl-mobile md:text-display-xl text-primary mb-stack-md relative z-10">ABOUT<br/>RECSY V2</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl relative z-10">
+                A technical deep dive into the architecture, philosophy, and evaluation metrics of the RECSY recommendation engine. 
+                Built for precision, driven by data.
+            </p>
+</section>
+<!-- Project In One Page -->
+<section class="mb-section-gap">
+<div class="flex items-center gap-4 mb-stack-lg border-b border-outline-variant pb-4">
+<span class="material-symbols-outlined text-primary text-2xl">subject</span>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary">Project In One Page</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter bg-outline-variant border border-outline-variant">
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-high transition-colors duration-200">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">// DIRECTIVE</h3>
+<p class="font-body-md text-body-md text-on-background">{{DATA:DOCUMENT:DOCUMENT_48}} summarizes the core mission: to provide unbiased, data-driven smartphone recommendations.</p>
+</div>
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-high transition-colors duration-200">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">// SCOPE</h3>
+<p class="font-body-md text-body-md text-on-background">Analysis of top-tier consumer hardware, focusing on real-world utility over synthetic benchmarks.</p>
+</div>
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-high transition-colors duration-200">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">// AUDIENCE</h3>
+<p class="font-body-md text-body-md text-on-background">Tech enthusiasts, professionals, and users demanding transparency in hardware evaluation.</p>
+</div>
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-high transition-colors duration-200">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">// STATUS</h3>
+<p class="font-body-md text-body-md text-primary flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-primary inline-block animate-pulse"></span> ACTIVE_DEPLOYMENT</p>
+</div>
+</div>
+</section>
+<!-- Product Philosophy -->
+<section class="mb-section-gap">
+<div class="flex items-center gap-4 mb-stack-lg border-b border-outline-variant pb-4">
+<span class="material-symbols-outlined text-primary text-2xl">psychology</span>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary">Product Philosophy</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<div class="md:col-span-8 border border-outline-variant p-8 bg-surface-container-lowest relative overflow-hidden group">
+<div class="absolute inset-0 bg-primary opacity-0 group-hover:opacity-5 transition-opacity duration-300 pointer-events-none"></div>
+<p class="font-body-md text-body-md text-on-background mb-4">
+                        RECSY v2 is built on the principle of "Calculated Objectivity". We reject marketing jargon in favor of spec-sheet reality. 
+                        Every recommendation is the result of a rigorous multi-point analysis, ensuring that recommendations align with actual user needs rather than perceived brand value.
+                    </p>
+<ul class="space-y-2 mt-6">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mt-1">check_box_outline_blank</span>
+<span class="font-meta-mono text-meta-mono text-on-background">Data over sentiment.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mt-1">check_box_outline_blank</span>
+<span class="font-meta-mono text-meta-mono text-on-background">Transparency in weighting.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-on-surface-variant text-sm mt-1">check_box_outline_blank</span>
+<span class="font-meta-mono text-meta-mono text-on-background">Utility over aesthetics.</span>
+</li>
+</ul>
+</div>
+<div class="md:col-span-4 border border-outline-variant bg-[url('https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&amp;fit=crop&amp;q=80')] bg-cover bg-center min-h-[300px] relative filter grayscale contrast-125" data-alt="A macro photograph of an intricate circuit board, heavily stylized with high contrast black and white lighting. The image emphasizes the complex, maze-like pathways of the technological hardware, fitting a stark, brutalist, spec-sheet aesthetic. The focus is sharp on the metallic traces, creating a sense of rigid digital precision.">
+<div class="absolute inset-0 bg-surface-container-lowest/80 backdrop-blur-sm"></div>
+<div class="absolute bottom-4 left-4 font-meta-mono text-meta-mono text-primary bg-background/50 px-2 py-1">FIG_1: LOGIC_GATE</div>
+</div>
+</div>
+</section>
+<!-- The Tech Stack -->
+<section class="mb-section-gap">
+<div class="flex items-center gap-4 mb-stack-lg border-b border-outline-variant pb-4">
+<span class="material-symbols-outlined text-primary text-2xl">dns</span>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary">The Tech Stack</h2>
+</div>
+<div class="border border-outline-variant bg-surface-container-lowest">
+<div class="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-outline-variant">
+<div class="p-6">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-4 border-b border-outline-variant pb-2 inline-block">FRONTEND</h3>
+<ul class="space-y-3">
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>FRAMEWORK</span> <span class="text-on-surface-variant">NEXT.JS</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>STYLING</span> <span class="text-on-surface-variant">TAILWIND_CSS</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>TYPOGRAPHY</span> <span class="text-on-surface-variant">HANKEN/JETBRAINS</span></li>
+</ul>
+</div>
+<div class="p-6">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-4 border-b border-outline-variant pb-2 inline-block">BACKEND</h3>
+<ul class="space-y-3">
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>CORE</span> <span class="text-on-surface-variant">PYTHON_3.11</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>DATABASE</span> <span class="text-on-surface-variant">POSTGRESQL</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>CACHE</span> <span class="text-on-surface-variant">REDIS</span></li>
+</ul>
+</div>
+<div class="p-6">
+<h3 class="font-meta-mono text-meta-mono text-on-surface-variant mb-4 border-b border-outline-variant pb-2 inline-block">INFRASTRUCTURE</h3>
+<ul class="space-y-3">
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>HOSTING</span> <span class="text-on-surface-variant">AWS_EC2</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>CI/CD</span> <span class="text-on-surface-variant">GITHUB_ACTIONS</span></li>
+<li class="font-meta-mono text-meta-mono text-on-background flex justify-between"><span>CDN</span> <span class="text-on-surface-variant">CLOUDFLARE</span></li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+<!-- Scorecard Aspects -->
+<section class="mb-section-gap">
+<div class="flex items-center gap-4 mb-stack-lg border-b border-outline-variant pb-4">
+<span class="material-symbols-outlined text-primary text-2xl">analytics</span>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary">Scorecard Matrix</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-gutter bg-outline-variant border border-outline-variant">
+<!-- Aspect 1 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 01</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">photo_camera</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">CAMERA</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        Evaluation of primary, ultrawide, and telephoto sensors. Metrics include dynamic range, low-light noise levels, color accuracy, and computational photography efficacy.
+                    </p>
+</div>
+<!-- Aspect 2 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 02</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">battery_charging_full</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">BATTERY</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        Screen-on time (SOT) analysis under mixed loads. Charge speed (wired/wireless), standby drain rates, and thermal degradation over simulated usage cycles.
+                    </p>
+</div>
+<!-- Aspect 3 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 03</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">speed</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">PERFORMANCE</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        SoC synthetic benchmarking (Geekbench, 3DMark) coupled with real-world sustained load testing. Analysis of thermal throttling and UI frame consistency.
+                    </p>
+</div>
+<!-- Aspect 4 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 04</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">screenshot</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">DISPLAY</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        Panel analysis covering peak brightness (nits), color gamut coverage (DCI-P3), refresh rate variability (LTPO), and touch sampling latency.
+                    </p>
+</div>
+<!-- Aspect 5 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 05</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">architecture</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">BUILD</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        Material analysis (titanium, aluminum, glass formulations). Tolerances, ingress protection ratings (IP68), and ergonomic weight distribution.
+                    </p>
+</div>
+<!-- Aspect 6 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 06</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">code</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">SOFTWARE</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm">
+                        OS stability, bloatware index, update longevity commitments, and UX fluidity. Assessment of proprietary ecosystem lock-in vs. interoperability.
+                    </p>
+</div>
+<!-- Aspect 7 -->
+<div class="bg-surface-container-lowest p-6 hover:bg-surface-container-highest transition-colors duration-200 border border-transparent hover:border-primary group md:col-span-2 lg:col-span-1 xl:col-span-2">
+<div class="flex items-center justify-between mb-4">
+<span class="font-meta-mono text-meta-mono text-on-surface-variant">// 07</span>
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">price_check</span>
+</div>
+<h3 class="font-meta-mono text-meta-mono text-primary mb-2 text-lg">VALUE</h3>
+<p class="font-body-md text-meta-mono text-on-background text-sm max-w-xl">
+                        The ultimate derivative metric. Calculates the ratio of aggregate score against current market MSRP, factoring in depreciation curves and long-term viability.
+                    </p>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="w-full px-grid-margin py-stack-lg flex flex-col gap-stack-md border-t border-gutter mt-auto bg-background dark:bg-background text-on-background dark:text-on-background font-technical-sm text-technical-sm flat no shadows z-40 hidden md:flex">
+<div class="flex justify-between items-start border-b border-outline-variant pb-8">
+<div class="font-meta-mono text-meta-mono text-tertiary">
+                RECSY_CORE
+            </div>
+<div class="flex gap-8">
+<a class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary hover:underline opacity-80 hover:opacity-100 transition-all" href="#">TERMINAL_LOGS</a>
+<a class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary hover:underline opacity-80 hover:opacity-100 transition-all" href="#">SYSTEM_PREFERENCES</a>
+<a class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary hover:underline opacity-80 hover:opacity-100 transition-all" href="#">PRIVACY_PROTOCOL</a>
+<a class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary hover:underline opacity-80 hover:opacity-100 transition-all" href="#">LICENSE_AGREEMENT</a>
+</div>
+</div>
+<div class="font-meta-mono text-[10px] text-on-surface-variant opacity-60">
+            ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+        </div>
+</footer>
+</body></html>

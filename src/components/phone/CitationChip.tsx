@@ -8,7 +8,7 @@ interface CitationChipProps {
 export function CitationChip({ citation, label }: CitationChipProps) {
   if (!citation) {
     return (
-      <span className="text-muted-foreground bg-muted/60 mx-0.5 inline-flex items-center rounded px-1.5 py-0.5 align-baseline text-xs">
+      <span className="border-outline-variant bg-muted text-muted-foreground mx-0.5 inline-flex items-center border px-1.5 py-0.5 align-baseline font-mono text-xs">
         {label}
       </span>
     );
@@ -19,7 +19,7 @@ export function CitationChip({ citation, label }: CitationChipProps) {
       href={citation.sourceUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="bg-primary/15 text-primary hover:bg-primary/25 mx-0.5 inline-flex items-center rounded px-1.5 py-0.5 align-baseline text-xs font-medium underline-offset-2 hover:underline"
+      className="border-outline-variant bg-primary/10 text-primary hover:bg-primary hover:text-background mx-0.5 inline-flex items-center border px-1.5 py-0.5 align-baseline font-mono text-xs underline-offset-2 transition-colors hover:underline"
       title={citation.title}
     >
       {label}

@@ -11,36 +11,38 @@ interface BrowseFiltersFormProps {
   readonly hasResults: boolean;
 }
 
-/**
- * Server-rendered `GET /browse?…` form — no client JS required to filter.
- * Brand filters use `name="brand"` checkboxes; parsed by {@link parseBrowseSearchParams} via `getAll('brand')`.
- */
 export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFiltersFormProps) {
   const { minInput, maxInput } = filterStateToInputDefaults(current);
   const foldableVal = foldableSelectValue(current);
 
   return (
-    <div className="border-border/80 bg-card/30 mb-8 rounded-lg border p-4 sm:p-5">
-      <h2 className="text-foreground text-sm font-semibold">Filter</h2>
-      <p className="text-muted-foreground mt-1 text-xs">
-        URL updates so you can share a filtered list. MSRP is in USD. Price filters ignore phones
-        without a listed price.
-      </p>
+    <section className="border-outline-variant bg-background mt-8 border">
+      <div className="border-outline-variant border-b p-5">
+        <h2 className="meta-label text-primary">Filters</h2>
+        <p className="text-muted-foreground mt-2 text-xs leading-5">
+          Native GET filters keep the catalog shareable. MSRP is USD; phones without prices are
+          omitted from price bounds.
+        </p>
+      </div>
 
-      <form method="get" action="/browse" className="mt-4 space-y-5">
+      <form
+        method="get"
+        action="/browse"
+        className="bg-outline-variant grid gap-px lg:grid-cols-12"
+      >
         {allBrands.length > 0 ? (
-          <fieldset>
-            <legend className="text-foreground mb-2 text-sm font-medium">Brands</legend>
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <fieldset className="bg-background p-5 lg:col-span-6">
+            <legend className="meta-label text-primary mb-4">Brand</legend>
+            <ul className="bg-outline-variant grid grid-cols-2 gap-px sm:grid-cols-3">
               {allBrands.map((b) => (
-                <li key={b}>
-                  <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-sm">
+                <li key={b} className="bg-background">
+                  <label className="text-muted-foreground hover:bg-surface-container-high hover:text-primary flex cursor-pointer items-center gap-2 px-3 py-3 font-mono text-[11px] tracking-[0.12em] uppercase transition-colors">
                     <input
                       type="checkbox"
                       name="brand"
                       value={b}
                       defaultChecked={current.brands.includes(b)}
-                      className="border-input text-primary focus-visible:ring-ring h-4 w-4 rounded"
+                      className="border-input text-primary focus-visible:ring-ring bg-background size-3 border"
                     />
                     {b}
                   </label>
@@ -50,10 +52,10 @@ export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFilt
           </fieldset>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2 sm:gap-6">
-          <div>
-            <label htmlFor="b-min" className="text-foreground text-sm font-medium">
-              Min price (USD)
+        <div className="bg-outline-variant grid gap-px lg:col-span-6 lg:grid-cols-2">
+          <div className="bg-background p-5">
+            <label htmlFor="b-min" className="meta-label text-primary">
+              Min price USD
             </label>
             <input
               id="b-min"
@@ -61,14 +63,14 @@ export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFilt
               type="number"
               min={0}
               step={1}
-              placeholder="Any"
+              placeholder="ANY"
               defaultValue={minInput}
-              className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring mt-1.5 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary mt-3 w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
             />
           </div>
-          <div>
-            <label htmlFor="b-max" className="text-foreground text-sm font-medium">
-              Max price (USD)
+          <div className="bg-background p-5">
+            <label htmlFor="b-max" className="meta-label text-primary">
+              Max price USD
             </label>
             <input
               id="b-max"
@@ -76,52 +78,51 @@ export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFilt
               type="number"
               min={0}
               step={1}
-              placeholder="Any"
+              placeholder="ANY"
               defaultValue={maxInput}
-              className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring mt-1.5 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary mt-3 w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
             />
+          </div>
+          <div className="bg-background p-5 lg:col-span-2">
+            <label htmlFor="b-fold" className="meta-label text-primary">
+              Form factor
+            </label>
+            <select
+              id="b-fold"
+              name="foldable"
+              defaultValue={foldableVal}
+              className="border-outline bg-background text-primary focus-visible:border-primary mt-3 w-full border px-3 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
+            >
+              <option value="">Any</option>
+              <option value="1">Foldable only</option>
+              <option value="0">Non-foldable only</option>
+            </select>
           </div>
         </div>
 
-        <div>
-          <label htmlFor="b-fold" className="text-foreground text-sm font-medium">
-            Form factor
-          </label>
-          <select
-            id="b-fold"
-            name="foldable"
-            defaultValue={foldableVal}
-            className="border-input bg-background focus-visible:ring-ring mt-1.5 w-full max-w-sm rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <option value="">Any</option>
-            <option value="1">Foldable only</option>
-            <option value="0">Non-foldable only</option>
-          </select>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="bg-background flex flex-wrap items-center gap-3 p-5 lg:col-span-12">
           <button
             type="submit"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="border-outline text-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background border px-5 py-3 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors focus-visible:outline-none"
           >
             Apply
           </button>
           <Link
             href="/browse"
             className={cn(
-              'text-muted-foreground hover:text-foreground text-sm',
-              'focus-visible:ring-ring inline-flex rounded-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+              'text-muted-foreground hover:text-primary px-3 py-3 font-mono text-[11px] tracking-[0.18em] uppercase',
+              'focus-visible:text-primary focus-visible:outline-none',
             )}
           >
-            Clear filters
+            Clear Filters
           </Link>
           {!hasResults ? (
-            <span className="text-muted-foreground text-sm">
-              No matches — try wider bounds or another brand.
+            <span className="text-muted-foreground font-mono text-[11px] tracking-[0.14em] uppercase">
+              No matches. Try wider bounds or remove brand filters.
             </span>
           ) : null}
         </div>
       </form>
-    </div>
+    </section>
   );
 }
