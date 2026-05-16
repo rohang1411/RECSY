@@ -1,3 +1,10 @@
+/**
+ * Unit tests for scorecard extraction schema validation (`extraction-schema.ts`).
+ *
+ * Tests cover: valid structured output accepted, invalid UUID rejected,
+ * out-of-range score rejected, missing required fields rejected,
+ * and confidence enum validation. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { aspectScorecardExtractionSchema } from './extraction-schema';

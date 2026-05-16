@@ -164,16 +164,17 @@ The safest mental model is:
 
 ### User-facing routes
 
-| Route                | Purpose                                                                | Depends on                                                        |
-| -------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `/`                  | Landing hero, “What you can do” cards, and navigation into the product | static UI                                                         |
-| `/recommend`         | Conversational intake and result cards                                 | `POST /api/recommend`, phones, aspects, optional `spec_embedding` |
-| `/browse`            | Server-rendered catalog list with filters                              | `phones` table and parsed `spec_json`                             |
-| `/p/[slug]`          | Phone detail page with image, specs, scorecard, and Q-and-A            | `phones`, `aspects`, `POST /api/ask`                              |
-| `/compare`           | Side-by-side compare for two active phones                             | `phones.spec_json`, `phones.image_url`, `phones.msrp_usd`         |
-| `/about`             | Product framing and guided links into the main flows                   | static UI                                                         |
-| `/api/health`        | Liveness/config probe                                                  | env validation only                                               |
-| `/internal/pipeline` | Internal dashboard visualizing data lifecycle and pipeline metrics     | `INTERNAL_DASHBOARD_ENABLED` env, DB metrics, mock fixtures       |
+| Route                | Purpose                                                                | Depends on                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/`                  | Landing hero, “What you can do” cards, and navigation into the product | static UI                                                                                                          |
+| `/recommend`         | Conversational intake and result cards                                 | `POST /api/recommend`, phones, aspects, optional `spec_embedding`                                                  |
+| `/browse`            | Server-rendered catalog list with filters                              | `phones` table and parsed `spec_json`                                                                              |
+| `/p/[slug]`          | Phone detail page with image, specs, scorecard, and Q-and-A            | `phones`, `aspects`, `POST /api/ask`                                                                               |
+| `/compare`           | Side-by-side compare for two active phones                             | `phones.spec_json`, `phones.image_url`, `phones.msrp_usd`                                                          |
+| `/about`             | Product framing and guided links into the main flows                   | static UI                                                                                                          |
+| `/settings`          | Client-side preference toggles (e.g. Enter-to-send)                    | `localStorage` via `useClientSetting`; [ADR 0013](adr/0013-recommender-summary-context-tie-honesty-settings.md)    |
+| `/api/health`        | Liveness/config probe                                                  | env validation only                                                                                                |
+| `/internal/pipeline` | Internal dashboard visualizing data lifecycle and pipeline metrics     | `INTERNAL_DASHBOARD_ENABLED` env, DB metrics, mock fixtures; [ADR 0016](adr/0016-internal-pipeline-observatory.md) |
 
 ### API routes
 
@@ -304,15 +305,16 @@ flowchart TD
 
 ### `src/` structure
 
-| Path              | Role                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------- |
-| `src/app/`        | App Router pages, layouts, metadata, and API routes (including `/internal`)                     |
-| `src/components/` | Shared UI components                                                                            |
-| `src/features/`   | Feature-specific code such as phone spec schemas and browse state parsing                       |
-| `src/services/`   | System logic: DB, LLMs, retrieval, chat, recommender, ingest, scorecard, logging, rate limiting |
-| `src/lib/`        | Shared constants, helpers, error types, and the ask **retrieval trace** builder for `/api/ask`  |
-| `src/styles/`     | Theme tokens                                                                                    |
-| `src/env.ts`      | Type-safe environment contract                                                                  |
+| Path                     | Role                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------- |
+| `src/app/`               | App Router pages, layouts, metadata, and API routes (including `/internal`)                       |
+| `src/components/`        | Shared UI components                                                                              |
+| `src/features/`          | Feature-specific code such as phone spec schemas and browse state parsing                         |
+| `src/services/`          | System logic: DB, LLMs, retrieval, chat, recommender, ingest, scorecard, logging, rate limiting   |
+| `src/services/internal/` | Pipeline Observatory data helpers: snapshot, phone-evidence, retrieval-explain, recommend-explain |
+| `src/lib/`               | Shared constants, helpers, error types, and the ask **retrieval trace** builder for `/api/ask`    |
+| `src/styles/`            | Theme tokens                                                                                      |
+| `src/env.ts`             | Type-safe environment contract                                                                    |
 
 ### Most important code locations by subsystem
 
@@ -1263,16 +1265,16 @@ The DB bootstrap script is intentionally more than just "run migrations". It:
 
 ### Phase/status snapshot
 
-| Phase | Scope                                               | Current state                                  |
-| ----- | --------------------------------------------------- | ---------------------------------------------- |
-| 0     | scaffold, strict TS, design system, CI skeleton     | shipped                                        |
-| 1     | DB schema, migrations, RLS, seeds                   | shipped                                        |
-| 2     | ingestion adapters and workflows                    | shipped                                        |
-| 3     | retrieval and phone-page Q-and-A                    | shipped                                        |
-| 4     | aspect scorecard                                    | shipped                                        |
-| 5     | conversational recommender                          | shipped                                        |
-| 6     | browse and filters                                  | shipped                                        |
-| 7     | polish: compare, about, images, PWA, SEO, analytics | mostly shipped, with follow-up items remaining |
+| Phase | Scope                                               | Current state                                                                                              |
+| ----- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 0     | scaffold, strict TS, design system, CI skeleton     | shipped                                                                                                    |
+| 1     | DB schema, migrations, RLS, seeds                   | shipped                                                                                                    |
+| 2     | ingestion adapters and workflows                    | shipped; hardened with tiered automation (ADR 0014) and resumability (ADR 0017)                            |
+| 3     | retrieval and phone-page Q-and-A                    | shipped                                                                                                    |
+| 4     | aspect scorecard                                    | shipped; automated daily batch (ADR 0015)                                                                  |
+| 5     | conversational recommender                          | shipped                                                                                                    |
+| 6     | browse and filters                                  | shipped                                                                                                    |
+| 7     | polish: compare, about, images, PWA, SEO, analytics | mostly shipped; Internal Pipeline Observatory (ADR 0016) shipped; offline PWA service worker still pending |
 
 ### Biggest open questions
 
@@ -1351,6 +1353,9 @@ go to `docs/RECSY_V2_PROJECT_CONTEXT.md`.
    - `0012` for recommender refine-over-prior-picks, rank UI, and empty-corpus honesty
    - `0013` for context-aware recommender summaries, tie/no-data honesty, and the client settings surface
    - `0014` for automated tiered ingestion with Curator + Disambiguator agents, polite HTTP, GSMArena + YouTube-channel adapters, and the time-aware empty-corpus message
+   - `0015` for automated aspect scorecard generation with staleness guards and telemetry
+   - `0016` for the Internal Pipeline Observatory dashboard
+   - `0017` for ingestion resumability and intelligent retry
 5. Open the corresponding service code in `src/services/`.
 
 ### One-sentence mental model

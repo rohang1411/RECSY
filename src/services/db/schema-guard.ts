@@ -1,3 +1,20 @@
+/**
+ * Database schema guard — pre-flight check for required tables and columns.
+ *
+ * `checkSchemaRequirements(db, requirements)` queries `information_schema`
+ * to verify that all listed tables and optional columns exist before an
+ * automation script starts doing real work. On failure it returns a
+ * structured `SchemaViolation[]` with actionable operator messages.
+ *
+ * `hasMissingDbObjectError(err)` detects Drizzle/Postgres errors caused by
+ * a missing table or column so callers can distinguish schema-missing failures
+ * from ordinary query errors.
+ *
+ * `describeMissingSchema(violations)` formats a human-readable `pnpm db:setup`
+ * prompt for the operator log.
+ *
+ * Used by: `scripts/{ingest-auto,creator-watch,ingest-report,scorecard-auto}.ts`.
+ */
 import { sql } from 'drizzle-orm';
 
 import type { AppDb } from './client';

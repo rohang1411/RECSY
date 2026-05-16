@@ -1,3 +1,11 @@
+/**
+ * Unit tests for in-process ingestion rate limiter (`rate-limit.ts`).
+ *
+ * Tests cover: `makeInMemoryLimiter` — minimum spacing between acquires,
+ * concurrent acquire serialization, per-host isolation. `normalizeHost`
+ * — protocol stripping, port preservation, and punycode normalisation.
+ * Pure — no network.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { makeInMemoryLimiter, normalizeHost } from './rate-limit';

@@ -1,6 +1,6 @@
 # Retrieval — operator & developer guide
 
-**Status:** Phase 3, in progress (2026-04-21).
+**Status:** Shipped (Phase 3, 2026-04-21). Additional ADRs: [ADR 0011](../adr/0011-phone-qa-scope-images-home-ask-trace.md), [ADR 0012](../adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
 **Code:** [`src/services/retrieval/`](../../src/services/retrieval/)
 **Rationale:** [ADR 0004 — Hybrid retrieval](../adr/0004-hybrid-retrieval.md)
 

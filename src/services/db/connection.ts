@@ -1,3 +1,19 @@
+/**
+ * Database connection helpers — URL normalisation and connectivity utilities.
+ *
+ * `normalizeDatabaseUrl(url)` strips Supavisor-only query params
+ * (`?pgbouncer=true&connection_limit=1`) that Vercel injects into
+ * `DATABASE_URL` but that the Porsager `postgres` driver does not understand.
+ *
+ * `shouldPreferIpv4ForDatabaseUrl(url)` returns `true` for Supabase hostnames;
+ * combined with `setDefaultResultOrder('ipv4first')` this prevents GitHub
+ * Actions runners from resolving Supabase to an unreachable IPv6 address.
+ *
+ * `getPostgresClient(url)` applies both normalisations and returns a configured
+ * `postgres` client instance. Called by `src/services/db/client.ts`.
+ *
+ * Used by: `src/services/db/client.ts`, `scripts/db-setup.ts`.
+ */
 import { setDefaultResultOrder } from 'node:dns';
 import { isIP } from 'node:net';
 

@@ -1,3 +1,23 @@
+/**
+ * Phone Q&A answer pipeline — the core of `/api/ask`.
+ *
+ * `runPhoneQna(input)` orchestrates:
+ *   1. Input sanitisation and byte-length guard.
+ *   2. Query embedding via Gemini.
+ *   3. Hybrid retrieval (vector + FTS) scoped to the phone.
+ *   4. Optional LLM rerank + MMR deduplication.
+ *   5. Citation validation — strips inline `[c:<uuid>]` tags that don't
+ *      reference a retrieved chunk so the model never fabricates sources.
+ *   6. Streaming via Vercel AI SDK `streamText`; yields NDJSON chunks.
+ *
+ * `persistChatQuery` writes the query + answer + chunk refs to
+ * `chat_queries` after the stream is fully consumed.
+ *
+ * `chunkTextForStream` splits text into NDJSON stream chunks for manual
+ * flush (used by the empty-corpus message path).
+ *
+ * Used by: `src/services/chat/index.ts`, `src/app/api/ask/route.ts`.
+ */
 import type { Logger } from 'pino';
 
 import { env } from '@/env';

@@ -1,3 +1,11 @@
+/**
+ * Unit tests for ingestion error classification (`error-classify.ts`).
+ *
+ * Tests cover: `classifyIngestError` — quota errors (429), network errors,
+ * validation errors, not-found errors, and unknown fallback. Also tests
+ * `computeRetryAfter` — correct delay from `Retry-After` header parsing
+ * and the 1-hour default for quota errors without a header. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { NotFoundError } from '@/lib/errors';

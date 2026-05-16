@@ -1,3 +1,17 @@
+/**
+ * User requirement extraction via structured LLM output.
+ *
+ * `extractUserRequirements(llm, message)` sends the user's free-text message
+ * to Gemini Flash using a Zod-backed structured-output schema
+ * (`userRequirementsSchema`). Returns normalised `UserRequirements` including
+ * budget range, brand preferences, must-haves, deal-breakers, and aspect
+ * weights (camera, battery, etc.).
+ *
+ * The system prompt is built from `ASPECT_NAMES` so adding a new axis only
+ * requires a constants change, not a prompt string change.
+ *
+ * Used by: `src/services/recommender/run-recommendation.ts`.
+ */
 import { env } from '@/env';
 import type { LlmProvider } from '@/services/llm/types';
 

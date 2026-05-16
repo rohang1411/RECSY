@@ -1,3 +1,10 @@
+/**
+ * Unit tests for refine-intent detection (`refine-intent.ts`).
+ *
+ * Tests cover: true positives (messages that reference prior picks),
+ * true negatives (fresh requests), and edge cases (very short messages,
+ * messages with numbers that aren't pick references). Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { detectRefineIntent } from './refine-intent';

@@ -1,3 +1,10 @@
+/**
+ * Unit tests for spec-embedding text builders (`spec-embedding-text.ts`).
+ *
+ * Tests cover: `buildSpecDocumentForEmbedding` output format (used for
+ * `phones.spec_embedding`), and `buildRecommenderQueryText` user-query
+ * text used to find the most spec-similar phones. All pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { buildRecommenderQueryText, buildSpecDocumentForEmbedding } from './spec-embedding-text';

@@ -1,3 +1,10 @@
+/**
+ * Unit tests for text chunking utilities (`chunking.ts`).
+ *
+ * Tests cover: `splitSentences` edge cases (empty string, single sentence,
+ * sentence boundary detection), `countTokens` approximation bounds, and
+ * `chunkText` overlap and size constraints. Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { chunkText, countTokens, splitSentences } from './chunking';

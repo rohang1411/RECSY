@@ -1,3 +1,10 @@
+/**
+ * Unit tests for content hashing (`hashing.ts`).
+ *
+ * Tests cover: deterministic output for the same input, different output
+ * for different inputs, output format (64-char hex), and stability
+ * across repeated calls (no randomness). Pure.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { hashContent } from './hashing';

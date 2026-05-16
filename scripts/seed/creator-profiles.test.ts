@@ -1,3 +1,14 @@
+/**
+ * Unit tests for creator profile seed data (`creator-profiles.ts`).
+ *
+ * Verifies that `CREATOR_SEEDS` uses the correct, currently-valid YouTube
+ * channel IDs for all monitored creator handles. This is a canary test —
+ * if a YouTube channel ID is updated, this test must be updated too. The
+ * test prevents re-introduction of the broken channel IDs from commit
+ * 2f18ff1 (The Verge, Booredatwork, Apple, SuperSaf Shorts).
+ *
+ * Pure — no network, no DB.
+ */
 import { describe, expect, it } from 'vitest';
 
 import { CREATOR_SEEDS } from './creator-profiles';
