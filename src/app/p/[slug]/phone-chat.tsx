@@ -58,43 +58,38 @@ function AnswerBody({ text, citations }: { text: string; citations: ResolvedCita
   if (last < text.length) {
     parts.push(<span key={`t-${k++}`}>{text.slice(last)}</span>);
   }
-  return (
-    <div className="text-foreground text-base leading-relaxed whitespace-pre-wrap">{parts}</div>
-  );
+  return <div className="text-primary text-base leading-7 whitespace-pre-wrap">{parts}</div>;
 }
 
 function RetrievalTracePanel({ trace }: { readonly trace: AskRetrievalTrace }) {
   return (
-    <div className="border-border/60 bg-muted/20 mt-4 rounded-lg border px-3 py-2 text-left">
-      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-        How this answer was built
-      </p>
-      <ol className="text-muted-foreground mt-2 space-y-1 text-xs">
+    <div className="border-outline-variant bg-background mt-4 border text-left">
+      <p className="meta-label border-outline-variant text-primary border-b p-3">Retrieval trace</p>
+      <ol className="divide-outline-variant text-muted-foreground divide-y font-mono text-xs">
         {trace.stages.map((s) => (
-          <li key={s.name} className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-foreground/90">{s.name}</span>
+          <li key={s.name} className="flex flex-wrap items-baseline justify-between gap-2 p-3">
+            <span className="text-primary">{s.name}</span>
             <span>
-              {s.count != null ? `${s.count} hit${s.count === 1 ? '' : 's'} · ` : ''}
+              {s.count != null ? `${s.count} hit${s.count === 1 ? '' : 's'} / ` : ''}
               {s.ms} ms
             </span>
           </li>
         ))}
       </ol>
-      <p className="text-muted-foreground mt-2 text-xs">
-        Final context: {trace.chunkCount} excerpt{trace.chunkCount === 1 ? '' : 's'} from{' '}
-        {trace.distinctSourceCount} source{trace.distinctSourceCount === 1 ? '' : 's'} · hybrid
+      <p className="border-outline-variant text-muted-foreground border-t p-3 font-mono text-xs">
+        Final context: {trace.chunkCount} excerpts / {trace.distinctSourceCount} sources / hybrid
         total {trace.totalMs} ms
-        {trace.coverageRelaxed ? ' · source diversity limit relaxed (small corpus)' : ''}
+        {trace.coverageRelaxed ? ' / source diversity limit relaxed' : ''}
       </p>
       {trace.sources.length > 0 ? (
-        <ul className="border-border/50 mt-2 space-y-1 border-t pt-2 text-xs">
+        <ul className="border-outline-variant divide-outline-variant divide-y border-t font-mono text-xs">
           {trace.sources.map((s) => (
-            <li key={s.url} className="truncate">
+            <li key={s.url} className="truncate p-3">
               <a
                 href={s.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary font-medium hover:underline"
+                className="text-primary hover:underline"
                 title={s.title}
               >
                 [{s.type}] {s.title}
@@ -184,77 +179,82 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
   }, [busy, phoneSlug, query]);
 
   return (
-    <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <h2 className="text-foreground text-lg font-semibold tracking-tight">Ask about this phone</h2>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Excerpts are from reviews about <strong>this phone only</strong>. Asking to compare other
-        models or prices may be out of scope — use{' '}
-        <a className="text-primary font-medium hover:underline" href="/recommend">
-          Recommend
-        </a>{' '}
-        or{' '}
-        <a className="text-primary font-medium hover:underline" href="/browse">
-          Browse
-        </a>{' '}
-        for cross-device picks. Inline links cite sources.
-      </p>
+    <section className="px-grid-margin py-10">
+      <div className="border-outline-variant bg-background border">
+        <div className="border-outline-variant border-b p-5">
+          <p className="meta-label">Ask a question</p>
+          <h2 className="font-display text-primary mt-3 text-4xl font-extrabold tracking-normal uppercase">
+            Ask About This Phone
+          </h2>
+          <p className="text-muted-foreground mt-3 max-w-3xl text-sm leading-6">
+            Excerpts are scoped to this device. For cross-device picks, use the recommender or
+            Browse catalog.
+          </p>
+        </div>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex-1">
-          <span className="text-muted-foreground sr-only">Your question</span>
-          <textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (enterToSend && e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void ask();
-              }
-            }}
-            rows={3}
-            placeholder="e.g. How is the battery life for heavy camera use?"
-            className="border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-y rounded-lg border px-3 py-2 text-sm shadow-sm focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void ask()}
-          disabled={busy || !query.trim()}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring inline-flex h-10 shrink-0 items-center justify-center rounded-lg px-5 text-sm font-medium shadow-sm transition focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-        >
-          {busy ? 'Thinking…' : 'Ask'}
-        </button>
+        <div className="bg-outline-variant grid gap-px lg:grid-cols-[1fr_auto]">
+          <label className="bg-background p-5">
+            <span className="sr-only">Your question</span>
+            <textarea
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (enterToSend && e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void ask();
+                }
+              }}
+              rows={3}
+              placeholder="How is the battery life for heavy camera use?"
+              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-y border-b px-0 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none disabled:opacity-50"
+              disabled={busy}
+            />
+          </label>
+          <div className="bg-background flex p-5 lg:items-end">
+            <button
+              type="button"
+              onClick={() => void ask()}
+              disabled={busy || !query.trim()}
+              className="border-outline text-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background inline-flex h-12 items-center justify-center border px-6 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
+            >
+              {busy ? 'Thinking' : 'Ask'}
+            </button>
+          </div>
+        </div>
+
+        {error ? (
+          <p
+            className="border-outline-variant text-destructive border-t p-5 font-mono text-sm"
+            role="alert"
+          >
+            Error: {error}
+          </p>
+        ) : null}
+
+        {answer ? (
+          <article className="border-outline-variant border-t p-5">
+            <p className="meta-label text-primary mb-4">Answer</p>
+            <AnswerBody text={answer} citations={citations} />
+            {meta?.retrievalMs != null ? (
+              <p className="text-muted-foreground mt-5 font-mono text-xs">
+                Retrieved in {Math.round(meta.retrievalMs)} ms
+                {meta.model ? ` / ${meta.model}` : ''}
+              </p>
+            ) : null}
+            {meta?.retrievalTrace ? (
+              <details className="group mt-4">
+                <summary className="text-muted-foreground hover:text-primary cursor-pointer list-none font-mono text-[11px] tracking-[0.16em] uppercase [&::-webkit-details-marker]:hidden">
+                  <span className="inline-flex items-center gap-2">
+                    <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                    Show Retrieval Pipeline
+                  </span>
+                </summary>
+                <RetrievalTracePanel trace={meta.retrievalTrace} />
+              </details>
+            ) : null}
+          </article>
+        ) : null}
       </div>
-
-      {error ? (
-        <p className="text-destructive mt-4 text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {answer ? (
-        <article className="border-border/80 bg-card/40 mt-8 rounded-xl border p-5 shadow-sm">
-          <AnswerBody text={answer} citations={citations} />
-          {meta?.retrievalMs != null ? (
-            <p className="text-muted-foreground mt-4 text-xs">
-              Retrieved in {Math.round(meta.retrievalMs)} ms
-              {meta.model ? ` · ${meta.model}` : ''}
-            </p>
-          ) : null}
-          {meta?.retrievalTrace ? (
-            <details className="group mt-3">
-              <summary className="text-muted-foreground hover:text-foreground cursor-pointer list-none text-xs font-medium [&::-webkit-details-marker]:hidden">
-                <span className="inline-flex items-center gap-1.5">
-                  <ChevronDown className="text-muted-foreground size-3.5 transition-transform group-open:rotate-180" />
-                  Show retrieval pipeline &amp; sources
-                </span>
-              </summary>
-              <RetrievalTracePanel trace={meta.retrievalTrace} />
-            </details>
-          ) : null}
-        </article>
-      ) : null}
     </section>
   );
 }

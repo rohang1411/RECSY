@@ -11,10 +11,10 @@ import { cn } from '@/lib/utils';
 
 export function SettingsClient() {
   return (
-    <section className="mt-8 space-y-6">
-      <fieldset className="border-border/80 bg-card/40 rounded-xl border p-5">
-        <legend className="text-foreground text-sm font-semibold">Chat input</legend>
-        <div className="mt-4 space-y-4">
+    <section className="mt-8">
+      <fieldset className="border-outline-variant bg-background border">
+        <legend className="meta-label text-primary ml-5 px-2">Chat input</legend>
+        <div className="p-5">
           <EnterToSendToggle />
         </div>
       </fieldset>
@@ -31,22 +31,14 @@ function EnterToSendToggle() {
   const descId = useId();
 
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-start">
       <div className="min-w-0">
-        <p id={labelId} className="text-foreground text-sm font-medium">
+        <p id={labelId} className="text-primary font-mono text-sm tracking-[0.12em] uppercase">
           Enter key sends message
         </p>
-        <p id={descId} className="text-muted-foreground mt-1 text-xs leading-relaxed">
-          When enabled, pressing{' '}
-          <kbd className="border-border/80 bg-muted rounded border px-1 py-0.5 text-[10px]">
-            Enter
-          </kbd>{' '}
-          submits the message on the recommend and phone Q&amp;A pages. Use{' '}
-          <kbd className="border-border/80 bg-muted rounded border px-1 py-0.5 text-[10px]">
-            Shift + Enter
-          </kbd>{' '}
-          for a newline. When disabled, Enter always inserts a newline and you must click{' '}
-          <em>Send</em>.
+        <p id={descId} className="text-muted-foreground mt-3 max-w-2xl text-xs leading-5">
+          When enabled, pressing Enter submits messages on recommend and phone Q&A pages. Use
+          Shift+Enter for a newline. When disabled, Enter always inserts a newline.
         </p>
       </div>
       <button
@@ -57,15 +49,15 @@ function EnterToSendToggle() {
         aria-describedby={descId}
         onClick={() => setEnabled(!enabled)}
         className={cn(
-          'focus-visible:ring-ring relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-          enabled ? 'bg-primary' : 'bg-muted border-border/80 border',
+          'relative inline-flex h-8 w-16 shrink-0 cursor-pointer items-center border transition-colors focus-visible:outline-none',
+          enabled ? 'border-primary bg-primary' : 'border-outline bg-background',
         )}
       >
         <span
           aria-hidden
           className={cn(
-            'bg-background inline-block size-4 transform rounded-full shadow transition-transform',
-            enabled ? 'translate-x-6' : 'translate-x-1',
+            'bg-background inline-block size-6 transform transition-transform',
+            enabled ? 'translate-x-9' : 'translate-x-1',
           )}
         />
       </button>

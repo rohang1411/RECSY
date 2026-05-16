@@ -1,0 +1,560 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>RECSY v2 - The Catalog</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@400&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'on-tertiary-fixed': '#1b1c1c',
+              'on-tertiary': '#303030',
+              'surface-container': '#1f1f1f',
+              'secondary-fixed-dim': '#c8c6c5',
+              tertiary: '#ffffff',
+              primary: '#ffffff',
+              surface: '#131313',
+              'primary-container': '#e2e2e2',
+              'on-surface-variant': '#c4c7c8',
+              'on-error': '#690005',
+              'surface-container-lowest': '#0e0e0e',
+              'outline-variant': '#444748',
+              'on-error-container': '#ffdad6',
+              'inverse-on-surface': '#303030',
+              'primary-fixed': '#e2e2e2',
+              'surface-container-high': '#2a2a2a',
+              'surface-variant': '#353535',
+              'inverse-surface': '#e2e2e2',
+              'inverse-primary': '#5d5f5f',
+              'secondary-fixed': '#e5e2e1',
+              'tertiary-container': '#e4e2e1',
+              'on-secondary-fixed-variant': '#474746',
+              'on-primary-fixed': '#1a1c1c',
+              'on-primary-container': '#636565',
+              'secondary-container': '#474746',
+              'on-secondary': '#313030',
+              background: '#131313',
+              'on-background': '#e2e2e2',
+              'surface-tint': '#c6c6c7',
+              'on-surface': '#e2e2e2',
+              'surface-dim': '#131313',
+              'tertiary-fixed-dim': '#c8c6c6',
+              'surface-bright': '#393939',
+              error: '#ffb4ab',
+              'on-secondary-container': '#b7b5b4',
+              'on-primary-fixed-variant': '#454747',
+              outline: '#8e9192',
+              'on-tertiary-container': '#656464',
+              'on-secondary-fixed': '#1c1b1b',
+              'surface-container-highest': '#353535',
+              'surface-container-low': '#1b1b1b',
+              secondary: '#c8c6c5',
+              'on-tertiary-fixed-variant': '#474747',
+              'on-primary': '#2f3131',
+              'primary-fixed-dim': '#c6c6c7',
+              'tertiary-fixed': '#e4e2e1',
+              'error-container': '#93000a',
+            },
+            borderRadius: {
+              DEFAULT: '0.25rem',
+              lg: '0.5rem',
+              xl: '0.75rem',
+              full: '9999px',
+            },
+            spacing: {
+              'stack-sm': '8px',
+              gutter: '1px',
+              'grid-margin': '4vw',
+              'section-gap': '160px',
+              'stack-lg': '48px',
+              'stack-md': '24px',
+            },
+            fontFamily: {
+              'display-xl': ['Hanken Grotesk'],
+              'meta-mono': ['JetBrains Mono'],
+              'headline-lg': ['Hanken Grotesk'],
+              'display-xl-mobile': ['Hanken Grotesk'],
+              'headline-lg-mobile': ['Hanken Grotesk'],
+              'body-md': ['Inter'],
+            },
+            fontSize: {
+              'display-xl': [
+                '120px',
+                {
+                  lineHeight: '110px',
+                  letterSpacing: '-0.04em',
+                  fontWeight: '800',
+                },
+              ],
+              'meta-mono': [
+                '12px',
+                {
+                  lineHeight: '16px',
+                  letterSpacing: '0.05em',
+                  fontWeight: '400',
+                },
+              ],
+              'headline-lg': [
+                '48px',
+                {
+                  lineHeight: '52px',
+                  letterSpacing: '-0.02em',
+                  fontWeight: '700',
+                },
+              ],
+              'display-xl-mobile': [
+                '64px',
+                {
+                  lineHeight: '60px',
+                  letterSpacing: '-0.03em',
+                  fontWeight: '800',
+                },
+              ],
+              'headline-lg-mobile': [
+                '32px',
+                {
+                  lineHeight: '36px',
+                  letterSpacing: '-0.02em',
+                  fontWeight: '700',
+                },
+              ],
+              'body-md': [
+                '16px',
+                {
+                  lineHeight: '24px',
+                  fontWeight: '400',
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .grid-bg {
+        background-image:
+          linear-gradient(to right, #353535 1px, transparent 1px),
+          linear-gradient(to bottom, #353535 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+      .btn-brutal {
+        border: 1px solid #e2e2e2;
+        background-color: transparent;
+        color: #e2e2e2;
+        transition: all 0.2s ease;
+      }
+      .btn-brutal:hover {
+        background-color: #e2e2e2;
+        color: #131313;
+      }
+      .spec-row {
+        border-bottom: 1px solid #444748;
+      }
+      .spec-row:last-child {
+        border-bottom: none;
+      }
+    </style>
+  </head>
+  <body class="bg-background text-on-background font-body-md flex min-h-screen flex-col">
+    <!-- TopNavBar -->
+    <header
+      class="bg-background dark:bg-background text-on-background dark:text-on-background px-margin-edge border-outline dark:border-outline-variant sticky top-0 z-50 flex w-full items-center justify-between border-b py-4"
+    >
+      <div class="flex items-center gap-8">
+        <span
+          class="font-display-xl-mobile text-on-background dark:text-on-background text-[24px] tracking-tighter"
+          >RECSY_v2</span
+        >
+        <nav class="hidden gap-6 md:flex">
+          <a
+            class="font-technical-sm text-technical-sm text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background px-2 py-1 transition-colors duration-100"
+            href="#"
+            >RESEARCH</a
+          >
+          <a
+            class="font-technical-sm text-technical-sm text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background px-2 py-1 transition-colors duration-100"
+            href="#"
+            >ARCHIVE</a
+          >
+          <a
+            class="font-technical-sm text-technical-sm text-on-surface-variant dark:text-on-surface-variant hover:bg-on-background hover:text-background px-2 py-1 transition-colors duration-100"
+            href="#"
+            >LABS</a
+          >
+        </nav>
+      </div>
+      <div class="flex items-center gap-4">
+        <button
+          class="font-technical-sm text-technical-sm btn-brutal font-meta-mono text-meta-mono px-4 py-2 uppercase"
+        >
+          COMMAND
+        </button>
+      </div>
+    </header>
+    <div class="relative flex flex-1 overflow-hidden">
+      <!-- SideNavBar -->
+      <aside
+        class="border-gutter bg-surface-container-lowest dark:bg-surface-container-lowest sticky top-[73px] hidden h-full w-64 flex-shrink-0 flex-col border-r lg:flex"
+        style="height: calc(100vh - 73px)"
+      >
+        <div class="border-outline-variant border-b p-6">
+          <div class="font-technical-sm text-primary mb-2 flex items-center gap-2">
+            <span class="material-symbols-outlined text-xl">memory</span>
+            SYSTEM_STATUS
+          </div>
+          <div class="font-meta-mono text-meta-mono text-on-surface-variant">
+            OPERATIONAL // V2.0.4
+          </div>
+        </div>
+        <nav class="flex-1 py-4">
+          <a
+            class="text-on-surface-variant hover:text-on-background hover:bg-surface-container-high flex items-center gap-4 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined">terminal</span>
+            <span class="font-technical-sm text-technical-sm">Engine</span>
+          </a>
+          <a
+            class="text-on-surface-variant hover:text-on-background hover:bg-surface-container-high flex items-center gap-4 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined">settings_input_component</span>
+            <span class="font-technical-sm text-technical-sm">Specs</span>
+          </a>
+          <a
+            class="bg-on-background text-background flex items-center gap-4 px-6 py-3 font-bold transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined">difference</span>
+            <span class="font-technical-sm text-technical-sm">Compare</span>
+          </a>
+          <a
+            class="text-on-surface-variant hover:text-on-background hover:bg-surface-container-high flex items-center gap-4 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined">analytics</span>
+            <span class="font-technical-sm text-technical-sm">Market</span>
+          </a>
+        </nav>
+        <div class="border-outline-variant border-t p-6">
+          <button class="btn-brutal font-meta-mono text-meta-mono mb-4 w-full py-2">
+            NEW SEARCH
+          </button>
+          <div class="flex flex-col gap-2">
+            <a
+              class="text-on-surface-variant hover:text-on-background font-meta-mono text-meta-mono flex items-center gap-2 text-xs"
+              href="#"
+            >
+              <span class="material-symbols-outlined text-sm">menu_book</span> Documentation
+            </a>
+            <a
+              class="text-on-surface-variant hover:text-on-background font-meta-mono text-meta-mono flex items-center gap-2 text-xs"
+              href="#"
+            >
+              <span class="material-symbols-outlined text-sm">contact_support</span> Support
+            </a>
+          </div>
+        </div>
+      </aside>
+      <!-- Main Content -->
+      <main class="p-grid-margin grid-bg relative flex-1 overflow-y-auto">
+        <div class="mx-auto max-w-7xl">
+          <header class="mb-stack-lg border-outline-variant border-b pb-8">
+            <h1
+              class="font-display-xl-mobile md:font-display-xl text-display-xl-mobile md:text-display-xl text-on-background tracking-tighter uppercase"
+            >
+              THE CATALOG
+            </h1>
+            <p class="font-meta-mono text-meta-mono text-on-surface-variant mt-4 max-w-2xl">
+              INDEX: 1,024 ENTRIES. FILTER PARAMETERS ACTIVE. SELECT MODEL FOR DETAILED
+              SPECIFICATIONS AND TELEMETRY.
+            </p>
+          </header>
+          <div class="flex flex-col gap-8 lg:flex-row">
+            <!-- Filters (Left Column) -->
+            <div class="flex w-full flex-shrink-0 flex-col gap-6 lg:w-64">
+              <div class="border-outline-variant bg-surface border p-4">
+                <h3
+                  class="font-meta-mono text-meta-mono text-on-background border-outline-variant mb-4 border-b pb-2 uppercase"
+                >
+                  Manufacturer
+                </h3>
+                <div
+                  class="font-meta-mono text-meta-mono text-on-surface-variant flex flex-col gap-2"
+                >
+                  <label class="hover:text-primary flex cursor-pointer items-center gap-2">
+                    <input
+                      class="border-outline-variant text-primary h-4 w-4 rounded-none bg-transparent focus:ring-0"
+                      type="checkbox"
+                    />
+                    Apple
+                  </label>
+                  <label class="hover:text-primary flex cursor-pointer items-center gap-2">
+                    <input
+                      class="border-outline-variant text-primary h-4 w-4 rounded-none bg-transparent focus:ring-0"
+                      type="checkbox"
+                    />
+                    Google
+                  </label>
+                  <label class="hover:text-primary flex cursor-pointer items-center gap-2">
+                    <input
+                      class="border-outline-variant text-primary h-4 w-4 rounded-none bg-transparent focus:ring-0"
+                      type="checkbox"
+                    />
+                    Samsung
+                  </label>
+                </div>
+              </div>
+              <div class="border-outline-variant bg-surface border p-4">
+                <h3
+                  class="font-meta-mono text-meta-mono text-on-background border-outline-variant mb-4 border-b pb-2 uppercase"
+                >
+                  MSRP Range
+                </h3>
+                <div
+                  class="font-meta-mono text-meta-mono text-on-surface-variant flex flex-col gap-4"
+                >
+                  <div>
+                    <label class="text-outline mb-1 block text-xs">MIN</label>
+                    <input
+                      class="border-outline-variant focus:border-primary text-on-background w-full border-0 border-b bg-transparent px-0 py-1 focus:ring-0"
+                      placeholder="$400"
+                      type="text"
+                    />
+                  </div>
+                  <div>
+                    <label class="text-outline mb-1 block text-xs">MAX</label>
+                    <input
+                      class="border-outline-variant focus:border-primary text-on-background w-full border-0 border-b bg-transparent px-0 py-1 focus:ring-0"
+                      placeholder="$1200"
+                      type="text"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="border-outline-variant bg-surface border p-4">
+                <h3
+                  class="font-meta-mono text-meta-mono text-on-background border-outline-variant mb-4 border-b pb-2 uppercase"
+                >
+                  Form Factor
+                </h3>
+                <div
+                  class="font-meta-mono text-meta-mono text-on-surface-variant flex flex-col gap-2"
+                >
+                  <label class="hover:text-primary flex cursor-pointer items-center gap-2">
+                    <input
+                      checked=""
+                      class="border-outline-variant text-primary h-4 w-4 rounded-none bg-transparent focus:ring-0"
+                      type="checkbox"
+                    />
+                    Slab
+                  </label>
+                  <label class="hover:text-primary flex cursor-pointer items-center gap-2">
+                    <input
+                      class="border-outline-variant text-primary h-4 w-4 rounded-none bg-transparent focus:ring-0"
+                      type="checkbox"
+                    />
+                    Foldable
+                  </label>
+                </div>
+              </div>
+            </div>
+            <!-- Catalog Grid -->
+            <div class="grid flex-1 auto-rows-max grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+              <!-- Phone Card 1 -->
+              <div
+                class="border-outline-variant bg-surface hover:border-primary group flex flex-col border transition-colors duration-200"
+              >
+                <div
+                  class="border-outline-variant bg-surface-container-lowest relative flex h-48 items-center justify-center overflow-hidden border-b"
+                >
+                  <span class="font-meta-mono text-meta-mono text-outline absolute top-2 right-2"
+                    >ID: APL-15P</span
+                  >
+                  <img
+                    alt="iPhone 15 Pro"
+                    class="h-40 object-contain grayscale transition-all duration-300 group-hover:grayscale-0"
+                    data-alt="A minimalist product shot of a modern smartphone with a titanium finish against a dark, industrial background. High-contrast lighting highlights the clean lines and premium materials. Brutalist tech aesthetic with deep shadows and sharp edges."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-wk9RzRWECg1TBNO3mRgoJdwxnAwYY1wbeOH3x4YxmQvxDsxO1Za1Z7RhK8Dp31Ri93yCWjvKW289IuVwR47DZeF17G0DqXxe605B2ey_UIAMk2H1J67F5IPcrABKivuo96nhNL15NmCAem76dfMrwWxXPmCxkMt9ZaLiCrPvwh_gcBw14cM7pocOwQCaINZsn35pIM5LJJmpwstHoh_-gGUeuha0KnZqFuA8lPoBSC_Rr6qzV4xfZJpoHj7gvWdIk-9u6DrenALQ"
+                  />
+                </div>
+                <div class="flex flex-1 flex-col p-4">
+                  <div class="mb-4">
+                    <div class="font-meta-mono text-meta-mono text-on-surface-variant">Apple</div>
+                    <div
+                      class="font-headline-lg-mobile text-headline-lg-mobile text-on-background tracking-tight"
+                    >
+                      iPhone 15 Pro
+                    </div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono flex flex-1 flex-col gap-2 text-sm">
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">SOC</span>
+                      <span class="text-on-background">A17 Pro</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">DISP</span>
+                      <span class="text-on-background">6.1" OLED 120Hz</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">BATT</span>
+                      <span class="text-on-background">3274 mAh</span>
+                    </div>
+                  </div>
+                  <div
+                    class="border-outline-variant mt-6 flex items-center justify-between border-t pt-4"
+                  >
+                    <span class="font-meta-mono text-meta-mono text-on-background text-lg"
+                      >$999</span
+                    >
+                    <button class="btn-brutal font-meta-mono text-meta-mono px-3 py-1 text-xs">
+                      DETAILS
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Phone Card 2 -->
+              <div
+                class="border-outline-variant bg-surface hover:border-primary group flex flex-col border transition-colors duration-200"
+              >
+                <div
+                  class="border-outline-variant bg-surface-container-lowest relative flex h-48 items-center justify-center overflow-hidden border-b"
+                >
+                  <span class="font-meta-mono text-meta-mono text-outline absolute top-2 right-2"
+                    >ID: GOO-P8P</span
+                  >
+                  <img
+                    alt="Pixel 8 Pro"
+                    class="h-40 object-contain grayscale transition-all duration-300 group-hover:grayscale-0"
+                    data-alt="A sleek, modern smartphone with a distinctive camera visor resting on a textured gray surface. The lighting is moody and low-key, emphasizing the device's geometric curves and matte glass finish. Brutalist, high-end editorial tech style."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbfKVPwBqaI8wTBBQ-VOYXwtVMo_6tUOfYtEM8AuGmewVVw8dvxJS8HVpMnv_edBUj03OtEevlFcEQWnjNhUTSTPrf7giot2tBXePe5We1S_a422pQlv68kghEwkCPaXCCLAYK-OrvinmuTPWWmgQkkwljMm-8dTedBBHqpPR-hbr69E02Bx3kG5OAQ1kpZvXHfvZw6B-301j3MfiPuNN-Hll8j1ty1Ntq9iL459zUlvFpd70Ml5JZvqfzTyBV1V6r2B7BXlRRn7vU"
+                  />
+                </div>
+                <div class="flex flex-1 flex-col p-4">
+                  <div class="mb-4">
+                    <div class="font-meta-mono text-meta-mono text-on-surface-variant">Google</div>
+                    <div
+                      class="font-headline-lg-mobile text-headline-lg-mobile text-on-background tracking-tight"
+                    >
+                      Pixel 8 Pro
+                    </div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono flex flex-1 flex-col gap-2 text-sm">
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">SOC</span>
+                      <span class="text-on-background">Tensor G3</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">DISP</span>
+                      <span class="text-on-background">6.7" OLED 120Hz</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">BATT</span>
+                      <span class="text-on-background">5050 mAh</span>
+                    </div>
+                  </div>
+                  <div
+                    class="border-outline-variant mt-6 flex items-center justify-between border-t pt-4"
+                  >
+                    <span class="font-meta-mono text-meta-mono text-on-background text-lg"
+                      >$999</span
+                    >
+                    <button class="btn-brutal font-meta-mono text-meta-mono px-3 py-1 text-xs">
+                      DETAILS
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Phone Card 3 -->
+              <div
+                class="border-outline-variant bg-surface hover:border-primary group flex flex-col border transition-colors duration-200"
+              >
+                <div
+                  class="border-outline-variant bg-surface-container-lowest relative flex h-48 items-center justify-center overflow-hidden border-b"
+                >
+                  <span class="font-meta-mono text-meta-mono text-outline absolute top-2 right-2"
+                    >ID: SAM-S24U</span
+                  >
+                  <img
+                    alt="Galaxy S24 Ultra"
+                    class="h-40 object-contain grayscale transition-all duration-300 group-hover:grayscale-0"
+                    data-alt="A large, sharp-edged modern smartphone standing vertically against a stark, dark concrete backdrop. The device has a flat display and visible camera lenses. The lighting is harsh and directional, creating a technical, blueprint-like atmosphere."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMQrNOCP5fo3v0OwGNvjhUpTF_e6fh70_URV_bkhMIafljqoDguzUFUz1iYCOlDIIm9EbWxUzQu79QTuzaIPikw0XhDfswUsXoGAKgwZCNUQoQPrEmdDOKmLnmKivN8p9DT7NDq9CHgOdFH70oyddr-SZStg8-xKlPm0h5YRMDyQx5WjF09WXxgZm1MPWRpOo5WhFUtHNPdC_ZQPk_w3Z83cGSJ4ILULwxGywpjqHvAJwH2dqOCVq03TFQfP_R1BPu3Z8JQPYPe3OM"
+                  />
+                </div>
+                <div class="flex flex-1 flex-col p-4">
+                  <div class="mb-4">
+                    <div class="font-meta-mono text-meta-mono text-on-surface-variant">Samsung</div>
+                    <div
+                      class="font-headline-lg-mobile text-headline-lg-mobile text-on-background tracking-tight"
+                    >
+                      Galaxy S24 Ultra
+                    </div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono flex flex-1 flex-col gap-2 text-sm">
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">SOC</span>
+                      <span class="text-on-background">Snapdragon 8 Gen 3</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">DISP</span>
+                      <span class="text-on-background">6.8" AMOLED 120Hz</span>
+                    </div>
+                    <div class="spec-row flex justify-between pb-1">
+                      <span class="text-outline">BATT</span>
+                      <span class="text-on-background">5000 mAh</span>
+                    </div>
+                  </div>
+                  <div
+                    class="border-outline-variant mt-6 flex items-center justify-between border-t pt-4"
+                  >
+                    <span class="font-meta-mono text-meta-mono text-on-background text-lg"
+                      >$1299</span
+                    >
+                    <button class="btn-brutal font-meta-mono text-meta-mono px-3 py-1 text-xs">
+                      DETAILS
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Footer -->
+        <footer
+          class="px-margin-edge py-stack-lg gap-stack-md border-outline mt-section-gap bg-background dark:bg-background text-on-background dark:text-on-background flex w-full flex-col border-t"
+        >
+          <div class="font-technical-sm text-tertiary">RECSY_CORE</div>
+          <nav
+            class="font-technical-sm text-technical-sm text-on-surface-variant flex flex-wrap gap-4"
+          >
+            <a class="opacity-80 hover:underline hover:opacity-100" href="#">TERMINAL_LOGS</a>
+            <a class="opacity-80 hover:underline hover:opacity-100" href="#">SYSTEM_PREFERENCES</a>
+            <a class="opacity-80 hover:underline hover:opacity-100" href="#">PRIVACY_PROTOCOL</a>
+            <a class="opacity-80 hover:underline hover:opacity-100" href="#">LICENSE_AGREEMENT</a>
+          </nav>
+          <div class="font-technical-sm text-technical-sm text-on-surface-variant mt-4">
+            ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+          </div>
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>

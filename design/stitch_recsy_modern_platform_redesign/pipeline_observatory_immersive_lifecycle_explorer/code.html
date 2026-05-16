@@ -1,0 +1,902 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>RECSY v2 Pipeline Observatory</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=Inter:wght@100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'on-tertiary-fixed': '#1b1c1c',
+              'on-tertiary': '#303030',
+              'surface-container': '#1f1f1f',
+              'secondary-fixed-dim': '#c8c6c5',
+              tertiary: '#ffffff',
+              primary: '#ffffff',
+              surface: '#131313',
+              'primary-container': '#e2e2e2',
+              'on-surface-variant': '#c4c7c8',
+              'on-error': '#690005',
+              'surface-container-lowest': '#0e0e0e',
+              'outline-variant': '#444748',
+              'on-error-container': '#ffdad6',
+              'inverse-on-surface': '#303030',
+              'primary-fixed': '#e2e2e2',
+              'surface-container-high': '#2a2a2a',
+              'surface-variant': '#353535',
+              'inverse-surface': '#e2e2e2',
+              'inverse-primary': '#5d5f5f',
+              'secondary-fixed': '#e5e2e1',
+              'tertiary-container': '#e4e2e1',
+              'on-secondary-fixed-variant': '#474746',
+              'on-primary-fixed': '#1a1c1c',
+              'on-primary-container': '#636565',
+              'secondary-container': '#474746',
+              'on-secondary': '#313030',
+              background: '#000000',
+              'on-background': '#e2e2e2',
+              'surface-tint': '#c6c6c7',
+              'on-surface': '#e2e2e2',
+              'surface-dim': '#131313',
+              'tertiary-fixed-dim': '#c8c6c6',
+              'surface-bright': '#393939',
+              error: '#ffb4ab',
+              'on-secondary-container': '#b7b5b4',
+              'on-primary-fixed-variant': '#454747',
+              outline: '#8e9192',
+              'on-tertiary-container': '#656464',
+              'on-secondary-fixed': '#1c1b1b',
+              'surface-container-highest': '#353535',
+              'surface-container-low': '#1b1b1b',
+              secondary: '#c8c6c5',
+              'on-tertiary-fixed-variant': '#474747',
+              'on-primary': '#2f3131',
+              'primary-fixed-dim': '#c6c6c7',
+              'tertiary-fixed': '#e4e2e1',
+              'error-container': '#93000a',
+            },
+            borderRadius: {
+              DEFAULT: '0.25rem',
+              lg: '0.5rem',
+              xl: '0.75rem',
+              full: '9999px',
+            },
+            spacing: {
+              'stack-sm': '8px',
+              gutter: '1px',
+              'grid-margin': '4vw',
+              'section-gap': '160px',
+              'stack-lg': '48px',
+              'stack-md': '24px',
+            },
+            fontFamily: {
+              'display-xl': ['Hanken Grotesk'],
+              'meta-mono': ['JetBrains Mono'],
+              'headline-lg': ['Hanken Grotesk'],
+              'display-xl-mobile': ['Hanken Grotesk'],
+              'headline-lg-mobile': ['Hanken Grotesk'],
+              'body-md': ['Inter'],
+            },
+            fontSize: {
+              'display-xl': [
+                '120px',
+                { lineHeight: '110px', letterSpacing: '-0.04em', fontWeight: '800' },
+              ],
+              'meta-mono': [
+                '12px',
+                { lineHeight: '16px', letterSpacing: '0.05em', fontWeight: '400' },
+              ],
+              'headline-lg': [
+                '48px',
+                { lineHeight: '52px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'display-xl-mobile': [
+                '64px',
+                { lineHeight: '60px', letterSpacing: '-0.03em', fontWeight: '800' },
+              ],
+              'headline-lg-mobile': [
+                '32px',
+                { lineHeight: '36px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'body-md': ['16px', { lineHeight: '24px', fontWeight: '400' }],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .tech-grid {
+        background-size: 40px 40px;
+        background-image:
+          linear-gradient(to right, rgba(142, 145, 146, 0.1) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(142, 145, 146, 0.1) 1px, transparent 1px);
+      }
+      .tech-border {
+        border: 1px solid theme('colors.primary');
+      }
+      .hover-invert:hover {
+        background-color: theme('colors.on-background');
+        color: theme('colors.background');
+      }
+      /* Custom scrollbar for data tables */
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: theme('colors.surface-container-lowest');
+      }
+      ::-webkit-scrollbar-thumb {
+        background: theme('colors.primary');
+      }
+
+      /* Device Lifecycle Explorer Animation Styles */
+      @keyframes float {
+        0% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-10px);
+        }
+        100% {
+          transform: translateY(0px);
+        }
+      }
+      @keyframes pulse-ring {
+        0% {
+          transform: scale(0.8);
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+        }
+        100% {
+          transform: scale(0.8);
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+        }
+      }
+      @keyframes flow {
+        0% {
+          left: 0%;
+          opacity: 0;
+        }
+        10% {
+          opacity: 1;
+        }
+        90% {
+          opacity: 1;
+        }
+        100% {
+          left: 100%;
+          opacity: 0;
+        }
+      }
+
+      .particle {
+        animation: float 6s ease-in-out infinite;
+        transition: all 0.3s ease;
+      }
+      .particle:nth-child(2) {
+        animation-delay: -2s;
+      }
+      .particle:nth-child(3) {
+        animation-delay: -4s;
+      }
+
+      .particle:hover {
+        transform: scale(1.1);
+        z-index: 20;
+      }
+
+      .synthesis-hub {
+        animation: pulse-ring 3s infinite;
+      }
+
+      .chunk-flow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 8px;
+        height: 8px;
+        background: white;
+        border-radius: 50%;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .flow-active .chunk-flow {
+        animation: flow 2s linear infinite;
+      }
+      .flow-active .chunk-flow:nth-child(2) {
+        animation-delay: 0.6s;
+      }
+      .flow-active .chunk-flow:nth-child(3) {
+        animation-delay: 1.2s;
+      }
+
+      .pipeline-track {
+        position: relative;
+        height: 2px;
+        background: repeating-linear-gradient(
+          90deg,
+          #fff 0,
+          #fff 4px,
+          transparent 4px,
+          transparent 8px
+        );
+        opacity: 0.3;
+      }
+    </style>
+  </head>
+  <body
+    class="text-on-background font-body-md tech-grid selection:bg-primary flex min-h-screen flex-col overflow-x-hidden bg-[#000000] antialiased selection:text-[#000000] md:flex-row"
+  >
+    <!-- SideNavBar (Desktop) -->
+    <nav
+      class="border-primary docked sticky top-0 left-0 z-50 hidden h-screen w-64 flex-shrink-0 flex-col border-r bg-[#000000] lg:flex"
+    >
+      <div class="border-primary flex items-center gap-4 border-b p-6">
+        <span
+          class="material-symbols-outlined text-primary text-3xl"
+          style="font-variation-settings: 'FILL' 1"
+          >terminal</span
+        >
+        <div>
+          <div class="font-meta-mono text-primary font-bold">SYSTEM_STATUS</div>
+          <div class="font-meta-mono text-meta-mono text-on-surface-variant">
+            OPERATIONAL // V2.0.4
+          </div>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto py-4">
+        <a
+          class="bg-primary font-meta-mono text-meta-mono flex items-center gap-4 px-6 py-3 font-bold text-[#000000] transition-all duration-75"
+          href="#"
+        >
+          <span class="material-symbols-outlined">terminal</span>
+          Engine
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono flex items-center gap-4 px-6 py-3 transition-all duration-75 hover:bg-[#111]"
+          href="#"
+        >
+          <span class="material-symbols-outlined">settings_input_component</span>
+          Specs
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono flex items-center gap-4 px-6 py-3 transition-all duration-75 hover:bg-[#111]"
+          href="#"
+        >
+          <span class="material-symbols-outlined">difference</span>
+          Compare
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono flex items-center gap-4 px-6 py-3 transition-all duration-75 hover:bg-[#111]"
+          href="#"
+        >
+          <span class="material-symbols-outlined">analytics</span>
+          Market
+        </a>
+      </div>
+      <div class="border-primary border-t p-6">
+        <button
+          class="border-primary font-meta-mono text-meta-mono hover-invert mb-6 w-full border py-3 uppercase transition-colors"
+        >
+          NEW SEARCH
+        </button>
+        <div class="flex flex-col gap-3">
+          <a
+            class="text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono flex items-center gap-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-lg">menu_book</span>
+            Documentation
+          </a>
+          <a
+            class="text-on-surface-variant hover:text-primary font-meta-mono text-meta-mono flex items-center gap-3"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-lg">contact_support</span>
+            Support
+          </a>
+        </div>
+      </div>
+    </nav>
+    <!-- Main Content Canvas -->
+    <main class="flex min-h-screen flex-1 flex-col">
+      <!-- Mobile Top Nav (Fallback) -->
+      <header
+        class="px-grid-margin border-primary sticky top-0 z-40 flex w-full items-center justify-between border-b bg-[#000000] py-4 lg:hidden"
+      >
+        <div class="font-display-xl-mobile text-primary text-[24px] font-bold tracking-tighter">
+          RECSY_v2
+        </div>
+        <button class="material-symbols-outlined text-primary">menu</button>
+      </header>
+      <!-- Observatory Content -->
+      <div class="px-grid-margin py-stack-lg flex-1">
+        <!-- Page Header -->
+        <header
+          class="mb-stack-lg border-primary pb-stack-sm gap-stack-sm flex flex-col items-end justify-between border-b md:flex-row"
+        >
+          <div>
+            <h1
+              class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary tracking-tighter uppercase"
+            >
+              Pipeline Observatory
+            </h1>
+            <p class="font-meta-mono text-meta-mono text-on-surface-variant mt-2">
+              REAL-TIME DATA LIFECYCLE MONITOR // SCHEMATIC VIEW
+            </p>
+          </div>
+          <div class="font-meta-mono text-meta-mono text-primary flex items-center gap-2">
+            <span class="bg-primary h-2 w-2 animate-pulse rounded-full"></span>
+            SYNCING: ACTIVE
+          </div>
+        </header>
+        <!-- Metrics Row (Bento Style) -->
+        <section
+          class="gap-gutter bg-primary border-primary mb-stack-lg grid grid-cols-1 border md:grid-cols-3"
+        >
+          <div class="group relative flex flex-col gap-2 overflow-hidden bg-[#000000] p-6">
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant z-10 uppercase">
+              Phones Active
+            </div>
+            <div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">20</div>
+            <span
+              class="material-symbols-outlined absolute -right-4 -bottom-4 z-0 text-[120px] text-[#222] opacity-50 transition-opacity group-hover:opacity-100"
+              >smartphone</span
+            >
+          </div>
+          <div class="group relative flex flex-col gap-2 overflow-hidden bg-[#000000] p-6">
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant z-10 uppercase">
+              Data Sources
+            </div>
+            <div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">126</div>
+            <span
+              class="material-symbols-outlined absolute -right-4 -bottom-4 z-0 text-[120px] text-[#222] opacity-50 transition-opacity group-hover:opacity-100"
+              >database</span
+            >
+          </div>
+          <div class="group relative flex flex-col gap-2 overflow-hidden bg-[#000000] p-6">
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant z-10 uppercase">
+              Total Chunks
+            </div>
+            <div class="font-display-xl-mobile text-display-xl-mobile text-primary z-10">1,470</div>
+            <span
+              class="material-symbols-outlined absolute -right-4 -bottom-4 z-0 text-[120px] text-[#222] opacity-50 transition-opacity group-hover:opacity-100"
+              >memory</span
+            >
+          </div>
+        </section>
+        <!-- Lifecycle Pipeline Visualization -->
+        <section class="mb-stack-lg">
+          <div
+            class="font-meta-mono text-meta-mono text-primary border-primary mb-4 border-b pb-2 uppercase"
+          >
+            Lifecycle Schematic
+          </div>
+          <div
+            class="border-primary p-stack-md gap-stack-md relative flex flex-col items-stretch border bg-[#000000] md:flex-row"
+          >
+            <!-- Flow Line -->
+            <div
+              class="bg-primary absolute top-1/2 left-0 -z-0 hidden h-[1px] w-full md:block"
+            ></div>
+            <!-- INGEST -->
+            <div
+              class="border-primary group z-10 flex flex-1 flex-col gap-4 border bg-[#000000] p-6 transition-colors hover:bg-[#111]"
+            >
+              <div class="flex items-center justify-between">
+                <h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">Ingest</h3>
+                <span class="material-symbols-outlined text-primary">input</span>
+              </div>
+              <p class="font-meta-mono text-meta-mono text-on-surface-variant">
+                Raw capture from 20 endpoints. Audio &amp; Metadata stream parsing.
+              </p>
+              <div class="border-primary mt-auto border-t pt-4">
+                <div class="font-meta-mono text-meta-mono flex justify-between">
+                  <span>RATE:</span>
+                  <span class="text-primary">450MB/s</span>
+                </div>
+              </div>
+            </div>
+            <!-- Process Arrow Mobile -->
+            <div class="text-primary flex justify-center md:hidden">
+              <span class="material-symbols-outlined">arrow_downward</span>
+            </div>
+            <!-- PROCESS -->
+            <div
+              class="border-primary group z-10 flex flex-1 flex-col gap-4 border bg-[#000000] p-6 transition-colors hover:bg-[#111]"
+            >
+              <div class="flex items-center justify-between">
+                <h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">
+                  Process
+                </h3>
+                <span
+                  class="material-symbols-outlined text-primary animate-spin-slow"
+                  style="animation: spin 8s linear infinite"
+                  >settings</span
+                >
+              </div>
+              <p class="font-meta-mono text-meta-mono text-on-surface-variant">
+                Chunking, embedding generation, and vector alignment.
+              </p>
+              <div class="border-primary mt-auto border-t pt-4">
+                <div class="font-meta-mono text-meta-mono flex justify-between">
+                  <span>LATENCY:</span>
+                  <span class="text-primary">12ms</span>
+                </div>
+              </div>
+            </div>
+            <!-- Process Arrow Mobile -->
+            <div class="text-primary flex justify-center md:hidden">
+              <span class="material-symbols-outlined">arrow_downward</span>
+            </div>
+            <!-- ARCHIVE -->
+            <div
+              class="border-primary group z-10 flex flex-1 flex-col gap-4 border bg-[#000000] p-6 transition-colors hover:bg-[#111]"
+            >
+              <div class="flex items-center justify-between">
+                <h3 class="font-headline-lg-mobile text-[24px] tracking-tight uppercase">
+                  Archive
+                </h3>
+                <span class="material-symbols-outlined text-primary">archive</span>
+              </div>
+              <p class="font-meta-mono text-meta-mono text-on-surface-variant">
+                Tiered storage allocation. Indexing for semantic retrieval.
+              </p>
+              <div class="border-primary mt-auto border-t pt-4">
+                <div class="font-meta-mono text-meta-mono flex justify-between">
+                  <span>CAPACITY:</span>
+                  <span class="text-primary">78%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Device Lifecycle Explorer -->
+        <section class="mb-section-gap">
+          <div class="border-primary mb-4 flex items-end justify-between border-b pb-2">
+            <div class="font-meta-mono text-meta-mono text-primary uppercase">
+              Device Lifecycle Explorer
+            </div>
+            <div class="flex items-center gap-2">
+              <label
+                class="font-meta-mono text-meta-mono text-on-surface-variant"
+                for="device-select"
+                >PROBE:</label
+              >
+              <select
+                class="border-primary text-primary font-meta-mono text-meta-mono focus:border-primary border bg-[#000000] px-2 py-1 outline-none focus:ring-0"
+                id="device-select"
+              >
+                <option value="pixel-9">PIXEL 9 PRO XL [ID: 0xFA89]</option>
+                <option value="iphone-16">IPHONE 16 PRO [ID: 0x9B12]</option>
+              </select>
+            </div>
+          </div>
+          <div
+            class="border-primary relative flex min-h-[500px] flex-col gap-8 overflow-hidden border bg-[#000000] p-8 lg:flex-row"
+            id="lifecycle-container"
+          >
+            <!-- Background Grid Pattern Specific to Explorer -->
+            <div
+              class="absolute inset-0 opacity-20"
+              style="
+                background-image:
+                  linear-gradient(#fff 1px, transparent 1px),
+                  linear-gradient(90deg, #fff 1px, transparent 1px);
+                background-size: 20px 20px;
+              "
+            ></div>
+            <!-- 1. Discovery Layer -->
+            <div
+              class="border-primary/30 relative z-10 flex flex-1 flex-col justify-center gap-8 border-r pr-8"
+            >
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-0"
+              >
+                STAGE 01: DISCOVERY
+              </div>
+              <div class="flex flex-col gap-6" id="discovery-layer">
+                <!-- Source Particle 1 -->
+                <div
+                  class="particle border-primary hover:bg-primary group flex w-max cursor-pointer items-center gap-3 rounded-full border p-4 hover:text-[#000000]"
+                  onclick="activateFlow('flow-1')"
+                >
+                  <span class="material-symbols-outlined">play_circle</span>
+                  <div class="font-meta-mono text-meta-mono hidden pr-2 group-hover:block">
+                    MKBHD Review
+                  </div>
+                </div>
+                <!-- Source Particle 2 -->
+                <div
+                  class="particle border-primary hover:bg-primary group ml-8 flex w-max cursor-pointer items-center gap-3 rounded-full border p-4 hover:text-[#000000]"
+                  onclick="activateFlow('flow-2')"
+                >
+                  <span class="material-symbols-outlined">article</span>
+                  <div class="font-meta-mono text-meta-mono hidden pr-2 group-hover:block">
+                    The Verge Specs
+                  </div>
+                </div>
+                <!-- Source Particle 3 -->
+                <div
+                  class="particle border-primary hover:bg-primary group ml-4 flex w-max cursor-pointer items-center gap-3 rounded-full border p-4 hover:text-[#000000]"
+                  onclick="activateFlow('flow-3')"
+                >
+                  <span class="material-symbols-outlined">forum</span>
+                  <div class="font-meta-mono text-meta-mono hidden pr-2 group-hover:block">
+                    r/Android Thread
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Connection Tracks -->
+            <div
+              class="pointer-events-none absolute top-1/2 left-[25%] hidden h-full w-[25%] -translate-y-1/2 lg:block"
+              id="flow-container"
+            >
+              <div class="pipeline-track absolute top-[30%] w-full" id="track-1">
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+              </div>
+              <div class="pipeline-track absolute top-[50%] w-full" id="track-2">
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+              </div>
+              <div class="pipeline-track absolute top-[70%] w-full" id="track-3">
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+                <div class="chunk-flow"></div>
+              </div>
+            </div>
+            <!-- 2. Synthesis Layer -->
+            <div
+              class="border-primary/30 relative z-10 flex flex-1 flex-col items-center justify-center border-r px-8"
+            >
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-8"
+              >
+                STAGE 02: SYNTHESIS
+              </div>
+              <div
+                class="synthesis-hub border-primary flex h-32 w-32 cursor-pointer items-center justify-center rounded-full border-2 transition-colors hover:bg-[#111]"
+                onclick="toggleModal('synthesis-modal')"
+              >
+                <span class="material-symbols-outlined text-primary text-4xl">hub</span>
+              </div>
+              <div class="font-meta-mono text-meta-mono text-primary mt-4 text-center">
+                LLM_HUB<br /><span class="text-[10px] opacity-70">AWAITING_CHUNKS</span>
+              </div>
+            </div>
+            <!-- Connection Track to RAG -->
+            <div
+              class="bg-primary/30 pointer-events-none absolute top-[50%] left-[75%] hidden h-px w-[10%] lg:block"
+            ></div>
+            <!-- 3. RAG/Retrieval Layer -->
+            <div class="relative z-10 flex flex-1 flex-col justify-center pl-8">
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant absolute top-0 left-8"
+              >
+                STAGE 03: RETRIEVAL EVENT
+              </div>
+              <div
+                class="border-primary group relative border bg-[#000000] p-6 transition-all duration-300 hover:border-white"
+              >
+                <div
+                  class="bg-primary font-meta-mono absolute -top-3 -right-3 px-2 py-1 text-[10px] text-[#000000]"
+                >
+                  QUERY_MATCH
+                </div>
+                <div class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">
+                  SAMPLE USER QUERY:
+                </div>
+                <div class="font-headline-lg-mobile mb-6 text-[20px] tracking-tight">
+                  "Best camera phone under $1000"
+                </div>
+                <div class="border-primary/30 flex items-end justify-between border-t pt-4">
+                  <div>
+                    <div class="font-meta-mono text-on-surface-variant text-[10px]">
+                      RETRIEVAL SCORE
+                    </div>
+                    <div class="font-meta-mono text-primary">0.942</div>
+                  </div>
+                  <span class="material-symbols-outlined text-primary">arrow_forward</span>
+                </div>
+              </div>
+            </div>
+            <!-- Modal Overlays -->
+            <!-- Source Modal -->
+            <div
+              class="border-primary absolute top-0 right-0 z-50 flex hidden h-full w-80 flex-col border-l bg-[#000000] p-6"
+              id="source-modal"
+            >
+              <div class="border-primary mb-6 flex items-center justify-between border-b pb-2">
+                <span class="font-meta-mono text-primary uppercase">Source Detail</span>
+                <button
+                  class="material-symbols-outlined text-primary hover:text-white"
+                  onclick="closeModals()"
+                >
+                  close
+                </button>
+              </div>
+              <div class="font-meta-mono text-on-surface-variant mb-1 text-[10px]">
+                RAW_METADATA
+              </div>
+              <div
+                class="border-primary font-meta-mono text-primary mb-6 border bg-[#111] p-3 text-[10px] opacity-80"
+              >
+                {<br />
+                  "id": "yt_mkbhd_01",<br />
+                  "type": "video_transcript",<br />
+                  "confidence": 0.98<br />
+                }
+              </div>
+              <div class="font-meta-mono text-on-surface-variant mb-1 text-[10px]">
+                EXTRACTED_CHUNKS
+              </div>
+              <div class="flex flex-1 flex-col gap-2 overflow-y-auto pr-2">
+                <div
+                  class="border-primary/50 font-meta-mono hover:border-primary cursor-pointer border p-2 text-[11px]"
+                >
+                  ...the primary sensor is massive, capturing way more light in dark scenes...
+                </div>
+                <div
+                  class="border-primary/50 font-meta-mono hover:border-primary cursor-pointer border p-2 text-[11px]"
+                >
+                  ...pricing starts at $999, putting it right against the Pro models...
+                </div>
+              </div>
+            </div>
+            <!-- Synthesis Modal -->
+            <div
+              class="border-primary absolute top-1/2 left-1/2 z-50 hidden w-[400px] -translate-x-1/2 -translate-y-1/2 border bg-[#000000] p-6 shadow-[0_0_50px_rgba(255,255,255,0.1)]"
+              id="synthesis-modal"
+            >
+              <div class="border-primary mb-6 flex items-center justify-between border-b pb-2">
+                <span class="font-meta-mono text-primary uppercase">Synthesis Profile</span>
+                <button
+                  class="material-symbols-outlined text-primary hover:text-white"
+                  onclick="closeModals()"
+                >
+                  close
+                </button>
+              </div>
+              <div class="space-y-4">
+                <div>
+                  <div class="font-meta-mono mb-1 flex justify-between text-[10px]">
+                    <span>CAMERA_SCORE</span><span class="text-primary">9.5/10</span>
+                  </div>
+                  <div class="h-1 w-full bg-[#111]">
+                    <div class="bg-primary h-full w-[95%]"></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="font-meta-mono mb-1 flex justify-between text-[10px]">
+                    <span>VALUE_SCORE</span><span class="text-primary">8.2/10</span>
+                  </div>
+                  <div class="h-1 w-full bg-[#111]">
+                    <div class="bg-primary h-full w-[82%]"></div>
+                  </div>
+                </div>
+                <div
+                  class="border-primary font-meta-mono text-on-surface-variant mt-6 border bg-[#111] p-3 text-[11px]"
+                >
+                  LLM_SUMMARY: Device excels in low-light photography. Positions competitively at
+                  $999 price point. Strong indicator for 'best camera' queries.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Lower Layout: Corpus & Device Probe -->
+        <div class="gap-stack-md mb-stack-lg grid grid-cols-1 lg:grid-cols-12">
+          <!-- Corpus Overview (Col 1-5) -->
+          <section class="gap-stack-md flex flex-col lg:col-span-5">
+            <div
+              class="font-meta-mono text-meta-mono text-primary border-primary border-b pb-2 uppercase"
+            >
+              Corpus Overview: Tier Dist
+            </div>
+            <div class="border-primary flex flex-1 flex-col justify-center border bg-[#000000] p-6">
+              <!-- Bar Chart Simulation -->
+              <div class="flex w-full flex-col gap-6">
+                <!-- HOT -->
+                <div class="group flex items-center gap-4">
+                  <div
+                    class="font-meta-mono text-meta-mono text-on-surface-variant w-16 text-right"
+                  >
+                    HOT
+                  </div>
+                  <div class="relative h-6 flex-1 overflow-hidden bg-[#111]">
+                    <div
+                      class="bg-primary absolute top-0 left-0 h-full w-[75%] transition-all duration-1000"
+                    ></div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono w-16">75%</div>
+                </div>
+                <!-- WARM -->
+                <div class="group flex items-center gap-4">
+                  <div
+                    class="font-meta-mono text-meta-mono text-on-surface-variant w-16 text-right"
+                  >
+                    WARM
+                  </div>
+                  <div class="relative h-6 flex-1 overflow-hidden bg-[#111]">
+                    <div
+                      class="bg-surface-tint absolute top-0 left-0 h-full w-[40%] transition-all duration-1000"
+                    ></div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono w-16">40%</div>
+                </div>
+                <!-- COLD -->
+                <div class="group flex items-center gap-4">
+                  <div
+                    class="font-meta-mono text-meta-mono text-on-surface-variant w-16 text-right"
+                  >
+                    COLD
+                  </div>
+                  <div class="relative h-6 flex-1 overflow-hidden bg-[#111]">
+                    <div
+                      class="bg-outline-variant absolute top-0 left-0 h-full w-[85%] transition-all duration-1000"
+                    ></div>
+                  </div>
+                  <div class="font-meta-mono text-meta-mono w-16">85%</div>
+                </div>
+              </div>
+              <div
+                class="border-primary font-meta-mono text-meta-mono text-on-surface-variant mt-8 border-t pt-4 text-center"
+              >
+                TOTAL CORPUS VOLUME: 4.2 TB
+              </div>
+            </div>
+          </section>
+          <!-- Device Probe (Col 6-12) -->
+          <section class="gap-stack-md flex flex-col lg:col-span-7">
+            <div
+              class="font-meta-mono text-meta-mono text-primary border-primary border-b pb-2 uppercase"
+            >
+              Device Probe: Chunk Viewer
+            </div>
+            <div class="border-primary flex flex-1 flex-col overflow-hidden border bg-[#000000]">
+              <!-- Table Header -->
+              <div
+                class="border-primary font-meta-mono text-meta-mono text-on-surface-variant grid grid-cols-12 gap-4 border-b bg-[#111] p-4"
+              >
+                <div class="col-span-3">CHUNK_ID</div>
+                <div class="col-span-4">SOURCE_DEVICE</div>
+                <div class="col-span-3">VECTOR_DIM</div>
+                <div class="col-span-2 text-right">STATUS</div>
+              </div>
+              <!-- Table Body (Scrollable) -->
+              <div class="flex max-h-[300px] flex-1 flex-col overflow-y-auto">
+                <!-- Row 1 -->
+                <div
+                  class="border-primary font-meta-mono text-meta-mono text-primary grid cursor-crosshair grid-cols-12 gap-4 border-b p-4 transition-colors hover:bg-[#111]"
+                >
+                  <div class="col-span-3 truncate">0xFA89...2B</div>
+                  <div class="text-on-surface-variant col-span-4 truncate">PHONE_NEXUS_01</div>
+                  <div class="col-span-3">1536</div>
+                  <div class="text-primary col-span-2 text-right">INDEXED</div>
+                </div>
+                <!-- Row 2 -->
+                <div
+                  class="border-primary font-meta-mono text-meta-mono text-primary grid cursor-crosshair grid-cols-12 gap-4 border-b p-4 transition-colors hover:bg-[#111]"
+                >
+                  <div class="col-span-3 truncate">0x9B12...4F</div>
+                  <div class="text-on-surface-variant col-span-4 truncate">PHONE_NEXUS_04</div>
+                  <div class="col-span-3">1536</div>
+                  <div class="text-primary col-span-2 text-right">INDEXED</div>
+                </div>
+                <!-- Row 3 -->
+                <div
+                  class="border-primary font-meta-mono text-meta-mono text-primary grid cursor-crosshair grid-cols-12 gap-4 border-b p-4 transition-colors hover:bg-[#111]"
+                >
+                  <div class="col-span-3 truncate">0x1C44...9A</div>
+                  <div class="text-on-surface-variant col-span-4 truncate">TABLET_CORE_02</div>
+                  <div class="col-span-3">1536</div>
+                  <div class="text-on-surface-variant col-span-2 text-right opacity-50">QUEUED</div>
+                </div>
+                <!-- Row 4 -->
+                <div
+                  class="border-primary font-meta-mono text-meta-mono text-primary grid cursor-crosshair grid-cols-12 gap-4 border-b p-4 transition-colors hover:bg-[#111]"
+                >
+                  <div class="col-span-3 truncate">0x7D31...8E</div>
+                  <div class="text-on-surface-variant col-span-4 truncate">PHONE_NEXUS_12</div>
+                  <div class="col-span-3">1536</div>
+                  <div class="text-error col-span-2 text-right">FAILED</div>
+                </div>
+              </div>
+              <!-- Viewer Context Panel -->
+              <div class="border-primary border-t bg-[#000000] p-4">
+                <div class="font-meta-mono text-meta-mono text-on-surface-variant mb-2">
+                  RAW_PREVIEW_BUFFER
+                </div>
+                <div
+                  class="border-primary font-meta-mono text-primary relative h-24 overflow-hidden border bg-[#111] p-3 text-[10px] leading-tight opacity-70"
+                >
+                  {"timestamp":"2024-05-12T14:32:01Z","payload_type":"audio_features","mfcc":[0.12,-0.45,0.88,1.2],"confidence":0.94,"ambient_noise_level_db":42.1,"speaker_id":"UNKNOWN","geo_fuzz":true}
+                  <div
+                    class="absolute bottom-0 left-0 h-8 w-full bg-gradient-to-t from-[#111] to-transparent"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <!-- Footer -->
+      <footer
+        class="px-grid-margin py-stack-lg gap-stack-md border-primary mt-auto flex w-full flex-col border-t bg-[#000000]"
+      >
+        <div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+          <div class="font-meta-mono text-tertiary text-meta-mono uppercase">
+            ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+          </div>
+          <div class="text-on-surface-variant font-meta-mono text-meta-mono flex flex-wrap gap-6">
+            <a class="hover:text-primary transition-colors hover:underline" href="#"
+              >TERMINAL_LOGS</a
+            >
+            <a class="hover:text-primary transition-colors hover:underline" href="#"
+              >SYSTEM_PREFERENCES</a
+            >
+            <a class="hover:text-primary transition-colors hover:underline" href="#"
+              >PRIVACY_PROTOCOL</a
+            >
+            <a class="hover:text-primary transition-colors hover:underline" href="#"
+              >LICENSE_AGREEMENT</a
+            >
+          </div>
+        </div>
+      </footer>
+    </main>
+    <script>
+      function activateFlow(flowId) {
+        closeModals();
+
+        // Remove active class from all tracks
+        document.getElementById('track-1').classList.remove('flow-active');
+        document.getElementById('track-2').classList.remove('flow-active');
+        document.getElementById('track-3').classList.remove('flow-active');
+
+        // Add active class to target track based on particle clicked
+        let trackNum = flowId.split('-')[1];
+        document.getElementById('track-' + trackNum).classList.add('flow-active');
+
+        // Show Source Modal after short delay to simulate extraction
+        setTimeout(() => {
+          document.getElementById('source-modal').classList.remove('hidden');
+        }, 1500);
+      }
+
+      function toggleModal(modalId) {
+        closeModals();
+        document.getElementById(modalId).classList.remove('hidden');
+      }
+
+      function closeModals() {
+        document.getElementById('source-modal').classList.add('hidden');
+        document.getElementById('synthesis-modal').classList.add('hidden');
+      }
+    </script>
+  </body>
+</html>

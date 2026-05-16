@@ -32,54 +32,64 @@ export async function ScorecardSection({ phoneId }: { readonly phoneId: string }
   return (
     <section
       aria-labelledby="scorecard-heading"
-      className="border-border/80 bg-muted/15 border-t px-4 py-10 sm:px-6"
+      className="border-outline-variant px-grid-margin border-t py-10"
     >
-      <div className="mx-auto max-w-3xl">
-        <h2 id="scorecard-heading" className="text-foreground text-xl font-semibold tracking-tight">
-          Consensus scorecard
-        </h2>
-        <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-relaxed">
-          Seven-axis scores derived from ingested reviews. Each row summarises what reviewers agree
-          on and where they disagree.
-        </p>
+      <div className="border-outline-variant bg-background border">
+        <div className="border-outline-variant border-b p-5">
+          <p className="meta-label">Review consensus</p>
+          <h2
+            id="scorecard-heading"
+            className="font-display text-primary mt-3 text-4xl font-extrabold tracking-normal uppercase"
+          >
+            Scorecard
+          </h2>
+          <p className="text-muted-foreground mt-3 max-w-2xl text-sm leading-6">
+            Seven-axis scores derived from ingested reviews. Rows expose agreement, dissent, and
+            confidence without adding visual softness.
+          </p>
+        </div>
 
-        <ul className="divide-border/80 border-border/80 bg-background mt-8 divide-y rounded-lg border">
-          {ASPECT_NAMES.map((key) => {
+        <ul className="divide-outline-variant divide-y">
+          {ASPECT_NAMES.map((key, index) => {
             const row = byAspect.get(key);
             if (!row) {
               return (
-                <li
-                  key={key}
-                  className="flex flex-col gap-1 px-4 py-4 sm:flex-row sm:items-baseline sm:justify-between"
-                >
-                  <span className="text-foreground font-medium">{labelForAspect(key)}</span>
-                  <span className="text-muted-foreground text-sm">Not scored yet</span>
+                <li key={key} className="bg-outline-variant grid gap-px sm:grid-cols-12">
+                  <span className="bg-background text-muted-foreground p-4 font-mono text-[11px] tracking-[0.16em] uppercase sm:col-span-3">
+                    Aspect {String(index + 1).padStart(2, '0')}: {labelForAspect(key)}
+                  </span>
+                  <span className="bg-background text-muted-foreground p-4 text-sm sm:col-span-9">
+                    Not scored yet
+                  </span>
                 </li>
               );
             }
             const confPct = Math.round(Number.parseFloat(row.confidence) * 100);
             return (
-              <li key={key} className="px-4 py-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-                  <span className="text-foreground font-medium">{labelForAspect(key)}</span>
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-                    <span className="text-foreground tabular-nums">
-                      <span className="font-semibold">{row.score}</span>
-                      <span className="text-muted-foreground"> / 10</span>
-                    </span>
-                    <span className="text-muted-foreground tabular-nums">
-                      Confidence {Number.isFinite(confPct) ? `${confPct}%` : row.confidence}
-                    </span>
-                    <span className="text-muted-foreground">
-                      +{row.nSupporting} / −{row.nDissenting} evidence
-                    </span>
-                  </div>
+              <li key={key} className="bg-outline-variant grid gap-px sm:grid-cols-12">
+                <div className="bg-background p-4 sm:col-span-3">
+                  <p className="meta-label">Aspect {String(index + 1).padStart(2, '0')}</p>
+                  <p className="text-primary mt-2 text-sm font-medium">{labelForAspect(key)}</p>
                 </div>
-                {row.summary ? (
-                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                    {row.summary}
+                <div className="bg-background p-4 sm:col-span-2">
+                  <p className="font-display text-primary text-5xl font-extrabold">{row.score}</p>
+                  <p className="meta-label mt-1">/10</p>
+                </div>
+                <div className="bg-background p-4 sm:col-span-3">
+                  <p className="text-muted-foreground font-mono text-xs">
+                    Confidence: {Number.isFinite(confPct) ? `${confPct}%` : row.confidence}
                   </p>
-                ) : null}
+                  <p className="text-muted-foreground mt-2 font-mono text-xs">
+                    Evidence: +{row.nSupporting} / -{row.nDissenting}
+                  </p>
+                </div>
+                <div className="bg-background p-4 sm:col-span-4">
+                  {row.summary ? (
+                    <p className="text-muted-foreground text-sm leading-6">{row.summary}</p>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No summary available.</p>
+                  )}
+                </div>
               </li>
             );
           })}

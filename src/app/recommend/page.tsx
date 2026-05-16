@@ -1,20 +1,26 @@
+import { SideNav } from '@/components/ui/side-nav';
+
 import { RecommendClient } from './recommend-client';
 
 export const dynamic = 'force-dynamic';
 
 export default function RecommendPage() {
   return (
-    <div className="pb-16">
-      <header className="border-border/80 bg-muted/25 border-b px-4 py-10 sm:px-6">
-        <div className="mx-auto max-w-2xl">
-          <h1 className="text-foreground text-3xl font-semibold tracking-tight">Find my phone</h1>
-          <p className="text-muted-foreground mt-3 max-w-xl text-base leading-relaxed">
-            Describe what you need in plain English. RECSY extracts structured preferences, matches
-            our review-backed aspect scores, and suggests up to three diverse picks.
+    <div className="bg-background flex">
+      <SideNav active="/recommend" />
+      <div className="grid-bg min-w-0 flex-1">
+        <header className="border-outline-variant px-grid-margin border-b py-10 sm:py-14">
+          <p className="meta-label border-primary mb-5 border-l-2 pl-4">Recommend</p>
+          <h1 className="font-display text-primary text-6xl leading-none font-extrabold tracking-normal uppercase sm:text-8xl">
+            Recommend
+          </h1>
+          <p className="text-muted-foreground mt-6 max-w-2xl text-sm leading-6">
+            Just describe the phone you want, the features you care about, and any price preference.
+            RECSY will turn that into a ranked shortlist.
           </p>
-        </div>
-      </header>
-      <RecommendClient />
+        </header>
+        <RecommendClient />
+      </div>
     </div>
   );
 }

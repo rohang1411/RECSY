@@ -42,7 +42,7 @@ export default async function PhonePage({ params }: PageProps) {
   const specParsed = PhoneSpecSchema.safeParse(phone.specJson);
 
   return (
-    <div className="pb-16">
+    <div className="bg-background pb-16">
       <PhoneHeader
         brand={phone.brand}
         model={phone.model}
@@ -50,11 +50,9 @@ export default async function PhonePage({ params }: PageProps) {
         imageUrl={phone.imageUrl}
         msrpUsd={phone.msrpUsd}
       />
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        {specParsed.success ? (
-          <PhoneSpecSummary spec={specParsed.data} msrpUsd={phone.msrpUsd} />
-        ) : null}
-      </div>
+      {specParsed.success ? (
+        <PhoneSpecSummary spec={specParsed.data} msrpUsd={phone.msrpUsd} />
+      ) : null}
       <ScorecardSection phoneId={phone.id} />
       <PhoneChat phoneSlug={phone.slug} />
     </div>
