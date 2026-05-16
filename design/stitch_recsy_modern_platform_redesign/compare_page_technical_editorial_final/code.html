@@ -1,0 +1,370 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>TITAN CLASH - RECSY V2</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@400&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'surface-variant': '#353535',
+              'inverse-on-surface': '#303030',
+              'outline-variant': '#444748',
+              'secondary-fixed': '#e5e2e1',
+              'on-surface': '#e2e2e2',
+              'on-primary-container': '#636565',
+              'on-primary': '#2f3131',
+              'surface-bright': '#393939',
+              outline: '#8e9192',
+              'on-error': '#690005',
+              'inverse-surface': '#e2e2e2',
+              'on-primary-fixed': '#1a1c1c',
+              secondary: '#c8c6c5',
+              'on-secondary-fixed-variant': '#474746',
+              'secondary-fixed-dim': '#c8c6c5',
+              background: '#131313',
+              'on-tertiary-fixed': '#1b1c1c',
+              'tertiary-container': '#e4e2e1',
+              'surface-container-lowest': '#0e0e0e',
+              error: '#ffb4ab',
+              'on-tertiary': '#303030',
+              'primary-container': '#e2e2e2',
+              'primary-fixed': '#e2e2e2',
+              'surface-container': '#1f1f1f',
+              'surface-container-high': '#2a2a2a',
+              'on-surface-variant': '#c4c7c8',
+              'surface-container-low': '#1b1b1b',
+              'on-secondary-container': '#b7b5b4',
+              'tertiary-fixed-dim': '#c8c6c6',
+              tertiary: '#ffffff',
+              'on-primary-fixed-variant': '#454747',
+              'inverse-primary': '#5d5f5f',
+              'on-secondary-fixed': '#1c1b1b',
+              surface: '#131313',
+              'on-tertiary-fixed-variant': '#474747',
+              'on-error-container': '#ffdad6',
+              'on-background': '#e2e2e2',
+              'tertiary-fixed': '#e4e2e1',
+              'secondary-container': '#474746',
+              primary: '#ffffff',
+              'primary-fixed-dim': '#c6c6c7',
+              'on-tertiary-container': '#656464',
+              'surface-dim': '#131313',
+              'surface-container-highest': '#353535',
+              'on-secondary': '#313030',
+              'surface-tint': '#c6c6c7',
+              'error-container': '#93000a',
+            },
+            borderRadius: {
+              DEFAULT: '0.25rem',
+              lg: '0.5rem',
+              xl: '0.75rem',
+              full: '9999px',
+            },
+            spacing: {
+              'stack-lg': '48px',
+              gutter: '1px',
+              'stack-md': '24px',
+              'stack-sm': '8px',
+              'section-gap': '160px',
+              'grid-margin': '4vw',
+            },
+            fontFamily: {
+              'headline-lg-mobile': ['Hanken Grotesk'],
+              'display-xl': ['Hanken Grotesk'],
+              'body-md': ['Inter'],
+              'meta-mono': ['JetBrains Mono'],
+              'headline-lg': ['Hanken Grotesk'],
+              'display-xl-mobile': ['Hanken Grotesk'],
+            },
+            fontSize: {
+              'headline-lg-mobile': [
+                '32px',
+                { lineHeight: '36px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'display-xl': [
+                '120px',
+                { lineHeight: '110px', letterSpacing: '-0.04em', fontWeight: '800' },
+              ],
+              'body-md': ['16px', { lineHeight: '24px', fontWeight: '400' }],
+              'meta-mono': [
+                '12px',
+                { lineHeight: '16px', letterSpacing: '0.05em', fontWeight: '400' },
+              ],
+              'headline-lg': [
+                '48px',
+                { lineHeight: '52px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'display-xl-mobile': [
+                '64px',
+                { lineHeight: '60px', letterSpacing: '-0.03em', fontWeight: '800' },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .grid-bg {
+        background-image:
+          linear-gradient(to right, #353535 1px, transparent 1px),
+          linear-gradient(to bottom, #353535 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+    </style>
+  </head>
+  <body class="bg-background text-on-background grid-bg flex min-h-screen flex-col antialiased">
+    <!-- TopNavBar -->
+    <header
+      class="px-grid-margin py-stack-sm bg-background border-outline dark:border-outline-variant sticky top-0 z-50 flex w-full items-center justify-between border-b"
+    >
+      <div
+        class="font-display-xl text-headline-lg text-primary dark:text-primary font-black tracking-tighter"
+      >
+        RECSY v2
+      </div>
+      <nav class="hidden gap-8 md:flex">
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-widest uppercase transition-colors duration-150"
+          href="#"
+          >RESEARCH</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-widest uppercase transition-colors duration-150"
+          href="#"
+          >PIPELINE</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-primary border-primary border-b-2 pb-1 tracking-widest uppercase transition-transform duration-100 active:scale-95"
+          href="#"
+          >DEVICES</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-widest uppercase transition-colors duration-150"
+          href="#"
+          >ARCHIVE</a
+        >
+      </nav>
+      <div class="flex items-center gap-4">
+        <button
+          class="font-meta-mono text-meta-mono border-outline hover:bg-primary hover:text-background border px-4 py-2 tracking-widest uppercase transition-colors duration-150"
+        >
+          SYSTEM_ACCESS
+        </button>
+      </div>
+    </header>
+    <main class="mx-auto flex w-full max-w-[1920px] flex-grow flex-col md:flex-row">
+      <!-- Main Content -->
+      <div
+        class="md:px-grid-margin py-stack-lg border-outline dark:border-outline-variant min-h-screen flex-1 border-x px-4"
+      >
+        <h1
+          class="font-display-xl-mobile md:font-display-xl text-display-xl-mobile md:text-display-xl text-primary mb-stack-lg border-outline pb-stack-sm border-b uppercase"
+        >
+          TITAN CLASH
+        </h1>
+        <!-- Comparison Columns -->
+        <div
+          class="gap-gutter bg-outline border-outline mb-section-gap grid grid-cols-1 border md:grid-cols-2"
+        >
+          <!-- Device Alpha -->
+          <div
+            class="bg-surface p-stack-md hover:border-primary flex flex-col items-center border border-transparent transition-colors duration-300"
+          >
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant mb-4 self-start">
+              ID: ALPHA_PRIME
+            </div>
+            <div
+              class="mb-stack-md border-outline relative h-64 w-full overflow-hidden border md:h-96"
+            >
+              <img
+                alt="Device Alpha"
+                class="h-full w-full object-cover opacity-80 mix-blend-screen grayscale filter transition-opacity duration-300 hover:opacity-100"
+                data-alt="A highly detailed, brutalist-style digital device, resembling a high-end server blade or quantum computer node. The metallic chassis is raw, unpolished steel with prominent cooling fins. Dramatic, high-contrast monochrome lighting accentuates sharp edges and geometric precision. Professional studio photography vibe, emphasizing a minimalist, technical, spec-sheet aesthetic in a pure dark mode environment."
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBphkOogPuGADmj2xh4ZTta5xzGs1eSuztaDEz0pKe4sLMBnveHqmsWqQQe6uuIrzZpS8nd4jo0PAFZVl5idlv8Vq72pe3ik7dJQYs0t-8K9r6a_oYJ_wenUPizaA_s94sOk4Buy3uu3ROywZFbbXEFh_HdUAI6uHToRwP5GUNJW88O4JkGVvbdqC-mgLqwFMkWI8JfXKJ8gNSGzBA_uWVl2jInUh1CyDJMgqI71xn7tTNraQu2I924UwWxnQixAF3iIqBo-dB33203"
+              />
+            </div>
+            <h2
+              class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary border-outline w-full border-b pb-2 text-center uppercase"
+            >
+              NEXUS X-1
+            </h2>
+          </div>
+          <!-- Device Beta -->
+          <div
+            class="bg-surface p-stack-md hover:border-primary flex flex-col items-center border border-transparent transition-colors duration-300"
+          >
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant mb-4 self-start">
+              ID: BETA_VANGUARD
+            </div>
+            <div
+              class="mb-stack-md border-outline relative h-64 w-full overflow-hidden border md:h-96"
+            >
+              <img
+                alt="Device Beta"
+                class="h-full w-full object-cover opacity-80 mix-blend-screen grayscale filter transition-opacity duration-300 hover:opacity-100"
+                data-alt="A sleek, futuristic computational device with a minimalist, brutalist aesthetic. The chassis features dark, matte carbon fiber with stark, pure white LED indicator strips. The lighting is low-key, dramatic monochrome, creating stark shadows and emphasizing the device's angular geometry. High-end editorial photography style, suited for a technical manifest in a strict dark mode design system."
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTV1POskC9Yj1IpeFkBSQokU5brR9R1qJdBQFmV4THtUPfGZGoohrcqfjFgxEO_scBvRBSP0-UwZ9hlVKH4fGRdW-u_H3WCqPkUBIm2cP_YAiJCeRqGqsVFthgEFtDL540QgRBCKCNYLo7UJPAA6zojhb9pe7ljYmVk1teWKmQ-o_vBKgTU0cP-FDDg1zB4laSFp9L84eq7S9u1fFUWxtLQ0DEKLtTuAGY2jv5w9doBsGsAW6d8_Sxdi7ePrs4qP8QTArRcdfF6KXR"
+              />
+            </div>
+            <h2
+              class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary border-outline w-full border-b pb-2 text-center uppercase"
+            >
+              AETHER MK-IV
+            </h2>
+          </div>
+        </div>
+        <!-- Specs Manifest -->
+        <div class="mb-section-gap">
+          <div
+            class="font-meta-mono text-meta-mono text-on-surface-variant border-outline mb-2 flex justify-between border-b pb-2"
+          >
+            <span>CORE SPECIFICATION MANIFEST</span>
+            <span class="material-symbols-outlined text-[16px]">data_object</span>
+          </div>
+          <div class="border-outline bg-surface flex flex-col border">
+            <!-- Row 1 -->
+            <div class="border-outline grid grid-cols-1 border-b md:grid-cols-3">
+              <div
+                class="border-outline font-meta-mono text-meta-mono text-on-surface-variant flex items-center gap-2 border-b p-4 uppercase md:border-r md:border-b-0"
+              >
+                <span class="material-symbols-outlined text-[16px]">memory</span>
+                COMPUTE NODE
+              </div>
+              <div
+                class="border-outline font-body-md text-body-md text-on-surface bg-surface-variant/20 flex items-center justify-between border-b p-4 md:border-r md:border-b-0"
+              >
+                <span>Q-Core Array v7</span>
+              </div>
+              <div
+                class="font-body-md text-body-md text-primary bg-surface-variant/50 relative flex items-center justify-between p-4"
+              >
+                <span>Tensor Grid X9</span>
+                <span
+                  class="font-meta-mono border-primary text-primary border px-1 text-[10px] tracking-widest"
+                  >SUPERIOR</span
+                >
+              </div>
+            </div>
+            <!-- Row 2 -->
+            <div class="border-outline grid grid-cols-1 border-b md:grid-cols-3">
+              <div
+                class="border-outline font-meta-mono text-meta-mono text-on-surface-variant flex items-center gap-2 border-b p-4 uppercase md:border-r md:border-b-0"
+              >
+                <span class="material-symbols-outlined text-[16px]">important_devices</span>
+                DISPLAY MATRIX
+              </div>
+              <div
+                class="border-outline font-body-md text-body-md text-primary bg-surface-variant/50 relative flex items-center justify-between border-b p-4 md:border-r md:border-b-0"
+              >
+                <span>OLED Retina 8K</span>
+                <span
+                  class="font-meta-mono border-primary text-primary border px-1 text-[10px] tracking-widest"
+                  >SUPERIOR</span
+                >
+              </div>
+              <div
+                class="font-body-md text-body-md text-on-surface bg-surface-variant/20 flex items-center justify-between p-4"
+              >
+                <span>MicroLED 4K+</span>
+              </div>
+            </div>
+            <!-- Row 3 -->
+            <div class="border-outline grid grid-cols-1 border-b md:grid-cols-3">
+              <div
+                class="border-outline font-meta-mono text-meta-mono text-on-surface-variant flex items-center gap-2 border-b p-4 uppercase md:border-r md:border-b-0"
+              >
+                <span class="material-symbols-outlined text-[16px]">camera</span>
+                OPTICAL SENSOR
+              </div>
+              <div
+                class="border-outline font-body-md text-body-md text-on-surface bg-surface-variant/20 flex items-center justify-between border-b p-4 md:border-r md:border-b-0"
+              >
+                <span>LIDAR Scanner Lite</span>
+              </div>
+              <div
+                class="font-body-md text-body-md text-primary bg-surface-variant/50 relative flex items-center justify-between p-4"
+              >
+                <span>Quantum Dot Array</span>
+                <span
+                  class="font-meta-mono border-primary text-primary border px-1 text-[10px] tracking-widest"
+                  >SUPERIOR</span
+                >
+              </div>
+            </div>
+            <!-- Row 4 -->
+            <div class="grid grid-cols-1 md:grid-cols-3">
+              <div
+                class="border-outline font-meta-mono text-meta-mono text-on-surface-variant flex items-center gap-2 border-b p-4 uppercase md:border-r md:border-b-0"
+              >
+                <span class="material-symbols-outlined text-[16px]">layers</span>
+                CHASSIS MATERIAL
+              </div>
+              <div
+                class="border-outline font-body-md text-body-md text-primary bg-surface-variant/50 relative flex items-center justify-between border-b p-4 md:border-r md:border-b-0"
+              >
+                <span>Titanium Alloy T-5</span>
+                <span
+                  class="font-meta-mono border-primary text-primary border px-1 text-[10px] tracking-widest"
+                  >SUPERIOR</span
+                >
+              </div>
+              <div
+                class="font-body-md text-body-md text-on-surface bg-surface-variant/20 flex items-center justify-between p-4"
+              >
+                <span>Carbon Fiber Composite</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <!-- Footer -->
+    <footer
+      class="px-grid-margin py-stack-md bg-background border-outline dark:border-outline-variant mt-auto flex w-full items-center justify-between border-t"
+    >
+      <div class="font-meta-mono text-meta-mono text-on-surface-variant tracking-tighter uppercase">
+        ©2024 RECSY_LABS // TECH_MANIFEST_V2.0
+      </div>
+      <div class="hidden gap-6 md:flex">
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-tighter uppercase transition-colors duration-200"
+          href="#"
+          >LEGAL_DOCUMENTATION</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-tighter uppercase transition-colors duration-200"
+          href="#"
+          >PRIVACY_ENCRYPTION</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-tighter uppercase transition-colors duration-200"
+          href="#"
+          >SPEC_SHEETS</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary tracking-tighter uppercase transition-colors duration-200"
+          href="#"
+          >API_ENDPOINT</a
+        >
+      </div>
+    </footer>
+  </body>
+</html>

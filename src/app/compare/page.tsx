@@ -4,7 +4,6 @@ import Link from 'next/link';
 
 import { appSearchParamsToURLSearchParams } from '@/app/browse/search-params-helpers';
 import { ComparePhonePickers } from '@/app/compare/compare-phone-pickers';
-import { CompareSlugForm } from '@/app/compare/compare-slug-form';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
@@ -48,15 +47,57 @@ async function loadComparePickerOptions() {
   }
 }
 
-function specLine(label: string, left: string, right: string) {
+type Winner = 'left' | 'right' | 'tie' | null;
+
+function winnerByNumber(left: number | null, right: number | null, higherIsBetter = true): Winner {
+  if (left == null || right == null || left === right) return null;
+  return higherIsBetter ? (left > right ? 'left' : 'right') : left < right ? 'left' : 'right';
+}
+
+function specLine(label: string, left: string, right: string, winner: Winner = null) {
+  const winningCell =
+    'bg-accent/10 text-primary font-semibold shadow-[inset_0_0_0_1px_var(--accent)] border-accent';
+  const normalCell = 'bg-background text-primary';
   return (
-    <tr className="border-border/60 border-b last:border-0">
-      <th className="text-muted-foreground w-[28%] py-2 pr-2 text-left text-xs font-medium sm:w-1/4">
+    <tr className="border-outline-variant border-b last:border-0">
+      <th className="border-outline-variant bg-background text-muted-foreground w-[28%] border-r p-4 text-left font-mono text-[11px] font-normal tracking-[0.16em] uppercase sm:w-1/4">
         {label}
       </th>
-      <td className="text-foreground w-[36%] py-2 text-sm sm:w-[37.5%]">{left}</td>
-      <td className="text-foreground w-[36%] py-2 text-sm sm:w-[37.5%]">{right}</td>
+      <td
+        className={`border-outline-variant w-[36%] border-r p-4 text-sm sm:w-[37.5%] ${
+          winner === 'left' ? winningCell : normalCell
+        }`}
+      >
+        {left}
+      </td>
+      <td
+        className={`w-[36%] p-4 text-sm sm:w-[37.5%] ${
+          winner === 'right' ? winningCell : normalCell
+        }`}
+      >
+        {right}
+      </td>
     </tr>
+  );
+}
+
+function EmptyCompareShell({
+  title = 'Compare Phones',
+  children,
+}: {
+  readonly title?: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="grid-bg px-grid-margin py-10">
+      <div className="border-outline-variant bg-background border p-6 sm:p-8">
+        <p className="meta-label">Compare</p>
+        <h1 className="font-display text-primary mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+          {title}
+        </h1>
+        <div className="mt-8">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -69,42 +110,29 @@ export default async function ComparePage({ searchParams }: PageProps) {
   if (!a || !b) {
     const compareOptions = await loadComparePickerOptions();
     return (
-      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-        <h1 className="text-foreground text-2xl font-semibold">Compare phones</h1>
-        <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-          Pick two models from the catalog, or add slugs to the URL — for example:
-        </p>
-        <p className="text-foreground bg-muted/50 mt-3 rounded-md px-3 py-2 font-mono text-sm break-all">
-          /compare?a=first-phone-slug&b=second-phone-slug
+      <EmptyCompareShell>
+        <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+          Pick two models from the catalog to compare their specs side by side.
         </p>
         {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
-        <p className="text-muted-foreground mt-4 text-sm">
-          <span className="text-foreground font-medium">By slug: </span>
-          from the recommender, use <strong>Compare the top 2</strong> after you get results, or
-          pick from{' '}
-          <Link className="text-primary font-medium hover:underline" href="/browse">
+        <p className="text-muted-foreground mt-5 text-sm">
+          You can also start from{' '}
+          <Link className="text-primary hover:underline" href="/browse">
             Browse
           </Link>
           .
         </p>
-        <CompareSlugForm />
-      </div>
+      </EmptyCompareShell>
     );
   }
 
   if (a === b) {
     const compareOptions = await loadComparePickerOptions();
     return (
-      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-        <h1 className="text-foreground text-2xl font-semibold">Compare</h1>
-        <p className="text-muted-foreground mt-2 text-sm">Choose two different phones.</p>
+      <EmptyCompareShell title="Compare">
+        <p className="text-muted-foreground text-sm">Choose two different phones.</p>
         {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
-        <p className="text-muted-foreground mt-4 text-sm">
-          <Link className="text-primary" href="/browse">
-            Browse
-          </Link>
-        </p>
-      </div>
+      </EmptyCompareShell>
     );
   }
 
@@ -133,34 +161,20 @@ export default async function ComparePage({ searchParams }: PageProps) {
     const missing = [a, b].filter((s) => !foundSlugs.has(s));
     const compareOptions = await loadComparePickerOptions();
     return (
-      <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
-        <h1 className="text-foreground text-2xl font-semibold">Compare</h1>
-        <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-          We couldn&apos;t find <strong>both</strong> phones as active catalog entries. Slugs must
-          match exactly (see{' '}
-          <Link className="text-primary font-medium hover:underline" href="/browse">
-            Browse
-          </Link>
-          ).
+      <EmptyCompareShell title="Compare">
+        <p className="text-muted-foreground max-w-2xl text-sm leading-6">
+          We could not find both phones as active catalog entries. Choose two phones from the
+          dropdowns below.
         </p>
         {missing.length > 0 ? (
-          <p className="text-destructive mt-3 text-sm">
-            Not found or not active:{' '}
-            {missing.map((s) => (
-              <code key={s} className="bg-muted/80 mr-2 rounded px-1.5 py-0.5">
-                {s}
-              </code>
-            ))}
+          <p className="text-destructive mt-4 font-mono text-sm">
+            Not found: {missing.join(' / ')}
           </p>
-        ) : (
-          <p className="text-muted-foreground mt-3 text-sm">Only one of the two slugs matched.</p>
-        )}
+        ) : null}
         {compareOptions.length > 0 ? (
           <ComparePhonePickers defaultA={a} defaultB={b} options={compareOptions} />
         ) : null}
-        <p className="text-muted-foreground mt-2 text-sm">Or re-enter by slug:</p>
-        <CompareSlugForm defaultA={a} defaultB={b} />
-      </div>
+      </EmptyCompareShell>
     );
   }
 
@@ -169,69 +183,106 @@ export default async function ComparePage({ searchParams }: PageProps) {
   const pL = sL.success ? sL.data : null;
   const pR = sR.success ? sR.data : null;
 
-  const priceL = formatUsdFromNumericString(left.msrpUsd) ?? '—';
-  const priceR = formatUsdFromNumericString(right.msrpUsd) ?? '—';
-
+  const priceL = formatUsdFromNumericString(left.msrpUsd) ?? 'N/A';
+  const priceR = formatUsdFromNumericString(right.msrpUsd) ?? 'N/A';
   const canDetail = pL && pR;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-      <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">Compare</h1>
-      <p className="text-muted-foreground mt-1 text-sm">Side-by-side from the current catalog</p>
-      {!canDetail ? (
-        <p className="text-muted-foreground mt-3 text-sm">
-          Full spec table needs valid specs on both phones. Open each page for details.
-        </p>
-      ) : null}
+    <div className="grid-bg px-grid-margin py-10">
+      <header className="border-outline-variant bg-background border p-6 sm:p-8">
+        <p className="meta-label">Compare</p>
+        <h1 className="font-display text-primary mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+          Compare
+        </h1>
+        {!canDetail ? (
+          <p className="text-muted-foreground mt-4 text-sm">
+            Full spec table needs valid specs on both phones. Open each page for details.
+          </p>
+        ) : null}
+      </header>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2">
-        {[left, right].map((p) => (
-          <div
+      <div className="bg-outline-variant mt-8 grid gap-px sm:grid-cols-2">
+        {[left, right].map((p, index) => (
+          <Link
             key={p.slug}
-            className="border-border/80 bg-card/30 flex flex-col items-center gap-2 rounded-lg border p-4 text-center"
+            href={`/p/${p.slug}`}
+            className="group bg-background relative min-h-[360px] overflow-hidden transition-colors"
           >
             <PhoneImage
               src={p.imageUrl}
               label={`${p.brand} ${p.model}`}
-              size={160}
-              className="flex w-40 justify-center"
+              fill
+              fit="cover"
+              className="absolute inset-0 h-full w-full"
             />
-            <p className="text-muted-foreground text-xs uppercase">{p.brand}</p>
-            <p className="text-foreground text-lg font-semibold">{p.model}</p>
-            {p.tagline ? <p className="text-muted-foreground text-sm">{p.tagline}</p> : null}
-            <Link
-              className="text-primary mt-1 text-sm font-medium hover:underline"
-              href={`/p/${p.slug}`}
-            >
-              Open page →
-            </Link>
-          </div>
+            <div className="from-background via-background/65 to-background/10 absolute inset-0 bg-gradient-to-t" />
+            <div className="absolute inset-x-0 bottom-0 p-6 text-left">
+              <p className="meta-label text-primary mb-3">Phone {index + 1}</p>
+              <p className="text-muted-foreground font-mono text-[11px] tracking-[0.16em] uppercase">
+                {p.brand}
+              </p>
+              <p className="font-display text-primary mt-2 text-4xl font-bold tracking-normal uppercase">
+                {p.model}
+              </p>
+              {p.tagline ? (
+                <p className="text-muted-foreground mt-3 max-w-md text-sm leading-6">{p.tagline}</p>
+              ) : null}
+              <p className="text-primary mt-5 font-mono text-[11px] tracking-[0.18em] uppercase">
+                Phone details
+              </p>
+            </div>
+          </Link>
         ))}
       </div>
 
-      <div className="border-border/80 bg-card/20 mt-8 overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[320px] border-collapse text-left">
+      <div className="border-outline-variant bg-background mt-8 overflow-x-auto border">
+        <table className="w-full min-w-[680px] border-collapse text-left">
           <tbody>
-            {specLine('MSRP (USD)', priceL, priceR)}
+            {specLine(
+              'MSRP USD',
+              priceL,
+              priceR,
+              winnerByNumber(
+                left.msrpUsd ? Number.parseFloat(left.msrpUsd) : null,
+                right.msrpUsd ? Number.parseFloat(right.msrpUsd) : null,
+                false,
+              ),
+            )}
             {canDetail ? (
               <>
                 {specLine(
                   'Display',
-                  `${pL.display.size_in}" ${pL.display.panel_type} · ${pL.display.resolution} · ${pL.display.refresh_rate_hz}Hz`,
-                  `${pR.display.size_in}" ${pR.display.panel_type} · ${pR.display.resolution} · ${pR.display.refresh_rate_hz}Hz`,
+                  `${pL.display.size_in}" ${pL.display.panel_type} / ${pL.display.resolution} / ${pL.display.refresh_rate_hz}Hz`,
+                  `${pR.display.size_in}" ${pR.display.panel_type} / ${pR.display.resolution} / ${pR.display.refresh_rate_hz}Hz`,
+                  winnerByNumber(pL.display.refresh_rate_hz, pR.display.refresh_rate_hz),
                 )}
                 {specLine('Chipset', pL.chipset, pR.chipset)}
                 {specLine(
-                  'RAM / storage (GB)',
+                  'RAM and storage GB',
                   `${pL.ram_gb} / ${pL.storage_options_gb.join(', ')}`,
                   `${pR.ram_gb} / ${pR.storage_options_gb.join(', ')}`,
+                  winnerByNumber(
+                    pL.ram_gb + Math.max(...pL.storage_options_gb) / 1000,
+                    pR.ram_gb + Math.max(...pR.storage_options_gb) / 1000,
+                  ),
                 )}
-                {specLine('Battery (mAh)', String(pL.battery_mah), String(pR.battery_mah))}
-                {specLine('Weight (g)', String(pL.weight_g), String(pR.weight_g))}
                 {specLine(
-                  'Main rear camera (MP)',
-                  String(pL.rear_cameras[0]?.mp ?? '—'),
-                  String(pR.rear_cameras[0]?.mp ?? '—'),
+                  'Battery mAh',
+                  String(pL.battery_mah),
+                  String(pR.battery_mah),
+                  winnerByNumber(pL.battery_mah, pR.battery_mah),
+                )}
+                {specLine(
+                  'Weight g',
+                  String(pL.weight_g),
+                  String(pR.weight_g),
+                  winnerByNumber(pL.weight_g, pR.weight_g, false),
+                )}
+                {specLine(
+                  'Main rear camera MP',
+                  String(pL.rear_cameras[0]?.mp ?? 'N/A'),
+                  String(pR.rear_cameras[0]?.mp ?? 'N/A'),
+                  winnerByNumber(pL.rear_cameras[0]?.mp ?? null, pR.rear_cameras[0]?.mp ?? null),
                 )}
                 {specLine('OS', pL.os, pR.os)}
                 {specLine('Foldable', pL.foldable ? 'Yes' : 'No', pR.foldable ? 'Yes' : 'No')}

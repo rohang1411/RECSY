@@ -1,0 +1,678 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>RECSY_v2 Engine</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;700;800&amp;family=JetBrains+Mono:wght@400;700&amp;family=Inter:wght@400;600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'on-tertiary-fixed': '#1b1c1c',
+              'on-tertiary': '#303030',
+              'surface-container': '#1f1f1f',
+              'secondary-fixed-dim': '#c8c6c5',
+              tertiary: '#ffffff',
+              primary: '#ffffff',
+              surface: '#131313',
+              'primary-container': '#e2e2e2',
+              'on-surface-variant': '#c4c7c8',
+              'on-error': '#690005',
+              'surface-container-lowest': '#000000',
+              'outline-variant': '#444748',
+              'on-error-container': '#ffdad6',
+              'inverse-on-surface': '#303030',
+              'primary-fixed': '#e2e2e2',
+              'surface-container-high': '#2a2a2a',
+              'surface-variant': '#353535',
+              'inverse-surface': '#e2e2e2',
+              'inverse-primary': '#5d5f5f',
+              'secondary-fixed': '#e5e2e1',
+              'tertiary-container': '#e4e2e1',
+              'on-secondary-fixed-variant': '#474746',
+              'on-primary-fixed': '#1a1c1c',
+              'on-primary-container': '#636565',
+              'secondary-container': '#474746',
+              'on-secondary': '#313030',
+              background: '#000000',
+              'on-background': '#e2e2e2',
+              'surface-tint': '#c6c6c7',
+              'on-surface': '#e2e2e2',
+              'surface-dim': '#000000',
+              'tertiary-fixed-dim': '#c8c6c6',
+              'surface-bright': '#393939',
+              error: '#ffb4ab',
+              'on-secondary-container': '#b7b5b4',
+              'on-primary-fixed-variant': '#454747',
+              outline: '#8e9192',
+              'on-tertiary-container': '#656464',
+              'on-secondary-fixed': '#1c1b1b',
+              'surface-container-highest': '#353535',
+              'surface-container-low': '#1b1b1b',
+              secondary: '#c8c6c5',
+              'on-tertiary-fixed-variant': '#474747',
+              'on-primary': '#2f3131',
+              'primary-fixed-dim': '#c6c6c7',
+              'tertiary-fixed': '#e4e2e1',
+              'error-container': '#93000a',
+            },
+            borderRadius: {
+              DEFAULT: '0.25rem',
+              lg: '0.5rem',
+              xl: '0.75rem',
+              full: '9999px',
+            },
+            spacing: {
+              'stack-sm': '8px',
+              gutter: '1px',
+              'grid-margin': '4vw',
+              'section-gap': '160px',
+              'stack-lg': '48px',
+              'stack-md': '24px',
+            },
+            fontFamily: {
+              'display-xl': ['Hanken Grotesk'],
+              'meta-mono': ['JetBrains Mono'],
+              'headline-lg': ['Hanken Grotesk'],
+              'display-xl-mobile': ['Hanken Grotesk'],
+              'headline-lg-mobile': ['Hanken Grotesk'],
+              'body-md': ['Inter'],
+            },
+            fontSize: {
+              'display-xl': [
+                '120px',
+                { lineHeight: '110px', letterSpacing: '-0.04em', fontWeight: '800' },
+              ],
+              'meta-mono': [
+                '12px',
+                { lineHeight: '16px', letterSpacing: '0.05em', fontWeight: '400' },
+              ],
+              'headline-lg': [
+                '48px',
+                { lineHeight: '52px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'display-xl-mobile': [
+                '64px',
+                { lineHeight: '60px', letterSpacing: '-0.03em', fontWeight: '800' },
+              ],
+              'headline-lg-mobile': [
+                '32px',
+                { lineHeight: '36px', letterSpacing: '-0.02em', fontWeight: '700' },
+              ],
+              'body-md': ['16px', { lineHeight: '24px', fontWeight: '400' }],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: #000000;
+        color: theme('colors.primary');
+        background-image:
+          linear-gradient(theme('colors.surface-container') 1px, transparent 1px),
+          linear-gradient(90deg, theme('colors.surface-container') 1px, transparent 1px);
+        background-size: 40px 40px;
+        background-position: center center;
+      }
+
+      .spec-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1px;
+        background-color: theme('colors.outline-variant');
+        border: 1px solid theme('colors.outline-variant');
+      }
+
+      .spec-item {
+        background-color: #000000;
+      }
+
+      /* Grid lines for larger screens */
+      @media (min-width: 768px) {
+        body::before {
+          content: '';
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          pointer-events: none;
+          z-index: -1;
+          background-image: linear-gradient(
+            to right,
+            theme('colors.outline-variant') 1px,
+            transparent 1px
+          );
+          background-size: calc(100% / 12) 100%;
+          opacity: 0.2;
+        }
+      }
+    </style>
+  </head>
+  <body
+    class="font-body-md text-body-md selection:bg-primary selection:text-background flex min-h-screen flex-col bg-black antialiased lg:flex-row"
+  >
+    <!-- SideNavBar (Hidden on Mobile, Visible lg+) -->
+    <nav
+      class="bg-surface-container-lowest text-on-background font-technical-sm text-technical-sm border-outline-variant flat no shadows border-gutter sticky top-0 left-0 hidden h-full h-screen w-64 flex-shrink-0 flex-col border-r transition-all duration-75 lg:flex"
+    >
+      <div class="p-stack-md border-gutter border-b">
+        <div class="gap-stack-sm mb-stack-sm text-primary flex items-center">
+          <span class="material-symbols-outlined text-[24px]">terminal</span>
+          <span class="font-meta-mono text-meta-mono">RECSY_CORE</span>
+        </div>
+        <div class="font-meta-mono text-meta-mono text-on-surface-variant">SYSTEM_STATUS</div>
+        <div class="font-meta-mono text-meta-mono text-on-surface-variant opacity-70">
+          OPERATIONAL // V2.0.4
+        </div>
+      </div>
+      <div class="py-stack-md px-stack-sm flex flex-grow flex-col gap-1">
+        <a
+          class="bg-primary text-background gap-stack-sm p-stack-sm rounded-DEFAULT group flex items-center font-bold transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined group-hover:text-background">terminal</span>
+          Engine
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary gap-stack-sm p-stack-sm rounded-DEFAULT hover:bg-surface-container-high flex items-center transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined">settings_input_component</span>
+          Specs
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary gap-stack-sm p-stack-sm rounded-DEFAULT hover:bg-surface-container-high flex items-center transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined">difference</span>
+          Compare
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary gap-stack-sm p-stack-sm rounded-DEFAULT hover:bg-surface-container-high flex items-center transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined">analytics</span>
+          Market
+        </a>
+      </div>
+      <div class="p-stack-md">
+        <button
+          class="border-outline p-stack-sm font-meta-mono text-meta-mono hover:bg-primary hover:text-background text-primary w-full border text-center tracking-widest uppercase transition-colors"
+        >
+          NEW SEARCH
+        </button>
+      </div>
+      <div class="border-gutter p-stack-md gap-stack-sm mt-auto flex flex-col border-t">
+        <a
+          class="text-on-surface-variant hover:text-primary gap-stack-sm font-meta-mono text-meta-mono flex items-center transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[16px]">menu_book</span>
+          Documentation
+        </a>
+        <a
+          class="text-on-surface-variant hover:text-primary gap-stack-sm font-meta-mono text-meta-mono flex items-center transition-colors"
+          href="#"
+        >
+          <span class="material-symbols-outlined text-[16px]">contact_support</span>
+          Support
+        </a>
+      </div>
+    </nav>
+    <!-- Main Content Area -->
+    <main class="flex min-h-screen flex-grow flex-col">
+      <!-- TopNavBar (Mobile mainly, or supplementary top bar) -->
+      <header
+        class="text-on-background font-technical-sm text-technical-sm docked full-width border-outline px-grid-margin sticky top-0 z-50 flex w-full items-center justify-between border-b bg-black py-4 uppercase lg:hidden"
+      >
+        <div class="font-display-xl-mobile text-primary text-[24px] tracking-tighter">RECSY_v2</div>
+        <div class="gap-stack-md flex">
+          <a
+            class="text-on-surface-variant hover:bg-primary hover:text-background px-2 py-1 transition-colors duration-100"
+            href="#"
+            >RESEARCH</a
+          >
+          <a
+            class="text-on-surface-variant hover:bg-primary hover:text-background px-2 py-1 transition-colors duration-100"
+            href="#"
+            >ARCHIVE</a
+          >
+          <a class="text-primary border-primary border-b px-2 py-1" href="#">LABS</a>
+        </div>
+        <button
+          class="border-outline hover:bg-primary hover:text-background font-meta-mono text-meta-mono text-primary border px-4 py-1 transition-colors"
+        >
+          COMMAND
+        </button>
+      </header>
+      <div class="p-grid-margin gap-stack-lg flex flex-grow flex-col">
+        <!-- Persistent Command Line Intake -->
+        <section class="gap-stack-lg pt-stack-md flex flex-col">
+          <div class="max-w-4xl">
+            <h1
+              class="font-display-xl-mobile md:font-display-xl text-display-xl-mobile md:text-display-xl text-primary mb-stack-md uppercase"
+            >
+              Operation<br />Log
+            </h1>
+            <p
+              class="font-meta-mono text-meta-mono text-on-surface-variant border-primary pl-stack-md max-w-xl border-l-2 tracking-widest uppercase"
+            >
+              Awaiting parameters for architectural synthesis. Input specifications below to
+              generate weighted recommendations based on structural integrity and aesthetic score.
+            </p>
+          </div>
+          <!-- Command Line Intake -->
+          <div
+            class="border-outline p-stack-lg group hover:border-primary sticky top-4 z-40 max-w-5xl border bg-black shadow-2xl transition-colors"
+          >
+            <div
+              class="gap-stack-sm mb-stack-lg border-outline pb-stack-sm flex items-center border-b"
+            >
+              <span class="material-symbols-outlined text-primary">terminal</span>
+              <span class="font-meta-mono text-meta-mono text-on-surface-variant"
+                >INPUT_TERMINAL // AWAITING_COMMAND</span
+              >
+            </div>
+            <div class="gap-stack-md font-meta-mono text-meta-mono flex flex-col">
+              <div class="gap-stack-sm flex flex-wrap items-center">
+                <span class="text-primary">&gt;</span>
+                <span class="text-on-surface-variant">SET.LOCATION = </span>
+                <input
+                  class="border-outline focus:border-primary text-primary placeholder:text-on-surface-variant/50 w-64 border-b bg-black px-2 py-1 outline-none"
+                  placeholder="'Pacific Northwest'"
+                  type="text"
+                />
+              </div>
+              <div class="gap-stack-sm flex flex-wrap items-center">
+                <span class="text-primary">&gt;</span>
+                <span class="text-on-surface-variant">SET.STYLE_WEIGHT = </span>
+                <input
+                  class="border-outline focus:border-primary text-primary placeholder:text-on-surface-variant/50 w-96 border-b bg-black px-2 py-1 outline-none"
+                  placeholder="'Brutalist: 0.8, Minimal: 0.6'"
+                  type="text"
+                />
+              </div>
+              <div class="gap-stack-sm flex items-center">
+                <span class="text-primary">&gt;</span>
+                <span class="text-on-surface-variant">EXECUTE.SEARCH --depth=high</span>
+                <span class="bg-primary ml-2 inline-block h-4 w-2 animate-pulse"></span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Results Section (Newest) -->
+        <section class="gap-stack-lg mt-stack-md relative flex flex-col">
+          <div class="border-outline pb-stack-sm flex items-end justify-between border-b">
+            <h2
+              class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary uppercase"
+            >
+              Current Manifest
+            </h2>
+            <div class="font-meta-mono text-meta-mono text-on-surface-variant text-right">
+              <div>FOUND: 3 ENTITIES</div>
+              <div>SORT: ASPECT_WEIGHTED_SCORE</div>
+            </div>
+          </div>
+          <!-- Bento Grid Results -->
+          <div
+            class="gap-gutter bg-outline-variant border-outline-variant grid grid-cols-1 border lg:grid-cols-12"
+          >
+            <!-- Top Pick (Spans 8 cols) -->
+            <article class="group relative col-span-1 overflow-hidden bg-black lg:col-span-8">
+              <div
+                class="bg-primary font-meta-mono text-meta-mono px-stack-sm border-outline absolute top-0 left-0 z-10 border-r border-b py-1 font-bold text-black"
+              >
+                RANK_01 // OPTIMAL
+              </div>
+              <div class="grid h-full grid-cols-1 md:grid-cols-2">
+                <div
+                  class="p-stack-lg border-outline flex flex-col justify-between border-b md:border-r md:border-b-0"
+                >
+                  <div>
+                    <h3
+                      class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-primary mb-stack-sm mt-stack-md leading-none uppercase"
+                    >
+                      The<br />Monolith
+                    </h3>
+                    <p class="font-meta-mono text-meta-mono text-on-surface-variant mb-stack-lg">
+                      Concrete structure emphasizing raw material honesty. Achieves 94% match on
+                      brutalist weight.
+                    </p>
+                  </div>
+                  <div
+                    class="gap-gutter bg-outline-variant border-outline-variant grid grid-cols-2 border"
+                  >
+                    <div class="p-stack-sm bg-black">
+                      <div
+                        class="font-meta-mono text-meta-mono text-on-surface-variant text-[10px] uppercase"
+                      >
+                        Aesthetic Match
+                      </div>
+                      <div class="font-meta-mono text-meta-mono text-primary text-lg">94.2%</div>
+                    </div>
+                    <div class="p-stack-sm bg-black">
+                      <div
+                        class="font-meta-mono text-meta-mono text-on-surface-variant text-[10px] uppercase"
+                      >
+                        Structural Integrity
+                      </div>
+                      <div class="font-meta-mono text-meta-mono text-primary text-lg">A+</div>
+                    </div>
+                    <div class="p-stack-sm bg-black">
+                      <div
+                        class="font-meta-mono text-meta-mono text-on-surface-variant text-[10px] uppercase"
+                      >
+                        Light Index
+                      </div>
+                      <div class="font-meta-mono text-meta-mono text-primary text-lg">Low-Key</div>
+                    </div>
+                    <div
+                      class="p-stack-sm hover:bg-primary text-primary flex cursor-pointer items-center justify-center bg-black transition-colors hover:text-black"
+                    >
+                      <span class="material-symbols-outlined">arrow_forward</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="relative min-h-[300px] md:min-h-full">
+                  <img
+                    alt="Brutalist concrete architecture"
+                    class="absolute inset-0 h-full w-full object-cover contrast-125 grayscale filter transition-all duration-700 group-hover:grayscale-0"
+                    data-alt="A striking digital image of a massive, imposing concrete building in a strict brutalist architectural style. The geometric structure features deep recesses and sharp angles, casting dramatic, high-contrast shadows. The lighting is harsh and directional, emphasizing the raw, unpolished texture of the gray concrete. The sky above is a flat, overcast white, creating a stark, minimalist, and authoritative mood typical of high-end technical design."
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQ4vAHNzqHhFCLTat-x62ZloGobMryG01bJhSFSGZWa40rLf1TAi6sVLlRC9WC5ZRM4MccLCqcKIVaGLpP-75e19X6mI2k-JN3H7MmHL2S3kd9Ozh3dhWKYOCkzLnKElBbFj8ui8jf08bndXweFYIQ7m-gTp4AOUbCDifjKTGdIm9pYO8CNWAwGtlMFpb3QC4URKvgAvRHh2Km5kwS2mp6J6YWVIetN8TTxEI0xGzdH_BsW3l_zcjXSadj0pfGpOeG-anamG7-RPs7"
+                  />
+                  <div
+                    class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"
+                  ></div>
+                </div>
+              </div>
+            </article>
+            <!-- Runner-up & 3rd (Span 4 cols, stacked) -->
+            <div class="gap-gutter bg-outline-variant col-span-1 grid grid-rows-2 lg:col-span-4">
+              <!-- Runner-up -->
+              <article class="group relative overflow-hidden bg-black">
+                <div
+                  class="bg-surface-container-high text-primary font-meta-mono text-meta-mono px-stack-sm border-outline absolute top-0 left-0 z-10 border-r border-b py-1"
+                >
+                  RANK_02
+                </div>
+                <div class="flex h-full flex-col">
+                  <div class="border-outline relative h-48 border-b">
+                    <img
+                      alt="Minimalist interior"
+                      class="absolute inset-0 h-full w-full object-cover contrast-125 grayscale filter transition-all duration-500 group-hover:grayscale-0"
+                      data-alt="A clean, minimalist interior space featuring vast expanses of smooth white walls and a polished concrete floor. A single, dramatic beam of natural light slices across the room from an unseen high window. The scene lacks any furniture, focusing entirely on spatial geometry and calculated emptiness. The mood is serene, sterile, and highly precise, fitting a modern architectural spec-sheet."
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuBm646oLB432CpiDhMkZTgmMXOyrtD_T46IkFwr1KjqeTYGbjXM_hMlgmgkrXR65DqU-vpFe7QH02zMlT92z5JHWu9y5hMmlfmLcMm8TJ8N9nw5MZ26JY5dIaQ5JhRrwfI97gUhkW55ZhjsPo8mU0qYqQSYYGACpzvFXHr4Pu-yS7oqM5__ArA254zWU6EQgZ1dvPfsQyxd3vxkEGLEmxNJCVK6uYAPBMd7YdUwiFT4rgJg9mD5LE2o6x3mbveAROqFB2W_bpsFuJvc"
+                    />
+                  </div>
+                  <div class="p-stack-md flex flex-grow flex-col justify-between">
+                    <div>
+                      <h4 class="font-headline-lg-mobile text-primary mb-1 text-[24px] uppercase">
+                        Void Pavilion
+                      </h4>
+                      <p class="font-meta-mono text-on-surface-variant text-[10px]">
+                        Emphasis on negative space. High minimalist coefficient.
+                      </p>
+                    </div>
+                    <div
+                      class="mt-stack-md border-outline pt-stack-sm flex items-center justify-between border-t"
+                    >
+                      <span class="font-meta-mono text-meta-mono text-primary">SCORE: 88.5%</span>
+                      <button
+                        class="font-meta-mono border-outline hover:bg-primary text-primary border px-2 py-1 text-[10px] uppercase transition-colors hover:text-black"
+                      >
+                        View Specs
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+              <!-- 3rd Place -->
+              <article class="group relative overflow-hidden bg-black">
+                <div
+                  class="bg-surface-container text-on-surface-variant font-meta-mono text-meta-mono px-stack-sm border-outline absolute top-0 left-0 z-10 border-r border-b py-1"
+                >
+                  RANK_03
+                </div>
+                <div class="flex h-full flex-col">
+                  <div class="border-outline relative h-48 border-b">
+                    <img
+                      alt="Glass and steel facade"
+                      class="absolute inset-0 h-full w-full object-cover contrast-125 grayscale filter transition-all duration-500 group-hover:grayscale-0"
+                      data-alt="A close-up abstract view of a modern skyscraper facade made entirely of sleek glass and dark steel mullions. The reflective surfaces mirror a pale, cloudless sky, creating a grid-like pattern of cool blues and sharp grays. The image is highly technical and precise, conveying a sense of corporate or industrial scale. The mood is cold, calculated, and high-performance."
+                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxhbggmNgPsnN2EXgAc18kHfUGzrysvugKzkx4ONHkOV79aB8Ue-eXEtiJklGgNEb238hvBfEUNbIHqBEWFZiMrLfkvk4O3Xs4xAI_9d-UUjaQZA3LoYhYet6k5SPd8cADhyjKZvKUA5V8Mbonw3rmKEYMEd672GS2m2z-W_vITtiTkQQuUcymEjd8hPthJE0IirMwMCCCPPBIuGQv5kUAlQfQTfSXwvHBpSMxi13hUm5CeiOPoZYRszyQdk3Vgx4P6KGxXSCc2MdR"
+                    />
+                  </div>
+                  <div class="p-stack-md flex flex-grow flex-col justify-between">
+                    <div>
+                      <h4 class="font-headline-lg-mobile text-primary mb-1 text-[24px] uppercase">
+                        Glass Matrix
+                      </h4>
+                      <p class="font-meta-mono text-on-surface-variant text-[10px]">
+                        Industrial scale structure. Lower organic integration.
+                      </p>
+                    </div>
+                    <div
+                      class="mt-stack-md border-outline pt-stack-sm flex items-center justify-between border-t"
+                    >
+                      <span class="font-meta-mono text-meta-mono text-primary">SCORE: 76.2%</span>
+                      <button
+                        class="font-meta-mono border-outline hover:bg-primary text-primary border px-2 py-1 text-[10px] uppercase transition-colors hover:text-black"
+                      >
+                        View Specs
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+          <!-- Raw Data Log -->
+          <div class="mt-stack-sm border-outline border bg-black">
+            <div
+              class="bg-surface-container-high border-outline p-stack-sm px-stack-md flex items-center justify-between border-b"
+            >
+              <span class="font-meta-mono text-meta-mono text-primary uppercase"
+                >Process Log // Expanded Manifest</span
+              >
+              <span class="material-symbols-outlined text-on-surface-variant text-[16px]"
+                >expand_more</span
+              >
+            </div>
+            <div
+              class="p-stack-md font-meta-mono text-on-surface-variant relative h-24 overflow-hidden font-mono text-[10px] opacity-50"
+            >
+              <div>&gt; Initializing spatial analysis protocol...</div>
+              <div>&gt; Cross-referencing material databases (concrete, steel, glass)...</div>
+              <div>&gt; Applying aesthetic weights: Brutalism [0.8], Minimalism [0.6]...</div>
+              <div>&gt; Rejecting candidates below 70% threshold...</div>
+              <div>&gt; Rendering final Top 3 for user review...</div>
+              <div>&gt; AWAITING FURTHER INSTRUCTIONS...</div>
+              <div
+                class="absolute bottom-0 left-0 h-12 w-full bg-gradient-to-t from-black to-transparent"
+              ></div>
+            </div>
+          </div>
+        </section>
+        <!-- History Section -->
+        <section
+          class="gap-stack-lg mt-section-gap border-outline pt-stack-lg relative flex flex-col border-t"
+        >
+          <div class="mb-stack-sm flex items-end justify-between">
+            <h2 class="font-meta-mono text-on-surface-variant text-lg tracking-widest uppercase">
+              Query History
+            </h2>
+          </div>
+          <!-- History Item 1 -->
+          <div class="border-outline flex flex-col border bg-black">
+            <div
+              class="bg-surface-container-lowest border-outline p-stack-md font-meta-mono text-on-surface-variant border-b text-[12px]"
+            >
+              <span class="text-primary mr-2">&gt;</span> SET.LOCATION = 'Desert Southwest' |
+              SET.STYLE_WEIGHT = 'Organic: 0.9, Minimal: 0.5'
+            </div>
+            <div class="p-stack-md gap-stack-md grid grid-cols-1 bg-black md:grid-cols-3">
+              <!-- Horizontal Card 1 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                >
+                  <img
+                    alt="Organic structure"
+                    class="absolute inset-0 h-full w-full object-cover contrast-125 grayscale filter group-hover:grayscale-0"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxhbggmNgPsnN2EXgAc18kHfUGzrysvugKzkx4ONHkOV79aB8Ue-eXEtiJklGgNEb238hvBfEUNbIHqBEWFZiMrLfkvk4O3Xs4xAI_9d-UUjaQZA3LoYhYet6k5SPd8cADhyjKZvKUA5V8Mbonw3rmKEYMEd672GS2m2z-W_vITtiTkQQuUcymEjd8hPthJE0IirMwMCCCPPBIuGQv5kUAlQfQTfSXwvHBpSMxi13hUm5CeiOPoZYRszyQdk3Vgx4P6KGxXSCc2MdR"
+                  />
+                </div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Dune Residency
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 91.2%</div>
+                </div>
+              </div>
+              <!-- Horizontal Card 2 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline bg-surface-container-high relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                ></div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Canyon Echo
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 85.4%</div>
+                </div>
+              </div>
+              <!-- Horizontal Card 3 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline bg-surface-container-high relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                ></div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Terra Firma
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 81.0%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- History Item 2 -->
+          <div class="border-outline flex flex-col border bg-black">
+            <div
+              class="bg-surface-container-lowest border-outline p-stack-md font-meta-mono text-on-surface-variant border-b text-[12px]"
+            >
+              <span class="text-primary mr-2">&gt;</span> SET.LOCATION = 'Tokyo Metro' |
+              SET.STYLE_WEIGHT = 'Cyberpunk: 0.8, Vertical: 0.9'
+            </div>
+            <div class="p-stack-md gap-stack-md grid grid-cols-1 bg-black md:grid-cols-3">
+              <!-- Horizontal Card 1 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline bg-surface-container-high relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                ></div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Neon Spire
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 95.8%</div>
+                </div>
+              </div>
+              <!-- Horizontal Card 2 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline bg-surface-container-high relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                ></div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Grid Lock
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 89.1%</div>
+                </div>
+              </div>
+              <!-- Horizontal Card 3 -->
+              <div
+                class="border-outline bg-surface-container-lowest group hover:border-primary flex items-center border transition-colors"
+              >
+                <div
+                  class="border-outline bg-surface-container-high relative h-20 w-20 flex-shrink-0 overflow-hidden border-r"
+                ></div>
+                <div class="p-stack-sm flex flex-grow flex-col justify-center">
+                  <div
+                    class="font-headline-lg-mobile text-primary mb-1 text-[16px] leading-none uppercase"
+                  >
+                    Alloy Tower
+                  </div>
+                  <div class="font-meta-mono text-on-surface-variant text-[10px]">SCORE: 82.5%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <!-- Footer -->
+      <footer
+        class="text-on-background font-technical-sm text-technical-sm full-width border-outline flat no shadows px-grid-margin py-stack-lg gap-stack-md border-gutter mt-section-gap mt-auto flex w-full flex-col border-t bg-black"
+      >
+        <div
+          class="gap-stack-md flex flex-col items-start justify-between md:flex-row md:items-center"
+        >
+          <div class="font-technical-sm text-tertiary">RECSY_CORE</div>
+          <div
+            class="gap-stack-md font-meta-mono text-meta-mono text-on-surface-variant flex flex-wrap uppercase"
+          >
+            <a class="opacity-80 transition-opacity hover:underline hover:opacity-100" href="#"
+              >TERMINAL_LOGS</a
+            >
+            <a class="opacity-80 transition-opacity hover:underline hover:opacity-100" href="#"
+              >SYSTEM_PREFERENCES</a
+            >
+            <a class="opacity-80 transition-opacity hover:underline hover:opacity-100" href="#"
+              >PRIVACY_PROTOCOL</a
+            >
+            <a class="opacity-80 transition-opacity hover:underline hover:opacity-100" href="#"
+              >LICENSE_AGREEMENT</a
+            >
+          </div>
+        </div>
+        <div
+          class="font-meta-mono text-on-surface-variant mt-stack-sm text-[10px] tracking-widest uppercase opacity-50"
+        >
+          ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

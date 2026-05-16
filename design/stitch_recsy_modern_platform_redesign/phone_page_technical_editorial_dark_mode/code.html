@@ -1,0 +1,514 @@
+<!doctype html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>RECSY_v2 - IPHONE 16 PRO SPECIFICATIONS</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@700;800&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@400&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              secondary: '#c8c6c5',
+              'on-secondary': '#313030',
+              'on-error-container': '#ffdad6',
+              tertiary: '#ffffff',
+              'on-primary-fixed-variant': '#454747',
+              'primary-container': '#e2e2e2',
+              'on-primary-fixed': '#1a1c1c',
+              surface: '#131313',
+              background: '#131313',
+              'surface-tint': '#c6c6c7',
+              'on-tertiary-fixed': '#1b1c1c',
+              'surface-dim': '#131313',
+              'on-primary': '#2f3131',
+              'secondary-container': '#474746',
+              'surface-bright': '#393939',
+              'primary-fixed-dim': '#c6c6c7',
+              'on-primary-container': '#636565',
+              'surface-container': '#1f1f1f',
+              'surface-container-low': '#1b1b1b',
+              outline: '#8e9192',
+              'secondary-fixed-dim': '#c8c6c5',
+              'on-tertiary-fixed-variant': '#474747',
+              'tertiary-fixed-dim': '#c8c6c6',
+              'on-tertiary': '#303030',
+              error: '#ffb4ab',
+              'on-surface-variant': '#c4c7c8',
+              'surface-container-lowest': '#0e0e0e',
+              'outline-variant': '#444748',
+              'surface-container-highest': '#353535',
+              'tertiary-fixed': '#e4e2e1',
+              'surface-variant': '#353535',
+              'primary-fixed': '#e2e2e2',
+              'on-background': '#e2e2e2',
+              'inverse-surface': '#e2e2e2',
+              'tertiary-container': '#e4e2e1',
+              'surface-container-high': '#2a2a2a',
+              primary: '#ffffff',
+              'on-surface': '#e2e2e2',
+              'on-secondary-fixed-variant': '#474746',
+              'on-error': '#690005',
+              'inverse-on-surface': '#303030',
+              'inverse-primary': '#5d5f5f',
+              'on-secondary-fixed': '#1c1b1b',
+              'secondary-fixed': '#e5e2e1',
+              'error-container': '#93000a',
+              'on-secondary-container': '#b7b5b4',
+              'on-tertiary-container': '#656464',
+            },
+            borderRadius: {
+              DEFAULT: '0.25rem',
+              lg: '0.5rem',
+              xl: '0.75rem',
+              full: '9999px',
+            },
+            spacing: {
+              'stack-md': '24px',
+              'section-gap': '160px',
+              'grid-margin': '4vw',
+              'stack-sm': '8px',
+              'stack-lg': '48px',
+              gutter: '1px',
+            },
+            fontFamily: {
+              'meta-mono': ['JetBrains Mono'],
+              'headline-lg-mobile': ['Hanken Grotesk'],
+              'display-xl': ['Hanken Grotesk'],
+              'display-xl-mobile': ['Hanken Grotesk'],
+              'body-md': ['Inter'],
+              'headline-lg': ['Hanken Grotesk'],
+            },
+            fontSize: {
+              'meta-mono': [
+                '12px',
+                {
+                  lineHeight: '16px',
+                  letterSpacing: '0.05em',
+                  fontWeight: '400',
+                },
+              ],
+              'headline-lg-mobile': [
+                '32px',
+                {
+                  lineHeight: '36px',
+                  letterSpacing: '-0.02em',
+                  fontWeight: '700',
+                },
+              ],
+              'display-xl': [
+                '120px',
+                {
+                  lineHeight: '110px',
+                  letterSpacing: '-0.04em',
+                  fontWeight: '800',
+                },
+              ],
+              'display-xl-mobile': [
+                '64px',
+                {
+                  lineHeight: '60px',
+                  letterSpacing: '-0.03em',
+                  fontWeight: '800',
+                },
+              ],
+              'body-md': [
+                '16px',
+                {
+                  lineHeight: '24px',
+                  fontWeight: '400',
+                },
+              ],
+              'headline-lg': [
+                '48px',
+                {
+                  lineHeight: '52px',
+                  letterSpacing: '-0.02em',
+                  fontWeight: '700',
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: theme('colors.background');
+        color: theme('colors.on-background');
+      }
+      .grid-bg {
+        background-image:
+          linear-gradient(theme('colors.outline-variant') 1px, transparent 1px),
+          linear-gradient(90deg, theme('colors.outline-variant') 1px, transparent 1px);
+        background-size: 20px 20px;
+        opacity: 0.1;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: -1;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body
+    class="font-body-md bg-background text-on-background flex min-h-screen flex-col antialiased"
+  >
+    <div class="grid-bg"></div>
+    <!-- TopNavBar -->
+    <header
+      class="px-grid-margin bg-background border-outline-variant sticky top-0 z-50 flex w-full items-center justify-between border-b py-4"
+    >
+      <div
+        class="font-display-xl-mobile text-on-background text-primary text-[24px] tracking-tighter"
+      >
+        RECSY_v2
+      </div>
+      <nav class="hidden gap-8 md:flex">
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary uppercase transition-colors duration-100"
+          href="#"
+          >RESEARCH</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary uppercase transition-colors duration-100"
+          href="#"
+          >ARCHIVE</a
+        >
+        <a
+          class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary uppercase transition-colors duration-100"
+          href="#"
+          >LABS</a
+        >
+      </nav>
+      <button
+        class="font-meta-mono text-meta-mono border-outline hover:bg-on-background hover:text-background border px-4 py-2 transition-colors duration-100"
+      >
+        COMMAND
+      </button>
+    </header>
+    <div class="flex flex-1 flex-col md:flex-row">
+      <!-- SideNavBar (Web Only) -->
+      <aside
+        class="bg-surface-container-lowest border-outline-variant sticky top-0 left-0 hidden h-screen w-64 shrink-0 flex-col border-r lg:flex"
+      >
+        <div class="border-outline-variant border-b p-6">
+          <div class="mb-2 flex items-center gap-4">
+            <span class="material-symbols-outlined text-primary text-3xl">memory</span>
+            <div>
+              <div class="font-meta-mono text-meta-mono text-primary font-bold">SYSTEM_STATUS</div>
+              <div class="font-meta-mono text-on-surface-variant text-[10px]">
+                OPERATIONAL // V2.0.4
+              </div>
+            </div>
+          </div>
+          <button
+            class="font-meta-mono text-meta-mono border-outline hover:bg-on-background hover:text-background mt-4 w-full border px-4 py-2 text-center transition-colors duration-100"
+          >
+            NEW SEARCH
+          </button>
+        </div>
+        <nav class="flex-1 overflow-y-auto py-4">
+          <a
+            class="font-meta-mono text-meta-mono text-on-surface-variant hover:bg-surface-container-high flex items-center gap-3 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-xl">terminal</span> Engine
+          </a>
+          <a
+            class="font-meta-mono text-meta-mono bg-on-background text-background flex items-center gap-3 px-6 py-3 font-bold transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-xl">settings_input_component</span> Specs
+          </a>
+          <a
+            class="font-meta-mono text-meta-mono text-on-surface-variant hover:bg-surface-container-high flex items-center gap-3 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-xl">difference</span> Compare
+          </a>
+          <a
+            class="font-meta-mono text-meta-mono text-on-surface-variant hover:bg-surface-container-high flex items-center gap-3 px-6 py-3 transition-all duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-xl">analytics</span> Market
+          </a>
+        </nav>
+        <div class="border-outline-variant border-t p-6">
+          <a
+            class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary flex items-center gap-3 py-2 transition-colors duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-lg">menu_book</span> Documentation
+          </a>
+          <a
+            class="font-meta-mono text-meta-mono text-on-surface-variant hover:text-primary flex items-center gap-3 py-2 transition-colors duration-75"
+            href="#"
+          >
+            <span class="material-symbols-outlined text-lg">contact_support</span> Support
+          </a>
+        </div>
+      </aside>
+      <!-- Main Canvas -->
+      <main
+        class="px-grid-margin py-stack-lg gap-section-gap mx-auto flex w-full max-w-[1400px] flex-1 flex-col"
+      >
+        <!-- Hero Section -->
+        <section class="gap-stack-lg border-outline-variant pb-stack-lg flex flex-col border-b">
+          <div
+            class="gap-stack-sm flex flex-col items-start justify-between md:flex-row md:items-end"
+          >
+            <h1
+              class="font-display-xl-mobile md:font-display-xl text-display-xl-mobile md:text-display-xl text-primary uppercase"
+            >
+              IPHONE<br />16 PRO
+            </h1>
+            <div
+              class="font-meta-mono text-meta-mono border-outline-variant flex flex-col gap-1 border-l pl-4 text-right"
+            >
+              <div class="text-on-surface-variant">MSRP</div>
+              <div class="text-primary text-2xl font-bold">$999</div>
+              <div class="text-on-surface-variant mt-4">STATUS</div>
+              <div class="text-primary flex items-center justify-end gap-2">
+                <span class="bg-primary block h-2 w-2 rounded-full"></span> Released
+              </div>
+              <div class="text-on-surface-variant mt-1">Sep 20, 2024</div>
+            </div>
+          </div>
+          <div
+            class="border-outline-variant group relative aspect-video w-full overflow-hidden border"
+          >
+            <img
+              alt="Device Image"
+              class="h-full w-full object-cover opacity-80 grayscale filter transition-opacity duration-500 group-hover:opacity-100"
+              data-alt="A sleek, high-end smartphone with a titanium finish resting on a dark, brutalist concrete surface. The lighting is harsh and dramatic, creating deep shadows and highlighting the precise, machined edges of the device's camera module and chassis. The scene embodies a modern, technical editorial style with a deep black and cold gray color palette, conveying premium build quality and advanced technology."
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBOmYMht4iJTGzAoC22zHEoc42E3XpWgN3PJ1bzB-ijXRxaEwQk2ZMB9DMwTvpfXCSk3GL4cz_IvQ21sK4NuwShO6d-dSr-9_-GgP3gAQ94jl5YKoUsqYO3jI67XYcavM0xk-R4Fjp4oB8_yLnCz6Hs8p1vpgHU0uEbJbFZPq8cevkF-_7TiJ34wUBgaNSQJUiDpeD9hCDl1OpeHOD7S0vOh5suanZExoGv0DIns49eqkKD9-byVPJszaeI82Aq_K2pLGvsANhLIxOo"
+            />
+            <div
+              class="font-meta-mono text-meta-mono bg-background border-outline-variant text-primary absolute bottom-4 left-4 border px-2 py-1"
+            >
+              FIG 01. HARDWARE_CHASSIS
+            </div>
+          </div>
+        </section>
+        <!-- Specs Section -->
+        <section
+          class="gap-stack-lg border-outline-variant pb-stack-lg grid grid-cols-1 border-b lg:grid-cols-12"
+        >
+          <!-- Radar Mockup -->
+          <div class="gap-stack-md flex flex-col lg:col-span-4">
+            <h2
+              class="font-headline-lg-mobile text-headline-lg-mobile text-primary border-outline-variant border-b pb-2"
+            >
+              CONSENSUS
+            </h2>
+            <div
+              class="border-outline-variant bg-surface-container-lowest relative flex aspect-square items-center justify-center border p-8"
+            >
+              <!-- Abstract Radar Representation using Grid -->
+              <div
+                class="pointer-events-none absolute inset-0 grid grid-cols-5 grid-rows-5 opacity-20"
+              >
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-r border-b"></div>
+                <div class="border-outline border-b"></div>
+                <div class="border-outline border-r"></div>
+                <div class="border-outline border-r"></div>
+                <div class="border-outline border-r"></div>
+                <div class="border-outline border-r"></div>
+                <div></div>
+              </div>
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant z-10 flex flex-col gap-2 text-center"
+              >
+                <span class="material-symbols-outlined text-primary text-4xl">data_usage</span>
+                <span class="text-primary">RADAR_PLOT_UNAVAILABLE</span>
+                <span class="text-on-surface-variant">SEE_RAW_DATA_RIGHT</span>
+              </div>
+            </div>
+          </div>
+          <!-- Spec Grid -->
+          <div class="gap-stack-md flex flex-col lg:col-span-8">
+            <h2
+              class="font-headline-lg-mobile text-headline-lg-mobile text-primary border-outline-variant border-b pb-2"
+            >
+              TECHNICAL_DATA
+            </h2>
+            <div
+              class="border-outline-variant font-meta-mono text-meta-mono bg-surface-container-lowest border"
+            >
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">SOC</div>
+                <div class="text-primary col-span-2">A18 Pro</div>
+              </div>
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">DISPLAY</div>
+                <div class="text-primary col-span-2">6.3" LTPO Super Retina XDR OLED (120Hz)</div>
+              </div>
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">DIMENSIONS</div>
+                <div class="text-primary col-span-2">149.6 x 71.5 x 8.3 mm, 199g</div>
+              </div>
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">CAMERA_MAIN</div>
+                <div class="text-primary col-span-2">
+                  48 MP, f/1.8, 24mm, 1/1.28", 1.22µm, dual pixel PDAF, sensor-shift OIS
+                </div>
+              </div>
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">CAMERA_TELE</div>
+                <div class="text-primary col-span-2">
+                  12 MP, f/2.8, 120mm, 1/3.06", 1.12µm, dual pixel PDAF, 3D sensor‑shift OIS, 5x
+                  optical zoom
+                </div>
+              </div>
+              <div
+                class="border-outline-variant hover:bg-surface-container-high grid grid-cols-3 border-b p-4 transition-colors"
+              >
+                <div class="text-on-surface-variant">CAMERA_UW</div>
+                <div class="text-primary col-span-2">48 MP, f/2.2, 13mm, 120˚, 0.7µm, PDAF</div>
+              </div>
+              <div class="hover:bg-surface-container-high grid grid-cols-3 p-4 transition-colors">
+                <div class="text-on-surface-variant">BATTERY</div>
+                <div class="text-primary col-span-2">3582 mAh</div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Q&A Section -->
+        <section class="gap-stack-md flex flex-col">
+          <h2
+            class="font-headline-lg-mobile text-headline-lg-mobile text-primary border-outline-variant border-b pb-2"
+          >
+            ANALYSIS_LOG
+          </h2>
+          <div class="gap-stack-md grid grid-cols-1 md:grid-cols-2">
+            <!-- Q&A Card 1 -->
+            <div
+              class="border-outline-variant bg-surface-container-lowest hover:border-primary flex flex-col gap-4 border p-6 transition-colors"
+            >
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant border-outline-variant flex justify-between border-b pb-2"
+              >
+                <span class="">QUERY_001</span>
+                <span class="material-symbols-outlined text-sm">memory</span>
+              </div>
+              <h3 class="font-body-md text-body-md text-primary font-bold">
+                What are the key performance differences of the A18 Pro chip?
+              </h3>
+              <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                The A18 Pro provides significant improvements in AI processing capabilities and
+                thermal efficiency compared to the previous generation, enabling sustained peak
+                performance during demanding tasks.
+              </p>
+              <div class="border-outline-variant mt-auto border-t pt-4">
+                <span
+                  class="font-meta-mono text-on-surface-variant bg-surface-container px-2 py-1 text-[10px]"
+                  >SOURCE: CHIPSET_ANALYSIS_DOC</span
+                >
+              </div>
+            </div>
+            <!-- Q&A Card 2 -->
+            <div
+              class="border-outline-variant bg-surface-container-lowest hover:border-primary flex flex-col gap-4 border p-6 transition-colors"
+            >
+              <div
+                class="font-meta-mono text-meta-mono text-on-surface-variant border-outline-variant flex justify-between border-b pb-2"
+              >
+                <span class="">QUERY_002</span>
+                <span class="material-symbols-outlined text-sm">photo_camera</span>
+              </div>
+              <h3 class="font-body-md text-body-md text-primary font-bold">
+                How does the 5x telephoto lens impact everyday photography?
+              </h3>
+              <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                The inclusion of the 5x optical zoom tetraprism lens, previously exclusive to the
+                Max model, offers greater framing versatility and improved subject isolation in
+                portrait and architectural photography.
+              </p>
+              <div class="border-outline-variant mt-auto border-t pt-4">
+                <span
+                  class="font-meta-mono text-on-surface-variant bg-surface-container px-2 py-1 text-[10px]"
+                  >SOURCE: OPTICS_EVAL_v2</span
+                >
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <!-- Footer -->
+    <footer
+      class="px-grid-margin py-stack-lg gap-stack-md border-outline-variant mt-section-gap bg-background flex w-full flex-col border-t"
+    >
+      <div class="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
+        <div class="font-meta-mono text-meta-mono text-tertiary text-primary">RECSY_CORE</div>
+        <nav class="font-meta-mono text-meta-mono flex flex-wrap gap-6">
+          <a
+            class="text-on-surface-variant hover:text-primary opacity-80 transition-opacity hover:underline hover:opacity-100"
+            href="#"
+            >TERMINAL_LOGS</a
+          >
+          <a
+            class="text-on-surface-variant hover:text-primary opacity-80 transition-opacity hover:underline hover:opacity-100"
+            href="#"
+            >SYSTEM_PREFERENCES</a
+          >
+          <a
+            class="text-on-surface-variant hover:text-primary opacity-80 transition-opacity hover:underline hover:opacity-100"
+            href="#"
+            >PRIVACY_PROTOCOL</a
+          >
+          <a
+            class="text-on-surface-variant hover:text-primary opacity-80 transition-opacity hover:underline hover:opacity-100"
+            href="#"
+            >LICENSE_AGREEMENT</a
+          >
+        </nav>
+      </div>
+      <div class="font-meta-mono text-meta-mono text-on-surface-variant opacity-60">
+        ©2024 RECSY_CORE. ALL RIGHTS RESERVED. ENCRYPTED_CONNECTION_SECURED.
+      </div>
+    </footer>
+  </body>
+</html>

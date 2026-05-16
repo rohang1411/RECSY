@@ -6,7 +6,6 @@ interface PhoneHeaderProps {
   readonly model: string;
   readonly tagline: string | null;
   readonly imageUrl: string | null;
-  /** Postgres `msrp_usd` numeric as string */
   readonly msrpUsd: string | null;
 }
 
@@ -14,31 +13,35 @@ export function PhoneHeader({ brand, model, tagline, imageUrl, msrpUsd }: PhoneH
   const price = formatUsdFromNumericString(msrpUsd);
   const label = `${brand} ${model}`;
   return (
-    <header className="border-border/80 bg-muted/25 border-b px-4 py-10 sm:px-6">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 sm:flex-row sm:items-start sm:gap-8">
-        <div className="shrink-0 self-center sm:self-start">
-          <PhoneImage
-            src={imageUrl}
-            label={label}
-            size={180}
-            className="w-[min(100%,12rem)] sm:w-44"
-          />
-        </div>
-        <div className="min-w-0 flex-1 text-center sm:text-left">
-          <p className="text-muted-foreground text-sm font-medium tracking-wide uppercase">
-            {brand}
-          </p>
-          <h1 className="text-foreground mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+    <header className="grid-bg border-outline-variant px-grid-margin border-b py-10 sm:py-14">
+      <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
+        <div className="lg:col-span-7">
+          <p className="meta-label border-primary mb-5 border-l-2 pl-4">{brand}</p>
+          <h1 className="font-display text-primary text-6xl leading-none font-extrabold tracking-normal uppercase sm:text-8xl lg:text-[112px]">
             {model}
           </h1>
-          {price ? (
-            <p className="text-foreground mt-2 text-lg font-medium tabular-nums">{price}</p>
-          ) : null}
           {tagline ? (
-            <p className="text-muted-foreground mt-3 max-w-2xl text-base leading-relaxed">
-              {tagline}
-            </p>
+            <p className="text-muted-foreground mt-6 max-w-2xl text-sm leading-6">{tagline}</p>
           ) : null}
+        </div>
+
+        <div className="border-outline-variant bg-background border lg:col-span-5">
+          <div className="border-outline-variant border-b p-4">
+            <p className="meta-label text-primary">Product image</p>
+          </div>
+          <div className="flex min-h-80 items-center justify-center p-8">
+            <PhoneImage src={imageUrl} label={label} size={300} className="h-72 w-72 max-w-full" />
+          </div>
+          <dl className="bg-outline-variant grid grid-cols-2 gap-px font-mono text-xs">
+            <div className="bg-background p-4">
+              <dt className="meta-label">MSRP</dt>
+              <dd className="text-primary mt-2">{price ?? 'TBD'}</dd>
+            </div>
+            <div className="bg-background p-4">
+              <dt className="meta-label">STATUS</dt>
+              <dd className="text-primary mt-2">ACTIVE</dd>
+            </div>
+          </dl>
         </div>
       </div>
     </header>

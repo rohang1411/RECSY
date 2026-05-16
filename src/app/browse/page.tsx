@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { parseBrowseSearchParams } from '@/features/browse/search-params';
 import { browseWhereFromState } from '@/features/browse/query';
+import { formatUsdFromNumericString } from '@/lib/format-usd';
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
 
@@ -45,48 +46,72 @@ export default async function BrowsePage({ searchParams }: PageProps) {
   ]);
 
   const allBrands = brandRows.map((r) => r.brand);
+
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <h1 className="text-foreground text-3xl font-semibold tracking-tight">Browse phones</h1>
-      <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-        Filter the active corpus by brand, US MSRP, and form factor. Open a phone for the scorecard
-        and Q&A.
-      </p>
+    <div className="grid-bg px-grid-margin py-10">
+      <header className="border-outline-variant bg-background border p-6 sm:p-8">
+        <p className="meta-label">Browse</p>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <h1 className="font-display text-primary text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+              Browse Phones
+            </h1>
+            <p className="text-muted-foreground mt-4 max-w-2xl text-sm leading-6">
+              Filter the active corpus by brand, US MSRP, and form factor. Open a phone for its
+              scorecard and Q&A.
+            </p>
+          </div>
+          <p className="border-outline-variant text-primary border px-4 py-3 font-mono text-[11px] tracking-[0.18em] uppercase">
+            {rows.length} {rows.length === 1 ? 'Device' : 'Devices'}
+          </p>
+        </div>
+      </header>
 
       <BrowseFiltersForm allBrands={allBrands} current={filter} hasResults={rows.length > 0} />
 
-      <p className="text-muted-foreground mb-3 text-sm">
-        {rows.length} {rows.length === 1 ? 'phone' : 'phones'}
-      </p>
-
-      <ul className="divide-border/80 border-border/80 divide-y rounded-lg border">
-        {rows.map((p) => (
-          <li key={p.slug}>
-            <Link
-              href={`/p/${p.slug}`}
-              className="hover:bg-muted/40 focus-visible:ring-ring flex gap-4 px-4 py-4 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <PhoneImage
-                src={p.imageUrl}
-                label={`${p.brand} ${p.model}`}
-                size={72}
-                className="shrink-0"
-              />
-              <div className="min-w-0">
-                <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  {p.brand}
-                </p>
-                <p className="text-foreground font-medium">{p.model}</p>
-                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
-                  {p.msrpUsd != null ? (
-                    <span>From ${Number.parseFloat(p.msrpUsd).toLocaleString('en-US')}</span>
-                  ) : null}
-                  {p.tagline ? <span>{p.tagline}</span> : null}
+      <ul className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        {rows.map((p, index) => {
+          const price = formatUsdFromNumericString(p.msrpUsd);
+          return (
+            <li key={p.slug}>
+              <Link
+                href={`/p/${p.slug}`}
+                className="group border-outline-variant bg-card hover:border-primary focus-visible:border-primary grid min-h-full overflow-hidden border transition-colors duration-150 focus-visible:outline-none"
+              >
+                <div className="border-outline-variant bg-surface-container relative h-64 overflow-hidden border-b">
+                  <PhoneImage
+                    src={p.imageUrl}
+                    label={`${p.brand} ${p.model}`}
+                    fill
+                    fit="cover"
+                    className="h-full w-full"
+                  />
+                  <div className="from-background via-background/20 absolute inset-0 bg-gradient-to-t to-transparent" />
+                  <p className="bg-background/80 text-primary absolute right-4 bottom-4 px-3 py-2 font-mono text-[11px]">
+                    {price ?? 'Price not listed'}
+                  </p>
                 </div>
-              </div>
-            </Link>
-          </li>
-        ))}
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className="meta-label">Phone {String(index + 1).padStart(2, '0')}</p>
+                  </div>
+                  <p className="text-muted-foreground mt-5 font-mono text-xs tracking-[0.16em] uppercase">
+                    {p.brand}
+                  </p>
+                  <h2 className="font-display text-primary mt-2 text-3xl font-bold tracking-normal uppercase">
+                    {p.model}
+                  </h2>
+                  {p.tagline ? (
+                    <p className="text-muted-foreground mt-4 text-sm leading-6">{p.tagline}</p>
+                  ) : null}
+                  <p className="text-primary mt-8 font-mono text-[11px] tracking-[0.18em] uppercase">
+                    Phone details
+                  </p>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
