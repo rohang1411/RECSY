@@ -83,6 +83,23 @@ function pickRankForPhone(picks: unknown, phoneId: string, slug: string) {
   return index >= 0 ? index + 1 : null;
 }
 
+async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 1500) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } catch {
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function loadPipelineData(selectedSlug: string | null) {
   const db = getDb();
 
@@ -139,62 +156,75 @@ async function loadPipelineData(selectedSlug: string | null) {
 
   const [deviceSources, deviceChunks, deviceAspects, sampleTurns] = selectedPhone
     ? await Promise.all([
-        db
-          .select({
-            id: sources.id,
-            type: sources.type,
-            url: sources.url,
-            title: sources.title,
-            author: sources.author,
-            channel: sources.channel,
-            publishedAt: sources.publishedAt,
-            relevance: sources.relevance,
-            quality: sources.quality,
-            viewCount: sources.viewCount,
-          })
-          .from(sources)
-          .where(and(eq(sources.phoneId, selectedPhone.id), eq(sources.status, 'active')))
-          .orderBy(desc(sources.lastFetchedAt))
-          .limit(8),
-        db
-          .select({
-            id: chunks.id,
-            sourceId: chunks.sourceId,
-            chunkIndex: chunks.chunkIndex,
-            text: chunks.text,
-            tokens: chunks.tokens,
-          })
-          .from(chunks)
-          .where(eq(chunks.phoneId, selectedPhone.id))
-          .orderBy(asc(chunks.chunkIndex))
-          .limit(24),
-        db
-          .select({
-            aspect: aspectDefinitions.aspect,
-            score: aspects.score,
-            confidence: aspects.confidence,
-            summary: aspects.summary,
-            nSupporting: aspects.nSupporting,
-            nDissenting: aspects.nDissenting,
-          })
-          .from(aspects)
-          .innerJoin(aspectDefinitions, eq(aspects.aspectDefinitionId, aspectDefinitions.id))
-          .where(eq(aspects.phoneId, selectedPhone.id))
-          .limit(7),
-        db
-          .select({
-            userMessage: recommendationTurns.userMessage,
-            candidatePhoneIds: recommendationTurns.candidatePhoneIds,
-            picks: recommendationTurns.picks,
-            createdAt: recommendationTurns.createdAt,
-            latencyMs: recommendationTurns.latencyMs,
-          })
-          .from(recommendationTurns)
-          .where(
-            sql`${recommendationTurns.candidatePhoneIds} @> ARRAY[${selectedPhone.id}::uuid]::uuid[] OR ${recommendationTurns.picks}::text ILIKE ${`%${selectedPhone.slug}%`}`,
-          )
-          .orderBy(desc(recommendationTurns.createdAt))
-          .limit(3),
+        optionalQuery(
+          db
+            .select({
+              id: sources.id,
+              type: sources.type,
+              url: sources.url,
+              title: sources.title,
+              author: sources.author,
+              channel: sources.channel,
+              publishedAt: sources.publishedAt,
+              relevance: sources.relevance,
+              quality: sources.quality,
+              viewCount: sources.viewCount,
+            })
+            .from(sources)
+            .where(and(eq(sources.phoneId, selectedPhone.id), eq(sources.status, 'active')))
+            .orderBy(desc(sources.lastFetchedAt))
+            .limit(8),
+          [],
+        ),
+        optionalQuery(
+          db
+            .select({
+              id: chunks.id,
+              sourceId: chunks.sourceId,
+              chunkIndex: chunks.chunkIndex,
+              text: chunks.text,
+              tokens: chunks.tokens,
+            })
+            .from(chunks)
+            .where(eq(chunks.phoneId, selectedPhone.id))
+            .orderBy(asc(chunks.chunkIndex))
+            .limit(24),
+          [],
+        ),
+        optionalQuery(
+          db
+            .select({
+              aspect: aspectDefinitions.aspect,
+              score: aspects.score,
+              confidence: aspects.confidence,
+              summary: aspects.summary,
+              nSupporting: aspects.nSupporting,
+              nDissenting: aspects.nDissenting,
+            })
+            .from(aspects)
+            .innerJoin(aspectDefinitions, eq(aspects.aspectDefinitionId, aspectDefinitions.id))
+            .where(eq(aspects.phoneId, selectedPhone.id))
+            .limit(7),
+          [],
+        ),
+        optionalQuery(
+          db
+            .select({
+              userMessage: recommendationTurns.userMessage,
+              candidatePhoneIds: recommendationTurns.candidatePhoneIds,
+              picks: recommendationTurns.picks,
+              createdAt: recommendationTurns.createdAt,
+              latencyMs: recommendationTurns.latencyMs,
+            })
+            .from(recommendationTurns)
+            .where(
+              sql`${recommendationTurns.candidatePhoneIds} @> ARRAY[${selectedPhone.id}]::uuid[]`,
+            )
+            .orderBy(desc(recommendationTurns.createdAt))
+            .limit(3),
+          [],
+          900,
+        ),
       ])
     : [[], [], [], []];
 
@@ -276,6 +306,30 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     (sum, list) => sum + list.length,
     0,
   );
+  const sourceMix = deviceSources.reduce<Record<string, number>>((acc, source) => {
+    acc[source.type] = (acc[source.type] ?? 0) + 1;
+    return acc;
+  }, {});
+  const topAspect = deviceAspects
+    .slice()
+    .sort((a, b) => Number.parseFloat(b.score) - Number.parseFloat(a.score))[0];
+  const latestSourceDate = deviceSources
+    .map((source) => source.publishedAt)
+    .filter((date): date is Date => date instanceof Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  const evidenceDensity =
+    deviceSources.length > 0 ? Math.round(deviceChunks.length / deviceSources.length) : 0;
+  const sourceDiversity = Object.keys(sourceMix).length;
+  const extractionCoverage =
+    deviceChunks.length > 0
+      ? Math.min(100, Math.round((deviceAspects.length / Math.min(deviceChunks.length, 12)) * 100))
+      : 0;
+  const retrievalState =
+    sampleTurns.length > 0
+      ? 'Matched in past query'
+      : deviceChunks.length > 0
+        ? 'Ready'
+        : 'Warming up';
 
   return (
     <div className="grid-bg bg-background flex">
@@ -603,6 +657,44 @@ export default async function PipelinePage({ searchParams }: PageProps) {
                   <div className="flex justify-between gap-4">
                     <dt className="text-muted-foreground">Scorecard aspects</dt>
                     <dd className="text-primary">{deviceAspects.length}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Source mix</dt>
+                    <dd className="text-primary max-w-[220px] text-right">
+                      {Object.entries(sourceMix).length > 0
+                        ? Object.entries(sourceMix)
+                            .map(([type, count]) => `${type} ${count}`)
+                            .join(' / ')
+                        : 'none'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Strongest signal</dt>
+                    <dd className="text-primary">
+                      {topAspect ? `${topAspect.aspect} ${topAspect.score}/10` : 'pending'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Newest source</dt>
+                    <dd className="text-primary">
+                      {latestSourceDate ? latestSourceDate.toLocaleDateString('en-US') : 'unknown'}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Evidence density</dt>
+                    <dd className="text-primary">{evidenceDensity} chunks/source</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Source diversity</dt>
+                    <dd className="text-primary">{sourceDiversity} source types</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Extraction coverage</dt>
+                    <dd className="text-primary">{extractionCoverage}%</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Retrieval state</dt>
+                    <dd className="text-primary">{retrievalState}</dd>
                   </div>
                   {spec ? (
                     <>
