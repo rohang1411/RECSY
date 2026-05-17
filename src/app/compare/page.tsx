@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { appSearchParamsToURLSearchParams } from '@/app/browse/search-params-helpers';
-import { ComparePhonePickers } from '@/app/compare/compare-phone-pickers';
+import { ComparePhonePickers, type ComparePickerOption } from '@/app/compare/compare-phone-pickers';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
@@ -33,50 +33,90 @@ type PhoneRow = {
   status: 'active' | 'discontinued' | 'upcoming';
 };
 
-async function loadComparePickerOptions() {
+type MetricValue = {
+  slug: string;
+  displayValue: string;
+  numericValue?: number | null;
+};
+
+async function loadComparePickerOptions(): Promise<ComparePickerOption[]> {
   try {
     const db = getDb();
     const rows = await db
-      .select({ slug: phones.slug, brand: phones.brand, model: phones.model })
+      .select({
+        slug: phones.slug,
+        brand: phones.brand,
+        model: phones.model,
+        imageUrl: phones.imageUrl,
+        msrpUsd: phones.msrpUsd,
+        specJson: phones.specJson,
+      })
       .from(phones)
       .where(eq(phones.status, 'active'))
       .orderBy(asc(phones.brand), asc(phones.model));
-    return rows.map((r) => ({ slug: r.slug, label: `${r.brand} ${r.model}` }));
+    return rows.map((row) => {
+      const spec = PhoneSpecSchema.safeParse(row.specJson);
+      return {
+        slug: row.slug,
+        label: `${row.brand} ${row.model}`,
+        brand: row.brand,
+        model: row.model,
+        imageUrl: row.imageUrl,
+        msrpUsd: row.msrpUsd,
+        batteryMah: spec.success ? spec.data.battery_mah : null,
+        refreshRateHz: spec.success ? spec.data.display.refresh_rate_hz : null,
+        cameraMp: spec.success ? (spec.data.rear_cameras[0]?.mp ?? null) : null,
+      };
+    });
   } catch {
     return [];
   }
 }
 
-type Winner = 'left' | 'right' | 'tie' | null;
-
-function winnerByNumber(left: number | null, right: number | null, higherIsBetter = true): Winner {
-  if (left == null || right == null || left === right) return null;
-  return higherIsBetter ? (left > right ? 'left' : 'right') : left < right ? 'left' : 'right';
+function uniqueSlugs(...values: readonly string[]) {
+  const result: string[] = [];
+  for (const value of values) {
+    const slug = value.trim();
+    if (!slug || result.includes(slug)) continue;
+    result.push(slug);
+  }
+  return result.slice(0, 3);
 }
 
-function specLine(label: string, left: string, right: string, winner: Winner = null) {
+function winnerSlugs(values: readonly MetricValue[], higherIsBetter = true) {
+  const numeric = values.filter(
+    (value): value is MetricValue & { numericValue: number } =>
+      typeof value.numericValue === 'number' && Number.isFinite(value.numericValue),
+  );
+  if (numeric.length < 2) return new Set<string>();
+
+  const best = higherIsBetter
+    ? Math.max(...numeric.map((value) => value.numericValue))
+    : Math.min(...numeric.map((value) => value.numericValue));
+  const winners = numeric.filter((value) => value.numericValue === best);
+  if (winners.length === numeric.length) return new Set<string>();
+  return new Set(winners.map((value) => value.slug));
+}
+
+function metricRow(label: string, values: readonly MetricValue[], higherIsBetter = true) {
+  const winners = winnerSlugs(values, higherIsBetter);
   const winningCell =
     'bg-accent/10 text-primary font-semibold shadow-[inset_0_0_0_1px_var(--accent)] border-accent';
-  const normalCell = 'bg-background text-primary';
   return (
     <tr className="border-outline-variant border-b last:border-0">
-      <th className="border-outline-variant bg-background text-muted-foreground w-[28%] border-r p-4 text-left font-mono text-[11px] font-normal tracking-[0.16em] uppercase sm:w-1/4">
+      <th className="border-outline-variant bg-background text-muted-foreground w-[24%] border-r p-4 text-left font-mono text-[11px] font-normal tracking-[0.16em] uppercase">
         {label}
       </th>
-      <td
-        className={`border-outline-variant w-[36%] border-r p-4 text-sm sm:w-[37.5%] ${
-          winner === 'left' ? winningCell : normalCell
-        }`}
-      >
-        {left}
-      </td>
-      <td
-        className={`w-[36%] p-4 text-sm sm:w-[37.5%] ${
-          winner === 'right' ? winningCell : normalCell
-        }`}
-      >
-        {right}
-      </td>
+      {values.map((value) => (
+        <td
+          key={`${label}-${value.slug}`}
+          className={`border-outline-variant border-r p-4 text-sm last:border-r-0 ${
+            winners.has(value.slug) ? winningCell : 'bg-background text-primary'
+          }`}
+        >
+          {value.displayValue}
+        </td>
+      ))}
     </tr>
   );
 }
@@ -92,7 +132,7 @@ function EmptyCompareShell({
     <div className="grid-bg px-grid-margin py-10">
       <div className="border-outline-variant bg-background border p-6 sm:p-8">
         <p className="meta-label">Compare</p>
-        <h1 className="font-display text-primary mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+        <h1 className="heading-scanline text-gradient-accent-edge font-display mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
           {title}
         </h1>
         <div className="mt-8">{children}</div>
@@ -104,15 +144,14 @@ function EmptyCompareShell({
 export default async function ComparePage({ searchParams }: PageProps) {
   const raw = await searchParams;
   const sp = appSearchParamsToURLSearchParams(raw);
-  const a = (sp.get('a') ?? '').trim();
-  const b = (sp.get('b') ?? '').trim();
+  const slugs = uniqueSlugs(sp.get('a') ?? '', sp.get('b') ?? '', sp.get('c') ?? '');
+  const compareOptions = await loadComparePickerOptions();
 
-  if (!a || !b) {
-    const compareOptions = await loadComparePickerOptions();
+  if (slugs.length < 2) {
     return (
       <EmptyCompareShell>
         <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-          Pick two models from the catalog to compare their specs side by side.
+          Pick two or three models from the catalog to compare their specs side by side.
         </p>
         {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
         <p className="text-muted-foreground mt-5 text-sm">
@@ -122,16 +161,6 @@ export default async function ComparePage({ searchParams }: PageProps) {
           </Link>
           .
         </p>
-      </EmptyCompareShell>
-    );
-  }
-
-  if (a === b) {
-    const compareOptions = await loadComparePickerOptions();
-    return (
-      <EmptyCompareShell title="Compare">
-        <p className="text-muted-foreground text-sm">Choose two different phones.</p>
-        {compareOptions.length > 0 ? <ComparePhonePickers options={compareOptions} /> : null}
       </EmptyCompareShell>
     );
   }
@@ -150,21 +179,24 @@ export default async function ComparePage({ searchParams }: PageProps) {
       status: phones.status,
     })
     .from(phones)
-    .where(and(eq(phones.status, 'active'), inArray(phones.slug, [a, b])))) as PhoneRow[];
+    .where(and(eq(phones.status, 'active'), inArray(phones.slug, slugs)))) as PhoneRow[];
 
-  const bySlug = new Map(list.map((r) => [r.slug, r]));
-  const left = bySlug.get(a);
-  const right = bySlug.get(b);
+  const bySlug = new Map(list.map((row) => [row.slug, row]));
+  const compared = slugs
+    .map((slug) => bySlug.get(slug))
+    .filter((phone): phone is PhoneRow => Boolean(phone))
+    .map((phone) => ({
+      ...phone,
+      parsedSpec: PhoneSpecSchema.safeParse(phone.specJson),
+    }));
 
-  if (!left || !right) {
-    const foundSlugs = new Set(list.map((r) => r.slug));
-    const missing = [a, b].filter((s) => !foundSlugs.has(s));
-    const compareOptions = await loadComparePickerOptions();
+  if (compared.length < 2) {
+    const missing = slugs.filter((slug) => !bySlug.has(slug));
     return (
       <EmptyCompareShell title="Compare">
         <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-          We could not find both phones as active catalog entries. Choose two phones from the
-          dropdowns below.
+          We could not find at least two active catalog entries. Choose phones from the picker
+          below.
         </p>
         {missing.length > 0 ? (
           <p className="text-destructive mt-4 font-mono text-sm">
@@ -172,60 +204,71 @@ export default async function ComparePage({ searchParams }: PageProps) {
           </p>
         ) : null}
         {compareOptions.length > 0 ? (
-          <ComparePhonePickers defaultA={a} defaultB={b} options={compareOptions} />
+          <ComparePhonePickers
+            defaultA={slugs[0]}
+            defaultB={slugs[1]}
+            defaultC={slugs[2]}
+            options={compareOptions}
+          />
         ) : null}
       </EmptyCompareShell>
     );
   }
 
-  const sL = PhoneSpecSchema.safeParse(left.specJson);
-  const sR = PhoneSpecSchema.safeParse(right.specJson);
-  const pL = sL.success ? sL.data : null;
-  const pR = sR.success ? sR.data : null;
-
-  const priceL = formatUsdFromNumericString(left.msrpUsd) ?? 'N/A';
-  const priceR = formatUsdFromNumericString(right.msrpUsd) ?? 'N/A';
-  const canDetail = pL && pR;
+  const validSpecs = compared.every((phone) => phone.parsedSpec.success);
+  const specs = compared.map((phone) => (phone.parsedSpec.success ? phone.parsedSpec.data : null));
 
   return (
     <div className="grid-bg px-grid-margin py-10">
       <header className="border-outline-variant bg-background border p-6 sm:p-8">
         <p className="meta-label">Compare</p>
-        <h1 className="font-display text-primary mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+        <h1 className="heading-scanline text-gradient-accent-edge font-display mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
           Compare
         </h1>
-        {!canDetail ? (
+        {!validSpecs ? (
           <p className="text-muted-foreground mt-4 text-sm">
-            Full spec table needs valid specs on both phones. Open each page for details.
+            Full spec table needs valid specs on every selected phone. Open each page for details.
           </p>
+        ) : null}
+        {compareOptions.length > 0 ? (
+          <ComparePhonePickers
+            defaultA={slugs[0]}
+            defaultB={slugs[1]}
+            defaultC={slugs[2]}
+            options={compareOptions}
+          />
         ) : null}
       </header>
 
-      <div className="bg-outline-variant mt-8 grid gap-px sm:grid-cols-2">
-        {[left, right].map((p, index) => (
+      <div
+        className={`bg-outline-variant mt-8 grid gap-px ${compared.length === 3 ? 'lg:grid-cols-3' : 'sm:grid-cols-2'}`}
+      >
+        {compared.map((phone, index) => (
           <Link
-            key={p.slug}
-            href={`/p/${p.slug}`}
-            className="group bg-background relative min-h-[360px] overflow-hidden transition-colors"
+            key={phone.slug}
+            href={`/p/${phone.slug}`}
+            className="interactive-panel group relative min-h-[360px] overflow-hidden border-0"
           >
             <PhoneImage
-              src={p.imageUrl}
-              label={`${p.brand} ${p.model}`}
+              src={phone.imageUrl}
+              label={`${phone.brand} ${phone.model}`}
               fill
               fit="cover"
               className="absolute inset-0 h-full w-full"
             />
-            <div className="from-background via-background/65 to-background/10 absolute inset-0 bg-gradient-to-t" />
+            <div className="from-background via-background/70 to-background/10 absolute inset-0 bg-gradient-to-t" />
             <div className="absolute inset-x-0 bottom-0 p-6 text-left">
               <p className="meta-label text-primary mb-3">Phone {index + 1}</p>
               <p className="text-muted-foreground font-mono text-[11px] tracking-[0.16em] uppercase">
-                {p.brand}
+                {phone.brand}
               </p>
-              <p className="font-display text-primary mt-2 text-4xl font-bold tracking-normal uppercase">
-                {p.model}
+              <p className="text-gradient-steel font-display mt-2 text-4xl font-bold tracking-normal uppercase">
+                {phone.model}
               </p>
-              {p.tagline ? (
-                <p className="text-muted-foreground mt-3 max-w-md text-sm leading-6">{p.tagline}</p>
+              {phone.tagline ? (
+                <p className="text-muted-foreground mt-3 max-w-md text-sm leading-6">
+                  {phone.tagline}
+                </p>
               ) : null}
               <p className="text-primary mt-5 font-mono text-[11px] tracking-[0.18em] uppercase">
                 Phone details
@@ -236,56 +279,102 @@ export default async function ComparePage({ searchParams }: PageProps) {
       </div>
 
       <div className="border-outline-variant bg-background mt-8 overflow-x-auto border">
-        <table className="w-full min-w-[680px] border-collapse text-left">
+        <table className="w-full min-w-[760px] border-collapse text-left">
+          <thead>
+            <tr className="border-outline-variant border-b">
+              <th className="border-outline-variant text-muted-foreground border-r p-4 text-left font-mono text-[11px] font-normal tracking-[0.16em] uppercase">
+                Metric
+              </th>
+              {compared.map((phone) => (
+                <th
+                  key={phone.slug}
+                  className="border-outline-variant text-primary border-r p-4 text-left font-mono text-[11px] font-normal tracking-[0.16em] uppercase last:border-r-0"
+                >
+                  {phone.brand} {phone.model}
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {specLine(
+            {metricRow(
               'MSRP USD',
-              priceL,
-              priceR,
-              winnerByNumber(
-                left.msrpUsd ? Number.parseFloat(left.msrpUsd) : null,
-                right.msrpUsd ? Number.parseFloat(right.msrpUsd) : null,
-                false,
-              ),
+              compared.map((phone) => ({
+                slug: phone.slug,
+                displayValue: formatUsdFromNumericString(phone.msrpUsd) ?? 'N/A',
+                numericValue: phone.msrpUsd ? Number.parseFloat(phone.msrpUsd) : null,
+              })),
+              false,
             )}
-            {canDetail ? (
+            {validSpecs ? (
               <>
-                {specLine(
+                {metricRow(
                   'Display',
-                  `${pL.display.size_in}" ${pL.display.panel_type} / ${pL.display.resolution} / ${pL.display.refresh_rate_hz}Hz`,
-                  `${pR.display.size_in}" ${pR.display.panel_type} / ${pR.display.resolution} / ${pR.display.refresh_rate_hz}Hz`,
-                  winnerByNumber(pL.display.refresh_rate_hz, pR.display.refresh_rate_hz),
+                  compared.map((phone, index) => {
+                    const spec = specs[index]!;
+                    return {
+                      slug: phone.slug,
+                      displayValue: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz}Hz`,
+                      numericValue: spec.display.refresh_rate_hz,
+                    };
+                  }),
                 )}
-                {specLine('Chipset', pL.chipset, pR.chipset)}
-                {specLine(
+                {metricRow(
+                  'Chipset',
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: specs[index]!.chipset,
+                  })),
+                )}
+                {metricRow(
                   'RAM and storage GB',
-                  `${pL.ram_gb} / ${pL.storage_options_gb.join(', ')}`,
-                  `${pR.ram_gb} / ${pR.storage_options_gb.join(', ')}`,
-                  winnerByNumber(
-                    pL.ram_gb + Math.max(...pL.storage_options_gb) / 1000,
-                    pR.ram_gb + Math.max(...pR.storage_options_gb) / 1000,
-                  ),
+                  compared.map((phone, index) => {
+                    const spec = specs[index]!;
+                    return {
+                      slug: phone.slug,
+                      displayValue: `${spec.ram_gb} / ${spec.storage_options_gb.join(', ')}`,
+                      numericValue: spec.ram_gb + Math.max(...spec.storage_options_gb) / 1000,
+                    };
+                  }),
                 )}
-                {specLine(
-                  'Battery mAh',
-                  String(pL.battery_mah),
-                  String(pR.battery_mah),
-                  winnerByNumber(pL.battery_mah, pR.battery_mah),
+                {metricRow(
+                  'Battery',
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: `${specs[index]!.battery_mah}mAh`,
+                    numericValue: specs[index]!.battery_mah,
+                  })),
                 )}
-                {specLine(
-                  'Weight g',
-                  String(pL.weight_g),
-                  String(pR.weight_g),
-                  winnerByNumber(pL.weight_g, pR.weight_g, false),
+                {metricRow(
+                  'Weight',
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: `${specs[index]!.weight_g}g`,
+                    numericValue: specs[index]!.weight_g,
+                  })),
+                  false,
                 )}
-                {specLine(
+                {metricRow(
                   'Main rear camera MP',
-                  String(pL.rear_cameras[0]?.mp ?? 'N/A'),
-                  String(pR.rear_cameras[0]?.mp ?? 'N/A'),
-                  winnerByNumber(pL.rear_cameras[0]?.mp ?? null, pR.rear_cameras[0]?.mp ?? null),
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: `${specs[index]!.rear_cameras[0]?.mp ?? 'N/A'}MP`,
+                    numericValue: specs[index]!.rear_cameras[0]?.mp ?? null,
+                  })),
                 )}
-                {specLine('OS', pL.os, pR.os)}
-                {specLine('Foldable', pL.foldable ? 'Yes' : 'No', pR.foldable ? 'Yes' : 'No')}
+                {metricRow(
+                  'OS',
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: specs[index]!.os,
+                  })),
+                )}
+                {metricRow(
+                  'Foldable',
+                  compared.map((phone, index) => ({
+                    slug: phone.slug,
+                    displayValue: specs[index]!.foldable ? 'Yes' : 'No',
+                  })),
+                )}
               </>
             ) : null}
           </tbody>

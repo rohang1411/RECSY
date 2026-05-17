@@ -2,7 +2,7 @@
 
 import { ArrowRight, Loader2, Scale } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import {
@@ -12,8 +12,8 @@ import {
 } from '@/lib/client-settings';
 import { formatUsdFromNumericString } from '@/lib/format-usd';
 import {
-  clearRecommendSession,
   readRecommendSession,
+  type RecommendationSnapshot,
   writeRecommendSession,
 } from '@/lib/recommend-session';
 import { cn } from '@/lib/utils';
@@ -37,7 +37,7 @@ interface ChatLine {
 const INITIAL_LINES: ChatLine[] = [
   {
     role: 'assistant',
-    text: 'What kind of phone are you looking for? Mention budget, must-haves, and what matters most (camera, battery, gaming, etc.).',
+    text: "Just describe the phone you want, the features you'd like, and any price preference. For example: great camera, under $700, strong battery, not too heavy.",
   },
 ];
 
@@ -54,6 +54,35 @@ function formatSavedAt(savedAt: number): string {
   if (diffH < 1) return 'earlier this session';
   if (diffH === 1) return '1 hour ago';
   return `${diffH} hours ago`;
+}
+
+function makeSnapshotId(): string {
+  return `answer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function legacySnapshotFromSession(
+  session: ReturnType<typeof readRecommendSession>,
+): RecommendationSnapshot[] {
+  if (!session?.picks || session.picks.length === 0) return [];
+  const query =
+    [...session.lines].reverse().find((line) => line.role === 'user')?.text ?? 'Previous request';
+  const assistantText =
+    [...session.lines].reverse().find((line) => line.role === 'assistant')?.text ??
+    'Recommendations are ready.';
+  return [
+    {
+      id: `restored-${session.savedAt}`,
+      query,
+      assistantText,
+      picks: session.picks,
+      relaxed: session.relaxed ?? [],
+      refined: session.refined,
+      scoresTied: session.scoresTied,
+      scorecardMissing: session.scorecardMissing,
+      topAspects: session.topAspects,
+      savedAt: session.savedAt,
+    },
+  ];
 }
 
 /** SSR-safe client mount gate (same pattern as `useClientSetting`). */
@@ -84,23 +113,42 @@ export function RecommendClient() {
 
 function RecommendClientLoaded() {
   const session = readRecommendSession();
+  const initialSnapshots = session?.snapshots?.length
+    ? [...session.snapshots]
+    : legacySnapshotFromSession(session);
+  const initialActiveSnapshotId =
+    session?.activeSnapshotId &&
+    initialSnapshots.some((snapshot) => snapshot.id === session.activeSnapshotId)
+      ? session.activeSnapshotId
+      : (initialSnapshots[0]?.id ?? null);
   const [input, setInput] = useState('');
   const [lines, setLines] = useState<ChatLine[]>([
-    {
-      role: 'assistant',
-      text: "Just describe the phone you want, the features you'd like, and any price preference. For example: great camera, under $700, strong battery, not too heavy.",
-    },
+    ...(session?.lines?.length ? (session.lines as ChatLine[]) : INITIAL_LINES),
   ]);
-  const [picks, setPicks] = useState<readonly ApiPick[] | null>(null);
-  const [relaxed, setRelaxed] = useState<readonly string[] | null>(null);
-  const [refined, setRefined] = useState<boolean>(false);
-  const [scoresTied, setScoresTied] = useState<boolean>(false);
-  const [scorecardMissing, setScorecardMissing] = useState<boolean>(false);
-  const [topAspects, setTopAspects] = useState<readonly string[]>([]);
+  const [picks, setPicks] = useState<readonly ApiPick[] | null>(
+    initialSnapshots[0]?.picks ?? session?.picks ?? null,
+  );
+  const [relaxed, setRelaxed] = useState<readonly string[] | null>(
+    initialSnapshots[0]?.relaxed ?? session?.relaxed ?? null,
+  );
+  const [refined, setRefined] = useState<boolean>(
+    initialSnapshots[0]?.refined ?? session?.refined ?? false,
+  );
+  const [scoresTied, setScoresTied] = useState<boolean>(
+    initialSnapshots[0]?.scoresTied ?? session?.scoresTied ?? false,
+  );
+  const [scorecardMissing, setScorecardMissing] = useState<boolean>(
+    initialSnapshots[0]?.scorecardMissing ?? session?.scorecardMissing ?? false,
+  );
+  const [topAspects, setTopAspects] = useState<readonly string[]>(
+    initialSnapshots[0]?.topAspects ?? session?.topAspects ?? [],
+  );
+  const [snapshots, setSnapshots] = useState<readonly RecommendationSnapshot[]>(initialSnapshots);
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(initialActiveSnapshotId);
+  const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Timestamp (ms) of the restored session, or null if this is a live session. */
-  const [restoredAt, setRestoredAt] = useState<number | null>(() => session?.savedAt ?? null);
+  const conversationEndRef = useRef<HTMLLIElement | null>(null);
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
@@ -122,23 +170,26 @@ function RecommendClientLoaded() {
       scoresTied,
       scorecardMissing,
       topAspects,
+      snapshots,
+      activeSnapshotId,
     });
-  }, [lines, picks, relaxed, refined, scoresTied, scorecardMissing, topAspects]);
+  }, [
+    lines,
+    picks,
+    relaxed,
+    refined,
+    scoresTied,
+    scorecardMissing,
+    topAspects,
+    snapshots,
+    activeSnapshotId,
+  ]);
 
-  const clearRestoredSession = useCallback(() => {
-    clearRecommendSession();
-    setLines(INITIAL_LINES);
-    setPicks(null);
-    setRelaxed(null);
-    setRefined(false);
-    setScoresTied(false);
-    setScorecardMissing(false);
-    setTopAspects([]);
-    setRestoredAt(null);
-    setError(null);
-  }, []);
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [busy, lines]);
 
-  const send = useCallback(async () => {
+  async function send() {
     const message = input.trim();
     if (!message || busy) return;
     setInput('');
@@ -149,9 +200,8 @@ function RecommendClientLoaded() {
     setScoresTied(false);
     setScorecardMissing(false);
     setTopAspects([]);
-    setRestoredAt(null);
-    // Clear any restored session so the new query owns the slot from scratch.
-    clearRecommendSession();
+    setActiveSnapshotId(null);
+    setPendingQuery(message);
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
     try {
@@ -222,6 +272,22 @@ function RecommendClientLoaded() {
           const intro =
             relaxedList.length > 0 ? `${base} Adjusted: ${relaxedList.join(', ')}.` : base;
           setLines((prev) => [...prev, { role: 'assistant', text: intro }]);
+          const snapshot: RecommendationSnapshot = {
+            id: makeSnapshotId(),
+            query: message,
+            assistantText: intro,
+            picks: pickList,
+            relaxed: relaxedList,
+            refined: rawRefined,
+            scoresTied: rawScoresTied,
+            scorecardMissing: rawScorecardMissing,
+            topAspects: topAspectsList,
+            savedAt: Date.now(),
+          };
+          setSnapshots((prev) =>
+            [snapshot, ...prev.filter((item) => item.id !== snapshot.id)].slice(0, 8),
+          );
+          setActiveSnapshotId(snapshot.id);
 
           if (rawScoresTied && pickList.length > 1) {
             const priorityHint =
@@ -256,12 +322,20 @@ function RecommendClientLoaded() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
+      setPendingQuery(null);
       setBusy(false);
     }
-  }, [busy, input]);
+  }
 
-  const topPick = picks?.[0] ?? null;
-  const runnerUps = picks?.slice(1) ?? [];
+  const activeSnapshot = snapshots.find((snapshot) => snapshot.id === activeSnapshotId) ?? null;
+  const displayPicks = activeSnapshot?.picks ?? picks;
+  const displayRelaxed = activeSnapshot?.relaxed ?? relaxed;
+  const displayRefined = activeSnapshot?.refined ?? refined;
+  const displayScoresTied = activeSnapshot?.scoresTied ?? scoresTied;
+  const displayScorecardMissing = activeSnapshot?.scorecardMissing ?? scorecardMissing;
+  const displayTopAspects = activeSnapshot?.topAspects ?? topAspects;
+  const topPick = displayPicks?.[0] ?? null;
+  const runnerUps = displayPicks?.slice(1) ?? [];
 
   return (
     <div className="px-grid-margin py-10">
@@ -272,7 +346,7 @@ function RecommendClientLoaded() {
           </div>
           <ul className="divide-outline-variant max-h-[min(520px,55vh)] divide-y overflow-y-auto">
             {lines.map((line, i) => (
-              <li key={i} className="p-4">
+              <li key={i} ref={i === lines.length - 1 ? conversationEndRef : null} className="p-4">
                 <p className="meta-label mb-2">
                   {line.role === 'user' ? `Your request ${String(i).padStart(2, '0')}` : 'RECSY'}
                 </p>
@@ -297,9 +371,9 @@ function RecommendClientLoaded() {
             </p>
           ) : null}
 
-          {relaxed && relaxed.length > 0 ? (
+          {displayRelaxed && displayRelaxed.length > 0 ? (
             <p className="border-outline-variant text-muted-foreground border-t p-4 font-mono text-xs">
-              Adjustments: {relaxed.join(' / ')}
+              Adjustments: {displayRelaxed.join(' / ')}
             </p>
           ) : null}
 
@@ -335,12 +409,45 @@ function RecommendClientLoaded() {
         </section>
 
         <section className="xl:col-span-7">
-          {picks && picks.length > 0 ? (
+          {snapshots.length > 0 ? (
+            <div className="mb-5">
+              <p className="meta-label text-primary mb-3">Answer timeline</p>
+              <div className="bg-outline-variant grid gap-px md:grid-cols-2">
+                {snapshots.map((snapshot, index) => (
+                  <button
+                    key={snapshot.id}
+                    type="button"
+                    onClick={() => setActiveSnapshotId(snapshot.id)}
+                    aria-current={activeSnapshotId === snapshot.id ? 'true' : undefined}
+                    className={cn(
+                      'interactive-panel p-4 text-left',
+                      activeSnapshotId === snapshot.id && 'border-accent bg-surface-container',
+                    )}
+                  >
+                    <span className="meta-label text-accent">
+                      {index === 0 ? 'Latest answer' : `Previous answer ${index}`}
+                    </span>
+                    <span className="text-primary mt-2 block truncate font-mono text-xs">
+                      {snapshot.query}
+                    </span>
+                    <span className="text-muted-foreground mt-2 block font-mono text-[10px] tracking-[0.12em] uppercase">
+                      {snapshot.picks[0]?.model ?? 'No picks'} / {snapshot.picks.length} picks /{' '}
+                      {formatSavedAt(snapshot.savedAt)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {displayPicks && displayPicks.length > 0 ? (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="meta-label text-primary">Recommendations</p>
-              {picks.length >= 2 && picks[0] != null && picks[1] != null ? (
+              <p className="meta-label text-primary">
+                {activeSnapshot ? 'Selected recommendations' : 'Recommendations'}
+              </p>
+              {displayPicks.length >= 2 && displayPicks[0] != null && displayPicks[1] != null ? (
                 <Link
-                  href={`/compare?a=${encodeURIComponent(picks[0].slug)}&b=${encodeURIComponent(picks[1].slug)}`}
+                  href={`/compare?a=${encodeURIComponent(displayPicks[0].slug)}&b=${encodeURIComponent(displayPicks[1].slug)}`}
                   className="border-outline text-primary hover:bg-primary hover:text-background inline-flex items-center gap-2 border px-3 py-2 font-mono text-[11px] tracking-[0.16em] uppercase transition-colors"
                 >
                   <Scale className="size-3.5" aria-hidden />
@@ -349,25 +456,37 @@ function RecommendClientLoaded() {
               ) : null}
             </div>
           ) : null}
-          {scoresTied || scorecardMissing ? (
+          {displayScoresTied || displayScorecardMissing ? (
             <div
               role="note"
               className="border-outline-variant bg-background text-muted-foreground mb-4 border p-4 font-mono text-xs leading-5"
             >
-              {scorecardMissing ? (
+              {displayScorecardMissing ? (
                 <p>Notice: no reviewer scorecard data yet. Aspect scores default to 5.0/10.</p>
               ) : null}
-              {scoresTied && picks && picks.length > 1 ? (
+              {displayScoresTied && displayPicks && displayPicks.length > 1 ? (
                 <p>
-                  Notice: the top {picks.length} picks are within rounding error for your
+                  Notice: the top {displayPicks.length} picks are within rounding error for your
                   priorities.
                 </p>
               ) : null}
             </div>
           ) : null}
 
-          {picks && picks.length > 0 ? (
-            <div className="bg-outline-variant grid gap-px lg:grid-cols-12">
+          {pendingQuery && busy ? (
+            <div className="interactive-panel relative mb-4 overflow-hidden p-10" aria-busy="true">
+              <p className="meta-label text-accent">Building answer</p>
+              <p className="text-gradient-steel font-display mt-4 text-4xl font-extrabold uppercase">
+                {pendingQuery}
+              </p>
+              <div className="bg-outline-variant mt-8 h-px overflow-hidden">
+                <span className="flow-dot bg-accent block size-2" />
+              </div>
+            </div>
+          ) : null}
+
+          {displayPicks && displayPicks.length > 0 ? (
+            <div className="bg-outline-variant grid gap-px lg:grid-cols-12" aria-busy={busy}>
               {topPick ? (
                 <RecommendationCard pick={topPick} index={0} featured className="lg:col-span-8" />
               ) : null}
@@ -378,8 +497,8 @@ function RecommendClientLoaded() {
               </div>
             </div>
           ) : (
-            <div className="border-outline-variant bg-background border p-10">
-              <p className="font-display text-primary text-4xl font-extrabold tracking-normal uppercase">
+            <div className="interactive-panel bg-background p-10">
+              <p className="heading-scanline text-gradient-steel font-display text-4xl font-extrabold tracking-normal uppercase">
                 Tell us what you want
               </p>
               <p className="text-muted-foreground mt-4 max-w-lg text-sm leading-6">
@@ -388,11 +507,13 @@ function RecommendClientLoaded() {
             </div>
           )}
 
-          {picks && picks.length > 0 ? (
+          {displayPicks && displayPicks.length > 0 ? (
             <p className="text-muted-foreground mt-4 font-mono text-[11px] tracking-[0.14em] uppercase">
-              Showing {picks.length} {picks.length === 1 ? 'match' : 'picks'}
-              {refined ? ' / updated' : ''}
-              {topAspects.length > 0 ? ` / based on ${topAspects.slice(0, 2).join(' then ')}` : ''}
+              Showing {displayPicks.length} {displayPicks.length === 1 ? 'match' : 'picks'}
+              {displayRefined ? ' / updated' : ''}
+              {displayTopAspects.length > 0
+                ? ` / based on ${displayTopAspects.slice(0, 2).join(' then ')}`
+                : ''}
             </p>
           ) : null}
         </section>
@@ -417,11 +538,12 @@ function RecommendationCard({
     <Link
       href={`/p/${pick.slug}`}
       className={cn(
-        'group bg-background hover:bg-surface-container focus-visible:bg-surface-container transition-colors duration-150 focus-visible:outline-none',
+        'interactive-panel group relative overflow-hidden focus-visible:outline-none',
         featured ? 'min-h-[520px]' : 'min-h-64',
         className,
       )}
     >
+      <span className="from-accent/40 pointer-events-none absolute inset-x-0 top-0 h-px scale-x-0 bg-gradient-to-r to-transparent transition-transform duration-300 group-hover:scale-x-100 group-focus-visible:scale-x-100" />
       <div
         className={cn('border-outline-variant border-b p-5', featured ? 'min-h-72' : 'min-h-36')}
       >
@@ -447,7 +569,7 @@ function RecommendationCard({
           </p>
           <h3
             className={cn(
-              'font-display text-primary mt-2 font-bold tracking-normal uppercase',
+              'font-display text-gradient-steel mt-2 font-bold tracking-normal uppercase',
               featured ? 'text-5xl leading-none' : 'text-2xl',
             )}
           >
@@ -459,7 +581,10 @@ function RecommendationCard({
           <p className="text-muted-foreground text-sm leading-6">{pick.summary}</p>
           <p className="text-primary mt-5 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] uppercase">
             Phone details
-            <ArrowRight className="size-3.5" aria-hidden />
+            <ArrowRight
+              className="size-3.5 transition-transform duration-200 group-hover:translate-x-1 group-focus-visible:translate-x-1"
+              aria-hidden
+            />
           </p>
         </div>
       </div>

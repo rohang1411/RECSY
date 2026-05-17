@@ -68,6 +68,14 @@
 }
 
 @layer base {
+  :root {
+    --motion-fast: 150ms;
+    --motion-medium: 260ms;
+    --motion-slow: 520ms;
+    --ease-editorial: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-schematic: cubic-bezier(0.65, 0, 0.35, 1);
+  }
+
   * {
     @apply border-border;
     border-radius: 0 !important;
@@ -188,6 +196,90 @@
     @apply font-display text-primary text-5xl leading-[0.92] font-extrabold tracking-normal uppercase sm:text-7xl lg:text-[120px];
   }
 
+  .text-gradient-steel {
+    color: var(--primary);
+  }
+
+  @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+    .text-gradient-steel {
+      background: linear-gradient(100deg, #ffffff 0%, #d7dadb 38%, #8e9495 78%, #ffffff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .text-gradient-accent-edge {
+      background: linear-gradient(
+        100deg,
+        #ffffff 0%,
+        #cfd3d4 42%,
+        rgb(216 107 56 / 0.72) 72%,
+        #f7f7f7 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  }
+
+  .heading-scanline {
+    @apply relative inline-block;
+  }
+
+  .heading-scanline::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.64), transparent);
+    bottom: 0.04em;
+    content: '';
+    height: 1px;
+    left: 0;
+    opacity: 0;
+    position: absolute;
+    transform: translateX(-18%);
+    transition:
+      opacity var(--motion-medium) var(--ease-editorial),
+      transform var(--motion-slow) var(--ease-editorial);
+    width: 100%;
+  }
+
+  .heading-scanline:hover::after,
+  .heading-scanline:focus-within::after {
+    opacity: 1;
+    transform: translateX(18%);
+  }
+
+  .interactive-panel {
+    @apply border-outline-variant bg-background border;
+    transition:
+      border-color var(--motion-medium) var(--ease-editorial),
+      background-color var(--motion-medium) var(--ease-editorial),
+      opacity var(--motion-medium) var(--ease-editorial),
+      filter var(--motion-medium) var(--ease-editorial),
+      transform var(--motion-medium) var(--ease-editorial);
+  }
+
+  .interactive-panel:hover,
+  .interactive-panel:focus-visible,
+  .interactive-panel:focus-within {
+    @apply border-accent bg-surface-container;
+    transform: translateY(-1px);
+  }
+
+  .image-reveal {
+    filter: grayscale(1) contrast(0.95) brightness(0.92);
+    transform: scale(1);
+    transition:
+      filter var(--motion-medium) var(--ease-editorial),
+      transform var(--motion-medium) var(--ease-editorial);
+  }
+
+  .group:hover .image-reveal,
+  .group:focus-within .image-reveal,
+  .image-reveal:hover,
+  .image-reveal:focus-visible {
+    filter: grayscale(0) contrast(1) brightness(1);
+    transform: scale(1.02);
+  }
+
   .accent-hairline {
     @apply relative;
   }
@@ -211,6 +303,14 @@
 
   .source-orbit {
     animation: source-float 6s ease-in-out infinite;
+    transform-origin: left center;
+  }
+
+  .source-orbit:hover,
+  .source-orbit:focus-visible,
+  .source-orbit:focus-within {
+    animation-play-state: paused;
+    transform: translateY(-2px) scale(1.02);
   }
 
   .source-orbit:nth-child(2) {
@@ -229,6 +329,10 @@
     animation: pipeline-pulse 3s ease-in-out infinite;
   }
 
+  .llm-agent-ring {
+    animation: llm-agent-ring 12s linear infinite;
+  }
+
   .flow-dot {
     animation: flow-dot 2.8s linear infinite;
   }
@@ -239,6 +343,35 @@
 
   .flow-dot:nth-child(3) {
     animation-delay: 1.4s;
+  }
+
+  .synthesis-bubble {
+    animation: synthesis-breathe 5.6s var(--ease-editorial) infinite;
+  }
+
+  .synthesis-bubble:nth-child(2n) {
+    animation-delay: -1.3s;
+  }
+
+  .synthesis-bubble:nth-child(3n) {
+    animation-delay: -2.7s;
+  }
+
+  .status-dot {
+    @apply relative inline-block size-2;
+    background: currentColor;
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent);
+  }
+
+  .status-dot[data-state='running'],
+  .status-dot[data-state='queued'],
+  .status-dot[data-state='in_progress'],
+  .status-dot[data-state='success'],
+  .status-dot[data-state='ready'],
+  .status-dot[data-state='failed'],
+  .status-dot[data-state='error'],
+  .status-dot[data-state='skipped'] {
+    animation: status-glow 1.8s var(--ease-editorial) infinite;
   }
 }
 
@@ -264,6 +397,20 @@
   }
 }
 
+@keyframes llm-agent-ring {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+
+  50% {
+    transform: rotate(180deg) scale(1.05);
+  }
+
+  to {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
 @keyframes flow-dot {
   0% {
     opacity: 0;
@@ -281,5 +428,40 @@
   100% {
     opacity: 0;
     transform: translateX(100%);
+  }
+}
+
+@keyframes synthesis-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1.035);
+  }
+}
+
+@keyframes status-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, currentColor 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heading-scanline::after,
+  .interactive-panel,
+  .image-reveal,
+  .synthesis-bubble,
+  .status-dot {
+    animation: none !important;
+    transform: none !important;
   }
 }

@@ -37,7 +37,7 @@ export function PhoneImage({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`bg-surface-container h-full w-full contrast-125 grayscale transition duration-150 group-hover:grayscale-0 hover:grayscale-0 ${
+          className={`image-reveal bg-surface-container h-full w-full ${
             fit === 'cover' ? 'object-cover' : 'object-contain p-2'
           }`}
         />

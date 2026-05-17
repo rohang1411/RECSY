@@ -44,7 +44,7 @@ export default function AboutPage() {
     <div className="grid-bg px-grid-margin py-10">
       <section className="border-outline-variant bg-background border p-6 sm:p-8">
         <p className="meta-label">About</p>
-        <h1 className="font-display text-primary mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+        <h1 className="heading-scanline text-gradient-accent-edge font-display mt-5 text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
           About RECSY
         </h1>
         <p className="text-muted-foreground mt-6 max-w-3xl text-sm leading-6">
@@ -62,7 +62,7 @@ export default function AboutPage() {
             className="bg-background hover:bg-surface-container p-6 transition-colors"
           >
             <p className="meta-label">Step {String(index + 1).padStart(2, '0')}</p>
-            <h2 className="font-display text-primary mt-4 text-3xl font-bold tracking-normal uppercase">
+            <h2 className="text-gradient-steel font-display mt-4 text-3xl font-bold tracking-normal uppercase">
               {label}
             </h2>
             <p className="text-muted-foreground mt-3 text-sm leading-6">{detail}</p>
