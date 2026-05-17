@@ -17,9 +17,11 @@
  *          `src/app/p/[slug]/page.tsx` (reads `aspects` rows for display).
  */
 export {
+  isScorecardQuotaExhaustedError,
   loadPhoneBySlug,
   runScorecardForPhone,
   runSingleAspect,
+  ScorecardQuotaExhaustedError,
   type ScorecardRunContext,
 } from './agent';
 export { latestAspectDefinitionsByAspect } from './definitions';
@@ -35,5 +37,9 @@ export {
   bootstrapNextScorecardAt,
   type ScorecardPickedPhone,
 } from './scheduler';
-export { computeChunkFingerprint, getLastScorecardFingerprint } from './staleness';
+export {
+  computeChunkFingerprint,
+  getCompletedAspectsForFingerprint,
+  getLastScorecardFingerprint,
+} from './staleness';
 export type { AspectDefinitionRow, AspectRow, ScorecardQuote } from './types';
