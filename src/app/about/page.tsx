@@ -39,6 +39,24 @@ const scorecard = [
   ['Value', 'How much phone you get for the price and how defensible the purchase is.'],
 ] as const;
 
+const creators = [
+  {
+    name: 'Rohan Sharma',
+    image: '/creators/rohan.jpg',
+    body: 'Rohan works across product, engineering, and applied AI to shape RECSY into a practical recommendation system with a clear user experience.',
+    links: [
+      ['LinkedIn', 'https://www.linkedin.com/in/rohang1411/'],
+      ['Portfolio', 'https://rohang1411.github.io/'],
+    ],
+  },
+  {
+    name: 'Milind Raj',
+    image: '/creators/milind.jpg',
+    body: 'Milind helps build the product vision behind RECSY, with a focus on making phone discovery more explainable and easier to trust.',
+    links: [['LinkedIn', 'https://www.linkedin.com/in/milindraj/']],
+  },
+] as const;
+
 export default function AboutPage() {
   return (
     <div className="grid-bg px-grid-margin py-10">
@@ -78,9 +96,9 @@ export default function AboutPage() {
           </h2>
           <p className="text-muted-foreground mt-5 text-sm leading-6">
             The system is built for shoppers who know what they want from a phone, even if they do
-            not know the exact spec sheet. A request like “under $800, great camera, strong battery,
-            and not huge” is enough to start. RECSY translates that into a ranking, shows the
-            strongest matches, and keeps comparison paths close by.
+            not know the exact spec sheet. A request like &quot;under $800, great camera, strong
+            battery, and not huge&quot; is enough to start. RECSY translates that into a ranking,
+            shows the strongest matches, and keeps comparison paths close by.
           </p>
           <div className="bg-outline-variant mt-6 grid gap-px sm:grid-cols-2">
             {principles.map(([title, body]) => (
@@ -129,6 +147,63 @@ export default function AboutPage() {
               </h3>
               <p className="text-muted-foreground mt-3 text-sm leading-6">{body}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <div className="accent-hairline border-outline-variant mb-4 border-b pb-4">
+          <p className="meta-label text-primary">Creators</p>
+          <h2 className="text-gradient-steel font-display mt-4 text-4xl font-bold tracking-normal uppercase">
+            Built by Rohan Sharma and Milind Raj
+          </h2>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          {creators.map((creator, index) => (
+            <article
+              key={creator.name}
+              className="creator-card interactive-panel group relative isolate min-h-[520px] overflow-hidden"
+            >
+              <div className="absolute inset-0">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local creator portrait in public/. */}
+                <img
+                  src={creator.image}
+                  alt={creator.name}
+                  className="creator-photo h-full w-full object-cover"
+                />
+                <div className="from-background via-background/55 absolute inset-0 bg-gradient-to-t to-transparent" />
+                <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgb(216_107_56_/_0.18)_46%,transparent_62%)] opacity-0 transition-opacity duration-500 group-focus-within:opacity-100 group-hover:opacity-100" />
+              </div>
+              <div className="relative flex min-h-[520px] flex-col justify-between p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <p className="meta-label text-accent">
+                    Creator {String(index + 1).padStart(2, '0')}
+                  </p>
+                  <span className="status-dot" data-state="ready" aria-hidden />
+                </div>
+                <div className="max-w-xl">
+                  <h3 className="text-gradient-accent-edge font-display text-5xl leading-none font-extrabold uppercase">
+                    {creator.name}
+                  </h3>
+                  <p className="text-muted-foreground mt-5 max-w-md text-sm leading-6">
+                    {creator.body}
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    {creator.links.map(([label, href]) => (
+                      <a
+                        key={href}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="border-outline bg-background/75 text-primary hover:border-accent hover:text-accent border px-3 py-2 font-mono text-[11px] tracking-[0.16em] uppercase backdrop-blur transition-colors"
+                      >
+                        {label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
       </section>

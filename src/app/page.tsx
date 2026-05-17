@@ -25,9 +25,9 @@ const flows = [
 export default function HomePage() {
   return (
     <div className="grid-bg">
-      <section className="px-grid-margin py-10 sm:py-14 lg:py-16">
-        <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
-          <div className="lg:col-span-8">
+      <section className="px-grid-margin flex min-h-[calc(100dvh-4rem)] items-center py-8 sm:py-10 lg:py-12">
+        <div className="grid w-full gap-8 lg:grid-cols-12 lg:items-end">
+          <div className="lg:col-span-9">
             <p className="meta-label border-primary mb-6 inline-flex border-l-2 pl-4">
               Conversational recommender
             </p>
@@ -57,7 +57,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <div className="border-outline-variant bg-background/80 border p-5 lg:col-span-4">
+          <div className="border-outline-variant bg-background/80 border p-5 lg:col-span-3">
             <p className="meta-label">What RECSY does</p>
             <p className="text-muted-foreground mt-4 text-sm leading-6">
               RECSY reads the review-backed catalog, extracts structured needs, and returns phone
