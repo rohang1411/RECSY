@@ -29,11 +29,14 @@ type WorkflowTablesProps = {
 function statusTone(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === 'success' || normalized === 'completed' || normalized === 'done') {
-    return 'text-success';
+    return 'text-[#39ff88]';
   }
-  if (normalized === 'running' || normalized === 'in_progress') return 'text-accent';
-  if (normalized === 'failed' || normalized === 'error') return 'text-destructive';
-  return 'text-muted-foreground';
+  if (normalized === 'queued' || normalized === 'pending') return 'text-[#ffe45e]';
+  if (normalized === 'running' || normalized === 'in_progress') return 'text-[#ff9f1c]';
+  if (normalized === 'failed' || normalized === 'error') return 'text-[#ff3b30]';
+  if (normalized === 'skipped') return 'text-[#ff7a1a]';
+  if (normalized === 'ready') return 'text-[#39ff88]';
+  return 'text-[#ffe45e]';
 }
 
 function dotState(status: string) {
@@ -68,7 +71,7 @@ function DataTable({ rows }: { readonly rows: readonly RunRow[] }) {
                 </td>
                 <td className="border-outline-variant border-r p-3 text-sm">
                   <span className={`inline-flex items-center gap-2 ${statusTone(row.status)}`}>
-                    <span className="status-dot" data-state={dotState(row.status)} />
+                    <span className="status-dot size-3" data-state={dotState(row.status)} />
                     <span className="text-primary">{row.status}</span>
                   </span>
                 </td>
@@ -154,7 +157,7 @@ export function WorkflowTables({
                     <span
                       className={`inline-flex items-center gap-2 ${statusTone(workflow.status)}`}
                     >
-                      <span className="status-dot" data-state={dotState(workflow.status)} />
+                      <span className="status-dot size-3" data-state={dotState(workflow.status)} />
                       <span className="font-mono text-[10px] uppercase">{workflow.status}</span>
                     </span>
                   </div>

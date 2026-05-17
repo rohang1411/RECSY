@@ -92,6 +92,10 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     background-image:
       linear-gradient(to right, rgb(68 71 72 / 0.35) 1px, transparent 1px),
@@ -358,9 +362,84 @@
   }
 
   .status-dot {
-    @apply relative inline-block size-2;
+    @apply relative inline-block size-2.5;
     background: currentColor;
-    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent);
+    color: #ff9f1c;
+    box-shadow:
+      0 0 10px color-mix(in srgb, currentColor 78%, transparent),
+      0 0 0 4px color-mix(in srgb, currentColor 22%, transparent);
+  }
+
+  .status-dot[data-state='success'],
+  .status-dot[data-state='completed'],
+  .status-dot[data-state='done'],
+  .status-dot[data-state='ready'] {
+    color: #39ff88;
+  }
+
+  .status-dot[data-state='queued'],
+  .status-dot[data-state='pending'] {
+    color: #ffe45e;
+  }
+
+  .status-dot[data-state='running'],
+  .status-dot[data-state='in_progress'] {
+    color: #ff9f1c;
+  }
+
+  .status-dot[data-state='failed'],
+  .status-dot[data-state='error'] {
+    color: #ff3b30;
+  }
+
+  .status-dot[data-state='skipped'] {
+    color: #ff7a1a;
+  }
+
+  .creator-card {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.03);
+  }
+
+  .creator-card::before {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(216 107 56 / 0.72),
+      rgb(255 255 255 / 0.42),
+      transparent
+    );
+    content: '';
+    height: 1px;
+    left: -30%;
+    opacity: 0;
+    position: absolute;
+    top: 28px;
+    transform: translateX(-20%);
+    transition:
+      opacity var(--motion-medium) var(--ease-editorial),
+      transform 900ms var(--ease-editorial);
+    width: 70%;
+    z-index: 2;
+  }
+
+  .creator-card:hover::before,
+  .creator-card:focus-within::before {
+    opacity: 1;
+    transform: translateX(170%);
+  }
+
+  .creator-photo {
+    filter: grayscale(1) contrast(1.08) brightness(0.68);
+    transform: scale(1.02);
+    transition:
+      filter 700ms var(--ease-editorial),
+      transform 900ms var(--ease-editorial);
+  }
+
+  .creator-card:hover .creator-photo,
+  .creator-card:focus-within .creator-photo {
+    filter: grayscale(0.15) contrast(1.04) brightness(0.86);
+    transform: scale(1.075);
   }
 
   .status-dot[data-state='running'],
@@ -459,6 +538,7 @@
   .heading-scanline::after,
   .interactive-panel,
   .image-reveal,
+  .creator-photo,
   .synthesis-bubble,
   .status-dot {
     animation: none !important;
