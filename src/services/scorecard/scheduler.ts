@@ -4,7 +4,8 @@
  * Provides functions to pick phones due for scorecard generation and to mark
  * them as completed, updating their next scheduled run time.
  */
-import { and, asc, isNull, lte, or, sql, eq } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
+import { ASPECT_NAMES } from '@/lib/constants';
 import { phones } from '@/services/db/schema';
 import type { AppDb } from '@/services/db/client';
 import { shardIndex } from '@/services/ingest/scheduler/pick-phones';
@@ -24,6 +25,20 @@ export interface ScorecardPickedPhone {
   model: string;
   lastScorecardAt: Date | null;
   lastIngestAt: Date | null;
+  activeChunkCount: number;
+  currentAspectCount: number;
+}
+
+interface ScorecardCandidateRow {
+  readonly [key: string]: unknown;
+  readonly id: string;
+  readonly slug: string;
+  readonly brand: string;
+  readonly model: string;
+  readonly last_scorecard_at: Date | null;
+  readonly last_ingest_at: Date | null;
+  readonly active_chunk_count: number | string;
+  readonly current_aspect_count: number | string;
 }
 
 export async function pickScorecardPhones(
@@ -36,27 +51,65 @@ export async function pickScorecardPhones(
   const totalShards = Math.max(1, opts.totalShards ?? 1);
   const shard = Math.max(0, Math.min(opts.shard ?? 0, totalShards - 1));
 
-  const rows = await db
-    .select({
-      id: phones.id,
-      slug: phones.slug,
-      brand: phones.brand,
-      model: phones.model,
-      lastScorecardAt: phones.lastScorecardAt,
-      lastIngestAt: phones.lastIngestAt,
-    })
-    .from(phones)
-    .where(
-      and(
-        sql`${phones.status} in ('active', 'upcoming')`,
-        onlyDue ? or(isNull(phones.nextScorecardAt), lte(phones.nextScorecardAt, now)) : sql`true`,
+  const rows = await db.execute<ScorecardCandidateRow>(
+    sql`
+      WITH latest_defs AS (
+        SELECT DISTINCT ON (aspect) id, aspect
+        FROM aspect_definitions
+        ORDER BY aspect, version DESC
       ),
-    )
-    .orderBy(asc(sql`coalesce(${phones.lastScorecardAt}, '1970-01-01'::timestamptz)`));
+      current_scores AS (
+        SELECT a.phone_id, count(DISTINCT ld.aspect)::int AS current_aspect_count
+        FROM aspects a
+        JOIN latest_defs ld ON ld.id = a.aspect_definition_id
+        GROUP BY a.phone_id
+      ),
+      active_chunks AS (
+        SELECT c.phone_id, count(*)::int AS active_chunk_count
+        FROM chunks c
+        JOIN sources s ON s.id = c.source_id
+        WHERE s.status = 'active'
+        GROUP BY c.phone_id
+      )
+      SELECT
+        p.id,
+        p.slug,
+        p.brand,
+        p.model,
+        p.last_scorecard_at,
+        p.last_ingest_at,
+        coalesce(ac.active_chunk_count, 0)::int AS active_chunk_count,
+        coalesce(cs.current_aspect_count, 0)::int AS current_aspect_count
+      FROM phones p
+      LEFT JOIN current_scores cs ON cs.phone_id = p.id
+      LEFT JOIN active_chunks ac ON ac.phone_id = p.id
+      WHERE p.status IN ('active', 'upcoming')
+        AND coalesce(ac.active_chunk_count, 0) > 0
+        AND (
+          ${onlyDue} = false
+          OR p.next_scorecard_at IS NULL
+          OR p.next_scorecard_at <= ${now.toISOString()}::timestamptz
+          OR coalesce(cs.current_aspect_count, 0) < ${ASPECT_NAMES.length}
+        )
+      ORDER BY
+        (coalesce(cs.current_aspect_count, 0) < ${ASPECT_NAMES.length}) DESC,
+        coalesce(p.last_scorecard_at, '1970-01-01'::timestamptz) ASC,
+        coalesce(p.next_scorecard_at, '1970-01-01'::timestamptz) ASC
+    `,
+  );
 
   const filtered = rows.filter((r) => shardIndex(r.id, totalShards) === shard);
 
-  return filtered.slice(0, limit);
+  return filtered.slice(0, limit).map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    brand: r.brand,
+    model: r.model,
+    lastScorecardAt: r.last_scorecard_at,
+    lastIngestAt: r.last_ingest_at,
+    activeChunkCount: Number(r.active_chunk_count),
+    currentAspectCount: Number(r.current_aspect_count),
+  }));
 }
 
 export async function markScorecardComplete(

@@ -7,6 +7,7 @@ import type { Logger } from 'pino';
 import { env } from '@/env';
 import { ASPECT_NAMES, MMR_LAMBDA } from '@/lib/constants';
 import type { AppDb } from '@/services/db/client';
+import { isLikelyGeminiQuotaExhaustedError } from '@/services/llm/gemini-request-governor';
 import type { LlmProvider, ChatMessage } from '@/services/llm/types';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievedChunk } from '@/services/retrieval/types';
@@ -25,6 +26,7 @@ import {
 } from './extraction-schema';
 import { buildCombinedRetrievalQuery } from './query-build';
 import { recencyConfidenceBoost } from './recency';
+import { getCompletedAspectsForFingerprint } from './staleness';
 import type { AspectDefinitionRow, ScorecardQuote } from './types';
 
 export interface ScorecardRunContext {
@@ -37,6 +39,17 @@ export interface ScorecardRunContext {
   readonly log: Logger;
   readonly chunkFingerprint?: string;
   readonly aspectDelayMs?: number;
+}
+
+export class ScorecardQuotaExhaustedError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = 'ScorecardQuotaExhaustedError';
+  }
+}
+
+export function isScorecardQuotaExhaustedError(err: unknown): boolean {
+  return err instanceof ScorecardQuotaExhaustedError || isLikelyGeminiQuotaExhaustedError(err);
 }
 
 function chunkAllowList(chunks: readonly RetrievedChunk[]): ReadonlySet<string> {
@@ -273,6 +286,16 @@ export async function runSingleAspect(
     );
     return { ok: true };
   } catch (err) {
+    if (isLikelyGeminiQuotaExhaustedError(err)) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn({ err: message }, 'Gemini quota exhausted; aborting scorecard batch');
+      await recordTelemetry(ctx, def, 'failed', {
+        startedAt,
+        error: message,
+      });
+      throw new ScorecardQuotaExhaustedError(message, err);
+    }
+
     log.warn({ err: err instanceof Error ? err.message : String(err) }, 'aspect extraction failed');
     await recordTelemetry(ctx, def, 'failed', {
       startedAt,
@@ -361,11 +384,16 @@ async function upsertAspect(
 
 export async function runScorecardForPhone(
   ctx: ScorecardRunContext,
-): Promise<{ updated: number; failed: number; fingerprint: string }> {
+): Promise<{ updated: number; failed: number; skipped: number; fingerprint: string }> {
   const rows = await ctx.db.select().from(aspectDefinitions);
   const latest = latestAspectDefinitionsByAspect(rows);
+  const reusable =
+    ctx.chunkFingerprint !== undefined
+      ? await getCompletedAspectsForFingerprint(ctx.db, ctx.phoneId, ctx.chunkFingerprint)
+      : new Set<(typeof ASPECT_NAMES)[number]>();
   let updated = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const name of ASPECT_NAMES) {
     const def = latest.get(name);
@@ -373,6 +401,18 @@ export async function runScorecardForPhone(
       ctx.log.warn({ aspect: name }, 'missing aspect_definition row');
       continue;
     }
+
+    if (reusable.has(name)) {
+      const now = new Date();
+      await recordTelemetry(ctx, def, 'skipped', {
+        skipReason: 'aspect_chunks_unchanged',
+        startedAt: now,
+      });
+      skipped += 1;
+      ctx.log.info({ aspect: name }, 'aspect skipped; chunks unchanged and current row exists');
+      continue;
+    }
+
     const res = await runSingleAspect(ctx, def);
     if (res.ok) {
       updated += 1;
@@ -385,7 +425,7 @@ export async function runScorecardForPhone(
     }
   }
 
-  return { updated, failed, fingerprint: ctx.chunkFingerprint || '' };
+  return { updated, failed, skipped, fingerprint: ctx.chunkFingerprint || '' };
 }
 
 /** Load phone row by slug for CLI / scripts. */

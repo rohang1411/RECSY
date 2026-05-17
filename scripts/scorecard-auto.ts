@@ -25,7 +25,10 @@ import {
   computeChunkFingerprint,
   getLastScorecardFingerprint,
 } from '../src/services/scorecard/staleness';
-import { runScorecardForPhone } from '../src/services/scorecard/agent';
+import {
+  isScorecardQuotaExhaustedError,
+  runScorecardForPhone,
+} from '../src/services/scorecard/agent';
 
 async function main() {
   const { values: args } = parseArgs({
@@ -95,6 +98,7 @@ Options:
   let scored = 0,
     skipped = 0,
     failures = 0;
+  let quotaExhausted = false;
 
   for (const phone of picked) {
     try {
@@ -137,10 +141,13 @@ Options:
         aspectDelayMs: 4500, // 4.5s pacing for free tier
       });
 
-      console.log(`  ${phone.slug}: ${result.updated} updated, ${result.failed} failed`);
-      if (result.updated > 0) {
+      console.log(
+        `  ${phone.slug}: ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed`,
+      );
+      if (result.updated + result.skipped >= ASPECT_NAMES.length && result.failed === 0) {
         await markScorecardComplete(db, { phoneId: phone.id });
-        scored++;
+        if (result.updated > 0) scored++;
+        else skipped++;
       } else {
         failures++;
         log.warn(
@@ -149,6 +156,18 @@ Options:
         );
       }
     } catch (err) {
+      if (isScorecardQuotaExhaustedError(err)) {
+        quotaExhausted = true;
+        log.warn(
+          { phone: phone.slug, err: err instanceof Error ? err.message : String(err) },
+          'Gemini quota exhausted; stopping scorecard batch',
+        );
+        console.warn(
+          `[scorecard:auto] Gemini quota exhausted while scoring ${phone.slug}; stopping now so the next scheduled run can resume pending phones.`,
+        );
+        break;
+      }
+
       failures++;
       log.error(
         { phone: phone.slug, err: err instanceof Error ? err.message : String(err) },
@@ -157,8 +176,10 @@ Options:
     }
   }
 
-  console.log(`[scorecard:auto] done scored=${scored} skipped=${skipped} failures=${failures}`);
-  process.exit(failures > 0 && scored === 0 && skipped === 0 ? 1 : 0);
+  console.log(
+    `[scorecard:auto] done scored=${scored} skipped=${skipped} failures=${failures} quotaExhausted=${quotaExhausted}`,
+  );
+  process.exit(quotaExhausted ? 0 : failures > 0 && scored === 0 && skipped === 0 ? 1 : 0);
 }
 
 main().catch((err) => {

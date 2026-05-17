@@ -175,7 +175,17 @@ export class GeminiRequestGovernor {
 export function isLikelyGeminiQuotaExhaustedError(err: unknown): boolean {
   if (err instanceof Error && err.name === 'AI_RetryError') return true;
   const msg = err instanceof Error ? err.message : String(err);
-  return /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded|status\s*code[:\s]*429|\b429\b/i.test(
-    msg,
-  );
+  if (
+    /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded|status\s*code[:\s]*429|\b429\b|all configured API keys exhausted|daily request budget reached|free-tier daily request budget/i.test(
+      msg,
+    )
+  ) {
+    return true;
+  }
+
+  if (err instanceof Error && 'cause' in err) {
+    return isLikelyGeminiQuotaExhaustedError((err as Error & { cause?: unknown }).cause);
+  }
+
+  return false;
 }
