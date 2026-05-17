@@ -8,7 +8,7 @@
  *
  * All LLM and DB calls are mocked — no network or Postgres connections.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
 
 import type { LlmProvider } from '@/services/llm/types';
@@ -85,8 +85,17 @@ vi.mock('./catalog', () => ({
 const mockCatalog = (await import('./catalog')).loadRecommendationCatalog as ReturnType<
   typeof vi.fn
 >;
+const { getLatestRequirementsForSession, getLatestRecommendPickIds } = await import('./session');
 
 const { runRecommendationPipeline } = await import('./run-recommendation');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockCatalog.mockReset();
+  mockCatalog.mockResolvedValue([]);
+  vi.mocked(getLatestRequirementsForSession).mockResolvedValue(null);
+  vi.mocked(getLatestRecommendPickIds).mockResolvedValue([]);
+});
 
 describe('runRecommendationPipeline — clarify branch', () => {
   it('returns kind=clarify when extraction confidence is low', async () => {
@@ -116,6 +125,37 @@ describe('runRecommendationPipeline — clarify branch', () => {
     expect(result.kind).toBe('clarify');
     if (result.kind === 'clarify') {
       expect(result.clarifyingQuestion).toBe('What is your budget?');
+    }
+  });
+
+  it('returns results when low-confidence extraction still has budget and priority', async () => {
+    mockCatalog.mockResolvedValue([makePhone('id-1', 'pixel-9-pro')]);
+    const llm = makeLlm({
+      confidence: 0.35,
+      clarifying_question: 'Do you prefer Android or iPhone?',
+      budget_usd: { max: 1200 },
+      priorities: [{ aspect: 'camera', weight: 1 }],
+      use_cases: ['camera'],
+    });
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockResolvedValue([]),
+      }),
+    };
+
+    const result = await runRecommendationPipeline({
+      db: db as never,
+      llm,
+      sessionId: 'sess-1',
+      userMessage: 'Suggest me a phone under $1200 with great camera',
+      log: mockLogger,
+    });
+
+    expect(result.kind).toBe('results');
+    if (result.kind === 'results') {
+      expect(result.picks).toHaveLength(1);
+      expect(result.requirements.confidence).toBeGreaterThanOrEqual(0.6);
+      expect(result.requirements.clarifying_question).toBeUndefined();
     }
   });
 });
@@ -166,8 +206,6 @@ describe('runRecommendationPipeline — results branch', () => {
 
 describe('runRecommendationPipeline — refine branch', () => {
   it('narrows to prior picks when refine intent is detected', async () => {
-    const { getLatestRequirementsForSession, getLatestRecommendPickIds } =
-      await import('./session');
     vi.mocked(getLatestRequirementsForSession).mockResolvedValue(makeRequirements());
     vi.mocked(getLatestRecommendPickIds).mockResolvedValue(['id-1', 'id-2']);
 

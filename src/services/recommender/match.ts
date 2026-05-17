@@ -93,6 +93,36 @@ export function mustHaveMatchRatio(haystack: string, mustHaves: readonly string[
   return ok / mustHaves.length;
 }
 
+type PlatformPreference = 'android' | 'ios';
+
+function detectPlatformPreference(requirements: UserRequirements): PlatformPreference | null {
+  const text = [...requirements.must_haves, ...requirements.use_cases].join(' ').toLowerCase();
+  const wantsAndroid = /\bandroid\b/.test(text);
+  const wantsIos = /\b(?:ios|iphone)\b/.test(text);
+
+  if (wantsAndroid === wantsIos) return null;
+  return wantsAndroid ? 'android' : 'ios';
+}
+
+function matchesPlatformPreference(
+  entry: PhoneCatalogEntry,
+  platform: PlatformPreference,
+): boolean {
+  const haystack = buildSearchHaystack(entry);
+  const os = entry.spec?.os.toLowerCase() ?? '';
+
+  if (platform === 'android') {
+    return os.includes('android') || haystack.includes('android');
+  }
+
+  return (
+    os.includes('ios') ||
+    haystack.includes('ios') ||
+    entry.brand.toLowerCase() === 'apple' ||
+    entry.model.toLowerCase().includes('iphone')
+  );
+}
+
 export function passesHardFilters(
   entry: PhoneCatalogEntry,
   requirements: UserRequirements,
@@ -106,6 +136,9 @@ export function passesHardFilters(
       if (b.includes(t) || t.includes(b)) return false;
     }
   }
+
+  const platform = detectPlatformPreference(requirements);
+  if (platform && !matchesPlatformPreference(entry, platform)) return false;
 
   const spec = entry.spec;
   const ff = requirements.form_factor;

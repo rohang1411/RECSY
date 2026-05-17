@@ -95,6 +95,29 @@ function toApiPicks(picks: readonly ScoredCandidate[]): RecommendApiPick[] {
   }));
 }
 
+function hasActionableRecommendationInput(requirements: UserRequirements): boolean {
+  const hasBudget = requirements.budget_usd?.max != null || requirements.budget_usd?.min != null;
+  const hasPreference =
+    requirements.priorities.length > 0 ||
+    requirements.use_cases.length > 0 ||
+    requirements.must_haves.length > 0 ||
+    requirements.brand_preference.liked.length > 0 ||
+    requirements.brand_preference.disliked.length > 0 ||
+    requirements.form_factor != null;
+
+  return hasBudget && hasPreference;
+}
+
+function promoteActionableRequirements(requirements: UserRequirements): UserRequirements {
+  if (!hasActionableRecommendationInput(requirements)) return requirements;
+
+  return {
+    ...requirements,
+    confidence: Math.max(requirements.confidence, RECOMMENDER_CLARIFY_THRESHOLD),
+    clarifying_question: undefined,
+  };
+}
+
 export async function runRecommendationPipeline(input: {
   readonly db: AppDb;
   readonly llm: LlmProvider;
@@ -107,11 +130,12 @@ export async function runRecommendationPipeline(input: {
     getLatestRecommendPickIds(input.db, input.sessionId),
   ]);
 
-  const requirements = await extractUserRequirements({
+  const extracted = await extractUserRequirements({
     llm: input.llm,
     userMessage: input.userMessage,
     previous,
   });
+  const requirements = promoteActionableRequirements(extracted);
 
   if (requirements.confidence < RECOMMENDER_CLARIFY_THRESHOLD) {
     const q =
