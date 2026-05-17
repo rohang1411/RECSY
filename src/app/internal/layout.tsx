@@ -5,7 +5,7 @@ import { env } from '@/env';
 export const dynamic = 'force-dynamic';
 
 export default function InternalLayout({ children }: { readonly children: React.ReactNode }) {
-  if (!env.INTERNAL_DASHBOARD_ENABLED) {
+  if (env.NODE_ENV === 'production' && !env.INTERNAL_DASHBOARD_ENABLED) {
     notFound();
   }
 
