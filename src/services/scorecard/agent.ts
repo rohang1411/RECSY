@@ -39,6 +39,7 @@ export interface ScorecardRunContext {
   readonly log: Logger;
   readonly chunkFingerprint?: string;
   readonly aspectDelayMs?: number;
+  readonly shouldStop?: () => boolean;
 }
 
 export class ScorecardQuotaExhaustedError extends Error {
@@ -128,12 +129,12 @@ function buildExtractionMessages(input: {
 }): ChatMessage[] {
   const excerpts = input.chunks
     .map((c, i) => {
-      const excerpt = c.text.replace(/\s+/g, ' ').trim().slice(0, 700);
+      const excerpt = c.text.replace(/\s+/g, ' ').trim().slice(0, 550);
       return `### ${i + 1}\nid=${c.chunkId}\nsource=${c.source.title}\nexcerpt=${excerpt}`;
     })
     .join('\n\n');
 
-  const system = `You are RECSY's methodology reviewer. Score the ${input.aspectKey} aspect for ${input.brand} ${input.model} using ONLY the numbered excerpts. Output JSON matching the schema: overallScore 0-10, confidence 0-1, summary (≤900 chars), supporting and dissenting evidence arrays. Each evidence item must use a chunk id from the excerpts and a short excerpt quote. Be honest about trade-offs; include dissent when reviewers disagree.`;
+  const system = `You are RECSY's methodology reviewer. Score the ${input.aspectKey} aspect for ${input.brand} ${input.model} using ONLY the numbered excerpts. Output compact JSON matching the schema: overallScore 0-10, confidence 0-1, summary (<=900 chars), up to 4 supporting evidence items, and up to 3 dissenting evidence items. Each evidence item must use a chunk id from the excerpts and a short quote (<=360 chars). Be honest about trade-offs; include dissent when reviewers disagree.`;
 
   const userParts = [`ASPECT METHODOLOGY:\n${input.aspectDescription}`, `PASSAGES:\n${excerpts}`];
   if (input.retryInvalid?.length) {
@@ -159,9 +160,9 @@ async function llmExtract(
     schemaName: 'AspectScorecard',
     schemaDescription: 'Consensus aspect score with grounded evidence chunk ids.',
     temperature: 0.2,
-    // Gemini 3.x may allocate output budget to reasoning tokens; keep headroom
-    // so JSON (summary + evidence) is not cut off at finishReason "length".
-    maxOutputTokens: 8192,
+    // Gemini 3.x may allocate output budget to reasoning tokens; keep enough
+    // room for JSON while avoiding very slow, overlong structured responses.
+    maxOutputTokens: 4096,
   });
   return out.value;
 }
@@ -382,9 +383,13 @@ async function upsertAspect(
     });
 }
 
-export async function runScorecardForPhone(
-  ctx: ScorecardRunContext,
-): Promise<{ updated: number; failed: number; skipped: number; fingerprint: string }> {
+export async function runScorecardForPhone(ctx: ScorecardRunContext): Promise<{
+  updated: number;
+  failed: number;
+  skipped: number;
+  stopped: boolean;
+  fingerprint: string;
+}> {
   const rows = await ctx.db.select().from(aspectDefinitions);
   const latest = latestAspectDefinitionsByAspect(rows);
   const reusable =
@@ -394,8 +399,15 @@ export async function runScorecardForPhone(
   let updated = 0;
   let failed = 0;
   let skipped = 0;
+  let stopped = false;
 
   for (const name of ASPECT_NAMES) {
+    if (ctx.shouldStop?.()) {
+      stopped = true;
+      ctx.log.warn({ aspect: name }, 'stopping scorecard phone due to runtime budget');
+      break;
+    }
+
     const def = latest.get(name);
     if (!def) {
       ctx.log.warn({ aspect: name }, 'missing aspect_definition row');
@@ -425,7 +437,7 @@ export async function runScorecardForPhone(
     }
   }
 
-  return { updated, failed, skipped, fingerprint: ctx.chunkFingerprint || '' };
+  return { updated, failed, skipped, stopped, fingerprint: ctx.chunkFingerprint || '' };
 }
 
 /** Load phone row by slug for CLI / scripts. */

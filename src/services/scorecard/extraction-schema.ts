@@ -17,15 +17,15 @@ const uuidStr = z.string().uuid();
 
 export const scorecardEvidenceItemSchema = z.object({
   chunkId: uuidStr,
-  excerpt: z.string().min(1),
+  excerpt: z.string().min(1).max(360),
 });
 
 export const aspectScorecardExtractionSchema = z.object({
   overallScore: z.coerce.number().min(0).max(10),
   confidence: z.coerce.number().min(0).max(1),
-  summary: z.string().min(1),
-  supporting: z.array(scorecardEvidenceItemSchema).default([]),
-  dissenting: z.array(scorecardEvidenceItemSchema).default([]),
+  summary: z.string().min(1).max(900),
+  supporting: z.array(scorecardEvidenceItemSchema).max(4).default([]),
+  dissenting: z.array(scorecardEvidenceItemSchema).max(3).default([]),
 });
 
 export type AspectScorecardExtraction = z.infer<typeof aspectScorecardExtractionSchema>;

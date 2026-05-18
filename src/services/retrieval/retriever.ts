@@ -55,6 +55,13 @@ export interface HybridSearchInput extends Omit<RetrievalRequest, 'k' | 'queryEm
   readonly options?: RetrievalOptions;
 }
 
+const QUERY_EMBEDDING_CACHE_MAX = 128;
+const queryEmbeddingCache = new Map<string, Promise<readonly number[]>>();
+
+export function resetHybridRetrieverQueryEmbeddingCache(): void {
+  queryEmbeddingCache.clear();
+}
+
 export class HybridRetriever {
   constructor(private readonly deps: HybridRetrieverDeps) {}
 
@@ -213,13 +220,36 @@ export class HybridRetriever {
 
   private async embedQuery(query: string): Promise<readonly number[]> {
     const { llm, embeddingModel } = this.deps;
-    const { embeddings } = await llm.embed([query], embeddingModel);
-    const vec = embeddings[0];
-    if (!vec || vec.length === 0) {
-      throw toAppError(new Error('embed() returned empty result for query'));
+    const key = `${embeddingModel ?? 'default'}\0${query}`;
+    let cached = queryEmbeddingCache.get(key);
+
+    if (!cached) {
+      cached = llm
+        .embed([query], embeddingModel)
+        .then(({ embeddings }) => {
+          const vec = embeddings[0];
+          if (!vec || vec.length === 0) {
+            throw toAppError(new Error('embed() returned empty result for query'));
+          }
+          return vec;
+        })
+        .catch((err) => {
+          queryEmbeddingCache.delete(key);
+          throw err;
+        });
+      rememberQueryEmbedding(key, cached);
     }
-    return vec;
+
+    return cached;
   }
+}
+
+function rememberQueryEmbedding(key: string, value: Promise<readonly number[]>): void {
+  if (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+    const oldest = queryEmbeddingCache.keys().next().value;
+    if (oldest !== undefined) queryEmbeddingCache.delete(oldest);
+  }
+  queryEmbeddingCache.set(key, value);
 }
 
 function resolveOptions(partial: RetrievalOptions | undefined): Required<RetrievalOptions> {

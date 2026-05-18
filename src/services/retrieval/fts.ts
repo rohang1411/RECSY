@@ -28,6 +28,7 @@ import type postgres from 'postgres';
 
 import { ValidationError } from '@/lib/errors';
 
+import { toRetrievedPublishedAt } from './dates';
 import type { RetrievalRequest, RetrievedChunk, Retriever } from './types';
 
 const MAX_QUERY_BYTES = 2048;
@@ -46,7 +47,7 @@ interface FtsSearchRow {
   readonly src_type: 'youtube' | 'reddit' | 'article';
   readonly src_author: string | null;
   readonly src_channel: string | null;
-  readonly src_published_at: Date | null;
+  readonly src_published_at: Date | string | null;
 }
 
 export interface FtsSearchDeps {
@@ -160,7 +161,7 @@ function rowToChunk(r: FtsSearchRow): RetrievedChunk {
       type: r.src_type,
       author: r.src_author,
       channel: r.src_channel,
-      publishedAt: r.src_published_at,
+      publishedAt: toRetrievedPublishedAt(r.src_published_at),
     },
   };
 }

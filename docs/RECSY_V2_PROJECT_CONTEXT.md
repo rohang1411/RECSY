@@ -1925,6 +1925,44 @@ dissenting_quotes)`.
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
 
+### Ops - automated scorecard generation (2026-05-18)
+
+#### HIGH
+
+- **Scorecard auto partially succeeded but GitHub Actions ended with `Operation canceled`; several aspects stayed pending.**
+  The scorecard cron showed healthy per-aspect progress, but the job ended with
+  `Error: The operation was canceled.` Operators also saw phones with a mix of
+  `skipped`, successful, failed, and still-pending aspects. This looked like
+  Gemini quota exhaustion at first, but the logs exposed two independent
+  failures plus one avoidable-cost issue.
+  - **Root cause 1 - production timestamp shape.** Retrieval rows sometimes
+    returned `sources.published_at` as a string instead of a `Date`.
+    `recencyConfidenceBoost` assumed `c.source.publishedAt?.getTime()` existed,
+    so an otherwise successful aspect could fail after retrieval/LLM work with
+    `c.source.publishedAt?.getTime is not a function`.
+  - **Root cause 2 - hard workflow timeout.** `.github/workflows/scorecard-auto.yml`
+    had a 30 minute job timeout. With free-tier Gemini pacing and occasional
+    slow structured calls, the script could still be actively processing when
+    Actions killed the runner. Because the kill was external, the script could
+    not print a clean summary or mark that it stopped intentionally.
+  - **Root cause 3 - avoidable Gemini spend.** The scorecard agent repeats the
+    same seven aspect retrieval queries across many phones, but the hybrid
+    retriever embedded each query independently. That wasted Gemini embedding
+    requests and made quota/time pressure worse.
+  - **Fix.** Retrieval now normalizes `publishedAt` via
+    `src/services/retrieval/dates.ts`, and `recencyConfidenceBoost` defensively
+    accepts `Date`, ISO string, number, or null. `scripts/scorecard-auto.ts`
+    gained `--max-runtime-minutes`; the workflow now gives the job 45 minutes
+    but asks the script to stop cleanly at 38 minutes, leaving incomplete phones
+    due for the next run instead of being hard-canceled. `runScorecardForPhone`
+    checks a stop callback between aspects. `HybridRetriever` keeps a small
+    capped in-process query embedding cache so repeated scorecard queries reuse
+    embeddings within the run. The scorecard prompt/schema also caps evidence
+    and output size to reduce slow overlong structured responses.
+  - **Hardening.** Regression tests cover string timestamp handling and
+    repeated-query embedding reuse. A local tiny-runtime smoke run verifies the
+    script exits with `timeBudgetExhausted=true` instead of being killed.
+
 ### Recommender - multi-turn clarification loop (2026-05-18)
 
 #### HIGH
