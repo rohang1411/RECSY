@@ -158,6 +158,118 @@ describe('runRecommendationPipeline — clarify branch', () => {
       expect(result.requirements.clarifying_question).toBeUndefined();
     }
   });
+
+  it('returns results when deterministic text facts recover an under-extracted first turn', async () => {
+    mockCatalog.mockResolvedValue([makePhone('id-1', 'pixel-9-pro')]);
+    const llm = makeLlm({
+      confidence: 0.25,
+      clarifying_question: 'Do you prefer Android or iPhone?',
+      budget_usd: null,
+      priorities: [],
+      use_cases: [],
+      must_haves: [],
+      brand_preference: { liked: [], disliked: [] },
+    });
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockResolvedValue([]),
+      }),
+    };
+
+    const result = await runRecommendationPipeline({
+      db: db as never,
+      llm,
+      sessionId: 'sess-1',
+      userMessage: 'Suggest me a phone under $1200 with great camera',
+      log: mockLogger,
+    });
+
+    expect(result.kind).toBe('results');
+    if (result.kind === 'results') {
+      expect(result.requirements.budget_usd?.max).toBe(1200);
+      expect(result.requirements.priorities[0]?.aspect).toBe('camera');
+    }
+  });
+
+  it('merges previous clarify state when a short follow-up only adds platform', async () => {
+    vi.mocked(getLatestRequirementsForSession).mockResolvedValue(
+      makeRequirements({
+        confidence: 0.35,
+        clarifying_question: 'Do you prefer Android or iPhone?',
+        budget_usd: { max: 1200 },
+        priorities: [{ aspect: 'camera', weight: 1 }],
+        use_cases: ['camera'],
+      }),
+    );
+    mockCatalog.mockResolvedValue([makePhone('id-1', 'pixel-9-pro')]);
+    const llm = makeLlm({
+      confidence: 0.25,
+      clarifying_question: 'What is your budget?',
+      budget_usd: null,
+      priorities: [],
+      use_cases: [],
+      must_haves: ['Android'],
+    });
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockResolvedValue([]),
+      }),
+    };
+
+    const result = await runRecommendationPipeline({
+      db: db as never,
+      llm,
+      sessionId: 'sess-1',
+      userMessage: 'I prefer Android',
+      log: mockLogger,
+    });
+
+    expect(result.kind).toBe('results');
+    if (result.kind === 'results') {
+      expect(result.requirements.budget_usd?.max).toBe(1200);
+      expect(result.requirements.priorities.some((p) => p.aspect === 'camera')).toBe(true);
+      expect(result.requirements.must_haves).toContain('Android');
+    }
+  });
+
+  it('caps clarification at one follow-up and returns broad results after a prior clarify', async () => {
+    vi.mocked(getLatestRequirementsForSession).mockResolvedValue(
+      makeRequirements({
+        confidence: 0.2,
+        clarifying_question: 'What is your budget?',
+        budget_usd: null,
+        priorities: [],
+        use_cases: [],
+      }),
+    );
+    mockCatalog.mockResolvedValue([makePhone('id-1', 'pixel-9')]);
+    const llm = makeLlm({
+      confidence: 0.25,
+      clarifying_question: 'What is your budget?',
+      budget_usd: null,
+      priorities: [],
+      use_cases: [],
+      must_haves: [],
+    });
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockResolvedValue([]),
+      }),
+    };
+
+    const result = await runRecommendationPipeline({
+      db: db as never,
+      llm,
+      sessionId: 'sess-1',
+      userMessage: "I'm not sure, just show me a good one",
+      log: mockLogger,
+    });
+
+    expect(result.kind).toBe('results');
+    if (result.kind === 'results') {
+      expect(result.picks).toHaveLength(1);
+    }
+  });
 });
 
 describe('runRecommendationPipeline — results branch', () => {

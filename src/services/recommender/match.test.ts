@@ -17,6 +17,7 @@ import {
   mustHaveMatchRatio,
   passesHardFilters,
   pickDiverseTop,
+  rankCandidates,
   resolveAspectWeights,
   specSemanticBonus,
   weightedAspectScore,
@@ -165,6 +166,21 @@ describe('match helpers', () => {
     expect(
       passesHardFilters(android, iosReq, { relaxBudgetMax: false, ignoreFoldable: false }),
     ).toBe(false);
+  });
+
+  it('does not soft-penalize a platform must-have after applying the platform filter', () => {
+    const google = entry({
+      slug: 'pixel',
+      brand: 'Google',
+      model: 'Pixel',
+      spec: null,
+    });
+
+    const baseline = rankCandidates([google], req({}), equalWeights);
+    const android = rankCandidates([google], req({ must_haves: ['Android'] }), equalWeights);
+
+    expect(android.picks).toHaveLength(1);
+    expect(android.picks[0]?.score).toBeCloseTo(baseline.picks[0]?.score ?? 0, 5);
   });
 
   it('dealBreakerHit detects substring', () => {

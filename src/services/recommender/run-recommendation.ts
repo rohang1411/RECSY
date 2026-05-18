@@ -108,8 +108,13 @@ function hasActionableRecommendationInput(requirements: UserRequirements): boole
   return hasBudget && hasPreference;
 }
 
-function promoteActionableRequirements(requirements: UserRequirements): UserRequirements {
-  if (!hasActionableRecommendationInput(requirements)) return requirements;
+function promoteRequirements(
+  requirements: UserRequirements,
+  options: { readonly forceAfterClarify: boolean },
+): UserRequirements {
+  if (!hasActionableRecommendationInput(requirements) && !options.forceAfterClarify) {
+    return requirements;
+  }
 
   return {
     ...requirements,
@@ -135,13 +140,14 @@ export async function runRecommendationPipeline(input: {
     userMessage: input.userMessage,
     previous,
   });
-  const requirements = promoteActionableRequirements(extracted);
+  const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
+  const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });
 
   if (requirements.confidence < RECOMMENDER_CLARIFY_THRESHOLD) {
     const q =
       requirements.clarifying_question?.trim() ||
       'What budget works for you, and what is the single most important thing (camera, battery, gaming, etc.)?';
-    input.log.info({ confidence: requirements.confidence }, 'recommender clarify');
+    input.log.info({ confidence: requirements.confidence, hadPriorClarify }, 'recommender clarify');
     return { kind: 'clarify', requirements, clarifyingQuestion: q };
   }
 

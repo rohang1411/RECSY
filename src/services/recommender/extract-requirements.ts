@@ -20,6 +20,7 @@ import {
   userRequirementsSchema,
   type UserRequirements,
 } from './requirements-schema';
+import { mergeUserRequirements, shouldResetRequirementState } from './requirements-merge';
 
 function buildMessages(input: {
   readonly userMessage: string;
@@ -59,14 +60,19 @@ export async function extractUserRequirements(input: {
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
 }): Promise<UserRequirements> {
+  const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const out = await input.llm.structured({
     model: env.LLM_CHAT_MODEL,
-    messages: buildMessages(input),
+    messages: buildMessages({ userMessage: input.userMessage, previous }),
     schema: userRequirementsSchema,
     schemaName: 'UserRequirements',
     schemaDescription: 'Merged phone shopper preferences for RECSY recommender Stage A.',
     temperature: 0.15,
     maxOutputTokens: 1024,
   });
-  return normalizeUserRequirements(out.value);
+  return mergeUserRequirements({
+    previous,
+    extracted: normalizeUserRequirements(out.value),
+    userMessage: input.userMessage,
+  });
 }

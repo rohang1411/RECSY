@@ -27,6 +27,10 @@ import {
 } from './constants';
 import type { PhoneCatalogEntry } from './catalog';
 import type { UserRequirements } from './requirements-schema';
+import {
+  detectPlatformPreferenceFromRequirements,
+  isPlatformRequirement,
+} from './requirements-merge';
 import { cosineSimilarity } from './vector-utils';
 
 export interface ScoredCandidate {
@@ -93,26 +97,17 @@ export function mustHaveMatchRatio(haystack: string, mustHaves: readonly string[
   return ok / mustHaves.length;
 }
 
-type PlatformPreference = 'android' | 'ios';
-
-function detectPlatformPreference(requirements: UserRequirements): PlatformPreference | null {
-  const text = [...requirements.must_haves, ...requirements.use_cases].join(' ').toLowerCase();
-  const wantsAndroid = /\bandroid\b/.test(text);
-  const wantsIos = /\b(?:ios|iphone)\b/.test(text);
-
-  if (wantsAndroid === wantsIos) return null;
-  return wantsAndroid ? 'android' : 'ios';
-}
-
-function matchesPlatformPreference(
-  entry: PhoneCatalogEntry,
-  platform: PlatformPreference,
-): boolean {
+function matchesPlatformPreference(entry: PhoneCatalogEntry, platform: 'android' | 'ios'): boolean {
   const haystack = buildSearchHaystack(entry);
   const os = entry.spec?.os.toLowerCase() ?? '';
 
   if (platform === 'android') {
-    return os.includes('android') || haystack.includes('android');
+    const brand = entry.brand.toLowerCase();
+    return (
+      os.includes('android') ||
+      haystack.includes('android') ||
+      ['google', 'samsung', 'oneplus', 'xiaomi', 'nothing', 'motorola'].includes(brand)
+    );
   }
 
   return (
@@ -137,7 +132,7 @@ export function passesHardFilters(
     }
   }
 
-  const platform = detectPlatformPreference(requirements);
+  const platform = detectPlatformPreferenceFromRequirements(requirements);
   if (platform && !matchesPlatformPreference(entry, platform)) return false;
 
   const spec = entry.spec;
@@ -350,7 +345,8 @@ interface ScoringContext {
 function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandidate {
   const haystack = buildSearchHaystack(entry);
   let score = weightedAspectScore(entry.aspectScores, ctx.weights);
-  const ratio = mustHaveMatchRatio(haystack, ctx.requirements.must_haves);
+  const scoringMustHaves = ctx.requirements.must_haves.filter((m) => !isPlatformRequirement(m));
+  const ratio = mustHaveMatchRatio(haystack, scoringMustHaves);
   score = score * (0.72 + 0.28 * ratio);
   score += specSemanticBonus(entry, ctx.queryEmbedding);
 
