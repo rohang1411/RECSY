@@ -32,7 +32,7 @@ export type { MmrOptions } from './mmr';
 export { enforceSourceCoverage } from './coverage';
 export type { CoverageOptions, CoverageResult } from './coverage';
 
-export { HybridRetriever } from './retriever';
+export { HybridRetriever, resetHybridRetrieverQueryEmbeddingCache } from './retriever';
 export type { HybridRetrieverDeps, HybridSearchInput } from './retriever';
 
 export { createHybridRetriever } from './factory';

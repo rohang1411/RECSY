@@ -11,7 +11,7 @@ export function recencyConfidenceBoost(chunks: readonly RetrievedChunk[]): numbe
   let fresh = 0;
   let dated = 0;
   for (const c of chunks) {
-    const t = c.source.publishedAt?.getTime();
+    const t = publishedAtMs(c.source.publishedAt);
     if (t == null || Number.isNaN(t)) continue;
     dated += 1;
     if (now - t <= SCORECARD_RECENCY_WINDOW_MS) fresh += 1;
@@ -19,4 +19,14 @@ export function recencyConfidenceBoost(chunks: readonly RetrievedChunk[]): numbe
   if (dated === 0) return 0;
   const ratio = fresh / dated;
   return Math.min(0.12, ratio * 0.12);
+}
+
+function publishedAtMs(value: unknown): number | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string' || typeof value === 'number') {
+    const t = new Date(value).getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  return null;
 }

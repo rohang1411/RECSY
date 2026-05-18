@@ -9,6 +9,8 @@
  *   --shard K          Shard index (default: 0)
  *   --total-shards N   Total shards (default: 1)
  *   --force            Ignore staleness guard
+ *   --max-runtime-minutes N
+ *                      Stop cleanly after N minutes (default: no limit)
  *   --dry-run          Print which phones would be scored, skip LLM calls
  *   --help
  */
@@ -37,6 +39,7 @@ async function main() {
       limit: { type: 'string', short: 'l' },
       shard: { type: 'string', short: 's' },
       'total-shards': { type: 'string', short: 't' },
+      'max-runtime-minutes': { type: 'string' },
       force: { type: 'boolean', short: 'f' },
       'dry-run': { type: 'boolean', short: 'd' },
       help: { type: 'boolean', short: 'h' },
@@ -53,6 +56,8 @@ Options:
   --shard K          Shard index (default: 0)
   --total-shards N   Total shards (default: 1)
   --force            Ignore staleness guard
+  --max-runtime-minutes N
+                     Stop cleanly after N minutes
   --dry-run          Print which phones would be scored, skip LLM calls
   --help
     `);
@@ -62,6 +67,15 @@ Options:
   const limit = args.limit ? parseInt(args.limit, 10) : 20;
   const shard = args.shard ? parseInt(args.shard, 10) : 0;
   const totalShards = args['total-shards'] ? parseInt(args['total-shards'], 10) : 1;
+  const maxRuntimeMinutes = args['max-runtime-minutes']
+    ? Number(args['max-runtime-minutes'])
+    : null;
+  const startedAtMs = Date.now();
+  const deadlineMs =
+    maxRuntimeMinutes !== null && Number.isFinite(maxRuntimeMinutes) && maxRuntimeMinutes > 0
+      ? startedAtMs + maxRuntimeMinutes * 60_000
+      : null;
+  const shouldStopForTime = () => deadlineMs !== null && Date.now() >= deadlineMs;
 
   const db = getDb();
 
@@ -99,8 +113,17 @@ Options:
     skipped = 0,
     failures = 0;
   let quotaExhausted = false;
+  let timeBudgetExhausted = false;
 
   for (const phone of picked) {
+    if (shouldStopForTime()) {
+      timeBudgetExhausted = true;
+      console.warn(
+        `[scorecard:auto] runtime budget reached before ${phone.slug}; stopping cleanly so the next scheduled run can resume pending phones.`,
+      );
+      break;
+    }
+
     try {
       const fingerprint = await computeChunkFingerprint(db, phone.id);
 
@@ -139,6 +162,7 @@ Options:
         log,
         chunkFingerprint: fingerprint,
         aspectDelayMs: 4500, // 4.5s pacing for free tier
+        shouldStop: shouldStopForTime,
       });
 
       console.log(
@@ -148,11 +172,31 @@ Options:
         await markScorecardComplete(db, { phoneId: phone.id });
         if (result.updated > 0) scored++;
         else skipped++;
+      } else if (result.stopped) {
+        timeBudgetExhausted = true;
+        log.warn(
+          {
+            phone: phone.slug,
+            updated: result.updated,
+            skipped: result.skipped,
+            failed: result.failed,
+          },
+          'runtime budget reached; leaving phone due for retry',
+        );
+        console.warn(
+          `[scorecard:auto] runtime budget reached while scoring ${phone.slug}; stopping cleanly so the next scheduled run can resume pending aspects.`,
+        );
+        break;
       } else {
         failures++;
         log.warn(
-          { phone: phone.slug, updated: result.updated, failed: result.failed },
-          'no aspects updated; leaving phone due for retry (not rescheduling)',
+          {
+            phone: phone.slug,
+            updated: result.updated,
+            skipped: result.skipped,
+            failed: result.failed,
+          },
+          'phone scorecard incomplete; leaving phone due for retry (not rescheduling)',
         );
       }
     } catch (err) {
@@ -177,9 +221,15 @@ Options:
   }
 
   console.log(
-    `[scorecard:auto] done scored=${scored} skipped=${skipped} failures=${failures} quotaExhausted=${quotaExhausted}`,
+    `[scorecard:auto] done scored=${scored} skipped=${skipped} failures=${failures} quotaExhausted=${quotaExhausted} timeBudgetExhausted=${timeBudgetExhausted}`,
   );
-  process.exit(quotaExhausted ? 0 : failures > 0 && scored === 0 && skipped === 0 ? 1 : 0);
+  process.exit(
+    quotaExhausted || timeBudgetExhausted
+      ? 0
+      : failures > 0 && scored === 0 && skipped === 0
+        ? 1
+        : 0,
+  );
 }
 
 main().catch((err) => {

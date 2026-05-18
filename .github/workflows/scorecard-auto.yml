@@ -17,6 +17,11 @@ on:
         required: false
         default: 'false'
         type: boolean
+      max_runtime_minutes:
+        description: 'Stop cleanly before the job timeout'
+        required: false
+        default: '38'
+        type: string
 
 concurrency:
   group: scorecard-auto
@@ -51,7 +56,7 @@ jobs:
     needs: secrets-gate
     if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       NODE_ENV: production
       NODE_OPTIONS: --dns-result-order=ipv4first
@@ -86,7 +91,8 @@ jobs:
         shell: bash
         run: |
           LIMIT="${{ github.event.inputs.limit || '20' }}"
-          ARGS="--limit $LIMIT"
+          MAX_RUNTIME="${{ github.event.inputs.max_runtime_minutes || '38' }}"
+          ARGS="--limit $LIMIT --max-runtime-minutes $MAX_RUNTIME"
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
             ARGS="$ARGS --force"
           fi

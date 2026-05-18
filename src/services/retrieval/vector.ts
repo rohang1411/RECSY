@@ -32,6 +32,7 @@ import type postgres from 'postgres';
 
 import { ValidationError } from '@/lib/errors';
 
+import { toRetrievedPublishedAt } from './dates';
 import type { RetrievalRequest, RetrievedChunk, Retriever } from './types';
 
 const EMBEDDING_DIMS = 768;
@@ -61,7 +62,7 @@ interface VectorSearchRow {
   readonly src_type: 'youtube' | 'reddit' | 'article';
   readonly src_author: string | null;
   readonly src_channel: string | null;
-  readonly src_published_at: Date | null;
+  readonly src_published_at: Date | string | null;
 }
 
 export interface VectorSearchDeps {
@@ -180,7 +181,7 @@ export class VectorSearch implements Retriever {
         type: r.src_type,
         author: r.src_author,
         channel: r.src_channel,
-        publishedAt: r.src_published_at,
+        publishedAt: toRetrievedPublishedAt(r.src_published_at),
       },
     }));
   }

@@ -12,7 +12,7 @@ import type { RetrievedChunk } from '@/services/retrieval/types';
 import { SCORECARD_RECENCY_WINDOW_MS } from './constants';
 import { recencyConfidenceBoost } from './recency';
 
-function chunk(publishedAt: Date | null): RetrievedChunk {
+function chunk(publishedAt: Date | string | null): RetrievedChunk {
   return {
     chunkId: '00000000-0000-4000-8000-000000000001',
     sourceId: '00000000-0000-4000-8000-0000000000aa',
@@ -25,7 +25,7 @@ function chunk(publishedAt: Date | null): RetrievedChunk {
       type: 'article',
       author: null,
       channel: null,
-      publishedAt,
+      publishedAt: publishedAt as Date | null,
     },
   };
 }
@@ -63,5 +63,10 @@ describe('recencyConfidenceBoost', () => {
     vi.setSystemTime(now);
     const edge = new Date(now.getTime() - SCORECARD_RECENCY_WINDOW_MS);
     expect(recencyConfidenceBoost([chunk(edge)])).toBeGreaterThan(0);
+  });
+
+  it('handles timestamp strings returned by production SQL drivers', () => {
+    vi.setSystemTime(new Date('2026-06-01T12:00:00.000Z'));
+    expect(recencyConfidenceBoost([chunk('2026-05-20T12:00:00.000Z')])).toBeGreaterThan(0);
   });
 });
