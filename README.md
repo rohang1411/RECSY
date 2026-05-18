@@ -7,6 +7,8 @@
 ![License: Internal / Portfolio](https://img.shields.io/badge/license-Internal%20%2F%20Portfolio-lightgrey)
 ![Free tier](https://img.shields.io/badge/infra-free%20tier-blue)
 
+**Live site:** [https://recsy-pi.vercel.app/](https://recsy-pi.vercel.app/)
+
 RECSY v2 is a web-first, AI-native smartphone companion built around one promise: **every claim is traceable to the review clip, thread, or paragraph it came from.**
 
 - **Conversational recommender** — describe your needs in plain English; the pipeline extracts structured requirements, ranks active phones using aspect scores and optional semantic search, and returns your top 3 picks.

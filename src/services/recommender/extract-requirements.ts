@@ -20,6 +20,7 @@ import {
   userRequirementsSchema,
   type UserRequirements,
 } from './requirements-schema';
+import { mergeUserRequirements, shouldResetRequirementState } from './requirements-merge';
 
 function buildMessages(input: {
   readonly userMessage: string;
@@ -36,10 +37,13 @@ Rules:
 - use_cases: short phrases (e.g. "travel photos", "gaming", "one-handed use").
 - form_factor: foldable true only if they want a foldable. If they give a screen size range in inches, use screen_size_min_in and screen_size_max_in (two numbers, not an array). weight_max_g only if stated.
 - brand_preference: liked / disliked brand names as the user implied.
-- confidence: how complete and actionable the requirements are (0–1). Use below 0.6 when critical info (e.g. budget OR primary use) is missing.
+- If the user says Android, iPhone, or iOS, preserve that as a concrete platform preference in must_haves. Do not ask them to repeat the platform choice.
+- An intake is actionable when it has both a budget/price constraint and at least one real preference (camera, battery, gaming, brand, Android/iPhone, size, etc.).
+- Do NOT ask for Android vs iPhone, brand, screen size, zoom, or other nice-to-have details when the user already supplied an actionable intake. The recommender can rank with sensible defaults.
+- confidence: how complete and actionable the requirements are (0-1). Use below 0.6 only when critical info (budget or the main priority/use case) is missing.
 - clarifying_question: one short question ONLY if confidence would be below ~0.6 without asking; otherwise omit.
 
-When PREVIOUS_STATE_JSON is present, merge the new message into it and return the full updated object.`;
+When PREVIOUS_STATE_JSON is present, merge the new message into it and return the full updated object. Preserve facts already present unless the new message explicitly changes them. Never ask for information that is already present in PREVIOUS_STATE_JSON.`;
 
   const user = input.previous
     ? `PREVIOUS_STATE_JSON:\n${JSON.stringify(input.previous)}\n\nNEW_USER_MESSAGE:\n${input.userMessage}`
@@ -56,14 +60,19 @@ export async function extractUserRequirements(input: {
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
 }): Promise<UserRequirements> {
+  const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const out = await input.llm.structured({
     model: env.LLM_CHAT_MODEL,
-    messages: buildMessages(input),
+    messages: buildMessages({ userMessage: input.userMessage, previous }),
     schema: userRequirementsSchema,
     schemaName: 'UserRequirements',
     schemaDescription: 'Merged phone shopper preferences for RECSY recommender Stage A.',
     temperature: 0.15,
     maxOutputTokens: 1024,
   });
-  return normalizeUserRequirements(out.value);
+  return mergeUserRequirements({
+    previous,
+    extracted: normalizeUserRequirements(out.value),
+    userMessage: input.userMessage,
+  });
 }

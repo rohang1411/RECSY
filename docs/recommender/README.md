@@ -90,7 +90,7 @@ longer produces three cards that all say _Strongest on camera_: a refined turn
 with data names **camera** and **performance**, and a refined turn without
 data says so in English instead of misleading the user.
 
-### Stage A: structured `UserRequirements` (Gemini + Zod)
+### Stage A: structured `UserRequirements` (Gemini + Zod + deterministic merge)
 
 `generateObject` validates every extraction against
 `userRequirementsSchema` in `src/services/recommender/requirements-schema.ts`. If
@@ -98,6 +98,19 @@ validation fails, the `GeminiProvider.structured` path retries **once** with a
 system nudge; a second failure surfaces as **HTTP 502** with
 `code: LLM_SCHEMA_VIOLATION` and message `Gemini structured output failed validation
 twice`.
+
+After the LLM returns, `mergeUserRequirements` in
+`src/services/recommender/requirements-merge.ts` performs a deterministic guard
+merge. It preserves previously-known facts across clarification turns and
+extracts high-confidence details directly from the latest message: budget
+amounts, camera/battery/performance-style priorities, Android/iPhone platform,
+common must-haves, brand likes/dislikes, and explicit "start over" resets. This
+keeps the LLM useful for fuzzy language while preventing short follow-ups like
+"I prefer Android" from dropping the already-known budget and camera priority.
+
+The orchestrator also caps clarification loops: after one prior clarify turn,
+the next turn is allowed to return broad recommendations rather than asking
+another back-to-back question.
 
 **Google Gemini + `responseSchema`:** the Zod object must not use shapes that
 map to a JSON-Schema `items` edge case Gemini’s protobuf API rejects (we avoid
@@ -153,18 +166,19 @@ preference text once and adds a **small additive** score from cosine similarity
 
 ## Code layout
 
-| Path                                               | Role                                       |
-| -------------------------------------------------- | ------------------------------------------ |
-| `src/services/recommender/requirements-schema.ts`  | Zod + normalisation                        |
-| `src/services/recommender/extract-requirements.ts` | Flash structured extract                   |
-| `src/services/recommender/spec-embedding-text.ts`  | Doc string for spec + query embed          |
-| `src/services/recommender/vector-utils.ts`         | Vector parse + cosine                      |
-| `src/services/recommender/catalog.ts`              | Load phones + aspects + `spec_embedding`   |
-| `src/services/recommender/match.ts`                | Filters, scoring, diversity, semantic bump |
-| `src/services/recommender/run-recommendation.ts`   | Orchestration                              |
-| `src/services/recommender/session.ts`              | Session + latest requirements              |
-| `src/app/api/recommend/route.ts`                   | HTTP, persistence, rate limit              |
-| `scripts/backfill-spec-embeddings.ts`              | CLI: `pnpm spec-embed:backfill`            |
+| Path                                               | Role                                        |
+| -------------------------------------------------- | ------------------------------------------- |
+| `src/services/recommender/requirements-schema.ts`  | Zod + normalisation                         |
+| `src/services/recommender/requirements-merge.ts`   | Deterministic fact extraction + state merge |
+| `src/services/recommender/extract-requirements.ts` | Flash structured extract                    |
+| `src/services/recommender/spec-embedding-text.ts`  | Doc string for spec + query embed           |
+| `src/services/recommender/vector-utils.ts`         | Vector parse + cosine                       |
+| `src/services/recommender/catalog.ts`              | Load phones + aspects + `spec_embedding`    |
+| `src/services/recommender/match.ts`                | Filters, scoring, diversity, semantic bump  |
+| `src/services/recommender/run-recommendation.ts`   | Orchestration                               |
+| `src/services/recommender/session.ts`              | Session + latest requirements               |
+| `src/app/api/recommend/route.ts`                   | HTTP, persistence, rate limit               |
+| `scripts/backfill-spec-embeddings.ts`              | CLI: `pnpm spec-embed:backfill`             |
 
 ## Follow-ups
 

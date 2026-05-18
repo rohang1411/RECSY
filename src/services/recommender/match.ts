@@ -27,6 +27,10 @@ import {
 } from './constants';
 import type { PhoneCatalogEntry } from './catalog';
 import type { UserRequirements } from './requirements-schema';
+import {
+  detectPlatformPreferenceFromRequirements,
+  isPlatformRequirement,
+} from './requirements-merge';
 import { cosineSimilarity } from './vector-utils';
 
 export interface ScoredCandidate {
@@ -93,6 +97,27 @@ export function mustHaveMatchRatio(haystack: string, mustHaves: readonly string[
   return ok / mustHaves.length;
 }
 
+function matchesPlatformPreference(entry: PhoneCatalogEntry, platform: 'android' | 'ios'): boolean {
+  const haystack = buildSearchHaystack(entry);
+  const os = entry.spec?.os.toLowerCase() ?? '';
+
+  if (platform === 'android') {
+    const brand = entry.brand.toLowerCase();
+    return (
+      os.includes('android') ||
+      haystack.includes('android') ||
+      ['google', 'samsung', 'oneplus', 'xiaomi', 'nothing', 'motorola'].includes(brand)
+    );
+  }
+
+  return (
+    os.includes('ios') ||
+    haystack.includes('ios') ||
+    entry.brand.toLowerCase() === 'apple' ||
+    entry.model.toLowerCase().includes('iphone')
+  );
+}
+
 export function passesHardFilters(
   entry: PhoneCatalogEntry,
   requirements: UserRequirements,
@@ -106,6 +131,9 @@ export function passesHardFilters(
       if (b.includes(t) || t.includes(b)) return false;
     }
   }
+
+  const platform = detectPlatformPreferenceFromRequirements(requirements);
+  if (platform && !matchesPlatformPreference(entry, platform)) return false;
 
   const spec = entry.spec;
   const ff = requirements.form_factor;
@@ -317,7 +345,8 @@ interface ScoringContext {
 function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandidate {
   const haystack = buildSearchHaystack(entry);
   let score = weightedAspectScore(entry.aspectScores, ctx.weights);
-  const ratio = mustHaveMatchRatio(haystack, ctx.requirements.must_haves);
+  const scoringMustHaves = ctx.requirements.must_haves.filter((m) => !isPlatformRequirement(m));
+  const ratio = mustHaveMatchRatio(haystack, scoringMustHaves);
   score = score * (0.72 + 0.28 * ratio);
   score += specSemanticBonus(entry, ctx.queryEmbedding);
 

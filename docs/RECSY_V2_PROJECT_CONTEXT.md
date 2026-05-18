@@ -550,6 +550,19 @@ Multi-turn sessions merge requirements across turns. If
 `confidence < RECOMMENDER_CLARIFY_THRESHOLD` (0.6), emit
 `clarifying_question` and wait for next user message.
 
+**2026-05-18 hardening:** after the LLM returns, the recommender now runs a
+deterministic guard merge in `src/services/recommender/requirements-merge.ts`.
+The guard preserves facts from previous turns and directly extracts
+high-confidence facts from the latest user message: budget amounts,
+camera/battery/performance/display/software/value priorities, Android/iPhone
+platform preference, common must-haves, brand likes/dislikes, form-factor hints,
+and explicit "start over" resets. This is intentionally layered _after_ the LLM:
+Gemini can still interpret fuzzy shopper language, but TypeScript owns concrete
+state preservation so a short follow-up like "I prefer Android" cannot drop the
+already-known "$1200 + camera" context. The orchestrator also prevents
+back-to-back clarification loops: once a prior clarify turn exists, the next
+turn is promoted to broad results instead of asking another question.
+
 ### Stage B — Candidate retrieval
 
 **MVP (implemented):**
@@ -1391,6 +1404,7 @@ rows are not deleted so history stays visible in the “Notes” column.
 | Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query       | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
 | Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only                | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
 | Recommender — Stage A | Gemini `UserRequirements` JSON often drifts (casing, nulls, string numbers)         | **Mitigated (MVP)**            | Lenient `userRequirementsSchema` + `normalizeUserRequirements` + one retry. See `docs/recommender/README.md` and ADR 0007 supplement. On persistent `LLM_SCHEMA_VIOLATION`, inspect Zod `cause` and extend the schema, not the ranker.                  |
+| Recommender - Stage A | LLM merge could drop prior budget / camera / platform facts during clarification    | **Mitigated (2026-05-18)**     | `requirements-merge.ts` deterministically preserves budget, priorities, platform, brands, and reset intent after structured extraction; the orchestrator also caps back-to-back clarification. See `docs/recommender/README.md`.                        |
 | Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
 | Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
 | Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
@@ -1429,6 +1443,36 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-05-18 - Recommender multi-turn clarification hardening
+
+- **Clarify-turn memory bug fixed** - `getLatestRequirementsForSession` now
+  loads the latest parseable `extracted_requirements` from any recommendation
+  turn, including `intent: 'clarify'`. Previously it only considered
+  `intent: 'recommend'`, so partial state captured during a clarification was
+  written to the DB but ignored on the next turn.
+- **Actionable-query clarify bypass** - `runRecommendationPipeline` promotes
+  requirements to results when the merged state already has a budget plus a
+  meaningful preference. Queries like "Suggest me a phone under $1200 with
+  great camera" should rank immediately even if the LLM would prefer optional
+  details such as Android vs iPhone.
+- **Deterministic state merge** - new
+  `src/services/recommender/requirements-merge.ts` extracts and preserves
+  concrete facts (budget, aspect priorities, Android/iPhone, common
+  must-haves, brand preferences, form factor, and "start over" resets) after
+  the LLM structured extraction. This makes the LLM a language parser, not the
+  sole source of memory.
+- **Clarification loop cap** - after one prior clarify turn, the next turn is
+  allowed to return broad results instead of asking another back-to-back
+  question. This protects the core recommender flow from low-confidence model
+  churn.
+- **Ranking hardening** - Android/iPhone is treated as a hard platform filter,
+  but platform words are removed from the soft must-have scoring multiplier so
+  matching phones are not accidentally penalized for not repeating "Android" in
+  their compact haystack.
+- **Tests** - added regressions for under-extracted first turns, short platform
+  follow-ups preserving prior budget/camera facts, explicit reset behavior,
+  one-clarify cap behavior, and platform-filter scoring.
 
 ### 2026-05-15 — CI success gate, secrets-gate hardening, recommend state persistence, Gemini rotation
 
@@ -1880,6 +1924,59 @@ dissenting_quotes)`.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
+
+### Recommender - multi-turn clarification loop (2026-05-18)
+
+#### HIGH
+
+- **`/api/recommend` repeatedly asked for information the user had already provided.**
+  The observed sequence was: first turn "under $1200 with great camera" asked
+  for Android/iPhone; second turn "I prefer Android" asked for budget and use
+  case; third turn "$1200, mostly camera" asked for Android/iPhone again. The
+  session cookie was stable, so this was not a browser/session-cookie problem.
+  It broke the core recommender experience because the user could not reach
+  picks after supplying enough information.
+  - **Root cause 1 - clarify-turn amnesia.** `POST /api/recommend` stored
+    partial `extracted_requirements` on rows with `intent: 'clarify'`, but
+    `getLatestRequirementsForSession` only loaded prior rows with
+    `intent: 'recommend'`. As a result, every clarification answer was merged
+    against `previous = null`; the LLM saw each short follow-up as a fresh
+    request and re-asked for facts from earlier turns.
+  - **Root cause 2 - over-eager clarification.** The first message was already
+    actionable by product rules: it had a budget and a primary preference. The
+    LLM could still return low confidence because optional detail was missing,
+    so the orchestrator needed a deterministic "good enough to rank" check
+    instead of blindly following the model's confidence.
+  - **Root cause 3 - fragile LLM merge boundary.** Even after loading prior
+    state correctly, the LLM remained the only component responsible for
+    preserving concrete facts. A short follow-up like "I prefer Android" could
+    still produce JSON that omitted the earlier budget/camera preference.
+  - **Fix.** `getLatestRequirementsForSession` now scans recent turns with any
+    parseable `extracted_requirements`, including `intent: 'clarify'`.
+    `runRecommendationPipeline` promotes actionable states to results when
+    budget plus a meaningful preference exist, and caps clarification loops by
+    returning broad results after one prior clarify. `extractUserRequirements`
+    now runs `mergeUserRequirements` after the LLM call; that deterministic
+    guard extracts/preserves budget, priorities, platform, common must-haves,
+    brand preferences, form factor, and explicit reset intent.
+  - **Ranking follow-up.** Android/iPhone is now a hard platform filter, but
+    platform words are removed from soft must-have scoring so matching Android
+    phones are not penalized for lacking the literal word "Android" in their
+    compact search haystack.
+  - **Hardening.** Regression tests cover under-extracted first turns, short
+    platform follow-ups preserving prior budget/camera facts, explicit
+    "start over" resets, the one-clarify cap, and platform-filter scoring.
+    Live local sanity checks returned `kind: "results"` for all three messages
+    in the original failure sequence.
+
+#### Related quality note
+
+- **Scorecard coverage affects ranking quality, not the clarification loop.**
+  Missing scorecards can produce weaker differentiation, `scoresTied`, or
+  "No reviewer scorecard yet" copy. They do not decide whether the API returns
+  `kind: 'clarify'` or `kind: 'results'`; that decision happens before catalog
+  ranking. Operators should continue running `scorecard:auto`, but the
+  repeated-question bug was a Stage A/session-state issue.
 
 ### Operations — GitHub Actions ingestion (2026-04-29)
 

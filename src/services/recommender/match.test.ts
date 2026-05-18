@@ -17,6 +17,7 @@ import {
   mustHaveMatchRatio,
   passesHardFilters,
   pickDiverseTop,
+  rankCandidates,
   resolveAspectWeights,
   specSemanticBonus,
   weightedAspectScore,
@@ -47,6 +48,31 @@ function entry(
     specEmbedding: null,
     aspectScores: scores,
     ...overrides,
+  };
+}
+
+function spec(os: string): NonNullable<PhoneCatalogEntry['spec']> {
+  return {
+    display: {
+      size_in: 6.4,
+      resolution: '1080x2400',
+      refresh_rate_hz: 120,
+      panel_type: 'OLED',
+      features: [],
+    },
+    chipset: 'Test Chip',
+    ram_gb: 8,
+    storage_options_gb: [128],
+    rear_cameras: [{ type: 'main', mp: 50 }],
+    front_camera: { mp: 12 },
+    battery_mah: 4500,
+    charging: { wired_w: 30, wireless_w: 15 },
+    weight_g: 190,
+    os,
+    connectivity: { wifi: 'Wi-Fi 7', bluetooth: '5.4', nfc: true },
+    colors: [],
+    foldable: false,
+    highlights: [],
   };
 }
 
@@ -109,6 +135,52 @@ describe('match helpers', () => {
     const r = req({ budget_usd: { max: 700, min: undefined } });
     expect(passesHardFilters(e, r, { relaxBudgetMax: false, ignoreFoldable: false })).toBe(false);
     expect(passesHardFilters(e, r, { relaxBudgetMax: true, ignoreFoldable: false })).toBe(true);
+  });
+
+  it('passesHardFilters treats explicit Android/iPhone must-haves as platform filters', () => {
+    const android = entry({
+      slug: 'pixel',
+      brand: 'Google',
+      model: 'Pixel',
+      spec: spec('Android 15'),
+    });
+    const iphone = entry({
+      slug: 'iphone',
+      brand: 'Apple',
+      model: 'iPhone 16',
+      spec: spec('iOS 18'),
+    });
+
+    const androidReq = req({ must_haves: ['Android'] });
+    expect(
+      passesHardFilters(android, androidReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(true);
+    expect(
+      passesHardFilters(iphone, androidReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(false);
+
+    const iosReq = req({ must_haves: ['iPhone'] });
+    expect(
+      passesHardFilters(iphone, iosReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(true);
+    expect(
+      passesHardFilters(android, iosReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(false);
+  });
+
+  it('does not soft-penalize a platform must-have after applying the platform filter', () => {
+    const google = entry({
+      slug: 'pixel',
+      brand: 'Google',
+      model: 'Pixel',
+      spec: null,
+    });
+
+    const baseline = rankCandidates([google], req({}), equalWeights);
+    const android = rankCandidates([google], req({ must_haves: ['Android'] }), equalWeights);
+
+    expect(android.picks).toHaveLength(1);
+    expect(android.picks[0]?.score).toBeCloseTo(baseline.picks[0]?.score ?? 0, 5);
   });
 
   it('dealBreakerHit detects substring', () => {

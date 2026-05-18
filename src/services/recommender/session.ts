@@ -15,7 +15,7 @@
  * Used by: `src/app/api/recommend/route.ts`,
  *          `src/services/recommender/run-recommendation.ts`.
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 import type { AppDb } from '@/services/db/client';
 import { recommendationSessions, recommendationTurns } from '@/services/db/schema';
@@ -88,28 +88,37 @@ export async function nextTurnIndex(db: AppDb, sessionId: string): Promise<numbe
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the most recent `extractedRequirements` for a session, or `null`
- * if the session has no prior turns with parsed requirements.
+ * Returns the most recent parseable `extractedRequirements` for a session, or
+ * `null` if the session has no prior turns with parsed requirements.
+ *
+ * Clarification turns are intentionally included: the extractor still captures
+ * partial state (budget, platform, priorities) before asking a follow-up, and
+ * the next user message must merge into that partial state instead of starting
+ * over.
  */
 export async function getLatestRequirementsForSession(
   db: AppDb,
   sessionId: string,
 ): Promise<UserRequirements | null> {
-  const [turn] = await db
+  const turns = await db
     .select({ extractedRequirements: recommendationTurns.extractedRequirements })
     .from(recommendationTurns)
     .where(
       and(
         eq(recommendationTurns.sessionId, sessionId),
-        eq(recommendationTurns.intent, 'recommend'),
+        isNotNull(recommendationTurns.extractedRequirements),
       ),
     )
     .orderBy(desc(recommendationTurns.turnIndex))
-    .limit(1);
+    .limit(10);
 
-  if (!turn?.extractedRequirements) return null;
-  const parsed = userRequirementsSchema.safeParse(turn.extractedRequirements);
-  return parsed.success ? normalizeUserRequirements(parsed.data) : null;
+  for (const turn of turns) {
+    const parsed = userRequirementsSchema.safeParse(turn.extractedRequirements);
+    if (parsed.success) {
+      return normalizeUserRequirements(parsed.data);
+    }
+  }
+  return null;
 }
 
 /**
