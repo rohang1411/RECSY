@@ -25,8 +25,8 @@ const flows = [
 export default function HomePage() {
   return (
     <div className="grid-bg">
-      <section className="px-grid-margin py-16 sm:py-24 lg:py-28">
-        <div className="grid min-h-[calc(100dvh-14rem)] gap-10 lg:grid-cols-12 lg:items-end">
+      <section className="px-grid-margin flex min-h-[calc(100dvh-4rem)] items-center py-8 sm:py-10 lg:py-12">
+        <div className="grid w-full gap-8 lg:grid-cols-12 lg:items-end">
           <div className="lg:col-span-9">
             <p className="meta-label border-primary mb-6 inline-flex border-l-2 pl-4">
               Conversational recommender
@@ -34,6 +34,28 @@ export default function HomePage() {
             <h1 className="display-heading max-w-6xl">
               Ask what matters. We&apos;ll find the phone.
             </h1>
+
+            <div className="border-outline-variant bg-background mt-10 grid border lg:grid-cols-[1fr_auto]">
+              <Link
+                href="/recommend"
+                className="group hover:bg-surface-container flex min-h-28 items-center gap-4 p-5 transition-colors duration-150"
+              >
+                <Terminal className="text-primary size-5 shrink-0" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="meta-label">Start a recommendation</p>
+                  <p className="text-primary mt-2 truncate font-mono text-sm">
+                    Describe your budget, favorite features, and must-haves.
+                  </p>
+                </div>
+                <ArrowRight className="text-muted-foreground group-hover:text-primary size-5 shrink-0 transition" />
+              </Link>
+              <Link
+                href="/recommend"
+                className="border-outline-variant text-primary hover:bg-primary hover:text-background flex items-center justify-center border-t px-8 py-5 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors duration-150 lg:border-t-0 lg:border-l"
+              >
+                Recommend
+              </Link>
+            </div>
           </div>
           <div className="border-outline-variant bg-background/80 border p-5 lg:col-span-3">
             <p className="meta-label">What RECSY does</p>
@@ -42,28 +64,6 @@ export default function HomePage() {
               picks with transparent reasoning.
             </p>
           </div>
-        </div>
-
-        <div className="border-outline-variant bg-background mt-12 grid border lg:grid-cols-[1fr_auto]">
-          <Link
-            href="/recommend"
-            className="group hover:bg-surface-container flex min-h-28 items-center gap-4 p-5 transition-colors duration-150"
-          >
-            <Terminal className="text-primary size-5 shrink-0" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <p className="meta-label">Start a recommendation</p>
-              <p className="text-primary mt-2 truncate font-mono text-sm">
-                Describe your budget, favorite features, and must-haves.
-              </p>
-            </div>
-            <ArrowRight className="text-muted-foreground group-hover:text-primary size-5 shrink-0 transition" />
-          </Link>
-          <Link
-            href="/recommend"
-            className="border-outline-variant text-primary hover:bg-primary hover:text-background flex items-center justify-center border-t px-8 py-5 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors duration-150 lg:border-t-0 lg:border-l"
-          >
-            Recommend
-          </Link>
         </div>
       </section>
 

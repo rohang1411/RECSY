@@ -53,7 +53,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         <p className="meta-label">Browse</p>
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <h1 className="font-display text-primary text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+            <h1 className="heading-scanline text-gradient-accent-edge font-display text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
               Browse Phones
             </h1>
             <p className="text-muted-foreground mt-4 max-w-2xl text-sm leading-6">
@@ -76,7 +76,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
             <li key={p.slug}>
               <Link
                 href={`/p/${p.slug}`}
-                className="group border-outline-variant bg-card hover:border-primary focus-visible:border-primary grid min-h-full overflow-hidden border transition-colors duration-150 focus-visible:outline-none"
+                className="interactive-panel group grid min-h-full overflow-hidden focus-visible:outline-none"
               >
                 <div className="border-outline-variant bg-surface-container relative h-64 overflow-hidden border-b">
                   <PhoneImage
@@ -98,7 +98,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
                   <p className="text-muted-foreground mt-5 font-mono text-xs tracking-[0.16em] uppercase">
                     {p.brand}
                   </p>
-                  <h2 className="font-display text-primary mt-2 text-3xl font-bold tracking-normal uppercase">
+                  <h2 className="text-gradient-steel font-display mt-2 text-3xl font-bold tracking-normal uppercase">
                     {p.model}
                   </h2>
                   {p.tagline ? (

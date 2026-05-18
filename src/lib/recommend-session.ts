@@ -46,6 +46,21 @@ export interface RecommendSession {
   readonly scoresTied: boolean;
   readonly scorecardMissing: boolean;
   readonly topAspects: readonly string[];
+  readonly snapshots?: readonly RecommendationSnapshot[];
+  readonly activeSnapshotId?: string | null;
+}
+
+export interface RecommendationSnapshot {
+  readonly id: string;
+  readonly query: string;
+  readonly assistantText: string;
+  readonly picks: readonly SessionPick[];
+  readonly relaxed: readonly string[];
+  readonly refined: boolean;
+  readonly scoresTied: boolean;
+  readonly scorecardMissing: boolean;
+  readonly topAspects: readonly string[];
+  readonly savedAt: number;
 }
 
 function isChatLine(v: unknown): v is SessionChatLine {
@@ -64,6 +79,26 @@ function isPick(v: unknown): v is SessionPick {
     typeof r.model === 'string' &&
     typeof r.score === 'number' &&
     typeof r.summary === 'string'
+  );
+}
+
+function isSnapshot(v: unknown): v is RecommendationSnapshot {
+  if (typeof v !== 'object' || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    typeof r.query === 'string' &&
+    typeof r.assistantText === 'string' &&
+    typeof r.savedAt === 'number' &&
+    Array.isArray(r.picks) &&
+    r.picks.every(isPick) &&
+    Array.isArray(r.relaxed) &&
+    r.relaxed.every((item) => typeof item === 'string') &&
+    Array.isArray(r.topAspects) &&
+    r.topAspects.every((item) => typeof item === 'string') &&
+    typeof r.refined === 'boolean' &&
+    typeof r.scoresTied === 'boolean' &&
+    typeof r.scorecardMissing === 'boolean'
   );
 }
 
@@ -104,6 +139,11 @@ function validateSession(raw: unknown): RecommendSession | null {
     scoresTied: r.scoresTied === true,
     scorecardMissing: r.scorecardMissing === true,
     topAspects,
+    snapshots:
+      Array.isArray(r.snapshots) && r.snapshots.every(isSnapshot)
+        ? (r.snapshots as RecommendationSnapshot[]).slice(0, 8)
+        : undefined,
+    activeSnapshotId: typeof r.activeSnapshotId === 'string' ? r.activeSnapshotId : null,
   };
 }
 

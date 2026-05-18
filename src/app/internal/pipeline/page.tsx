@@ -2,6 +2,9 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { ChunkWorkbench } from '@/app/internal/pipeline/_components/chunk-workbench';
+import { LifecycleExplorer } from '@/app/internal/pipeline/_components/lifecycle-explorer';
+import { WorkflowTables } from '@/app/internal/pipeline/_components/workflow-tables';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { getDb } from '@/services/db/client';
@@ -13,6 +16,7 @@ import {
   ingestRuns,
   phones,
   recommendationTurns,
+  scorecardRuns,
   sources,
 } from '@/services/db/schema';
 
@@ -34,9 +38,11 @@ type Metric = {
   icon: string;
 };
 
+type SourceType = 'youtube' | 'reddit' | 'article' | 'gsmarena';
+
 type SourceRow = {
   id: string;
-  type: 'youtube' | 'reddit' | 'article' | 'gsmarena';
+  type: SourceType;
   url: string;
   title: string;
   author: string | null;
@@ -55,22 +61,60 @@ type ChunkRow = {
   tokens: number;
 };
 
-function sourceIcon(type: SourceRow['type']) {
-  if (type === 'youtube') return '▶';
-  if (type === 'reddit') return '☰';
-  if (type === 'gsmarena') return '▣';
-  return '§';
-}
+const WORKFLOWS = [
+  {
+    id: 'ci',
+    name: 'CI',
+    trigger: 'push / pull request',
+    purpose: 'Runs format, lint, typecheck, tests, and build verification.',
+    status: 'ready',
+  },
+  {
+    id: 'creator-watch',
+    name: 'Creator watch',
+    trigger: 'scheduled',
+    purpose: 'Watches creator feeds and queues fresh mobile review sources.',
+    status: 'ready',
+  },
+  {
+    id: 'ingest-on-new-phone',
+    name: 'Ingest on new phone',
+    trigger: 'catalog change',
+    purpose: 'Starts discovery when a new catalog phone appears.',
+    status: 'ready',
+  },
+  {
+    id: 'ingest-resume',
+    name: 'Resume ingestion',
+    trigger: 'scheduled / manual',
+    purpose: 'Retries incomplete or quota-limited ingestion work.',
+    status: 'ready',
+  },
+  {
+    id: 'ingest-tiered',
+    name: 'Tiered ingest',
+    trigger: 'daily schedule',
+    purpose: 'Refreshes hot, warm, and cold device corpora by freshness tier.',
+    status: 'ready',
+  },
+  {
+    id: 'scorecard-auto',
+    name: 'Scorecard auto',
+    trigger: 'after ingest',
+    purpose: 'Regenerates aspect scorecards from newly embedded evidence.',
+    status: 'ready',
+  },
+] as const;
 
-function sourceLabel(type: SourceRow['type']) {
+function sourceLabel(type: SourceType) {
   if (type === 'youtube') return 'YouTube video';
   if (type === 'reddit') return 'Reddit post';
   if (type === 'gsmarena') return 'GSMArena page';
   return 'Article';
 }
 
-function trimText(text: string, max = 160) {
-  return text.length > max ? `${text.slice(0, max).trim()}...` : text;
+function formatDate(value: Date | null | undefined) {
+  return value ? value.toLocaleString('en-US') : null;
 }
 
 function pickRankForPhone(picks: unknown, phoneId: string, slug: string) {
@@ -83,7 +127,7 @@ function pickRankForPhone(picks: unknown, phoneId: string, slug: string) {
   return index >= 0 ? index + 1 : null;
 }
 
-async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 1500) {
+async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 1200) {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   try {
@@ -100,18 +144,47 @@ async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 15
   }
 }
 
+function groupChunksBySource(chunksList: readonly ChunkRow[]) {
+  const map = new Map<string, ChunkRow[]>();
+  for (const chunk of chunksList) {
+    const list = map.get(chunk.sourceId) ?? [];
+    list.push(chunk);
+    map.set(chunk.sourceId, list);
+  }
+  return map;
+}
+
+function selectLifecycleSources(
+  sourcesList: readonly SourceRow[],
+  chunksBySource: Map<string, ChunkRow[]>,
+) {
+  const chosen: SourceRow[] = [];
+  const seen = new Set<string>();
+
+  for (const type of ['youtube', 'reddit', 'article', 'gsmarena'] as const) {
+    const source = sourcesList.find((item) => item.type === type);
+    if (!source) continue;
+    chosen.push(source);
+    seen.add(source.id);
+  }
+
+  for (const source of sourcesList) {
+    if (chosen.length >= 6) break;
+    if (seen.has(source.id)) continue;
+    chosen.push(source);
+  }
+
+  return chosen.map((source) => ({
+    ...source,
+    publishedAt: source.publishedAt?.toISOString() ?? null,
+    chunkCount: chunksBySource.get(source.id)?.length ?? 0,
+  }));
+}
+
 async function loadPipelineData(selectedSlug: string | null) {
   const db = getDb();
 
-  const [
-    phoneOptions,
-    phoneCountRows,
-    sourceCountRows,
-    chunkCountRows,
-    queuedCount,
-    runningCount,
-    latestRuns,
-  ] = await Promise.all([
+  const phoneOptions = await optionalQuery(
     db
       .select({
         id: phones.id,
@@ -124,39 +197,24 @@ async function loadPipelineData(selectedSlug: string | null) {
       .from(phones)
       .where(eq(phones.status, 'active'))
       .orderBy(asc(phones.brand), asc(phones.model)),
-    db.select({ value: sql<number>`count(*)` }).from(phones),
-    db.select({ value: sql<number>`count(*)` }).from(sources),
-    db.select({ value: sql<number>`count(*)` }).from(chunks),
-    db
-      .select({ value: sql<number>`count(*)` })
-      .from(crawlQueue)
-      .where(eq(crawlQueue.status, 'queued')),
-    db
-      .select({ value: sql<number>`count(*)` })
-      .from(crawlQueue)
-      .where(eq(crawlQueue.status, 'in_progress')),
-    db
-      .select({
-        id: ingestRuns.id,
-        adapter: ingestRuns.adapter,
-        status: ingestRuns.status,
-        chunksCreated: ingestRuns.chunksCreated,
-        tier: ingestRuns.tier,
-        startedAt: ingestRuns.startedAt,
-        finishedAt: ingestRuns.finishedAt,
-        error: ingestRuns.error,
-      })
-      .from(ingestRuns)
-      .orderBy(desc(ingestRuns.startedAt))
-      .limit(8),
-  ]);
+    [],
+    1800,
+  );
 
   const selectedPhone =
     phoneOptions.find((phone) => phone.slug === selectedSlug) ?? phoneOptions[0] ?? null;
 
-  const [deviceSources, deviceChunks, deviceAspects, sampleTurns] = selectedPhone
-    ? await Promise.all([
-        optionalQuery(
+  const [
+    deviceSources,
+    deviceChunks,
+    deviceAspects,
+    sampleTurns,
+    latestRuns,
+    scoreRuns,
+    resumeRows,
+  ] = await Promise.all([
+    selectedPhone
+      ? optionalQuery(
           db
             .select({
               id: sources.id,
@@ -173,10 +231,12 @@ async function loadPipelineData(selectedSlug: string | null) {
             .from(sources)
             .where(and(eq(sources.phoneId, selectedPhone.id), eq(sources.status, 'active')))
             .orderBy(desc(sources.lastFetchedAt))
-            .limit(8),
+            .limit(12),
           [],
-        ),
-        optionalQuery(
+        )
+      : [],
+    selectedPhone
+      ? optionalQuery(
           db
             .select({
               id: chunks.id,
@@ -188,10 +248,12 @@ async function loadPipelineData(selectedSlug: string | null) {
             .from(chunks)
             .where(eq(chunks.phoneId, selectedPhone.id))
             .orderBy(asc(chunks.chunkIndex))
-            .limit(24),
+            .limit(32),
           [],
-        ),
-        optionalQuery(
+        )
+      : [],
+    selectedPhone
+      ? optionalQuery(
           db
             .select({
               aspect: aspectDefinitions.aspect,
@@ -206,8 +268,10 @@ async function loadPipelineData(selectedSlug: string | null) {
             .where(eq(aspects.phoneId, selectedPhone.id))
             .limit(7),
           [],
-        ),
-        optionalQuery(
+        )
+      : [],
+    selectedPhone
+      ? optionalQuery(
           db
             .select({
               userMessage: recommendationTurns.userMessage,
@@ -224,54 +288,102 @@ async function loadPipelineData(selectedSlug: string | null) {
             .limit(3),
           [],
           900,
-        ),
-      ])
-    : [[], [], [], []];
+        )
+      : [],
+    optionalQuery(
+      db
+        .select({
+          id: ingestRuns.id,
+          adapter: ingestRuns.adapter,
+          status: ingestRuns.status,
+          chunksCreated: ingestRuns.chunksCreated,
+          tier: ingestRuns.tier,
+          stage: ingestRuns.stage,
+          errorCode: ingestRuns.errorCode,
+          sourceUrl: ingestRuns.sourceUrl,
+          startedAt: ingestRuns.startedAt,
+          finishedAt: ingestRuns.finishedAt,
+          error: ingestRuns.error,
+        })
+        .from(ingestRuns)
+        .orderBy(desc(ingestRuns.startedAt))
+        .limit(8),
+      [],
+      900,
+    ),
+    optionalQuery(
+      db
+        .select({
+          id: scorecardRuns.id,
+          aspect: scorecardRuns.aspect,
+          status: scorecardRuns.status,
+          nSources: scorecardRuns.nSources,
+          durationMs: scorecardRuns.durationMs,
+          startedAt: scorecardRuns.startedAt,
+          finishedAt: scorecardRuns.finishedAt,
+          error: scorecardRuns.error,
+        })
+        .from(scorecardRuns)
+        .orderBy(desc(scorecardRuns.startedAt))
+        .limit(8),
+      [],
+      900,
+    ),
+    optionalQuery(
+      db
+        .select({
+          id: crawlQueue.id,
+          adapter: crawlQueue.adapter,
+          status: crawlQueue.status,
+          tier: crawlQueue.tier,
+          attempts: crawlQueue.attempts,
+          scheduledFor: crawlQueue.scheduledFor,
+          lastError: crawlQueue.lastError,
+        })
+        .from(crawlQueue)
+        .orderBy(asc(crawlQueue.scheduledFor))
+        .limit(8),
+      [],
+      900,
+    ),
+  ]);
 
-  const sourceIds = new Set(deviceSources.map((source) => source.id));
-  const chunksBySource = new Map<string, ChunkRow[]>();
-  for (const chunk of deviceChunks) {
-    if (!sourceIds.has(chunk.sourceId)) continue;
-    const list = chunksBySource.get(chunk.sourceId) ?? [];
-    list.push(chunk);
-    chunksBySource.set(chunk.sourceId, list);
-  }
-
+  const chunksBySource = groupChunksBySource(deviceChunks as ChunkRow[]);
   const specParsed = selectedPhone ? PhoneSpecSchema.safeParse(selectedPhone.specJson) : null;
-  const phoneCount = Number(phoneCountRows[0]?.value ?? 0);
-  const sourceCount = Number(sourceCountRows[0]?.value ?? 0);
-  const chunkCount = Number(chunkCountRows[0]?.value ?? 0);
+  const runningCount = resumeRows.filter((row) => row.status === 'in_progress').length;
 
   const metrics: Metric[] = [
     {
       label: 'Phones active',
-      value: phoneCount.toLocaleString('en-US'),
+      value: phoneOptions.length.toLocaleString('en-US'),
       detail: 'Catalog entries',
-      icon: '▯',
+      icon: '[]',
     },
     {
-      label: 'Data sources',
-      value: sourceCount.toLocaleString('en-US'),
-      detail: 'Review and article sources',
-      icon: '◉',
+      label: 'Device sources',
+      value: deviceSources.length.toLocaleString('en-US'),
+      detail: 'Visible for selected phone',
+      icon: '()',
     },
     {
-      label: 'Total chunks',
-      value: chunkCount.toLocaleString('en-US'),
-      detail: 'Indexed retrieval units',
-      icon: '▣',
+      label: 'Visible chunks',
+      value: deviceChunks.length.toLocaleString('en-US'),
+      detail: 'Sampled retrieval units',
+      icon: '##',
     },
     {
       label: 'Queue',
-      value: Number(queuedCount[0]?.value ?? 0).toLocaleString('en-US'),
-      detail: `${Number(runningCount[0]?.value ?? 0).toLocaleString('en-US')} running`,
-      icon: '⌁',
+      value: resumeRows.length.toLocaleString('en-US'),
+      detail: `${runningCount.toLocaleString('en-US')} running`,
+      icon: '>',
     },
   ];
 
   return {
     metrics,
     latestRuns,
+    scoreRuns,
+    resumeRows,
     phoneOptions,
     selectedPhone,
     deviceSources: deviceSources as SourceRow[],
@@ -292,6 +404,8 @@ export default async function PipelinePage({ searchParams }: PageProps) {
   const {
     metrics,
     latestRuns,
+    scoreRuns,
+    resumeRows,
     phoneOptions,
     selectedPhone,
     deviceSources,
@@ -302,17 +416,17 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     spec,
   } = await loadPipelineData(selectedSlug);
 
-  const sourceChunkTotal = Array.from(chunksBySource.values()).reduce(
-    (sum, list) => sum + list.length,
-    0,
-  );
   const sourceMix = deviceSources.reduce<Record<string, number>>((acc, source) => {
     acc[source.type] = (acc[source.type] ?? 0) + 1;
     return acc;
   }, {});
+  const sourceMixLabel =
+    Object.entries(sourceMix)
+      .map(([type, count]) => `${type} ${count}`)
+      .join(' / ') || 'none';
   const topAspect = deviceAspects
     .slice()
-    .sort((a, b) => Number.parseFloat(b.score) - Number.parseFloat(a.score))[0];
+    .sort((a, b) => Number.parseFloat(String(b.score)) - Number.parseFloat(String(a.score)))[0];
   const latestSourceDate = deviceSources
     .map((source) => source.publishedAt)
     .filter((date): date is Date => date instanceof Date)
@@ -324,12 +438,74 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     deviceChunks.length > 0
       ? Math.min(100, Math.round((deviceAspects.length / Math.min(deviceChunks.length, 12)) * 100))
       : 0;
+  const recommendedTurns = selectedPhone
+    ? sampleTurns
+        .map((turn) => ({
+          userMessage: turn.userMessage,
+          createdAt: turn.createdAt.toISOString(),
+          latencyMs: turn.latencyMs,
+          rank: pickRankForPhone(turn.picks, selectedPhone.id, selectedPhone.slug),
+        }))
+        .filter((turn) => turn.rank != null)
+    : [];
   const retrievalState =
-    sampleTurns.length > 0
+    recommendedTurns.length > 0
       ? 'Matched in past query'
       : deviceChunks.length > 0
         ? 'Ready'
         : 'Warming up';
+  const selectedPhoneLabel = selectedPhone
+    ? `${selectedPhone.brand} ${selectedPhone.model}`
+    : 'No phone selected';
+  const evidenceReasons = [
+    topAspect ? `Strong ${topAspect.aspect} signal` : null,
+    deviceSources.some((source) => source.type === 'youtube') ? 'Video evidence available' : null,
+    deviceChunks.length > 0 ? `${deviceChunks.length} chunks indexed` : null,
+    recommendedTurns[0] ? 'Matched a past recommendation turn' : null,
+  ].filter((value): value is string => Boolean(value));
+
+  const lifecycleSourceRows = selectLifecycleSources(deviceSources, chunksBySource);
+  const serializedSources = deviceSources.map((source) => ({
+    id: source.id,
+    type: sourceLabel(source.type),
+    title: source.title,
+    url: source.url,
+  }));
+  const serializedChunks = deviceChunks.map((chunk) => ({ ...chunk }));
+  const serializedAspects = deviceAspects.map((aspect) => ({
+    aspect: String(aspect.aspect),
+    score: String(aspect.score),
+    confidence: String(aspect.confidence),
+    summary: aspect.summary,
+    nSupporting: aspect.nSupporting,
+    nDissenting: aspect.nDissenting,
+  }));
+  const serializedTurns = recommendedTurns;
+
+  const ingestionRows = latestRuns.map((run) => ({
+    id: run.id,
+    label: `${run.adapter}${run.stage ? ` / ${run.stage}` : ''}`,
+    status: run.status,
+    detail: run.error ?? run.errorCode ?? `${run.chunksCreated} chunks / ${run.tier ?? 'no tier'}`,
+    startedAt: formatDate(run.startedAt),
+    finishedAt: formatDate(run.finishedAt),
+  }));
+  const scorecardRows = scoreRuns.map((run) => ({
+    id: run.id,
+    label: run.aspect,
+    status: run.status,
+    detail: run.error ?? `${run.nSources ?? 0} sources / ${run.durationMs ?? 0} ms`,
+    startedAt: formatDate(run.startedAt),
+    finishedAt: formatDate(run.finishedAt),
+  }));
+  const resumeRunRows = resumeRows.map((row) => ({
+    id: row.id,
+    label: `${row.adapter} / ${row.tier}`,
+    status: row.status,
+    detail: row.lastError ?? `${row.attempts} attempts`,
+    startedAt: formatDate(row.scheduledFor),
+    finishedAt: null,
+  }));
 
   return (
     <div className="grid-bg bg-background flex">
@@ -364,20 +540,12 @@ export default async function PipelinePage({ searchParams }: PageProps) {
             </Link>
           ))}
         </nav>
-        <div className="border-outline-variant border-t p-4">
-          <Link
-            href="/recommend"
-            className="border-outline text-primary hover:border-accent hover:text-accent block border px-4 py-3 text-center font-mono text-[11px] tracking-[0.18em] uppercase transition-colors"
-          >
-            New recommendation
-          </Link>
-        </div>
       </aside>
 
       <main className="px-grid-margin min-w-0 flex-1 py-10">
         <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="font-display text-primary text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
+            <h1 className="heading-scanline font-display text-gradient-accent-edge text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
               Pipeline Observatory
             </h1>
             <p className="text-muted-foreground mt-3 font-mono text-xs tracking-[0.16em] uppercase">
@@ -385,7 +553,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
             </p>
           </div>
           <div className="text-primary inline-flex items-center gap-2 font-mono text-xs tracking-[0.14em] uppercase">
-            <span className="bg-accent size-2 animate-pulse" />
+            <span className="status-dot text-accent" data-state="running" />
             Syncing: active
           </div>
         </header>
@@ -394,7 +562,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           {metrics.map((metric) => (
             <div key={metric.label} className="bg-background relative overflow-hidden p-6">
               <p className="meta-label">{metric.label}</p>
-              <p className="font-display text-primary mt-4 text-6xl leading-none font-extrabold">
+              <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
                 {metric.value}
               </p>
               <p className="text-muted-foreground mt-2 text-sm">{metric.detail}</p>
@@ -405,230 +573,51 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           ))}
         </section>
 
-        <section className="mt-12">
-          <div className="accent-hairline border-outline-variant mb-4 border-b pb-3">
-            <p className="meta-label text-primary">Lifecycle schematic</p>
-          </div>
-          <div className="border-outline-variant bg-background relative grid gap-6 border p-6 md:grid-cols-3">
-            <div className="bg-primary/35 pointer-events-none absolute top-1/2 right-6 left-6 hidden h-px md:block" />
-            {[
-              [
-                'Ingest',
-                'Raw capture from source pages, videos, posts, and specs.',
-                'Rate',
-                '450MB/s',
-              ],
-              [
-                'Process',
-                'Chunking, embedding generation, and score extraction.',
-                'Latency',
-                '12ms',
-              ],
-              [
-                'Retrieve',
-                'Indexed evidence is pulled into recommendations and Q&A.',
-                'Capacity',
-                '78%',
-              ],
-            ].map(([title, body, stat, value]) => (
-              <div
-                key={title}
-                className="border-outline-variant bg-background hover:border-accent hover:bg-surface-container relative z-10 border p-6 transition-colors"
-              >
-                <h2 className="font-display text-primary text-3xl font-bold tracking-normal uppercase">
-                  {title}
-                </h2>
-                <p className="text-muted-foreground mt-6 min-h-14 font-mono text-xs leading-5">
-                  {body}
-                </p>
-                <div className="border-outline-variant text-primary mt-6 flex justify-between border-t pt-4 font-mono text-xs">
-                  <span>{stat}</span>
-                  <span>{value}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        <div className="accent-hairline border-outline-variant mt-12 flex flex-col gap-4 border-b pb-3 md:flex-row md:items-center md:justify-between">
+          <p className="meta-label text-primary">Device probe</p>
+          <form action="/internal/pipeline" className="flex items-center gap-3">
+            <label htmlFor="phone" className="meta-label">
+              Phone
+            </label>
+            <select
+              id="phone"
+              name="phone"
+              defaultValue={selectedPhone?.slug}
+              className="border-outline bg-background text-primary focus:border-accent border px-3 py-2 font-mono text-xs focus:ring-0 focus:outline-none"
+            >
+              {phoneOptions.map((phone) => (
+                <option key={phone.slug} value={phone.slug}>
+                  {phone.brand} {phone.model}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="border-outline text-primary hover:border-accent hover:text-accent border px-4 py-2 font-mono text-[11px] tracking-[0.16em] uppercase transition-colors"
+            >
+              View
+            </button>
+          </form>
+        </div>
 
-        <section className="mt-12">
-          <div className="accent-hairline border-outline-variant mb-4 flex flex-col gap-4 border-b pb-3 md:flex-row md:items-center md:justify-between">
-            <p className="meta-label text-primary">Device lifecycle explorer</p>
-            <form action="/internal/pipeline" className="flex items-center gap-3">
-              <label htmlFor="phone" className="meta-label">
-                Probe
-              </label>
-              <select
-                id="phone"
-                name="phone"
-                defaultValue={selectedPhone?.slug}
-                className="border-outline bg-background text-primary focus:border-accent border px-3 py-2 font-mono text-xs focus:ring-0 focus:outline-none"
-              >
-                {phoneOptions.map((phone) => (
-                  <option key={phone.slug} value={phone.slug}>
-                    {phone.brand} {phone.model}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="border-outline text-primary hover:border-accent hover:text-accent border px-4 py-2 font-mono text-[11px] tracking-[0.16em] uppercase transition-colors"
-              >
-                View
-              </button>
-            </form>
-          </div>
-
-          <div className="pipeline-grid border-outline-variant bg-background relative min-h-[560px] overflow-hidden border p-6">
-            <div className="grid min-h-[500px] gap-6 lg:grid-cols-3">
-              <div className="border-outline-variant/60 relative border-r pr-4">
-                <p className="meta-label mb-8">Stage 1: Discovery</p>
-                <div className="space-y-5">
-                  {deviceSources.length > 0 ? (
-                    deviceSources.slice(0, 4).map((source) => (
-                      <details
-                        key={source.id}
-                        className="source-orbit group border-outline-variant bg-background/95 hover:border-accent hover:bg-surface-container w-full max-w-sm cursor-pointer border p-4 transition-all"
-                      >
-                        <summary className="list-none [&::-webkit-details-marker]:hidden">
-                          <div className="flex items-center gap-4">
-                            <span className="border-primary text-primary group-hover:border-accent group-hover:text-accent flex size-14 shrink-0 items-center justify-center rounded-full border text-xl transition-colors">
-                              {sourceIcon(source.type)}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
-                                {sourceLabel(source.type)}
-                              </p>
-                              <p className="text-muted-foreground mt-1 truncate text-sm">
-                                {source.title}
-                              </p>
-                            </div>
-                          </div>
-                        </summary>
-                        <div className="border-outline-variant mt-4 border-t pt-4">
-                          <p className="text-muted-foreground text-sm leading-6">
-                            {source.channel ?? source.author ?? 'Source'} /{' '}
-                            {source.publishedAt
-                              ? source.publishedAt.toLocaleDateString('en-US')
-                              : 'date unknown'}
-                          </p>
-                          <p className="text-muted-foreground mt-2 font-mono text-xs">
-                            Quality {source.quality ?? 'n/a'} / relevance{' '}
-                            {source.relevance ?? 'n/a'}
-                          </p>
-                          <a
-                            href={source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:text-accent mt-3 inline-flex font-mono text-xs"
-                          >
-                            Open source
-                          </a>
-                        </div>
-                      </details>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground text-sm">
-                      No active sources have been ingested for this phone yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-outline-variant/60 relative flex flex-col items-center justify-center border-r px-4">
-                <p className="meta-label absolute top-0 left-4">Stage 2: Synthesis</p>
-                <div className="border-primary/40 absolute top-[32%] right-full left-[-40%] hidden h-px border-t border-dashed lg:block">
-                  <span className="flow-dot bg-accent absolute top-[-4px] left-0 size-2" />
-                  <span className="flow-dot bg-accent absolute top-[-4px] left-0 size-2" />
-                  <span className="flow-dot bg-accent absolute top-[-4px] left-0 size-2" />
-                </div>
-                <details className="pipeline-pulse group border-primary bg-background hover:border-accent w-44 cursor-pointer border-2 p-8 text-center transition-colors">
-                  <summary className="list-none [&::-webkit-details-marker]:hidden">
-                    <div className="border-primary text-primary group-hover:border-accent group-hover:text-accent mx-auto flex size-24 items-center justify-center rounded-full border text-4xl">
-                      ⌘
-                    </div>
-                    <p className="text-primary mt-4 font-mono text-xs tracking-[0.14em] uppercase">
-                      LLM hub
-                    </p>
-                    <p className="text-muted-foreground mt-1 font-mono text-[10px]">
-                      {deviceAspects.length} extracted aspects
-                    </p>
-                  </summary>
-                  <div className="border-outline-variant mt-5 space-y-3 border-t pt-4 text-left">
-                    {deviceAspects.length > 0 ? (
-                      deviceAspects.slice(0, 4).map((aspect) => (
-                        <div key={aspect.aspect}>
-                          <div className="text-muted-foreground flex justify-between font-mono text-[10px]">
-                            <span>{aspect.aspect}</span>
-                            <span>{aspect.score}/10</span>
-                          </div>
-                          <div className="bg-surface-container mt-1 h-1">
-                            <div
-                              className="bg-accent h-full"
-                              style={{ width: `${Number.parseFloat(aspect.score) * 10}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-xs">No scorecard extraction yet.</p>
-                    )}
-                  </div>
-                </details>
-              </div>
-
-              <div className="relative flex flex-col justify-center pl-4">
-                <p className="meta-label absolute top-0 left-4">Stage 3: Retrieval event</p>
-                <div className="border-primary/40 absolute top-1/2 right-[55%] left-[-35%] hidden h-px border-t border-dashed lg:block" />
-                <details className="group border-outline-variant bg-background hover:border-accent hover:bg-surface-container mt-16 border p-6 transition-colors">
-                  <summary className="list-none [&::-webkit-details-marker]:hidden">
-                    <p className="meta-label text-accent">Query match</p>
-                    <p className="text-primary mt-5 text-2xl font-semibold">
-                      &quot;{sampleTurns[0]?.userMessage ?? 'Best camera phone under $1000'}&quot;
-                    </p>
-                    <div className="border-outline-variant mt-6 flex items-end justify-between border-t pt-4">
-                      <div>
-                        <p className="meta-label">Retrieval score</p>
-                        <p className="text-primary mt-2 font-mono text-lg">
-                          {sampleTurns[0] ? '0.942' : 'pending'}
-                        </p>
-                      </div>
-                      <span className="text-accent text-3xl">→</span>
-                    </div>
-                  </summary>
-                  <div className="border-outline-variant text-muted-foreground mt-5 border-t pt-4 text-sm leading-6">
-                    {sampleTurns.length > 0 ? (
-                      sampleTurns.map((turn, index) => {
-                        const rank = selectedPhone
-                          ? pickRankForPhone(turn.picks, selectedPhone.id, selectedPhone.slug)
-                          : null;
-                        return (
-                          <p key={`${turn.createdAt.toISOString()}-${index}`} className="mb-3">
-                            This phone appeared{' '}
-                            {rank ? `as recommendation #${rank}` : 'in the candidate set'} for a
-                            past query on {turn.createdAt.toLocaleDateString('en-US')}
-                            {turn.latencyMs ? ` after ${turn.latencyMs} ms` : ''}.
-                          </p>
-                        );
-                      })
-                    ) : (
-                      <p>
-                        No past recommendation turn for this phone yet. Run a recommendation and it
-                        will show up here.
-                      </p>
-                    )}
-                  </div>
-                </details>
-              </div>
-            </div>
-          </div>
-        </section>
+        <LifecycleExplorer
+          sources={lifecycleSourceRows}
+          aspects={serializedAspects}
+          turns={serializedTurns}
+          chunkCount={deviceChunks.length}
+          sourceMixLabel={sourceMixLabel}
+          selectedPhoneLabel={selectedPhoneLabel}
+          evidenceReasons={
+            evidenceReasons.length > 0 ? evidenceReasons : ['Evidence profile pending']
+          }
+        />
 
         <section className="mt-12 grid gap-8 lg:grid-cols-12">
           <div className="border-outline-variant bg-background border lg:col-span-5">
             <div className="border-outline-variant border-b p-5">
               <p className="meta-label text-primary">Corpus overview</p>
               {selectedPhone ? (
-                <h2 className="font-display text-primary mt-3 text-3xl font-bold uppercase">
+                <h2 className="text-gradient-steel font-display mt-3 text-3xl font-bold uppercase">
                   {selectedPhone.brand} {selectedPhone.model}
                 </h2>
               ) : null}
@@ -646,56 +635,29 @@ export default async function PipelinePage({ searchParams }: PageProps) {
               </div>
               <div className="bg-background p-5">
                 <dl className="grid gap-3 font-mono text-xs">
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Sources</dt>
-                    <dd className="text-primary">{deviceSources.length}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Visible chunks</dt>
-                    <dd className="text-primary">{sourceChunkTotal || deviceChunks.length}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Scorecard aspects</dt>
-                    <dd className="text-primary">{deviceAspects.length}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Source mix</dt>
-                    <dd className="text-primary max-w-[220px] text-right">
-                      {Object.entries(sourceMix).length > 0
-                        ? Object.entries(sourceMix)
-                            .map(([type, count]) => `${type} ${count}`)
-                            .join(' / ')
-                        : 'none'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Strongest signal</dt>
-                    <dd className="text-primary">
-                      {topAspect ? `${topAspect.aspect} ${topAspect.score}/10` : 'pending'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Newest source</dt>
-                    <dd className="text-primary">
-                      {latestSourceDate ? latestSourceDate.toLocaleDateString('en-US') : 'unknown'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Evidence density</dt>
-                    <dd className="text-primary">{evidenceDensity} chunks/source</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Source diversity</dt>
-                    <dd className="text-primary">{sourceDiversity} source types</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Extraction coverage</dt>
-                    <dd className="text-primary">{extractionCoverage}%</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Retrieval state</dt>
-                    <dd className="text-primary">{retrievalState}</dd>
-                  </div>
+                  {[
+                    ['Sources', String(deviceSources.length)],
+                    ['Visible chunks', String(deviceChunks.length)],
+                    ['Scorecard aspects', String(deviceAspects.length)],
+                    ['Source mix', sourceMixLabel],
+                    [
+                      'Strongest signal',
+                      topAspect ? `${topAspect.aspect} ${topAspect.score}/10` : 'pending',
+                    ],
+                    [
+                      'Newest source',
+                      latestSourceDate ? latestSourceDate.toLocaleDateString('en-US') : 'unknown',
+                    ],
+                    ['Evidence density', `${evidenceDensity} chunks/source`],
+                    ['Source diversity', `${sourceDiversity} source types`],
+                    ['Extraction coverage', `${extractionCoverage}%`],
+                    ['Retrieval state', retrievalState],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="text-primary max-w-[220px] text-right">{value}</dd>
+                    </div>
+                  ))}
                   {spec ? (
                     <>
                       <div className="flex justify-between gap-4">
@@ -713,117 +675,19 @@ export default async function PipelinePage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          <div className="border-outline-variant bg-background border lg:col-span-7">
-            <div className="border-outline-variant border-b p-5">
-              <p className="meta-label text-primary">Chunk viewer</p>
-            </div>
-            <div className="max-h-[520px] overflow-y-auto">
-              {deviceSources.length > 0 ? (
-                deviceSources.map((source) => {
-                  const sourceChunks = chunksBySource.get(source.id) ?? [];
-                  return (
-                    <details key={source.id} className="border-outline-variant border-b">
-                      <summary className="hover:bg-surface-container cursor-pointer list-none p-5 transition-colors [&::-webkit-details-marker]:hidden">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
-                              {sourceLabel(source.type)}
-                            </p>
-                            <p className="text-muted-foreground mt-2 text-sm">{source.title}</p>
-                          </div>
-                          <span className="text-accent font-mono text-xs">
-                            {sourceChunks.length} chunks
-                          </span>
-                        </div>
-                      </summary>
-                      <div className="bg-outline-variant grid gap-px p-px">
-                        {sourceChunks.length > 0 ? (
-                          sourceChunks.slice(0, 5).map((chunk) => (
-                            <details key={chunk.id} className="bg-background p-4">
-                              <summary className="text-primary cursor-pointer list-none font-mono text-xs [&::-webkit-details-marker]:hidden">
-                                Chunk {chunk.chunkIndex} / {chunk.tokens} tokens
-                              </summary>
-                              <p className="text-muted-foreground mt-3 text-sm leading-6">
-                                {trimText(chunk.text, 360)}
-                              </p>
-                            </details>
-                          ))
-                        ) : (
-                          <p className="bg-background text-muted-foreground p-4 text-sm">
-                            No chunks from this source are visible in the current sample.
-                          </p>
-                        )}
-                      </div>
-                    </details>
-                  );
-                })
-              ) : (
-                <p className="text-muted-foreground p-5 text-sm">
-                  No source or chunk data has been ingested for this phone yet.
-                </p>
-              )}
-            </div>
-          </div>
+          <ChunkWorkbench
+            sources={serializedSources}
+            chunks={serializedChunks}
+            aspectLabels={serializedAspects.map((aspect) => aspect.aspect)}
+          />
         </section>
 
-        <section className="border-outline-variant bg-background mt-12 border">
-          <div className="border-outline-variant border-b p-5">
-            <p className="meta-label text-primary">Recent ingestion runs</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left">
-              <thead>
-                <tr className="border-outline-variant border-b">
-                  {['Adapter', 'Status', 'Tier', 'Chunks', 'Started', 'Finished'].map((heading) => (
-                    <th
-                      key={heading}
-                      className="border-outline-variant text-muted-foreground border-r p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase last:border-r-0"
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {latestRuns.length > 0 ? (
-                  latestRuns.map((run) => (
-                    <tr key={run.id} className="border-outline-variant border-b last:border-b-0">
-                      <td className="border-outline-variant text-primary border-r p-3 text-sm">
-                        {run.adapter}
-                      </td>
-                      <td className="border-outline-variant text-primary border-r p-3 text-sm">
-                        {run.status}
-                        {run.error ? (
-                          <span className="text-destructive ml-2" title={run.error}>
-                            error
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
-                        {run.tier ?? 'not set'}
-                      </td>
-                      <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
-                        {run.chunksCreated}
-                      </td>
-                      <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
-                        {run.startedAt ? run.startedAt.toLocaleString('en-US') : 'not started'}
-                      </td>
-                      <td className="text-muted-foreground p-3 text-sm">
-                        {run.finishedAt ? run.finishedAt.toLocaleString('en-US') : 'not finished'}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="text-muted-foreground p-5 text-sm" colSpan={6}>
-                      No ingestion runs have been recorded yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <WorkflowTables
+          ingestionRuns={ingestionRows}
+          scorecardRuns={scorecardRows}
+          resumeRows={resumeRunRows}
+          workflows={WORKFLOWS}
+        />
       </main>
     </div>
   );
