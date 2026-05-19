@@ -23,6 +23,7 @@ type WorkflowTablesProps = {
   readonly ingestionRuns: readonly RunRow[];
   readonly scorecardRuns: readonly RunRow[];
   readonly resumeRows: readonly RunRow[];
+  readonly catalogRefreshRuns: readonly RunRow[];
   readonly workflows: readonly WorkflowRow[];
 };
 
@@ -103,12 +104,14 @@ export function WorkflowTables({
   ingestionRuns,
   scorecardRuns,
   resumeRows,
+  catalogRefreshRuns,
   workflows,
 }: WorkflowTablesProps) {
   const sections = [
     { id: 'ingestion', title: 'Recent ingestion runs', rows: ingestionRuns },
     { id: 'scorecards', title: 'Scorecard generation', rows: scorecardRuns },
     { id: 'resume', title: 'Resume ingestion candidates', rows: resumeRows },
+    { id: 'catalog', title: 'Catalog refresh runs', rows: catalogRefreshRuns },
   ] as const;
   const [openId, setOpenId] = useState<string | null>('ingestion');
 
