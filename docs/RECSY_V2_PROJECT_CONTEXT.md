@@ -1540,7 +1540,11 @@ dissenting_quotes)`.
 - **Monthly workflow** - `.github/workflows/catalog-refresh.yml` runs at
   01:17 UTC on the first day of each month and supports manual dispatch. It
   backfills identities, stages Wikidata, optionally syncs/promotes MobileAPI
-  when `MOBILEAPI_API_KEY` is configured, and prints `catalog:report`.
+  when `MOBILEAPI_API_KEY` is configured, and prints `catalog:report`. If the
+  selected source is `both` or `mobileapi` and the GitHub repository secret
+  `MOBILEAPI_API_KEY` is missing, the workflow emits a GitHub Actions error and
+  fails instead of silently skipping MobileAPI. Run with `source=wikidata` for a
+  deliberate no-MobileAPI workflow.
 - **Operator report** - `pnpm catalog:report --days 30` summarizes run status,
   staged candidate state, request counts, and LLM call counts.
 

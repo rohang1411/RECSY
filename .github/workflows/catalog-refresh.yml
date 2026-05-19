@@ -131,7 +131,8 @@ jobs:
               fi
               pnpm exec tsx scripts/catalog-sync-mobileapi.ts $ARGS
             else
-              echo "MOBILEAPI_API_KEY not configured; skipping MobileAPI sync."
+              echo "::error title=Missing MOBILEAPI_API_KEY::Source '$SOURCE' includes MobileAPI, but the MOBILEAPI_API_KEY repository secret is not configured. Add the secret or run the workflow with source=wikidata."
+              exit 1
             fi
           fi
 
