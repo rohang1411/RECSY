@@ -975,7 +975,7 @@ URLs when failure rows exist; otherwise runs full discovery for that phone.
   failed / incomplete / empty-corpus phones. **Residual:** runs **before**
   this deploy have no tagged failure rows — use `--resume-failed` (includes
   empty corpus + legacy error-text match) or `pnpm ingest --phone <slug>`.
-  Multiple API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`) still help avoid
+  Multiple API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`) still help avoid
   hitting the daily cap.
 - **Ingestion audit trail incomplete for early pipeline stages.** We do
   **not** persist every discovered URL or every not-found skip in
@@ -1583,7 +1583,7 @@ dissenting_quotes)`.
 - **Required CI success gate** ([`59edc99`](https://github.com/rohang1411/RECSY/commit/59edc99)) — `ci.yml` gains a `required` job that acts as a single merge gate, aggregating all lanes (`quality`, `e2e`, `retrieval-eval`). Workflows now also run on `master` pushes so the gate fires on direct merges.
 - **Secrets-gate for ingestion / scorecard workflows** ([`c4724d8`](https://github.com/rohang1411/RECSY/commit/c4724d8), [`18cdd6d`](https://github.com/rohang1411/RECSY/commit/18cdd6d)) — A reusable `secrets-gate` job checks for `GEMINI_API_KEY`, `DATABASE_URL`, and Supabase secrets before running the heavy jobs. On forks or environments without secrets, workflows skip cleanly instead of failing env validation or making unauthenticated LLM calls.
 - **Recommend page state persisted in `sessionStorage`** ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02)) — `RecommendClient` now serializes the conversation history to `sessionStorage` on every update and hydrates from it on mount. A full browser refresh no longer wipes the pick cards and chat turns.
-- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) — `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
+- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) — `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
 - **Scorecard chunk-id UUID validation regression fix** ([`3eee6f9`](https://github.com/rohang1411/RECSY/commit/3eee6f9)) — The scorecard extraction schema had lost its UUID format check on evidence `chunkId` fields. This allowed non-UUID strings to pass validation and produced silent evidence mismatches downstream. Restored strict `z.string().uuid()` validation.
 
 ### 2026-05-14 — Internal Pipeline Observatory dashboard
