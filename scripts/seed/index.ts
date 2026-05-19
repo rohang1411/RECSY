@@ -12,6 +12,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { aspectDefinitions, phones } from '../../src/services/db/schema';
 import { ASPECT_DEFINITION_SEEDS, validateAspectSeedWeights } from './aspect-definitions';
+import { seedCatalogSourceProfiles } from './catalog-source-profiles';
 import { seedCreatorProfiles } from './creator-profiles';
 import { seedDomainProfiles } from './domain-profiles';
 import { seedPhoneAliases } from './phone-aliases';
@@ -25,6 +26,7 @@ export interface SeedSummary {
   subredditProfiles: { upserted: number };
   domainProfiles: { upserted: number };
   phoneAliases: { upserted: number };
+  catalogSourceProfiles: { upserted: number };
 }
 
 /**
@@ -44,6 +46,7 @@ export async function runSeeds(
   const subredditProfilesUp = await seedSubredditProfiles(db);
   const domainProfilesUp = await seedDomainProfiles(db);
   const phoneAliasesUp = await seedPhoneAliases(db);
+  const catalogSourceProfilesUp = await seedCatalogSourceProfiles(db);
   return {
     aspects,
     phones: phonesUp,
@@ -51,6 +54,7 @@ export async function runSeeds(
     subredditProfiles: subredditProfilesUp,
     domainProfiles: domainProfilesUp,
     phoneAliases: phoneAliasesUp,
+    catalogSourceProfiles: catalogSourceProfilesUp,
   };
 }
 

@@ -87,7 +87,8 @@ async function main(): Promise<void> {
         `(disabled stale: ${summary.creatorProfiles.disabledStale}), ` +
         `subreddits: ${summary.subredditProfiles.upserted}, ` +
         `domains: ${summary.domainProfiles.upserted}, ` +
-        `aliases: ${summary.phoneAliases.upserted}`,
+        `aliases: ${summary.phoneAliases.upserted}, ` +
+        `catalog profiles: ${summary.catalogSourceProfiles.upserted}`,
     );
 
     log('\n[db:setup] OK - all five steps completed.');

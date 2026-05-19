@@ -48,6 +48,16 @@ ALTER TABLE domain_profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE source_phone_links       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crawl_queue              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limit_state         ENABLE ROW LEVEL SECURITY;
+-- Automated catalog refresh tables — all service-role-only.
+ALTER TABLE catalog_runs             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_source_profiles  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_snapshots        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_candidates       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE phone_identities         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE phone_configurations     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_source_claims    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE phone_media_assets       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_quality_issues   ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- Public read policies — anon + authenticated can browse the corpus.
@@ -109,7 +119,10 @@ $$;
 --   recommendation_sessions, recommendation_turns, recommendation_feedback,
 --   chat_queries, llm_cache, ingest_runs, rate_limits,
 --   phone_aliases, creator_profiles, subreddit_profiles, domain_profiles,
---   crawl_queue, rate_limit_state.
+--   crawl_queue, rate_limit_state, catalog_runs, catalog_source_profiles,
+--   catalog_snapshots, catalog_candidates, phone_identities,
+--   phone_configurations, catalog_source_claims, phone_media_assets,
+--   catalog_quality_issues.
 --
 -- Rationale:
 --   - chat/recommendation logs may contain user-provided text that we don't

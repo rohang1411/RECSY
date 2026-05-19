@@ -63,7 +63,7 @@ export async function findMissingPublicSchema(
 
 export function describeMissingSchema(scriptName: string, missing: readonly string[]): string {
   return (
-    `[${scriptName}] automated ingestion schema is incomplete: ${missing.join(', ')}. ` +
+    `[${scriptName}] required database schema is incomplete: ${missing.join(', ')}. ` +
     'Run `pnpm db:setup` or apply the latest DB migrations before enabling this workflow.'
   );
 }

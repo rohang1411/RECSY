@@ -13,7 +13,7 @@ import { describeMissingSchema, hasMissingDbObjectError } from './schema-guard';
 describe('describeMissingSchema', () => {
   it('formats an actionable operator message', () => {
     expect(describeMissingSchema('creator-watch', ['table phone_aliases'])).toContain(
-      '[creator-watch] automated ingestion schema is incomplete: table phone_aliases.',
+      '[creator-watch] required database schema is incomplete: table phone_aliases.',
     );
   });
 });
