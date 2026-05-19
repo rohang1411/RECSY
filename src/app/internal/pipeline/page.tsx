@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -11,6 +11,8 @@ import { getDb } from '@/services/db/client';
 import {
   aspectDefinitions,
   aspects,
+  catalogCandidates,
+  catalogRuns,
   chunks,
   crawlQueue,
   ingestRuns,
@@ -137,7 +139,8 @@ async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 12
         timer = setTimeout(() => resolve(fallback), timeoutMs);
       }),
     ]);
-  } catch {
+  } catch (error) {
+    console.error('optionalQuery error/timeout:', error);
     return fallback;
   } finally {
     if (timer) clearTimeout(timer);
@@ -193,12 +196,13 @@ async function loadPipelineData(selectedSlug: string | null) {
         model: phones.model,
         imageUrl: phones.imageUrl,
         specJson: phones.specJson,
+        lastScorecardAt: phones.lastScorecardAt,
       })
       .from(phones)
       .where(eq(phones.status, 'active'))
       .orderBy(asc(phones.brand), asc(phones.model)),
     [],
-    1800,
+    3500,
   );
 
   const selectedPhone =
@@ -212,6 +216,7 @@ async function loadPipelineData(selectedSlug: string | null) {
     latestRuns,
     scoreRuns,
     resumeRows,
+    catalogRefreshRuns,
   ] = await Promise.all([
     selectedPhone
       ? optionalQuery(
@@ -287,7 +292,7 @@ async function loadPipelineData(selectedSlug: string | null) {
             .orderBy(desc(recommendationTurns.createdAt))
             .limit(3),
           [],
-          900,
+          2500,
         )
       : [],
     optionalQuery(
@@ -309,7 +314,7 @@ async function loadPipelineData(selectedSlug: string | null) {
         .orderBy(desc(ingestRuns.startedAt))
         .limit(8),
       [],
-      900,
+      2500,
     ),
     optionalQuery(
       db
@@ -327,7 +332,7 @@ async function loadPipelineData(selectedSlug: string | null) {
         .orderBy(desc(scorecardRuns.startedAt))
         .limit(8),
       [],
-      900,
+      2500,
     ),
     optionalQuery(
       db
@@ -344,7 +349,24 @@ async function loadPipelineData(selectedSlug: string | null) {
         .orderBy(asc(crawlQueue.scheduledFor))
         .limit(8),
       [],
-      900,
+      2500,
+    ),
+    optionalQuery(
+      db
+        .select({
+          id: catalogRuns.id,
+          status: catalogRuns.status,
+          stage: catalogRuns.stage,
+          kind: catalogRuns.kind,
+          error: catalogRuns.error,
+          startedAt: catalogRuns.startedAt,
+          finishedAt: catalogRuns.finishedAt,
+        })
+        .from(catalogRuns)
+        .orderBy(desc(catalogRuns.startedAt))
+        .limit(8),
+      [],
+      2500,
     ),
   ]);
 
@@ -366,9 +388,9 @@ async function loadPipelineData(selectedSlug: string | null) {
       icon: '()',
     },
     {
-      label: 'Visible chunks',
-      value: deviceChunks.length.toLocaleString('en-US'),
-      detail: 'Sampled retrieval units',
+      label: 'Scorecards generated',
+      value: phoneOptions.filter((p) => p.lastScorecardAt !== null).length.toLocaleString('en-US'),
+      detail: `Out of ${phoneOptions.length.toLocaleString('en-US')} phones`,
       icon: '##',
     },
     {
@@ -384,6 +406,7 @@ async function loadPipelineData(selectedSlug: string | null) {
     latestRuns,
     scoreRuns,
     resumeRows,
+    catalogRefreshRuns,
     phoneOptions,
     selectedPhone,
     deviceSources: deviceSources as SourceRow[],
@@ -392,6 +415,7 @@ async function loadPipelineData(selectedSlug: string | null) {
     deviceAspects,
     sampleTurns,
     spec: specParsed?.success ? specParsed.data : null,
+    runCandidateAggregates: [], // We'll fetch this below
   };
 }
 
@@ -406,6 +430,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     latestRuns,
     scoreRuns,
     resumeRows,
+    catalogRefreshRuns,
     phoneOptions,
     selectedPhone,
     deviceSources,
@@ -415,6 +440,30 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     sampleTurns,
     spec,
   } = await loadPipelineData(selectedSlug);
+
+  const db = getDb();
+  const runIds = catalogRefreshRuns.map((r) => r.id);
+  const runCandidateAggregates =
+    runIds.length > 0
+      ? await optionalQuery(
+          db
+            .select({
+              runId: catalogCandidates.lastRunId,
+              decision: catalogCandidates.decision,
+              status: catalogCandidates.status,
+              count: sql<number>`count(*)`.mapWith(Number),
+            })
+            .from(catalogCandidates)
+            .where(inArray(catalogCandidates.lastRunId, runIds))
+            .groupBy(
+              catalogCandidates.lastRunId,
+              catalogCandidates.decision,
+              catalogCandidates.status,
+            ),
+          [],
+          2500,
+        )
+      : [];
 
   const sourceMix = deviceSources.reduce<Record<string, number>>((acc, source) => {
     acc[source.type] = (acc[source.type] ?? 0) + 1;
@@ -506,6 +555,38 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     startedAt: formatDate(row.scheduledFor),
     finishedAt: null,
   }));
+  const catalogRunRows = catalogRefreshRuns.map((run) => {
+    const aggregates = runCandidateAggregates.filter((a) => a.runId === run.id);
+    let added = 0;
+    let pending = 0;
+    let approved = 0;
+    let failed = 0;
+
+    for (const agg of aggregates) {
+      added += agg.count;
+      if (agg.decision === 'pending_review') {
+        pending += agg.count;
+      } else if (agg.status === 'promoted' || agg.decision === 'promote') {
+        approved += agg.count;
+      } else {
+        failed += agg.count;
+      }
+    }
+
+    let detailStr = run.error ?? (run.stage ? `Stage: ${run.stage}` : 'Completed');
+    if (added > 0) {
+      detailStr = `Added: ${added} (Pending: ${pending}, Approved: ${approved}, Failed/Other: ${failed})`;
+    }
+
+    return {
+      id: run.id,
+      label: `Catalog Refresh / ${run.kind}`,
+      status: run.status,
+      detail: detailStr,
+      startedAt: formatDate(run.startedAt),
+      finishedAt: formatDate(run.finishedAt),
+    };
+  });
 
   return (
     <div className="grid-bg bg-background flex">
@@ -686,6 +767,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           ingestionRuns={ingestionRows}
           scorecardRuns={scorecardRows}
           resumeRows={resumeRunRows}
+          catalogRefreshRuns={catalogRunRows}
           workflows={WORKFLOWS}
         />
       </main>
