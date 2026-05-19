@@ -1492,8 +1492,44 @@ dissenting_quotes)`.
   `--min-request-gap-ms 12500`, staying at or below 50 requests/month and under
   5 requests/minute. MobileAPI candidate selection is mainstream-first within
   the fetched batch: complete Apple, Samsung, Xiaomi, vivo, OPPO,
-  Transsion-family, and Nothing/CMF records are selected before niche brands. This is
-  deterministic and makes no LLM calls or extra API calls.
+  Transsion-family, and Nothing/CMF records are selected before niche brands.
+  This is deterministic and makes no LLM calls or extra API calls.
+- **MobileAPI implementation notes and fixes**:
+  - Missing API key failure is intentional and now actionable: if
+    `MOBILEAPI_API_KEY` is absent, `catalog:sync-mobileapi` exits with options
+    to add the key, run Wikidata discovery, or import a trusted structured JSON
+    export. The command explicitly reports `LLM calls: 0`.
+  - Free-plan budget is enforced twice: a per-run cap (`--max-requests`,
+    default 50) and cumulative month-to-date accounting from successful/failed
+    `catalog_runs` with `stage in ('mobileapi_stage', 'mobileapi_promote')`. If
+    the month is exhausted, the command skips before making a MobileAPI request;
+    if partial quota remains, it reduces the run cap.
+  - Rate pacing is enforced with `--min-request-gap-ms 12500`, keeping traffic
+    under MobileAPI's 5 requests/minute free-plan limit. The seeded
+    `mobileapi` catalog source profile also records `monthlyRequestBudget: 50`
+    and `rateLimitMs: 12500`.
+  - A dry-run SQL failure in the month-to-date usage query was fixed by avoiding
+    a JSON expression on `checkpoint_json` and counting only MobileAPI stages.
+    The schema guard now checks `catalog_runs.stage`, `request_count`, and
+    `started_at` before the query.
+  - A dry run that printed `blocked:missing_spec_field 8849 Tank X` was not an
+    upstream API block. MobileAPI returned a device, but RECSY blocked promotion
+    because that record did not satisfy the strict `PhoneSpecSchema`. Dry-run
+    output now shows `scanned`, `selected`, `valid`, `blocked`,
+    `mainstream_selected`, `incomplete_scanned`, `unselected`, exact missing
+    fields, request count, monthly usage, and `llm_calls=0`.
+  - `--limit` selection now scans the fetched batch, prefers complete/promotable
+    records first, then applies brand priority, launch date, spec completeness,
+    and stable name ordering. This prevents one incomplete niche phone from
+    hiding valid mainstream phones already present in the same API response.
+  - The MobileAPI adapter now uses description/hardware text as fallback spec
+    evidence and parses RAM, storage, chipset, battery, charging, wireless
+    charging absence, NFC absence, and common sub-brand names more carefully.
+    RAM values such as `12GB RAM` are not misclassified as storage.
+  - Brand priority lives in `src/services/catalog/brand-priority.ts` and is
+    covered by `brand-priority.test.ts`. Current ranks are Apple, Samsung,
+    Xiaomi/Redmi/POCO, vivo/iQOO, OPPO/OnePlus/Realme, Transsion-family
+    Tecno/Infinix/itel, and Nothing/CMF.
 - **MobileAPI key setup** - Sign up at
   [mobileapi.dev/signup](https://mobileapi.dev/signup), confirm/sign in, copy
   the API key from the profile/dashboard page, add
