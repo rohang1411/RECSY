@@ -95,6 +95,100 @@ export const sentimentSummaryEnum = pgEnum('sentiment_summary', [
   'neutral',
 ]);
 
+export const catalogPhoneMediaStatusEnum = pgEnum('catalog_phone_media_status', [
+  'local_ok',
+  'remote_only',
+  'missing',
+  'blocked',
+]);
+
+export const catalogRunKindEnum = pgEnum('catalog_run_kind', [
+  'scheduled',
+  'manual',
+  'dry_run',
+  'resume',
+]);
+
+export const catalogRunStatusEnum = pgEnum('catalog_run_status', [
+  'running',
+  'success',
+  'partial',
+  'failed',
+  'cancelled',
+]);
+
+export const catalogSourceProfileTypeEnum = pgEnum('catalog_source_profile_type', [
+  'wikidata',
+  'media',
+  'oem_sitemap',
+  'licensed_api',
+  'aggregator',
+  'search',
+]);
+
+export const catalogSnapshotStatusEnum = pgEnum('catalog_snapshot_status', [
+  'active',
+  'pruned',
+  'failed',
+]);
+
+export const catalogCandidateDecisionEnum = pgEnum('catalog_candidate_decision', [
+  'pending_review',
+  'promote',
+  'update_existing',
+  'matched_existing',
+  'configuration',
+  'skip',
+  'quarantine',
+]);
+
+export const catalogCandidateStatusEnum = pgEnum('catalog_candidate_status', [
+  'discovered',
+  'fetched',
+  'extracted',
+  'validated',
+  'ready_to_promote',
+  'promoted',
+  'skipped',
+  'quarantined',
+  'failed',
+  'failed_transient',
+  'rate_limited',
+  'quota_exhausted',
+]);
+
+export const phoneIdentityTypeEnum = pgEnum('phone_identity_type', [
+  'legacy_slug',
+  'canonical_key',
+  'official_url',
+  'wikidata_qid',
+  'provider_id',
+  'oem_product_id',
+  'model_number',
+  'sku',
+  'gtin',
+]);
+
+export const phoneMediaRightsStatusEnum = pgEnum('phone_media_rights_status', [
+  'cache_allowed',
+  'remote_only',
+  'blocked',
+  'unknown',
+]);
+
+export const phoneMediaAssetStatusEnum = pgEnum('phone_media_asset_status', [
+  'active',
+  'stale',
+  'failed',
+  'rejected',
+]);
+
+export const catalogIssueSeverityEnum = pgEnum('catalog_issue_severity', [
+  'info',
+  'warn',
+  'blocker',
+]);
+
 // ---------------------------------------------------------------------------
 // phones
 // ---------------------------------------------------------------------------
@@ -139,6 +233,20 @@ export const phones = pgTable(
     lastScorecardAt: timestamp('last_scorecard_at', { withTimezone: true }),
     /** When the scheduler should next re-score this phone. Null = eligible now. */
     nextScorecardAt: timestamp('next_scorecard_at', { withTimezone: true }),
+    /** Internal catalog dedupe key. Nullable until legacy/catalog backfills derive it. */
+    canonicalKey: text('canonical_key'),
+    family: text('family'),
+    generation: text('generation'),
+    officialUrl: text('official_url'),
+    announcedAt: timestamp('announced_at', { withTimezone: true }),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    discontinuedAt: timestamp('discontinued_at', { withTimezone: true }),
+    catalogLastSeenAt: timestamp('catalog_last_seen_at', { withTimezone: true }),
+    lastCatalogRefreshAt: timestamp('last_catalog_refresh_at', { withTimezone: true }),
+    nextCatalogRefreshAt: timestamp('next_catalog_refresh_at', { withTimezone: true }),
+    metadataConfidence: numeric('metadata_confidence', { precision: 3, scale: 2 }),
+    specCompleteness: numeric('spec_completeness', { precision: 3, scale: 2 }),
+    mediaStatus: catalogPhoneMediaStatusEnum('media_status'),
     /**
      * Outcome of the most recent ingest attempt:
      *   'success' | 'partial' | 'quota_exhausted' | 'failed' | null (never attempted).
@@ -154,6 +262,9 @@ export const phones = pgTable(
     index('phones_next_ingest_at_idx').on(t.nextIngestAt),
     index('phones_next_scorecard_at_idx').on(t.nextScorecardAt),
     index('phones_last_ingest_status_idx').on(t.lastIngestStatus),
+    uniqueIndex('phones_canonical_key_uniq').on(t.canonicalKey),
+    index('phones_catalog_last_seen_idx').on(t.catalogLastSeenAt),
+    index('phones_next_catalog_refresh_idx').on(t.nextCatalogRefreshAt),
   ],
 );
 
@@ -633,6 +744,305 @@ export const rateLimitState = pgTable('rate_limit_state', {
 });
 
 // ---------------------------------------------------------------------------
+// Automated phone catalog refresh pipeline.
+// ---------------------------------------------------------------------------
+
+export const catalogRuns = pgTable(
+  'catalog_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: catalogRunKindEnum('kind').notNull().default('manual'),
+    status: catalogRunStatusEnum('status').notNull().default('running'),
+    stage: text('stage'),
+    checkpointJson: jsonb('checkpoint_json').notNull().$type<Record<string, unknown>>().default({}),
+    createdCount: integer('created_count').notNull().default(0),
+    updatedCount: integer('updated_count').notNull().default(0),
+    skippedCount: integer('skipped_count').notNull().default(0),
+    quarantinedCount: integer('quarantined_count').notNull().default(0),
+    error: text('error'),
+    errorCode: text('error_code'),
+    requestCount: integer('request_count').notNull().default(0),
+    llmCallCount: integer('llm_call_count').notNull().default(0),
+    maxWallMs: integer('max_wall_ms'),
+    maxRequests: integer('max_requests'),
+    maxNewPromotions: integer('max_new_promotions'),
+    maxLlmCalls: integer('max_llm_calls'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+  },
+  (t) => [
+    index('catalog_runs_status_idx').on(t.status),
+    index('catalog_runs_started_at_idx').on(t.startedAt),
+  ],
+);
+
+export const catalogSourceProfiles = pgTable(
+  'catalog_source_profiles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceKey: text('source_key').notNull().unique(),
+    type: catalogSourceProfileTypeEnum('type').notNull(),
+    priority: integer('priority').notNull().default(50),
+    trustWeight: numeric('trust_weight', { precision: 3, scale: 2 }).notNull().default('0.50'),
+    enabled: boolean('enabled').notNull().default(true),
+    baseUrls: text('base_urls')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    sitemapUrls: text('sitemap_urls')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    allowedUrlPatterns: text('allowed_url_patterns')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    robotsRespected: boolean('robots_respected').notNull().default(true),
+    rateLimitMs: integer('rate_limit_ms').notNull().default(3_000),
+    monthlyRequestBudget: integer('monthly_request_budget'),
+    lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+    lastSuccessfulAt: timestamp('last_successful_at', { withTimezone: true }),
+    cursorJson: jsonb('cursor_json').notNull().$type<Record<string, unknown>>().default({}),
+    configJson: jsonb('config_json').notNull().$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('catalog_source_profiles_enabled_idx').on(t.enabled),
+    index('catalog_source_profiles_type_idx').on(t.type),
+  ],
+);
+
+export const catalogSnapshots = pgTable(
+  'catalog_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceKey: text('source_key').notNull(),
+    url: text('url').notNull(),
+    canonicalUrl: text('canonical_url').notNull(),
+    contentHash: text('content_hash').notNull(),
+    etag: text('etag'),
+    lastModified: text('last_modified'),
+    headersJson: jsonb('headers_json').notNull().$type<Record<string, unknown>>().default({}),
+    bodyRef: text('body_ref'),
+    bodyBytes: integer('body_bytes'),
+    contentType: text('content_type'),
+    status: catalogSnapshotStatusEnum('status').notNull().default('active'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('catalog_snapshots_source_hash_uniq').on(t.sourceKey, t.contentHash),
+    index('catalog_snapshots_url_idx').on(t.canonicalUrl),
+    index('catalog_snapshots_fetched_idx').on(t.fetchedAt),
+  ],
+);
+
+export const catalogCandidates = pgTable(
+  'catalog_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    firstRunId: uuid('first_run_id').references(() => catalogRuns.id, { onDelete: 'set null' }),
+    lastRunId: uuid('last_run_id').references(() => catalogRuns.id, { onDelete: 'set null' }),
+    stableKey: text('stable_key').notNull(),
+    sourceKey: text('source_key').notNull(),
+    sourceType: text('source_type').notNull(),
+    externalId: text('external_id'),
+    sourceUrl: text('source_url'),
+    candidateTitle: text('candidate_title').notNull(),
+    rawCandidateJson: jsonb('raw_candidate_json')
+      .notNull()
+      .$type<Record<string, unknown>>()
+      .default({}),
+    normalizedIdentityJson: jsonb('normalized_identity_json')
+      .notNull()
+      .$type<Record<string, unknown>>()
+      .default({}),
+    claimsJson: jsonb('claims_json').notNull().$type<Record<string, unknown>>().default({}),
+    canonicalKey: text('canonical_key'),
+    contentHash: text('content_hash'),
+    lastSnapshotId: uuid('last_snapshot_id').references(() => catalogSnapshots.id, {
+      onDelete: 'set null',
+    }),
+    matchedPhoneId: uuid('matched_phone_id').references(() => phones.id, { onDelete: 'set null' }),
+    decision: catalogCandidateDecisionEnum('decision'),
+    status: catalogCandidateStatusEnum('status').notNull().default('discovered'),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    issueCodes: text('issue_codes')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    attempts: integer('attempts').notNull().default(0),
+    seenCount: integer('seen_count').notNull().default(1),
+    retryAfter: timestamp('retry_after', { withTimezone: true }),
+    lastDecisionAt: timestamp('last_decision_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('catalog_candidates_stable_key_uniq').on(t.stableKey),
+    unique('catalog_candidates_source_external_uniq').on(t.sourceKey, t.externalId),
+    index('catalog_candidates_status_idx').on(t.status),
+    index('catalog_candidates_canonical_key_idx').on(t.canonicalKey),
+    index('catalog_candidates_retry_idx').on(t.retryAfter),
+    index('catalog_candidates_matched_phone_idx').on(t.matchedPhoneId),
+  ],
+);
+
+export const phoneIdentities = pgTable(
+  'phone_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    sourceKey: text('source_key').notNull(),
+    externalId: text('external_id').notNull(),
+    url: text('url'),
+    identityType: phoneIdentityTypeEnum('identity_type').notNull(),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }).notNull().default('1.00'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('phone_identities_source_external_uniq').on(t.sourceKey, t.externalId),
+    unique('phone_identities_type_value_uniq').on(t.identityType, t.externalId),
+    index('phone_identities_phone_idx').on(t.phoneId),
+  ],
+);
+
+export const phoneConfigurations = pgTable(
+  'phone_configurations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    region: text('region'),
+    modelNumber: text('model_number'),
+    sku: text('sku'),
+    gtin: text('gtin'),
+    ramGb: integer('ram_gb'),
+    storageGb: integer('storage_gb'),
+    color: text('color'),
+    networkVariant: text('network_variant'),
+    marketVariant: text('market_variant'),
+    simVariant: text('sim_variant'),
+    priceAmount: numeric('price_amount', { precision: 10, scale: 2 }),
+    priceCurrency: text('price_currency'),
+    availabilityStatus: text('availability_status'),
+    sourceKey: text('source_key'),
+    sourceUrl: text('source_url'),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('phone_configs_natural_uniq').on(
+      t.phoneId,
+      t.region,
+      t.modelNumber,
+      t.marketVariant,
+      t.ramGb,
+      t.storageGb,
+      t.color,
+    ),
+    index('phone_configs_phone_idx').on(t.phoneId),
+  ],
+);
+
+export const catalogSourceClaims = pgTable(
+  'catalog_source_claims',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    candidateId: uuid('candidate_id').references(() => catalogCandidates.id, {
+      onDelete: 'set null',
+    }),
+    sourceKey: text('source_key').notNull(),
+    sourceUrl: text('source_url'),
+    fieldPath: text('field_path').notNull(),
+    valueJson: jsonb('value_json').notNull().$type<unknown>(),
+    unit: text('unit'),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    trustWeight: numeric('trust_weight', { precision: 3, scale: 2 }),
+    contentHash: text('content_hash'),
+    isCurrent: boolean('is_current').notNull().default(true),
+    isDisputed: boolean('is_disputed').notNull().default(false),
+    observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+    rawSnapshotRef: text('raw_snapshot_ref'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('catalog_claims_phone_field_idx').on(t.phoneId, t.fieldPath),
+    index('catalog_claims_candidate_idx').on(t.candidateId),
+    index('catalog_claims_current_idx').on(t.isCurrent),
+  ],
+);
+
+export const phoneMediaAssets = pgTable(
+  'phone_media_assets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    sourceKey: text('source_key'),
+    originUrl: text('origin_url'),
+    storagePath: text('storage_path'),
+    publicUrl: text('public_url'),
+    sha256: text('sha256').notNull(),
+    perceptualHash: text('perceptual_hash'),
+    mimeType: text('mime_type'),
+    width: integer('width'),
+    height: integer('height'),
+    bytes: integer('bytes'),
+    license: text('license'),
+    licenseUrl: text('license_url'),
+    attribution: text('attribution'),
+    rightsStatus: phoneMediaRightsStatusEnum('rights_status').notNull().default('unknown'),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    status: phoneMediaAssetStatusEnum('status').notNull().default('active'),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('phone_media_phone_sha_uniq').on(t.phoneId, t.sha256),
+    index('phone_media_phone_primary_idx').on(t.phoneId, t.isPrimary),
+    index('phone_media_status_idx').on(t.status),
+  ],
+);
+
+export const catalogQualityIssues = pgTable(
+  'catalog_quality_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    runId: uuid('run_id').references(() => catalogRuns.id, { onDelete: 'set null' }),
+    candidateId: uuid('candidate_id').references(() => catalogCandidates.id, {
+      onDelete: 'set null',
+    }),
+    phoneId: uuid('phone_id').references(() => phones.id, { onDelete: 'set null' }),
+    severity: catalogIssueSeverityEnum('severity').notNull().default('warn'),
+    code: text('code').notNull(),
+    message: text('message').notNull(),
+    fieldPath: text('field_path'),
+    sourceKey: text('source_key'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('catalog_quality_issues_run_idx').on(t.runId),
+    index('catalog_quality_issues_candidate_idx').on(t.candidateId),
+    index('catalog_quality_issues_code_idx').on(t.code),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Simple rate-limiter table. Cleaned by `pg_cron`.
 // ---------------------------------------------------------------------------
 
@@ -659,6 +1069,11 @@ export const phonesRelations = relations(phones, ({ many }) => ({
   sourceLinks: many(sourcePhoneLinks),
   crawlQueue: many(crawlQueue),
   scorecardRuns: many(scorecardRuns),
+  identities: many(phoneIdentities),
+  configurations: many(phoneConfigurations),
+  catalogClaims: many(catalogSourceClaims),
+  mediaAssets: many(phoneMediaAssets),
+  catalogQualityIssues: many(catalogQualityIssues),
 }));
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
@@ -695,6 +1110,56 @@ export const aspectsRelations = relations(aspects, ({ one }) => ({
 
 export const scorecardRunsRelations = relations(scorecardRuns, ({ one }) => ({
   phone: one(phones, { fields: [scorecardRuns.phoneId], references: [phones.id] }),
+}));
+
+export const catalogCandidatesRelations = relations(catalogCandidates, ({ one, many }) => ({
+  firstRun: one(catalogRuns, {
+    fields: [catalogCandidates.firstRunId],
+    references: [catalogRuns.id],
+  }),
+  lastRun: one(catalogRuns, {
+    fields: [catalogCandidates.lastRunId],
+    references: [catalogRuns.id],
+  }),
+  snapshot: one(catalogSnapshots, {
+    fields: [catalogCandidates.lastSnapshotId],
+    references: [catalogSnapshots.id],
+  }),
+  matchedPhone: one(phones, {
+    fields: [catalogCandidates.matchedPhoneId],
+    references: [phones.id],
+  }),
+  claims: many(catalogSourceClaims),
+  qualityIssues: many(catalogQualityIssues),
+}));
+
+export const phoneIdentitiesRelations = relations(phoneIdentities, ({ one }) => ({
+  phone: one(phones, { fields: [phoneIdentities.phoneId], references: [phones.id] }),
+}));
+
+export const phoneConfigurationsRelations = relations(phoneConfigurations, ({ one }) => ({
+  phone: one(phones, { fields: [phoneConfigurations.phoneId], references: [phones.id] }),
+}));
+
+export const catalogSourceClaimsRelations = relations(catalogSourceClaims, ({ one }) => ({
+  phone: one(phones, { fields: [catalogSourceClaims.phoneId], references: [phones.id] }),
+  candidate: one(catalogCandidates, {
+    fields: [catalogSourceClaims.candidateId],
+    references: [catalogCandidates.id],
+  }),
+}));
+
+export const phoneMediaAssetsRelations = relations(phoneMediaAssets, ({ one }) => ({
+  phone: one(phones, { fields: [phoneMediaAssets.phoneId], references: [phones.id] }),
+}));
+
+export const catalogQualityIssuesRelations = relations(catalogQualityIssues, ({ one }) => ({
+  run: one(catalogRuns, { fields: [catalogQualityIssues.runId], references: [catalogRuns.id] }),
+  candidate: one(catalogCandidates, {
+    fields: [catalogQualityIssues.candidateId],
+    references: [catalogCandidates.id],
+  }),
+  phone: one(phones, { fields: [catalogQualityIssues.phoneId], references: [phones.id] }),
 }));
 
 export const recommendationSessionsRelations = relations(recommendationSessions, ({ many }) => ({
