@@ -61,6 +61,23 @@ const CATALOG_SOURCE_PROFILE_SEEDS: readonly CatalogSourceProfileSeed[] = [
     },
   },
   {
+    sourceKey: 'mobileapi',
+    type: 'licensed_api',
+    priority: 90,
+    trustWeight: '0.90',
+    enabled: false,
+    baseUrls: ['https://api.mobileapi.dev/'],
+    robotsRespected: true,
+    rateLimitMs: 12_500,
+    monthlyRequestBudget: 50,
+    configJson: {
+      role: 'licensed-structured-specs',
+      promotion: 'allowed_when_phone_spec_projection_valid',
+      freePlan: { requestsPerMonth: 50, requestsPerMinute: 5 },
+      llmCalls: false,
+    },
+  },
+  {
     sourceKey: 'google-store-us',
     type: 'oem_sitemap',
     priority: 95,

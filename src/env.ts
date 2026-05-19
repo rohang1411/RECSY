@@ -86,6 +86,7 @@ export const env = createEnv({
       .string()
       .default('false')
       .transform((v) => v.toLowerCase() === 'true'),
+    MOBILEAPI_API_KEY: z.string().optional(),
 
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
@@ -143,6 +144,7 @@ export const env = createEnv({
     YOUTUBE_TRANSCRIPT_PYTHON: process.env.YOUTUBE_TRANSCRIPT_PYTHON ?? 'python',
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
     INTERNAL_DASHBOARD_ENABLED: process.env.INTERNAL_DASHBOARD_ENABLED ?? 'false',
+    MOBILEAPI_API_KEY: process.env.MOBILEAPI_API_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
     SENTRY_DSN: process.env.SENTRY_DSN ?? '',
 

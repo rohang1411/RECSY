@@ -16,10 +16,23 @@ export {
   stripConfigurationTokens,
 } from './identity';
 export { generateAliasCandidates, type AliasCandidate } from './aliases';
+export {
+  brandPriorityRank,
+  DEFAULT_MAINSTREAM_BRAND_PRIORITY,
+  isMainstreamPriorityBrand,
+  mainstreamPriorityBrandLabel,
+} from './brand-priority';
+export type { BrandPriorityEntry } from './brand-priority';
 export { projectPhoneSpec, specCompleteness } from './spec-project';
 export type { CatalogSpecProjectionInput, ProjectionResult } from './spec-project';
 export { validateCatalogCandidate, validatePlausibility } from './validation';
 export type { CatalogValidationIssue } from './validation';
 export { hashJson, sha256Hex, stableCandidateKey } from './snapshots';
+export { CatalogImportRecordSchema, parseCatalogImportFile } from './import-schema';
+export type { CatalogImportRecord, CatalogPromotionClaims } from './import-schema';
+export { buildPromotionPlan, promoteCatalogCandidate } from './promote';
+export type { PromoteCandidateResult, PromotionPlan } from './promote';
 export type { CatalogDiscoveryCandidate, CatalogSourceTier, WikidataPhoneCandidate } from './types';
 export { buildRecentPhonesQuery, discoverRecentWikidataPhones } from './adapters/wikidata';
+export { fetchMobileApiDevicesByYear, mobileApiDeviceToImportRecord } from './adapters/mobileapi';
+export type { MobileApiByYearPage } from './adapters/mobileapi';
