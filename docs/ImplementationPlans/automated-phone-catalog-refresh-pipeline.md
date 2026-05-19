@@ -25,6 +25,11 @@ Implemented in this slice:
   blocks incomplete specs, dedupes by slug/canonical key/identities, and writes
   `phones`, identities, aliases, configurations, source claims, and remote-only
   media metadata idempotently.
+- Generic OEM page enrichment: `catalog:enrich-oem --from-candidates --promote`
+  fetches official product URLs from staged candidates, extracts JSON-LD/meta/
+  visible spec text via `src/services/catalog/adapters/oem-page.ts`, validates
+  `PhoneSpecSchema`, and promotes only complete T0 official records. No LLM
+  calls.
 - CLI scripts:
   - `pnpm catalog:backfill-identities` - backfills existing seed phones with
     canonical keys and seed identities. Supports `--dry-run`. No LLM calls.
@@ -47,6 +52,11 @@ Implemented in this slice:
     from Apple, Samsung, Xiaomi, vivo, OPPO, Transsion-family brands
     (Tecno/Infinix/itel), and Nothing/CMF are staged/promoted before niche brands. This is a
     deterministic rank, not an LLM call, and it does not make extra API calls.
+  - `pnpm catalog:enrich-oem --from-candidates --promote --update-existing` -
+    fetches official OEM URLs already present on staged candidates, extracts
+    structured product/spec claims, and promotes only records that satisfy
+    `PhoneSpecSchema`. Also supports `--url <official-product-url>` for one-off
+    enrichment. No LLM calls.
   - `pnpm catalog:promote --ready --limit 20` - promotes staged
     `ready_to_promote` candidates. No LLM calls.
   - `pnpm catalog:report --days 30` - reports runs/candidate status and LLM
@@ -54,15 +64,181 @@ Implemented in this slice:
 - GitHub Actions:
   - `.github/workflows/catalog-refresh.yml` - monthly 01:17 UTC plus manual
     dispatch. Runs legacy identity backfill, Wikidata staging, optional
-    MobileAPI sync/promotion when `MOBILEAPI_API_KEY` is configured, and a final
-    report. No LLM calls.
+    MobileAPI sync/promotion when `MOBILEAPI_API_KEY` is configured, OEM
+    enrichment from candidates, and a final report. No LLM calls.
 
 Still pending before fully hands-off scheduled auto-promotion:
 
-- OEM sitemap/product-page extractors with fixtures for source diversity beyond
-  Wikidata and MobileAPI.
+- Brand-specific OEM overrides and sitemap discovery expansion beyond the
+  generic official-page extractor.
 - Local licensed media caching, optional hot-ingest workflow dispatch,
   resume by checkpoint, and internal review UI.
+
+---
+
+## 0.1 Current Automatic Refresh Flow
+
+The implemented pipeline is intentionally staged. A phone only appears in the
+canonical `phones` table after a trusted structured source satisfies the strict
+runtime `PhoneSpecSchema`.
+
+```text
+legacy backfill
+  -> discovery/staging
+  -> licensed structured sync
+  -> official OEM enrichment
+  -> strict validation + dedupe
+  -> promotion into phones
+  -> existing ingestion and scorecard automation
+```
+
+### Step 1: Legacy identity backfill
+
+Command:
+
+```bash
+pnpm catalog:backfill-identities
+```
+
+This derives `phones.canonical_key` for existing seeded phones and seeds
+`phone_identities` using the known RECSY slugs. It runs before discovery in the
+monthly workflow so auto-refresh can match existing rows instead of creating
+duplicates such as a second `Galaxy S25 Ultra`.
+
+### Step 2: Wikidata discovery
+
+Command:
+
+```bash
+pnpm catalog:refresh --source wikidata --since-years 2 --limit 150
+```
+
+This path makes one Wikidata query and writes durable snapshots plus
+`catalog_candidates`. It is a discovery/identity source only. Wikidata candidates
+remain `discovered`/`pending_review` because Wikidata does not include the full
+set of required `PhoneSpecSchema` fields. The expected output is therefore
+`promoted=0`.
+
+### Step 3: MobileAPI structured sync
+
+Command:
+
+```bash
+pnpm catalog:sync-mobileapi --since-years 2 --limit 150 --promote --update-existing
+```
+
+This path uses the optional `MOBILEAPI_API_KEY`, makes no LLM calls, and obeys
+the free-plan limits:
+
+- default `--max-requests 50`
+- persisted month-to-date accounting from `catalog_runs`
+- default `--min-request-gap-ms 12500`, staying below 5 requests/minute
+- GitHub Actions failure if the selected workflow source includes MobileAPI but
+  the `MOBILEAPI_API_KEY` secret is missing
+
+MobileAPI's by-year endpoint may return listing-level records rather than full
+spec sheets. The sync therefore prioritizes complete/promotable records first,
+then ranks by mainstream brand priority: Apple, Samsung, Xiaomi/Redmi/POCO,
+vivo/iQOO, OPPO/OnePlus/Realme, Transsion-family Tecno/Infinix/itel, and
+Nothing/CMF. If a record is missing required fields, it is staged/quarantined
+with exact issue codes. Output such as `promoted=0 quarantined=50` means the API
+returned candidates, but none passed `PhoneSpecSchema`; it is not an API block.
+
+### Step 4: Official OEM page enrichment
+
+Command:
+
+```bash
+pnpm catalog:enrich-oem --from-candidates --limit 25 --promote --update-existing
+```
+
+This is the no-LLM path that lets staged candidates move into `phones` when
+official manufacturer pages provide complete specs.
+
+The command:
+
+1. scans staged candidates for official product URLs, usually from Wikidata
+   `officialWebsite` or any existing official candidate URL;
+2. fetches pages politely with a default 2 second delay between requests;
+3. extracts Schema.org JSON-LD, OpenGraph/meta tags, and visible spec text via
+   `src/services/catalog/adapters/oem-page.ts`;
+4. builds a T0 `CatalogImportRecord` with `sourceKey='oem_page'`;
+5. runs the same promotion validation as every other path;
+6. stages valid records as `ready_to_promote` and, when `--promote` is set,
+   promotes them immediately.
+
+One-off enrichment is available for manually found official URLs:
+
+```bash
+pnpm catalog:enrich-oem --url <official-product-url> --promote --update-existing
+```
+
+The generic extractor is intentionally conservative. If the OEM page omits
+display, RAM, storage, cameras, battery, charging, weight, OS, Wi-Fi,
+Bluetooth, or NFC, the candidate remains quarantined. Brand-specific overrides
+and broader sitemap discovery are the next step for pages whose templates do
+not expose enough parseable text.
+
+### Step 5: Validation and dedupe
+
+Every source uses the same promotion gate:
+
+- `CatalogPromotionClaimsSchema` validates source claims.
+- `projectPhoneSpec` maps source claims into today's strict `PhoneSpecSchema`.
+- Plausibility checks reject impossible values.
+- Source tier rules require T0 official or T2 licensed structured data for
+  auto-promotion.
+- Matching checks slug, canonical key, identities, and existing aliases so
+  existing phones update instead of duplicating.
+- RAM/storage/color/model-number SKUs are saved in `phone_configurations`, not
+  as separate canonical `phones` rows.
+
+If any required field is missing or ambiguous, the candidate is quarantined and
+recorded in `catalog_quality_issues` rather than polluting the canonical
+catalog.
+
+### Step 6: Promotion into `phones`
+
+Valid candidates are promoted by:
+
+```bash
+pnpm catalog:promote --ready --limit 20 --update-existing
+```
+
+or directly by `catalog:sync-mobileapi --promote` and
+`catalog:enrich-oem --promote`.
+
+Promotion writes:
+
+- `phones`
+- `phone_identities`
+- `phone_aliases`
+- `phone_configurations`
+- `catalog_source_claims`
+- `phone_media_assets` as remote-only metadata when local media caching is not
+  yet licensed/implemented
+
+New active phones are immediately eligible for the existing ingestion scheduler
+because `next_ingest_at` is null. Scorecard automation follows the configured
+catalog-created grace behavior so newly added phones do not get scored before
+review evidence exists.
+
+### Step 7: Monthly GitHub Action
+
+`.github/workflows/catalog-refresh.yml` runs monthly at `01:17 UTC` and supports
+manual dispatch. The default scheduled path is:
+
+1. `catalog:backfill-identities`
+2. `catalog:refresh --source wikidata`
+3. optional `catalog:sync-mobileapi --promote --update-existing`
+4. `catalog:enrich-oem --from-candidates --promote --update-existing`
+5. `catalog:report --days 35`
+
+If `source=both` or `source=mobileapi` and `MOBILEAPI_API_KEY` is missing, the
+workflow fails with a GitHub Actions error instead of silently succeeding.
+Operators can intentionally avoid MobileAPI by dispatching with
+`source=wikidata`. OEM enrichment can be disabled with the workflow
+`oem_enrich=false` input.
 
 ---
 

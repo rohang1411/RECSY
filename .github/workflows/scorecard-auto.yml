@@ -68,6 +68,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
       GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
       GEMINI_RATE_LIMIT_PROFILE: google_ai_studio_free
       GEMINI_FREE_RPM: '5'
       GEMINI_FREE_TPM_INPUT: '250000'

@@ -148,6 +148,9 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/recsy
       SUPABASE_SERVICE_ROLE_KEY: e2e-ci-service-role
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
       GROQ_API_KEY: placeholder
       LLM_PROVIDER: gemini
       NEXT_PUBLIC_SUPABASE_URL: https://example.com

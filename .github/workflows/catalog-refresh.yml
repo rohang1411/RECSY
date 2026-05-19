@@ -34,6 +34,16 @@ on:
         required: false
         default: '50'
         type: string
+      oem_enrich:
+        description: 'Fetch official OEM pages from staged candidates'
+        required: false
+        default: true
+        type: boolean
+      oem_limit:
+        description: 'Max official OEM pages to fetch'
+        required: false
+        default: '25'
+        type: string
       promote:
         description: 'Promote complete structured MobileAPI records'
         required: false
@@ -117,6 +127,8 @@ jobs:
           SINCE_YEARS="${{ github.event.inputs.since_years || '2' }}"
           LIMIT="${{ github.event.inputs.limit || '150' }}"
           MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
+          OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
+          OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
           PROMOTE="${{ github.event.inputs.promote || 'true' }}"
 
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "wikidata" ]; then
@@ -135,6 +147,22 @@ jobs:
               exit 1
             fi
           fi
+
+          if [ "$OEM_ENRICH" = "true" ]; then
+            ARGS="--from-candidates --limit $OEM_LIMIT --min-request-gap-ms 2000"
+            if [ "$PROMOTE" = "true" ]; then
+              ARGS="$ARGS --promote --update-existing"
+            fi
+            pnpm exec tsx scripts/catalog-enrich-oem.ts $ARGS
+          fi
+
+      - name: Backfill spec embeddings for promoted phones
+        if: success()
+        run: |
+          # Generate spec_embedding for any phone promoted or updated this run
+          # (promotion sets spec_embedding = NULL). The backfill script processes
+          # only NULL rows by default so this is safe to run every time.
+          pnpm exec tsx scripts/backfill-spec-embeddings.ts
 
       - name: Catalog report
         if: always()
