@@ -1,0 +1,140 @@
+# Automated phone catalog refresh.
+#
+# This workflow makes zero LLM calls. Wikidata is used for open discovery and
+# staging; MobileAPI is optional and can promote only records that satisfy the
+# strict PhoneSpec promotion contract.
+name: catalog (refresh)
+
+on:
+  schedule:
+    - cron: '17 1 1 * *'
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Source to run'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - wikidata
+          - mobileapi
+      since_years:
+        description: 'Lookback window in years'
+        required: false
+        default: '2'
+        type: string
+      limit:
+        description: 'Max candidates/devices per source'
+        required: false
+        default: '150'
+        type: string
+      mobileapi_max_requests:
+        description: 'MobileAPI request cap for this run'
+        required: false
+        default: '50'
+        type: string
+      promote:
+        description: 'Promote complete structured MobileAPI records'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: catalog-refresh
+  cancel-in-progress: false
+
+jobs:
+  secrets-gate:
+    name: Check catalog secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+      mobileapi: ${{ steps.check.outputs.mobileapi }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          MOBILEAPI_API_KEY: ${{ secrets.MOBILEAPI_API_KEY }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Catalog DB/Supabase secrets incomplete; skipping refresh."
+          fi
+
+          if [ -n "$MOBILEAPI_API_KEY" ]; then
+            echo "mobileapi=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mobileapi=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  catalog:
+    name: Refresh catalog
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: production
+      NODE_OPTIONS: --dns-result-order=ipv4first
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      MOBILEAPI_API_KEY: ${{ secrets.MOBILEAPI_API_KEY }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Backfill legacy identities
+        run: pnpm exec tsx scripts/backfill/canonical-keys.ts
+
+      - name: Run catalog refresh
+        shell: bash
+        run: |
+          SOURCE="${{ github.event.inputs.source || 'both' }}"
+          SINCE_YEARS="${{ github.event.inputs.since_years || '2' }}"
+          LIMIT="${{ github.event.inputs.limit || '150' }}"
+          MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
+          PROMOTE="${{ github.event.inputs.promote || 'true' }}"
+
+          if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "wikidata" ]; then
+            pnpm exec tsx scripts/catalog-refresh.ts --source wikidata --since-years "$SINCE_YEARS" --limit "$LIMIT"
+          fi
+
+          if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "mobileapi" ]; then
+            if [ "${{ needs.secrets-gate.outputs.mobileapi }}" = "true" ]; then
+              ARGS="--since-years $SINCE_YEARS --limit $LIMIT --max-requests $MOBILEAPI_MAX_REQUESTS --min-request-gap-ms 12500"
+              if [ "$PROMOTE" = "true" ]; then
+                ARGS="$ARGS --promote --update-existing"
+              fi
+              pnpm exec tsx scripts/catalog-sync-mobileapi.ts $ARGS
+            else
+              echo "MOBILEAPI_API_KEY not configured; skipping MobileAPI sync."
+            fi
+          fi
+
+      - name: Catalog report
+        if: always()
+        run: pnpm exec tsx scripts/catalog-report.ts --days 35

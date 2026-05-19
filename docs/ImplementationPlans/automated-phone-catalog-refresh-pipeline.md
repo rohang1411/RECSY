@@ -21,21 +21,48 @@ Implemented in this slice:
   strict `PhoneSpec` projection, validation, conservative alias generation, and
   Wikidata discovery adapter. The Wikidata query uses direct `P31` instance
   matches to avoid broad subclass-path timeouts.
+- Promotion foundation: `catalog:promote` validates `claims_json.promotion`,
+  blocks incomplete specs, dedupes by slug/canonical key/identities, and writes
+  `phones`, identities, aliases, configurations, source claims, and remote-only
+  media metadata idempotently.
 - CLI scripts:
   - `pnpm catalog:backfill-identities` - backfills existing seed phones with
     canonical keys and seed identities. Supports `--dry-run`. No LLM calls.
   - `pnpm catalog:refresh --source wikidata --since-years 2` - stages recent
     Wikidata candidates. `--dry-run` previews without DB writes. No LLM calls.
     Does not auto-promote because specs are incomplete.
+  - `pnpm catalog:import-specs --file <path> --promote` - imports a trusted
+    structured JSON export and promotes records that satisfy `PhoneSpecSchema`.
+    No LLM calls.
+  - `MOBILEAPI_API_KEY=... pnpm catalog:sync-mobileapi --since-years 2
+--promote` - optional licensed API sync using MobileAPI by-year pages.
+    Stages every fetched device and promotes only complete structured records.
+    No LLM calls. Requires `MOBILEAPI_API_KEY` in `.env.local`; without that
+    key, use Wikidata staging or `catalog:import-specs` with a structured export.
+    Free-plan guardrails are enforced in code: default `--max-requests 50`,
+    persisted month-to-date usage from `catalog_runs`, and
+    `--min-request-gap-ms 12500`, keeping cumulative usage at or below 50
+    requests/month and under 5 requests/minute.
+    Selection is mainstream-first within the fetched batch: complete records
+    from Apple, Samsung, Xiaomi, vivo, OPPO, Transsion-family brands
+    (Tecno/Infinix/itel), and Nothing/CMF are staged/promoted before niche brands. This is a
+    deterministic rank, not an LLM call, and it does not make extra API calls.
+  - `pnpm catalog:promote --ready --limit 20` - promotes staged
+    `ready_to_promote` candidates. No LLM calls.
   - `pnpm catalog:report --days 30` - reports runs/candidate status and LLM
     call counts.
+- GitHub Actions:
+  - `.github/workflows/catalog-refresh.yml` - monthly 01:17 UTC plus manual
+    dispatch. Runs legacy identity backfill, Wikidata staging, optional
+    MobileAPI sync/promotion when `MOBILEAPI_API_KEY` is configured, and a final
+    report. No LLM calls.
 
-Still pending before safe auto-promotion:
+Still pending before fully hands-off scheduled auto-promotion:
 
-- A non-LLM spec source that can satisfy `PhoneSpecSchema` for newly discovered
-  phones, such as one OEM extractor with fixtures or an enabled licensed API.
-- Transactional promotion into `phones`, media caching, optional hot-ingest
-  workflow dispatch, and internal review UI.
+- OEM sitemap/product-page extractors with fixtures for source diversity beyond
+  Wikidata and MobileAPI.
+- Local licensed media caching, optional hot-ingest workflow dispatch,
+  resume by checkpoint, and internal review UI.
 
 ---
 
@@ -127,17 +154,17 @@ Important existing behavior:
 
 ## 5. Source Research Summary
 
-| Source                                  | Use                                                                         | Strength                                                                                | Risk / limitation                                                              | Decision                                                                  |
-| --------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Official OEM product pages and sitemaps | Canonical names, official URLs, launch status, specs, images, MSRP, regions | Most authoritative source for the manufacturer's own claims                             | Fragmented HTML/templates; region pages differ; image reuse may be copyrighted | Primary verification source. Use per-brand profiles and fixtures.         |
-| Schema.org `Product` JSON-LD/microdata  | Structured extraction from official/retail pages                            | Standard fields include `brand`, `model`, `image`, `gtin`, `sku`, `releaseDate`, offers | Many OEM pages omit fields or use marketing-only metadata                      | Parse when present, but validate and supplement.                          |
-| Sitemaps                                | Efficient URL discovery and change detection                                | Standard XML with `loc` and optional `lastmod`; avoids crawling entire sites            | Some sites omit product URLs or set poor `lastmod` values                      | Use as first URL discovery mechanism for OEM sites.                       |
-| Wikidata Query Service                  | Open discovery and cross-checking for known devices/QIDs                    | Programmatic SPARQL endpoint; useful for release date, brand, image candidates          | Not for fuzzy search; query limits; specs incomplete and community-maintained  | Primary open discovery, not sole spec source.                             |
-| Wikimedia Commons                       | Product image candidates with machine-readable metadata                     | API can return license, artist, credit, and license URL through `imageinfo` extmetadata | Not every phone has a usable image; attribution must be stored                 | Preferred free-media image source when quality is acceptable.             |
-| MobileAPI.dev                           | Optional structured specs/images API                                        | Docs claim 31,500+ devices, images, search, manufacturers, by-year endpoints            | Vendor dependency, limited free tier: 200 requests/month and 5 requests/minute | Optional enrichment adapter behind an env flag.                           |
-| PhoneArena specs database licensing     | Optional licensed database                                                  | Commercial database covers major brands/models and detailed specs                       | Requires licensing; not a free automated source                                | Consider if the project needs higher completeness.                        |
-| GSMArena/Kimovil/DeviceSpecifications   | Secondary cross-check and source URL enrichment                             | Broad phone/spec coverage                                                               | Fragile scraping, unclear reuse rights, no official clean API for many cases   | Use only as secondary evidence and only through polite HTTP/robots gates. |
-| Google Custom Search JSON API           | Site-restricted URL resolver                                                | Official API supports CSE and `siterestrict` search                                     | API quotas and availability; not a data source                                 | Optional resolver only, not part of core pipeline.                        |
+| Source                                  | Use                                                                         | Strength                                                                                | Risk / limitation                                                              | Decision                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Official OEM product pages and sitemaps | Canonical names, official URLs, launch status, specs, images, MSRP, regions | Most authoritative source for the manufacturer's own claims                             | Fragmented HTML/templates; region pages differ; image reuse may be copyrighted | Primary verification source. Use per-brand profiles and fixtures.             |
+| Schema.org `Product` JSON-LD/microdata  | Structured extraction from official/retail pages                            | Standard fields include `brand`, `model`, `image`, `gtin`, `sku`, `releaseDate`, offers | Many OEM pages omit fields or use marketing-only metadata                      | Parse when present, but validate and supplement.                              |
+| Sitemaps                                | Efficient URL discovery and change detection                                | Standard XML with `loc` and optional `lastmod`; avoids crawling entire sites            | Some sites omit product URLs or set poor `lastmod` values                      | Use as first URL discovery mechanism for OEM sites.                           |
+| Wikidata Query Service                  | Open discovery and cross-checking for known devices/QIDs                    | Programmatic SPARQL endpoint; useful for release date, brand, image candidates          | Not for fuzzy search; query limits; specs incomplete and community-maintained  | Primary open discovery, not sole spec source.                                 |
+| Wikimedia Commons                       | Product image candidates with machine-readable metadata                     | API can return license, artist, credit, and license URL through `imageinfo` extmetadata | Not every phone has a usable image; attribution must be stored                 | Preferred free-media image source when quality is acceptable.                 |
+| MobileAPI.dev                           | Optional structured specs/images API                                        | Docs claim 31,500+ devices, images, search, manufacturers, by-year endpoints            | Vendor dependency, limited free tier: 50 requests/month and 5 requests/minute  | Optional enrichment adapter behind an env flag with hard request/pacing caps. |
+| PhoneArena specs database licensing     | Optional licensed database                                                  | Commercial database covers major brands/models and detailed specs                       | Requires licensing; not a free automated source                                | Consider if the project needs higher completeness.                            |
+| GSMArena/Kimovil/DeviceSpecifications   | Secondary cross-check and source URL enrichment                             | Broad phone/spec coverage                                                               | Fragile scraping, unclear reuse rights, no official clean API for many cases   | Use only as secondary evidence and only through polite HTTP/robots gates.     |
+| Google Custom Search JSON API           | Site-restricted URL resolver                                                | Official API supports CSE and `siterestrict` search                                     | API quotas and availability; not a data source                                 | Optional resolver only, not part of core pipeline.                            |
 
 References used:
 
@@ -208,6 +235,9 @@ Current implementation slice:
 
 - `pnpm catalog:backfill-identities`: **0 LLM calls**.
 - `pnpm catalog:refresh --source wikidata --since-years 2`: **0 LLM calls**.
+- `pnpm catalog:import-specs --file <path> --promote`: **0 LLM calls**.
+- `pnpm catalog:sync-mobileapi --since-years 2 --promote`: **0 LLM calls**.
+- `pnpm catalog:promote --ready`: **0 LLM calls**.
 - `pnpm catalog:report`: **0 LLM calls**.
 
 Important limitation:
@@ -215,10 +245,12 @@ Important limitation:
 - Wikidata discovery can stage many recent phone candidates, but it does not
   provide enough structured specs to satisfy `PhoneSpecSchema`. Therefore those
   candidates are marked `pending_review` with `spec_projection_missing` and are
-  not auto-promoted into `phones`.
+  not auto-promoted into `phones` by the Wikidata path.
 - To auto-add as many phones as possible from the last two years without LLM
-  calls, implement at least one non-LLM structured spec source next: an official
-  OEM extractor with fixtures or an enabled licensed API such as MobileAPI.dev.
+  calls, use `catalog:sync-mobileapi --since-years 2 --promote` with a
+  MobileAPI key, or import a trusted structured JSON export with
+  `catalog:import-specs --promote`. Promotion still blocks records whose
+  structured fields do not satisfy `PhoneSpecSchema`.
 
 Future LLM use, if enabled, is only for ambiguous identity disambiguation and is
 budget-capped by `catalog_runs.max_llm_calls`. It must never be required for the
@@ -1053,7 +1085,7 @@ Adapters:
    - Upsert URL candidates.
 
 3. `MobileApiCatalogAdapter` (optional)
-   - Enabled only when `MOBILEAPI_KEY` is set.
+   - Enabled only when `MOBILEAPI_API_KEY` is set.
    - Use by-year and manufacturer endpoints with strict monthly request
      budgeting.
    - Prefer current and previous launch year, not full database scans.
@@ -1358,7 +1390,10 @@ Mechanisms:
 9. Candidate URL/stable-key dedupe before fetch.
 10. One bounded Wikidata query per run.
 11. Optional MobileAPI requests only for current/previous launch years and
-    only when the monthly budget allows.
+    only when the monthly budget allows. The sync CLI defaults to
+    `--max-requests 50`, persisted month-to-date usage from `catalog_runs`, and
+    `--min-request-gap-ms 12500`, so cumulative usage stays within the free
+    plan's 50 requests/month and 5 requests/minute limits.
 12. A single shared MobileAPI budget counter in the orchestrator, not
     per-adapter local counters.
 13. No LLM call in normal discovery, extraction, validation, or matching.
