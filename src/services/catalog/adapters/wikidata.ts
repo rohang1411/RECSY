@@ -64,13 +64,21 @@ export async function discoverRecentWikidataPhones(
 export function buildRecentPhonesQuery(since: Date, limit: number): string {
   const date = since.toISOString().slice(0, 10);
   const boundedLimit = Math.max(1, Math.min(limit, 500));
+  // Use a UNION of P571 (inception / hardware release date, preferred for
+  // devices) and P577 (publication date) so phones that only carry one of
+  // the two properties are still discovered.  A BIND + COALESCE ensures the
+  // rest of the query can treat ?releaseDate uniformly.
   return `
 SELECT ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
        (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
 WHERE {
   VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 }
-  ?item wdt:P577 ?releaseDate.
   ?item wdt:P31 ?class.
+  {
+    ?item wdt:P571 ?releaseDate.
+  } UNION {
+    ?item wdt:P577 ?releaseDate.
+  }
   FILTER(?releaseDate >= "${date}"^^xsd:dateTime)
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }

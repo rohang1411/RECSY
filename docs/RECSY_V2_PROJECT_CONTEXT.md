@@ -1,15 +1,15 @@
-# RECSY v2 — Project Context
+﻿# RECSY v2 â€” Project Context
 
 > **Purpose.** This is the single source of truth for what RECSY v2 is, why it
-> exists, how it works, and where it's going. It is a **living document** —
+> exists, how it works, and where it's going. It is a **living document** â€”
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
+**Status.** Phase 6 (Browse + faceted filter) **shipped (MVP)** â€” URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
 [ADR 0008](./adr/0008-browse-filters-mvp.md) and [`docs/browse/README.md`](./browse/README.md).
-Phase 5 (Conversational recommender) **shipped (MVP)** — `/recommend` multi-turn
+Phase 5 (Conversational recommender) **shipped (MVP)** â€” `/recommend` multi-turn
 intake, `POST /api/recommend` with cookie-backed `recommendation_sessions` /
 `recommendation_turns`, Flash **structured** `UserRequirements` extraction +
 clarify threshold, **aspect-weighted** ranking with budget / form-factor /
@@ -17,17 +17,17 @@ brand filters, optional **cosine bump** vs `phones.spec_embedding` after
 `pnpm spec-embed:backfill`, deal-breaker keyword gate, must-have soft scoring,
 **two-per-brand** diversity in the top three picks, relaxation ladder when
 filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
-**Living risk register:** §20 (feature & approach). **Still deferred:** Gemini
-**Pro tie-break**, richer NLP on must-haves — see [ADR 0007](./adr/0007-recommender-mvp.md)
+**Living risk register:** Â§20 (feature & approach). **Still deferred:** Gemini
+**Pro tie-break**, richer NLP on must-haves â€” see [ADR 0007](./adr/0007-recommender-mvp.md)
 and [`docs/recommender/README.md`](./recommender/README.md).
-Phase 4 (Aspect scorecard) **shipped (MVP)** — hybrid retrieval per
+Phase 4 (Aspect scorecard) **shipped (MVP)** â€” hybrid retrieval per
 aspect with a **single combined query** from `query_prompts`, structured Gemini
-extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto` (scheduler + chunk fingerprint + `scorecard_runs` telemetry; **2026-05-15** hardening: reschedule only after `updated > 0`, per-aspect skip rows — see [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md)), neutral
+extraction with chunk-id validation + one retry, automated daily batches via `scorecard:auto` (scheduler + chunk fingerprint + `scorecard_runs` telemetry; **2026-05-15** hardening: reschedule only after `updated > 0`, per-aspect skip rows â€” see [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md)), neutral
 rows when retrieval is empty, recency as a **confidence** bump only, and
 `ScorecardSection` on `/p/[slug]` when aspects exist. **Calibration** (z-score /
 price bracket) and **multi-query fusion** per aspect are explicitly deferred;
 see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md) and [`docs/scorecard/README.md`](./scorecard/README.md).
-Phase 3 (Retrieval + phone pages) **shipped (MVP)** —
+Phase 3 (Retrieval + phone pages) **shipped (MVP)** â€”
 retrieval, IP-hashed `/api/ask` rate limiting, citation-tagged chat
 with validation + retry, `/p/[slug]` UI, `pnpm retrieval:smoke`, **Playwright
 E2E** (SSR phone page + mocked NDJSON ask), **tiered eval** (`docs/eval/README.md`,
@@ -45,7 +45,7 @@ gracefully to a skipped-source telemetry row. Phase 1 (DB, data
 model, seed corpus) and Phase 0 (scaffold, design system, service
 skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 
-**Ops / automation (2026-05-14—15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an all–cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text — see [§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip — full detail in [§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
+**Ops / automation (2026-05-14â€”15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an allâ€“cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text â€” see [Â§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip â€” full detail in [Â§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [Â§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ---
 
@@ -70,7 +70,7 @@ skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 17. [Testing Strategy](#17-testing-strategy)
 18. [CI/CD & Deployment](#18-cicd--deployment)
 19. [Project Phases & Progress](#19-project-phases--progress)
-20. [Open Questions & Future Work](#20-open-questions--future-work) — includes [feature & approach risk register](#feature-and-approach-risk-register-living)
+20. [Open Questions & Future Work](#20-open-questions--future-work) â€” includes [feature & approach risk register](#feature-and-approach-risk-register-living)
 21. [Glossary](#21-glossary)
 22. [Change Log](#22-change-log)
 23. [Issues Log](#23-issues-log)
@@ -91,18 +91,18 @@ experiences on one site:
   pages.
 - **Per-phone consensus engine.** Each phone has a dedicated page with a
   seven-axis aspect scorecard (camera, battery, performance, display, build,
-  software, value) aggregated from YouTube, Reddit, and editorial reviews —
+  software, value) aggregated from YouTube, Reddit, and editorial reviews â€”
   and a chat Q&A where every answer is grounded in cited source excerpts
   (YouTube deep-links include timestamps).
 - **Internal Pipeline Observatory.** An internal-only, narrative-driven dashboard (`/internal/pipeline`) that visualizes the entire RECSY data lifecycle for presentations, featuring live database metrics and pre-computed pipeline replays.
 
-**Stack summary.** Next.js 16 · Drizzle ORM → Supabase Postgres + pgvector ·
-Gemini 2.5 Flash/Pro via Vercel AI SDK · TypeScript ingestion adapters
-(`youtubei.js` · Reddit public JSON · `@mozilla/readability` + `linkedom`).
+**Stack summary.** Next.js 16 Â· Drizzle ORM â†’ Supabase Postgres + pgvector Â·
+Gemini 2.5 Flash/Pro via Vercel AI SDK Â· TypeScript ingestion adapters
+(`youtubei.js` Â· Reddit public JSON Â· `@mozilla/readability` + `linkedom`).
 Runs entirely on free tiers.
 
 **This is a portfolio/learning project.** See
-[§4 Honest Defensibility Statement](#4-honest-defensibility-statement). The
+[Â§4 Honest Defensibility Statement](#4-honest-defensibility-statement). The
 goal is to ship a production-quality application, not to out-compete
 general-purpose LLMs at the review-summarisation task.
 
@@ -111,13 +111,13 @@ general-purpose LLMs at the review-summarisation task.
 ## 2. Origin Story
 
 The original **RECSY** was a 2020 undergraduate project: a Flutter mobile app
-that asked the user 6–8 preference questions, fed them to a bespoke Keras
+that asked the user 6â€“8 preference questions, fed them to a bespoke Keras
 model exported to TensorFlow Lite, and returned a recommended smartphone. The
 dataset was a hand-curated CSV; ~100 phones.
 
 By 2026 this approach is dead. Users ask ChatGPT/Gemini the same question and
 get a synthesised answer sourced from the live web. The app's value
-proposition — "ask questions, get a phone" — has been fully absorbed by
+proposition â€” "ask questions, get a phone" â€” has been fully absorbed by
 general-purpose assistants.
 
 The original project files live under [`legacy/`](../legacy) for reference.
@@ -138,7 +138,7 @@ The original project files live under [`legacy/`](../legacy) for reference.
 
 ## 3. Product Vision & Positioning
 
-**One-liner.** "Ask what matters. Get the phone that actually fits you —
+**One-liner.** "Ask what matters. Get the phone that actually fits you â€”
 grounded in real reviews, with receipts."
 
 **What the user gets.**
@@ -156,7 +156,7 @@ grounded in real reviews, with receipts."
 - Not a used-phone marketplace.
 - Not a price-tracker / deal site (initially).
 - Not a forum / social product.
-- Not trying to beat Rtings / GSMArena at technical specs — we _cite_ them.
+- Not trying to beat Rtings / GSMArena at technical specs â€” we _cite_ them.
 
 ---
 
@@ -169,7 +169,7 @@ bespoke pipeline we can build on a free tier. **We accept this.**
 RECSY v2 is therefore shipped as a **portfolio / learning project** with these
 intentional goals:
 
-1. **Demonstrate modern retrieval + agent engineering** end-to-end — hybrid
+1. **Demonstrate modern retrieval + agent engineering** end-to-end â€” hybrid
    RAG, structured-output agents, MCP-style ingestion adapters, LLM response
    caching, observability.
 2. **Produce a polished, self-contained product** that a recruiter or
@@ -180,46 +180,46 @@ intentional goals:
 Durability features we _do_ invest in (because they're good engineering, not
 moats):
 
-- **Transparent methodology** — aspect definitions, weights, and retrieval
+- **Transparent methodology** â€” aspect definitions, weights, and retrieval
   prompts are data (`aspect_definitions`) not code, versioned and auditable.
-- **Citation fidelity** — claim-level citation validation in the chat
+- **Citation fidelity** â€” claim-level citation validation in the chat
   pipeline (a claim without a supporting chunk is rejected).
-- **Source-tier awareness (deferred)** — the schema leaves room for a future
+- **Source-tier awareness (deferred)** â€” the schema leaves room for a future
   reputation signal per source.
 
 ---
 
 ## 5. Target Users & Use Cases
 
-### Primary persona — "overwhelmed buyer" (Rahul, 27, India/US/UK/global English)
+### Primary persona â€” "overwhelmed buyer" (Rahul, 27, India/US/UK/global English)
 
 Has a rough budget, three or four non-negotiables, and 45 minutes before
 pulling the trigger on a phone they'll live with for 2 years. Doesn't want
 to watch four 30-minute reviews. Trusts picks more than rankings.
 
-### Secondary persona — "skeptical researcher"
+### Secondary persona â€” "skeptical researcher"
 
 Already has a shortlist; wants to stress-test it. Lands on `/p/<slug>` pages,
 opens the consensus scorecard, asks specific follow-ups ("does the camera
 struggle at night?", "is the battery really that good?").
 
-### Tertiary — "just browsing"
+### Tertiary â€” "just browsing"
 
 Lands on `/browse`, filters by price & form factor. (Phase 3+.)
 
-### Quaternary — "reviewers and collaborators"
+### Quaternary â€” "reviewers and collaborators"
 
 Lands on `/internal/pipeline` to inspect the system architecture, live corpus metrics, and data pipeline walkthroughs without reading the codebase.
 
 ### Core user flows
 
-| #   | Flow                     | Entry                            | Exit                                       |
-| --- | ------------------------ | -------------------------------- | ------------------------------------------ |
-| U1  | Conversational recommend | `/` landing chat                 | 3-card pick → click through to `/p/<slug>` |
-| U2  | Consensus & Q&A          | `/p/<slug>`                      | Answer with citations → buy-link / browse  |
-| U3  | Browse & filter          | `/browse` (Phase 3+)             | Phone page                                 |
-| U4  | Compare two phones       | `/compare/<a>-vs-<b>` (Phase 5+) | Phone page                                 |
-| U5  | System architecture demo | `/internal/pipeline`             | Pipeline walkthrough                       |
+| #   | Flow                     | Entry                            | Exit                                         |
+| --- | ------------------------ | -------------------------------- | -------------------------------------------- |
+| U1  | Conversational recommend | `/` landing chat                 | 3-card pick â†’ click through to `/p/<slug>` |
+| U2  | Consensus & Q&A          | `/p/<slug>`                      | Answer with citations â†’ buy-link / browse  |
+| U3  | Browse & filter          | `/browse` (Phase 3+)             | Phone page                                   |
+| U4  | Compare two phones       | `/compare/<a>-vs-<b>` (Phase 5+) | Phone page                                   |
+| U5  | System architecture demo | `/internal/pipeline`             | Pipeline walkthrough                         |
 
 ### Non-users we explicitly decline to serve
 
@@ -232,56 +232,56 @@ Lands on `/internal/pipeline` to inspect the system architecture, live corpus me
 
 ## 6. Feature Inventory
 
-**Legend.** ✓ = shipped, ▲ = in progress, ◯ = planned.
+**Legend.** âœ“ = shipped, â–² = in progress, â—¯ = planned.
 
-| Feature                                    | Status | Phase | Notes                                                                                                                                                                                                                |
-| ------------------------------------------ | ------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Landing hero + CTA                         | ✓      | 0–5   | Hero points to `/recommend` and `/browse`                                                                                                                                                                            |
-| Dark/light theme (OKLCH tokens)            | ✓      | 0     | Dark default, `next-themes`, AA contrast                                                                                                                                                                             |
-| `/api/health` liveness probe               | ✓      | 0     |                                                                                                                                                                                                                      |
-| Typed env validation                       | ✓      | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                                                                                                           |
-| LLM provider abstraction                   | ✓      | 0     | Gemini impl + cache decorator                                                                                                                                                                                        |
-| Drizzle schema (29 tables, catalog enums)  | ✓      | 0+8   | Core app tables plus catalog refresh staging/identity/media/audit tables                                                                                                                                             |
-| Postgres extensions bootstrapped           | ✓      | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                                                                                                       |
-| Initial migration applied                  | ✓      | 1     | All tables + HNSW (cosine) indexes                                                                                                                                                                                   |
-| RLS policies                               | ✓      | 1     | default-deny + anon read on public tables                                                                                                                                                                            |
-| `PhoneSpec` Zod schema                     | ✓      | 1     | `src/features/phones/schema.ts`                                                                                                                                                                                      |
-| Aspect definitions seeded                  | ✓      | 1     | 7 aspects, weights sum to 1.0                                                                                                                                                                                        |
-| Starter phone corpus (20 phones)           | ✓      | 1     | budget→flagship, 6 brands, 1 foldable                                                                                                                                                                                |
-| Automated catalog refresh foundation       | ▲      | 8     | Catalog schema/migration, legacy identity backfill, no-LLM Wikidata staging, structured import/MobileAPI sync, promotion CLI, report CLI ([plan](./ImplementationPlans/automated-phone-catalog-refresh-pipeline.md)) |
-| `db:setup` orchestrator + `db:smoke`       | ✓      | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                                                                                               |
-| MCP-style ingestion adapters               | ✓      | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                                                                                                      |
-| `pnpm ingest` CLI + tiered GH Actions      | ✓      | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see §22)                   |
-| Ingestion resumability + audit telemetry   | ✓      | 2     | `ingest_runs.{stage,error_code,retry_after,candidate_title}`; `phones.last_ingest_status`; `--resume-failed`; `ingest-resume.yml`; hash pre-check — [§13](#13-ingestion-pipeline-mcp-style-adapters)                 |
-| Hybrid retrieval (vector + FTS + RRF)      | ✓      | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                                                                                              |
-| Per-phone page & chat Q&A                  | ✓      | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                                                          |
-| Aspect scorecard agent graph               | ✓      | 4     | MVP: ADR 0006; automated via `scorecard:auto` — daily 02:17 UTC, 20 phones/run, per-phone queue ([§12](#automated-batch-scheduling-scorecardauto)); UI when rows exist                                               |
-| Conversational recommender                 | ✓      | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                                                                                                        |
-| Browse (phone list)                        | ✓      | 5     | `/browse` → `/p/[slug]`                                                                                                                                                                                              |
-| Browse + filter                            | ✓      | 6     | ADR 0008; URL `GET` form + server `where`                                                                                                                                                                            |
-| About page                                 | ✓      | 7     | `/about` — what RECSY is + links to flows                                                                                                                                                                            |
-| Compare (two phones)                       | ✓      | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=…`                                                                                                                                                  |
-| Phone page: spec grid + MSRP + image       | ✓      | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                                                                                                     |
-| Browse + rec cards: product imagery        | ✓      | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                                                                                                     |
-| Recommender: price + image on pick cards   | ✓      | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                                                                                                 |
-| PWA manifest + icons (installable)         | ✓      | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                                                                                                    |
-| SEO + default OG (sitemap, robots)         | ✓      | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                                                                                                 |
-| Product analytics (Vercel)                 | ✓      | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                                                                                                        |
-| Compare: catalog pickers + slug form       | ✓      | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                                                                                                          |
-| Starter corpus: sample `image_url`         | ✓      | 7     | Five flagship rows → Wikimedia Commons; allowlisted in `next.config`                                                                                                                                                 |
-| Hybrid `eval:retrieval` in CI              | ▲      | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) — job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)                                                                                  |
-| PWA **offline** shell (service worker)     | ◯      | 7+    | Deferred; ADR 0010                                                                                                                                                                                                   |
-| Phone Q&A: cross-scope guidance + trace UI | ✓      | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI                                                                               |
-| Landing: “What you can do” cards           | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `/` below hero                                                                                                                                      |
-| `PhoneImage` remote delivery               | ✓      | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) — `<img>` + `referrerPolicy="no-referrer"`                                                                                                            |
-| Recommender: refine-over-prior-picks       | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — re-ranks prior picks on conversational follow-ups                                                                                    |
-| Recommender: tie + no-data honesty         | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `scoresTied`, `scorecardMissing`, `topAspects`, banner                                                                                  |
-| Recommender: context-aware summaries       | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — refined turns name top + secondary priority aspects                                                                                     |
-| Phone Q&A: empty-corpus short-circuit      | ✓      | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) — deterministic message when 0 chunks, `NO_CONTEXT_MODEL`                                                                              |
-| Client settings + `/settings`              | ✓      | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) — `useClientSetting`, Enter-to-send toggle, header link                                                                                   |
-| Internal Pipeline Observatory              | ✓      | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                                                                                                |
+| Feature                                    | Status | Phase | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------ | ------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing hero + CTA                         | âœ“    | 0â€“5 | Hero points to `/recommend` and `/browse`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Dark/light theme (OKLCH tokens)            | âœ“    | 0     | Dark default, `next-themes`, AA contrast                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `/api/health` liveness probe               | âœ“    | 0     |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Typed env validation                       | âœ“    | 0     | `@t3-oss/env-nextjs` + Zod                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| LLM provider abstraction                   | âœ“    | 0     | Gemini impl + cache decorator                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Drizzle schema (29 tables, catalog enums)  | âœ“    | 0+8   | Core app tables plus catalog refresh staging/identity/media/audit tables                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Postgres extensions bootstrapped           | âœ“    | 1     | pgvector, pg_trgm, pgcrypto (pg_cron deferred)                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Initial migration applied                  | âœ“    | 1     | All tables + HNSW (cosine) indexes                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| RLS policies                               | âœ“    | 1     | default-deny + anon read on public tables                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `PhoneSpec` Zod schema                     | âœ“    | 1     | `src/features/phones/schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Aspect definitions seeded                  | âœ“    | 1     | 7 aspects, weights sum to 1.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Starter phone corpus (20 phones)           | âœ“    | 1     | budgetâ†’flagship, 6 brands, 1 foldable                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Automated catalog refresh foundation       | â–²    | 8     | Catalog schema/migration, legacy identity backfill, no-LLM Wikidata staging (P571âˆªP577), structured import/MobileAPI sync, promotion CLI, report CLI. **2026-05-19 hardening:** identity match scoped to `(source_key, external_id)`, `phoneUpdateValues` preserves `next_ingest_at`, spec-embedding backfill in workflow, `parseWeightG` tightened, `isLikelyOfficialPage` blocklist, `failed_transient` removed ([plan](./ImplementationPlans/automated-phone-catalog-refresh-pipeline.md)) |
+| `db:setup` orchestrator + `db:smoke`       | âœ“    | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| MCP-style ingestion adapters               | âœ“    | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `pnpm ingest` CLI + tiered GH Actions      | âœ“    | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see Â§22)                                                                                                                                                                                                                                                                                             |
+| Ingestion resumability + audit telemetry   | âœ“    | 2     | `ingest_runs.{stage,error_code,retry_after,candidate_title}`; `phones.last_ingest_status`; `--resume-failed`; `ingest-resume.yml`; hash pre-check â€” [Â§13](#13-ingestion-pipeline-mcp-style-adapters)                                                                                                                                                                                                                                                                                         |
+| Hybrid retrieval (vector + FTS + RRF)      | âœ“    | 3     | + MMR + source coverage; optional LLM rerank (ADR 0005)                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Per-phone page & chat Q&A                  | âœ“    | 3     | `/p/[slug]`, `/api/ask`, citations; scope + `retrievalTrace` [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                                                                                                                                                                                                                                                                                                                                     |
+| Aspect scorecard agent graph               | âœ“    | 4     | MVP: ADR 0006; automated via `scorecard:auto` â€” daily 02:17 UTC, 20 phones/run, per-phone queue ([Â§12](#automated-batch-scheduling-scorecardauto)); UI when rows exist                                                                                                                                                                                                                                                                                                                       |
+| Conversational recommender                 | âœ“    | 5     | MVP: ADR 0007; `/api/recommend`, `/recommend`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Browse (phone list)                        | âœ“    | 5     | `/browse` â†’ `/p/[slug]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Browse + filter                            | âœ“    | 6     | ADR 0008; URL `GET` form + server `where`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| About page                                 | âœ“    | 7     | `/about` â€” what RECSY is + links to flows                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Compare (two phones)                       | âœ“    | 7     | [ADR 0009](./adr/0009-phone-ux-images-compare.md); `/compare?a&b=â€¦`                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Phone page: spec grid + MSRP + image       | âœ“    | 7     | `PhoneSpecSummary`, `PhoneImage`, from `spec_json` / `image_url`                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Browse + rec cards: product imagery        | âœ“    | 7     | Thumbnails when `phones.image_url` set; else initial placeholder                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Recommender: price + image on pick cards   | âœ“    | 7     | `RecommendApiPick.msrpUsd` + `imageUrl` from catalog                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| PWA manifest + icons (installable)         | âœ“    | 7     | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md); **offline** SW still planned                                                                                                                                                                                                                                                                                                                                                                                                               |
+| SEO + default OG (sitemap, robots)         | âœ“    | 7     | `app/sitemap.ts`, `robots.ts`, `opengraph-image.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Product analytics (Vercel)                 | âœ“    | 7     | `AnalyticsClient`; no-op off Vercel; ADR 0010                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Compare: catalog pickers + slug form       | âœ“    | 7     | `ComparePhonePickers` + [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md)                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Starter corpus: sample `image_url`         | âœ“    | 7     | Five flagship rows â†’ Wikimedia Commons; allowlisted in `next.config`                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Hybrid `eval:retrieval` in CI              | â–²    | 3+7   | [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md) â€” job runs when `GEMINI_API_KEY` secret is set; see [docs/eval](eval/README.md)                                                                                                                                                                                                                                                                                                                                                           |
+| PWA **offline** shell (service worker)     | â—¯    | 7+    | Deferred; ADR 0010                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Phone Q&A: cross-scope guidance + trace UI | âœ“    | 3+7   | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) â€” system prompt, panel copy, `retrievalTrace` on `done`, `<details>` UI                                                                                                                                                                                                                                                                                                                                                        |
+| Landing: â€œWhat you can doâ€ cards        | âœ“    | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) â€” `/` below hero                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `PhoneImage` remote delivery               | âœ“    | 7     | [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) â€” `<img>` + `referrerPolicy="no-referrer"`                                                                                                                                                                                                                                                                                                                                                                                     |
+| Recommender: refine-over-prior-picks       | âœ“    | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) â€” re-ranks prior picks on conversational follow-ups                                                                                                                                                                                                                                                                                                                                                             |
+| Recommender: tie + no-data honesty         | âœ“    | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) â€” `scoresTied`, `scorecardMissing`, `topAspects`, banner                                                                                                                                                                                                                                                                                                                                                           |
+| Recommender: context-aware summaries       | âœ“    | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) â€” refined turns name top + secondary priority aspects                                                                                                                                                                                                                                                                                                                                                              |
+| Phone Q&A: empty-corpus short-circuit      | âœ“    | 7     | [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) â€” deterministic message when 0 chunks, `NO_CONTEXT_MODEL`                                                                                                                                                                                                                                                                                                                                                       |
+| Client settings + `/settings`              | âœ“    | 7     | [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) â€” `useClientSetting`, Enter-to-send toggle, header link                                                                                                                                                                                                                                                                                                                                                            |
+| Internal Pipeline Observatory              | âœ“    | 7     | Dashboard at `/internal/pipeline` with live metrics, replays, and walkthrough (gated by `INTERNAL_DASHBOARD_ENABLED`)                                                                                                                                                                                                                                                                                                                                                                           |
 
-> **Backlog check (2026-05-15).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev, discover-time candidate logging in DB. **Shipped this week:** tiered ingest cron alignment, `scorecard:auto` hardening, **ingestion resumability + audit telemetry** ([§13](#13-ingestion-pipeline-mcp-style-adapters), [§22](#22-change-log)).
+> **Backlog check (2026-05-15).** PWA/SEO/OG, eval job, and compare/seed polish remain as in [ADR 0010](./adr/0010-pwa-seo-analytics-compare.md). [ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md) / [ADR 0012](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md) / [ADR 0013](./adr/0013-recommender-summary-context-tie-honesty-settings.md) document the Q&A scope, refine, and tie/no-data/settings work. Still **planned**: offline PWA, per-route OG, broader `image_url` backfill, scorecard ingestion seed shortcut for dev, discover-time candidate logging in DB. **Shipped this week:** tiered ingest cron alignment, `scorecard:auto` hardening, **ingestion resumability + audit telemetry** ([Â§13](#13-ingestion-pipeline-mcp-style-adapters), [Â§22](#22-change-log)).
 
 ---
 
@@ -300,7 +300,7 @@ flowchart LR
   end
 
   subgraph Batch["Scorecard (daily cron)"]
-    PG --> AgentGraph["Aspect agent graph<br/>retrieve → extract → aggregate → calibrate"]
+    PG --> AgentGraph["Aspect agent graph<br/>retrieve â†’ extract â†’ aggregate â†’ calibrate"]
     AgentGraph --> PG
   end
 
@@ -334,7 +334,7 @@ flowchart LR
 
 ### Data flow (simplified, user asks a question on a phone page)
 
-1. Browser → `POST /api/ask` `{ phoneSlug, query }`
+1. Browser â†’ `POST /api/ask` `{ phoneSlug, query }`
 2. Zod validates input; trace id created; rate limit checked.
 3. Server fetches phone by slug; builds a retrieval context scoped to its
    chunks.
@@ -377,16 +377,16 @@ flowchart LR
 
 ### AI
 
-| Concern            | Choice                              | Version | Why                                                                 |
-| ------------------ | ----------------------------------- | ------- | ------------------------------------------------------------------- |
-| LLM SDK            | Vercel AI SDK                       | 6.x     | `generateObject`, streaming                                         |
-| Primary provider   | `@ai-sdk/google` → Gemini 2.5 Flash | 3.x     | Free tier, fast, structured output                                  |
-| Reasoning model    | Gemini 2.5 Pro                      | —       | Aspect extraction, ranker tie-break                                 |
-| Fallback (planned) | Groq Llama 3.3                      | —       | Provider diversity                                                  |
-| Embeddings         | `gemini-embedding-001`              | —       | 768 dim (Matryoshka-truncated), free tier, hardcoded in `gemini.ts` |
-| Schema             | Zod v4                              | 4.x     | Runtime validation of LLM output                                    |
+| Concern            | Choice                                | Version | Why                                                                 |
+| ------------------ | ------------------------------------- | ------- | ------------------------------------------------------------------- |
+| LLM SDK            | Vercel AI SDK                         | 6.x     | `generateObject`, streaming                                         |
+| Primary provider   | `@ai-sdk/google` â†’ Gemini 2.5 Flash | 3.x     | Free tier, fast, structured output                                  |
+| Reasoning model    | Gemini 2.5 Pro                        | â€”     | Aspect extraction, ranker tie-break                                 |
+| Fallback (planned) | Groq Llama 3.3                        | â€”     | Provider diversity                                                  |
+| Embeddings         | `gemini-embedding-001`                | â€”     | 768 dim (Matryoshka-truncated), free tier, hardcoded in `gemini.ts` |
+| Schema             | Zod v4                                | 4.x     | Runtime validation of LLM output                                    |
 
-### Ingestion (Phase 2 — shipped 2026-04-21)
+### Ingestion (Phase 2 â€” shipped 2026-04-21)
 
 TypeScript on the same Node.js toolchain as the web app (see
 [ADR 0003](./adr/0003-ingestion-typescript.md) for why we dropped the
@@ -397,16 +397,16 @@ no API key), `@mozilla/readability` + `linkedom` (article extraction),
 
 ### DevOps
 
-| Concern         | Choice                                     |
-| --------------- | ------------------------------------------ |
-| Package manager | pnpm 10                                    |
-| Logging         | `pino` structured JSON                     |
-| Error tracking  | Sentry (optional, env-gated)               |
-| Analytics       | Vercel Analytics (future)                  |
-| Host            | Vercel (Hobby)                             |
-| CI              | GitHub Actions                             |
-| Tests           | Vitest (unit) · Playwright (E2E, Phase 3+) |
-| Pre-commit      | Husky + lint-staged + commitlint           |
+| Concern         | Choice                                      |
+| --------------- | ------------------------------------------- |
+| Package manager | pnpm 10                                     |
+| Logging         | `pino` structured JSON                      |
+| Error tracking  | Sentry (optional, env-gated)                |
+| Analytics       | Vercel Analytics (future)                   |
+| Host            | Vercel (Hobby)                              |
+| CI              | GitHub Actions                              |
+| Tests           | Vitest (unit) Â· Playwright (E2E, Phase 3+) |
+| Pre-commit      | Husky + lint-staged + commitlint            |
 
 ---
 
@@ -423,30 +423,30 @@ Conventions enforced in review:
 
 ### Tables (Phase 1)
 
-| Table                     | Purpose                                        | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `phones`                  | Canonical phone entities                       | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler — [§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
-| `catalog_runs`            | Catalog refresh telemetry and budgets          | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                              |
-| `catalog_source_profiles` | DB-configured catalog source policy            | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                      |
-| `catalog_snapshots`       | Durable source snapshot registry               | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                      |
-| `catalog_candidates`      | Staged discovered phone candidates             | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                              |
-| `phone_identities`        | External/canonical identities for dedupe       | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `phone_configurations`    | RAM/storage/color/region/SKU variants          | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                            |
-| `catalog_source_claims`   | Promoted field-level provenance                | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                        |
-| `phone_media_assets`      | Durable media and rights metadata              | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                    |
-| `catalog_quality_issues`  | Catalog quarantine/audit trail                 | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `sources`                 | Ingested artefacts (video, thread, article)    | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `chunks`                  | Retrievable text chunks                        | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `aspect_definitions`      | Methodology — aspects are data                 | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `aspects`                 | Current score per phone × aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                          |
-| `recommendation_sessions` | One per browser session (hashed)               | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `recommendation_turns`    | Per-message state in a session                 | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `recommendation_feedback` | User signals on picks                          | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `chat_queries`            | Per-phone Q&A log (analytics)                  | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `llm_cache`               | LLM response cache (sha256 prompt key)         | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `ingest_runs`             | Ingestion telemetry (per source attempt)       | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** — see [§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                         |
-| `scorecard_runs`          | Scorecard batch telemetry (per phone × aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                         |
-| `rate_limits`             | IP-window counters                             | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Table                     | Purpose                                         | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phones`                  | Canonical phone entities                        | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler â€” [Â§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
+| `catalog_runs`            | Catalog refresh telemetry and budgets           | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `catalog_source_profiles` | DB-configured catalog source policy             | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_snapshots`       | Durable source snapshot registry                | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_candidates`      | Staged discovered phone candidates              | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                                 |
+| `phone_identities`        | External/canonical identities for dedupe        | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `phone_configurations`    | RAM/storage/color/region/SKU variants           | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                               |
+| `catalog_source_claims`   | Promoted field-level provenance                 | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                           |
+| `phone_media_assets`      | Durable media and rights metadata               | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                       |
+| `catalog_quality_issues`  | Catalog quarantine/audit trail                  | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `sources`                 | Ingested artefacts (video, thread, article)     | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `chunks`                  | Retrievable text chunks                         | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `aspect_definitions`      | Methodology â€” aspects are data                | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `aspects`                 | Current score per phone Ã— aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                             |
+| `recommendation_sessions` | One per browser session (hashed)                | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `recommendation_turns`    | Per-message state in a session                  | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `recommendation_feedback` | User signals on picks                           | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `chat_queries`            | Per-phone Q&A log (analytics)                   | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `llm_cache`               | LLM response cache (sha256 prompt key)          | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ingest_runs`             | Ingestion telemetry (per source attempt)        | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** â€” see [Â§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                         |
+| `scorecard_runs`          | Scorecard batch telemetry (per phone Ã— aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                            |
+| `rate_limits`             | IP-window counters                              | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ### Enums
 
@@ -457,7 +457,7 @@ identity type, media rights/status, and issue severity.
 
 ### Indexing strategy
 
-- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` — vector search.
+- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` â€” vector search.
 - **B-tree** on `phones.brand`, `phones.status`, `phones.next_scorecard_at`, `phones.next_ingest_at`, `chunks.phone_id`, `chunks.source_id`.
 - **tsvector** FTS index on `chunks.text` (added Phase 3 when hybrid retrieval lands).
 - **Unique constraints** on `phones.slug`, `(sources.phone_id, sources.url)`,
@@ -478,7 +478,7 @@ Applied via `drizzle/sql/999_rls.sql` (see Phase 1).
 
 ## 10. Retrieval & Chat Q&A Pipeline
 
-Phase 3 deliverable — **MVP shipped 2026-04-21.** Code:
+Phase 3 deliverable â€” **MVP shipped 2026-04-21.** Code:
 `src/services/retrieval/`, `src/services/chat/`, `POST /api/ask`,
 `src/app/p/[slug]/`. Design: [ADR 0004](./adr/0004-hybrid-retrieval.md),
 [operator guide](./retrieval/README.md).
@@ -486,21 +486,21 @@ Phase 3 deliverable — **MVP shipped 2026-04-21.** Code:
 High-level steps (implemented):
 
 1. **Input validation.** Zod parses `{ phoneSlug, query }`; `query` byte
-   length ≤ `MAX_CHAT_MESSAGE_BYTES` (4 KB); `X-Trace-Id` on responses.
+   length â‰¤ `MAX_CHAT_MESSAGE_BYTES` (4 KB); `X-Trace-Id` on responses.
 2. **Rate limit.** Client IP from `x-forwarded-for` / `x-real-ip`, SHA-256
    hashed; sliding window `ASK_RATE_LIMIT_WINDOW_MS` with max
    `ASK_RATE_LIMIT_MAX` requests per window; atomic upsert into
    `rate_limits` (unique on `key, window_start`).
-3. **Hybrid retrieval** — vector + FTS → RRF → MMR → source-coverage clamp
-   (constants in `src/lib/constants.ts` align pre/post K and λ with the
+3. **Hybrid retrieval** â€” vector + FTS â†’ RRF â†’ MMR â†’ source-coverage clamp
+   (constants in `src/lib/constants.ts` align pre/post K and Î» with the
    product defaults).
 4. **Answer generation.** Gemini Flash **blocking** `chat()` call with
-   `[c:<chunkUuid>]` inline tags. Post-processor validates every tag ⊆
+   `[c:<chunkUuid>]` inline tags. Post-processor validates every tag âŠ†
    retrieved chunk ids; one retry with a stricter system prompt if the model
    hallucinates ids.
 5. **Response.** `application/x-ndjson`: `meta`, `delta` (chunked replay of
    the validated answer), `done` (resolved citations + usage). Not
-   token-true streaming — first byte waits for validation.
+   token-true streaming â€” first byte waits for validation.
 6. **Logging.** Best-effort insert into `chat_queries` (answer text,
    structured citations JSON, `retrieved_chunk_ids`, latency, tokens,
    model).
@@ -518,13 +518,13 @@ citation validation).
 
 ## 11. Recommender Pipeline
 
-Phase 5 **MVP (shipped 2026-04-21)** — [ADR 0007](./adr/0007-recommender-mvp.md),
+Phase 5 **MVP (shipped 2026-04-21)** â€” [ADR 0007](./adr/0007-recommender-mvp.md),
 [`docs/recommender/README.md`](./recommender/README.md). The live path uses
 **Flash** structured extraction, **SQL + spec-json** candidate filtering, and
 **aspect-weighted** scores; `spec_embedding` semantic retrieval and **Pro**
 tie-break are documented below as **full vision** / deferred.
 
-### Stage A — Preference extraction (`UserRequirements`)
+### Stage A â€” Preference extraction (`UserRequirements`)
 
 Structured-output Gemini Flash call. Zod schema:
 
@@ -533,7 +533,7 @@ interface UserRequirements {
   budget_usd: { min?: number; max: number } | null;
   priorities: Array<{
     aspect: 'camera' | 'battery' | 'performance' | 'display' | 'build' | 'software' | 'value';
-    weight: number; // after normalise: 0–1, sum 1; prior to that, any nonnegative scale
+    weight: number; // after normalise: 0â€“1, sum 1; prior to that, any nonnegative scale
   }>;
   must_haves: string[];
   deal_breakers: string[];
@@ -545,7 +545,7 @@ interface UserRequirements {
     foldable?: boolean;
   };
   brand_preference: { liked: string[]; disliked: string[] };
-  confidence: number; // 0–1
+  confidence: number; // 0â€“1
   clarifying_question?: string; // present iff confidence < threshold
 }
 ```
@@ -555,8 +555,8 @@ Zod `userRequirementsSchema` used with `generateObject` is more permissive on
 **LLM output** (e.g. title-case aspect names, `budget_usd` as a single number
 or string currency, `null` for optional objects) so a single model quirk does
 not trip `LLM_SCHEMA_VIOLATION` on every request; see
-[`docs/recommender/README.md`](./recommender/README.md) (“Stage A: structured
-`UserRequirements`”).
+[`docs/recommender/README.md`](./recommender/README.md) (â€œStage A: structured
+`UserRequirements`â€).
 
 Multi-turn sessions merge requirements across turns. If
 `confidence < RECOMMENDER_CLARIFY_THRESHOLD` (0.6), emit
@@ -575,24 +575,24 @@ already-known "$1200 + camera" context. The orchestrator also prevents
 back-to-back clarification loops: once a prior clarify turn exists, the next
 turn is promoted to broad results instead of asking another question.
 
-### Stage B — Candidate retrieval
+### Stage B â€” Candidate retrieval
 
 **MVP (implemented):**
 
 1. **Hard filter** by parsed `spec_json` + `msrp_usd` (budget min/max, foldable,
    screen-size range, max weight) and **disliked brands**.
-2. **Deal-breakers** — substring match on a compact haystack; **exclude** hits.
-3. **Must-haves** — keyword overlap **soft multiplier** on the composite score
+2. **Deal-breakers** â€” substring match on a compact haystack; **exclude** hits.
+3. **Must-haves** â€” keyword overlap **soft multiplier** on the composite score
    (reduces false-empty sets from literal matching).
-4. **Aspect score join** — weighted `aspects.score` with user priorities;
+4. **Aspect score join** â€” weighted `aspects.score` with user priorities;
    missing explicit priorities use **`aspect_definitions.default_weight`**
    (latest version per axis).
-5. **Optional semantic bump** — when at least one active phone has
+5. **Optional semantic bump** â€” when at least one active phone has
    `spec_embedding`, embed `buildRecommenderQueryText(requirements)` once and
-   add a **bounded additive** term from cosine vs each phone’s stored vector
+   add a **bounded additive** term from cosine vs each phoneâ€™s stored vector
    (phones without a vector get **no** bonus for that part). Backfill:
    `pnpm spec-embed:backfill` (not part of `db:setup`).
-6. **Diversity** — at most **two** phones per **brand** in the top **three**
+6. **Diversity** â€” at most **two** phones per **brand** in the top **three**
    picks.
 
 **Full vision (deferred):**
@@ -601,7 +601,7 @@ turn is promoted to broad results instead of asking another question.
   alone, or multi-vector fusion) if offline eval shows gain over additive cosine.
 - **Regional** hard filter via `region_availability` once intake captures region.
 
-### Stage C — Ranking
+### Stage C â€” Ranking
 
 **MVP:** deterministic composite score only; picks persisted on
 `recommendation_turns` (`intent: recommend`, `picks`, `candidate_phone_ids`).
@@ -617,13 +617,13 @@ if still empty, then rank **all active** phones that survive deal-breakers
 (surfaced as `relaxed` codes to the UI).
 
 **Principle (unchanged):** never pretend a great match exists when the corpus
-cannot support it — honest relaxation beats silent failure.
+cannot support it â€” honest relaxation beats silent failure.
 
 ---
 
 ## 12. Aspect Scorecard Agent
 
-Phase 4 **MVP (shipped)** — see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md),
+Phase 4 **MVP (shipped)** â€” see [ADR 0006](./adr/0006-aspect-scorecard-mvp.md),
 [ADR 0015](./adr/0015-automated-aspect-scorecard.md), and
 [`docs/scorecard/README.md`](./scorecard/README.md). Produces `aspects` rows
 from hybrid retrieval + structured LLM extraction. **Automated daily batch**
@@ -633,7 +633,7 @@ runs via GitHub Actions (`pnpm scorecard:auto`); manual CLI remains as
 ### Agent graph (MVP pseudocode)
 
 ```
-for each phone × latest aspect_definition (seven axes):
+for each phone Ã— latest aspect_definition (seven axes):
   query = combine(query_prompts)        // one string, UTF-8 byte cap
   chunks = hybrid_retrieve(phone_id, query, scorecard_knobs)
   if chunks empty:
@@ -647,7 +647,7 @@ for each phone × latest aspect_definition (seven axes):
 
 ### Automated batch scheduling (`scorecard:auto`)
 
-The automated pipeline is **not** “score every phone on every run.” It is a
+The automated pipeline is **not** â€œscore every phone on every run.â€ It is a
 **per-phone queue** in Postgres: each row in `phones` carries
 `last_scorecard_at` and `next_scorecard_at`. A daily cron drains phones that
 are **due**, up to a fixed batch size, then reschedules each processed phone
@@ -656,25 +656,25 @@ burning Gemini quota on unchanged evidence.
 
 #### When it runs
 
-| Trigger              | Schedule / entrypoint                                                                                             |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **GitHub Actions**   | **Daily at 02:17 UTC** — `.github/workflows/scorecard-auto.yml` cron (`17 2 * * *`)                               |
-| **Manual (Actions)** | `workflow_dispatch` with optional `limit` (default **20**) and `force` (ignore staleness)                         |
-| **Local / operator** | `pnpm scorecard:auto` — same flags as the script (`--limit`, `--shard`, `--total-shards`, `--force`, `--dry-run`) |
+| Trigger              | Schedule / entrypoint                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **GitHub Actions**   | **Daily at 02:17 UTC** â€” `.github/workflows/scorecard-auto.yml` cron (`17 2 * * *`)                               |
+| **Manual (Actions)** | `workflow_dispatch` with optional `limit` (default **20**) and `force` (ignore staleness)                           |
+| **Local / operator** | `pnpm scorecard:auto` â€” same flags as the script (`--limit`, `--shard`, `--total-shards`, `--force`, `--dry-run`) |
 
-The workflow uses a **`secrets-gate`** job (see [§18](#18-cicd--deployment)): if
+The workflow uses a **`secrets-gate`** job (see [Â§18](#18-cicd--deployment)): if
 `GEMINI_API_KEY`, `DATABASE_URL`, or Supabase secrets are unset (e.g. forks),
 the heavy job is **skipped** instead of failing env validation or calling Gemini
 with empty keys.
 
 #### How many phones per run
 
-- Default **`--limit 20`** — at most **20 phones** per cron execution.
+- Default **`--limit 20`** â€” at most **20 phones** per cron execution.
 - The workflow passes `limit` from `workflow_dispatch` input or defaults to 20.
 - Phones beyond the limit stay in the queue for the next day (or the next shard,
   if sharding is enabled).
 
-This caps daily LLM usage: a full 7-aspect scorecard takes ~35–40 seconds per
+This caps daily LLM usage: a full 7-aspect scorecard takes ~35â€“40 seconds per
 phone (4.5 s pacing between aspects) plus retrieval/embed calls.
 
 #### Which phones are picked (`pickScorecardPhones`)
@@ -683,15 +683,15 @@ Implemented in `src/services/scorecard/scheduler.ts`. On each run the orchestrat
 (`scripts/scorecard-auto.ts`) calls `pickScorecardPhones` with `onlyDue: true`
 (default):
 
-1. **Status** — `phones.status` in `('active', 'upcoming')` only.
-2. **Due** — `next_scorecard_at IS NULL` **or** `next_scorecard_at <= now()`.
-   (`NULL` means “eligible immediately,” e.g. never scheduled or bootstrapped.)
-3. **Order** — ascending `coalesce(last_scorecard_at, epoch)` — phones scored
+1. **Status** â€” `phones.status` in `('active', 'upcoming')` only.
+2. **Due** â€” `next_scorecard_at IS NULL` **or** `next_scorecard_at <= now()`.
+   (`NULL` means â€œeligible immediately,â€ e.g. never scheduled or bootstrapped.)
+3. **Order** â€” ascending `coalesce(last_scorecard_at, epoch)` â€” phones scored
    longest ago (or never) first.
-4. **Sharding (optional)** — `shardIndex(phone.id, totalShards) === shard` so
+4. **Sharding (optional)** â€” `shardIndex(phone.id, totalShards) === shard` so
    multiple workers can partition the due-set deterministically (default:
    `shard=0`, `totalShards=1`).
-5. **Cap** — `slice(0, limit)`.
+5. **Cap** â€” `slice(0, limit)`.
 
 **Not all phones every day:** if the catalog has 100 active phones and
 `limit=20`, it takes ~5 daily runs to touch everyone once, assuming all are
@@ -711,17 +711,17 @@ When a run **succeeds** (`runScorecardForPhone` returns `updated > 0`) or is
 Also sets `last_scorecard_at` to the completion timestamp.
 
 **Failures stay due:** if **every** aspect fails (`updated === 0`), the phone is
-**not** rescheduled — it remains due for the next cron so operators can retry
+**not** rescheduled â€” it remains due for the next cron so operators can retry
 after fixing quota/schema issues. A **warn** is logged and `failures` counts
 toward a non-zero exit code when nothing succeeded.
 
 **Bootstrap:** `bootstrapNextScorecardAt` assigns a jittered first deadline
 (~3 days, spread randomly) to phones with `next_scorecard_at IS NULL` so new
-catalog rows don’t all hit the same cron.
+catalog rows donâ€™t all hit the same cron.
 
 #### Staleness guard (skip LLM when evidence unchanged)
 
-Before calling the agent, `computeChunkFingerprint` hashes the phone’s chunk IDs
+Before calling the agent, `computeChunkFingerprint` hashes the phoneâ€™s chunk IDs
 in Postgres (`md5(string_agg(id::text, ',' ORDER BY id))` over `chunks`). If
 the fingerprint matches the last successful run in `scorecard_runs` and
 `--force` is not set:
@@ -739,7 +739,7 @@ Use `--force` (workflow input or CLI) to re-extract despite an unchanged corpus.
 Scorecard and ingest are **decoupled crons** but share schedule columns on
 `phones`. After `ingest-auto` **writes new chunks** for a phone
 (`chunksWritten > 0`), it **pulls forward** `next_scorecard_at` to
-**now + 24 hours** — but only if that is **sooner** than the existing deadline
+**now + 24 hours** â€” but only if that is **sooner** than the existing deadline
 (`next_scorecard_at IS NULL` or `next_scorecard_at > nudgeTarget`). Ingest never
 pushes a deadline **later**.
 
@@ -759,8 +759,8 @@ flowchart TD
   Empty -->|no| Done0["exit 0: no phones due"]
   Empty -->|yes| Loop["for each phone"]
   Loop --> FP{"chunk fingerprint<br/>changed?"}
-  FP -->|no| Skip["skip LLM<br/>7× scorecard_runs skipped"]
-  FP -->|yes| Agent["runScorecardForPhone<br/>7 aspects × ~4.5s"]
+  FP -->|no| Skip["skip LLM<br/>7Ã— scorecard_runs skipped"]
+  FP -->|yes| Agent["runScorecardForPhone<br/>7 aspects Ã— ~4.5s"]
   Agent --> OK{"updated > 0?"}
   OK -->|yes| Mark["markScorecardComplete<br/>+3d or +7d"]
   OK -->|no| Retry["stay due<br/>warn + failures++"]
@@ -771,17 +771,17 @@ flowchart TD
 
 #### Telemetry
 
-- **`scorecard_runs`** — per phone × aspect (or skip): `status`, `duration_ms`,
+- **`scorecard_runs`** â€” per phone Ã— aspect (or skip): `status`, `duration_ms`,
   `score`, `confidence`, `chunk_fingerprint`, `skip_reason`, timestamps.
 - Operator deep-dive: [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ### Full vision (deferred)
 
-- **Multi-query retrieval** — several embeds per aspect (e.g. battery life vs
+- **Multi-query retrieval** â€” several embeds per aspect (e.g. battery life vs
   charging) fused before the LLM; MVP uses one combined query to cap cost.
-- **Recency in scoring** — MVP applies recency only as a small **confidence**
-  bump, not 2× evidence weights in the headline 0–10 score.
-- **Z-score calibration within price bracket** — peer-normalised scores using
+- **Recency in scoring** â€” MVP applies recency only as a small **confidence**
+  bump, not 2Ã— evidence weights in the headline 0â€“10 score.
+- **Z-score calibration within price bracket** â€” peer-normalised scores using
   `aspect_definitions.metadata` (TBD). MVP keeps `score` and `raw_score`
   identical.
 
@@ -830,30 +830,30 @@ fixtures without a network or an LLM.
 
 ### Per-adapter specifics
 
-- **YouTube** (`adapters/youtube.ts`). Uses `youtubei.js` (Innertube — no
+- **YouTube** (`adapters/youtube.ts`). Uses `youtubei.js` (Innertube â€” no
   API key). Discovery searches `"{brand} {model} review"`, `"camera test"`,
   `"long term review"`; results deduped by video id. Chunking is
   **timestamp-aware**: each chunk carries `start_ts` + an `?t=<sec>`
   anchor so retrieval citations deep-link into the video.
 
   **Transcript fallback chain** (tries in order, first non-empty wins):
-  1. `info.getTranscript()` — Innertube's transcript endpoint (fastest
+  1. `info.getTranscript()` â€” Innertube's transcript endpoint (fastest
      when YouTube isn't rotating the endpoint).
   2. Caption tracks on the already-fetched `Info` object, requested as
      `timedtext?fmt=json3`.
-  3. Watch-page HTML scrape → `captionTracks` → `timedtext?fmt=json3`
+  3. Watch-page HTML scrape â†’ `captionTracks` â†’ `timedtext?fmt=json3`
      (same mechanism the YouTube web player itself falls back to).
 
-  Within tiers 2/3 we iterate `rankCaptionTracks` (manual English → ASR
-  English → any English → any) because YouTube occasionally lists a
+  Within tiers 2/3 we iterate `rankCaptionTracks` (manual English â†’ ASR
+  English â†’ any English â†’ any) because YouTube occasionally lists a
   manual English track whose endpoint returns empty; the actual
   captions are on the ASR track one position lower. Segments are
-  passed from `fetch()` → `chunk()` via `RawSource.transient` so
+  passed from `fetch()` â†’ `chunk()` via `RawSource.transient` so
   timestamps survive without bloating `sources.raw_json`.
 
-- **Reddit** (`adapters/reddit.ts`). Reddit's public JSON endpoints — no
+- **Reddit** (`adapters/reddit.ts`). Reddit's public JSON endpoints â€” no
   OAuth required. Discovery searches an allowlist (`r/Android`,
-  `r/GooglePixel`, `r/apple`, `r/iphone`, `r/OnePlus`, `r/nothingtech`, …)
+  `r/GooglePixel`, `r/apple`, `r/iphone`, `r/OnePlus`, `r/nothingtech`, â€¦)
   for the phone model over the last year. Thread + top-N comments above
   `MIN_COMMENT_SCORE`. Spam / karma floors applied.
 - **Article** (`adapters/article.ts`). `linkedom` + `@mozilla/readability`
@@ -861,17 +861,17 @@ fixtures without a network or an LLM.
 
 ### Orchestration
 
-- `IngestOrchestrator` coordinates `discover → fetch → chunk → embed →
-write` per phone × adapter. Candidates fetched serially per adapter (be
+- `IngestOrchestrator` coordinates `discover â†’ fetch â†’ chunk â†’ embed â†’
+write` per phone Ã— adapter. Candidates fetched serially per adapter (be
   a polite bot). Adapters run serially per phone.
 - Idempotency via `sources.content_hash` (sha256 of normalised body):
-  matching hash → skip re-embed and re-insert entirely; record
+  matching hash â†’ skip re-embed and re-insert entirely; record
   `ingest_runs.status = skipped`.
 - Embedding: `ChunkEmbedder` batches 50 texts/call, concurrency 1,
   exponential backoff via `p-retry`.
 - Writing: single transaction per source replaces chunks atomically.
 - Telemetry: one `ingest_runs` row per **terminal** source attempt
-  (`status` ∈ `success | skipped | failed`). Since 2026-05-15, curator /
+  (`status` âˆˆ `success | skipped | failed`). Since 2026-05-15, curator /
   embed / disambiguator / fetch failures also call `recordFailedRun` with
   `stage` + `error_code` + optional `retry_after` (not only the writer's
   success/skip path). Hash pre-check against `sources.content_hash` runs
@@ -881,15 +881,15 @@ write` per phone × adapter. Candidates fetched serially per adapter (be
   (`success` | `partial` | `quota_exhausted` | `failed`).
 - Scheduling:
   [`.github/workflows/ingest-tiered.yml`](../.github/workflows/ingest-tiered.yml)
-  — daily 02:17 UTC, four shards, `--tier all` on schedule.
+  â€” daily 02:17 UTC, four shards, `--tier all` on schedule.
   [`.github/workflows/ingest-resume.yml`](../.github/workflows/ingest-resume.yml)
-  — daily 03:20 UTC, `--resume-failed` for quota / incomplete / empty-corpus
+  â€” daily 03:20 UTC, `--resume-failed` for quota / incomplete / empty-corpus
   retries (see [Implementation plan](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md)).
 
 ### Ingestion audit trail (database)
 
-**What we persist today** — useful for “what was ingested, kept, rejected,
-and why” without reading raw CI logs:
+**What we persist today** â€” useful for â€œwhat was ingested, kept, rejected,
+and whyâ€ without reading raw CI logs:
 
 | Store                                          | What it answers                                                                                                                                                                                                                              |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -901,24 +901,24 @@ and why” without reading raw CI logs:
 
 **How to inspect**
 
-- `pnpm ingest:report` — CLI digest (counts by adapter/status, top
+- `pnpm ingest:report` â€” CLI digest (counts by adapter/status, top
   `rejected_reason`, quota failures, `last_ingest_status` distribution, overdue phones).
-- `pnpm db:studio` — browse `ingest_runs`, `sources`, `chunks` directly.
-- **`/internal/pipeline`** (when `INTERNAL_DASHBOARD_ENABLED`) — per-phone
+- `pnpm db:studio` â€” browse `ingest_runs`, `sources`, `chunks` directly.
+- **`/internal/pipeline`** (when `INTERNAL_DASHBOARD_ENABLED`) â€” per-phone
   sources, chunks, and `ingest_runs` via `phone-evidence.ts`.
 - **SQL** (Supabase): e.g. `SELECT status, rejected_reason, error_code, stage, count(*) FROM ingest_runs WHERE started_at > now() - interval '7 days' GROUP BY 1,2,3,4`.
 
-**Gaps (not in DB yet)** — still only in **pino** stdout / GitHub Actions logs:
+**Gaps (not in DB yet)** â€” still only in **pino** stdout / GitHub Actions logs:
 
 - Candidates **discovered** but never fetched (e.g. adapter returned 0 URLs).
-- **Not-found / unusable** skips after fetch (e.g. no YouTube transcript) —
+- **Not-found / unusable** skips after fetch (e.g. no YouTube transcript) â€”
   counted in run summary, usually **no** `ingest_runs` row.
-- Full discover list before curator — only per-URL outcomes once fetch starts.
+- Full discover list before curator â€” only per-URL outcomes once fetch starts.
 
 **Future improvement (planned, not shipped):** log every discovered candidate
 at discover time (e.g. `ingest_candidates` table or `ingest_runs` row at
-`stage='discover'`) so false negatives and “never tried” URLs are queryable.
-Tracked in [§20](#20-open-questions--future-work).
+`stage='discover'`) so false negatives and â€œnever triedâ€ URLs are queryable.
+Tracked in [Â§20](#20-open-questions--future-work).
 
 ### CLI
 
@@ -935,7 +935,7 @@ pnpm ingest:report [--days N]
 ```
 
 `--dry-run` runs discover + fetch + chunk, but skips embedding and DB
-writes — useful for validating a new adapter end-to-end without cost.
+writes â€” useful for validating a new adapter end-to-end without cost.
 
 `--resume-failed` prioritises phones with recent retriable `ingest_runs`
 (quota / rate-limit, including legacy rows matched by error text),
@@ -947,33 +947,33 @@ URLs when failure rows exist; otherwise runs full discovery for that phone.
 
 - **YouTube datacenter-IP throttling.** YouTube's `timedtext` endpoint
   silently returns HTTP 200 with a **zero-byte body** when called from a
-  non-residential IP — observed consistently from home/ISP ranges
+  non-residential IP â€” observed consistently from home/ISP ranges
   flagged as dynamic and from cloud runners. All three fallback tiers
   hit this ceiling together because the signed URLs are the same
   resource. Mitigation: the adapter already detects the empty-body
   case, walks the ranked track list, and ultimately emits a
-  `NotFoundError` that the orchestrator records as a skipped source —
+  `NotFoundError` that the orchestrator records as a skipped source â€”
   ingestion never crashes. A residential-IP proxy (e.g. Bright Data,
   Scrape.do) would fix it, but it costs money and is therefore
   explicitly out of scope for the zero-budget MVP. Documented in
   [`docs/ingest/README.md`](./ingest/README.md#youtube-adaptersyoutube-ts).
-- **`youtubei.js` `getTranscript()` returns HTTP 400** sporadically —
+- **`youtubei.js` `getTranscript()` returns HTTP 400** sporadically â€”
   YouTube rotates the Innertube endpoint every few months. The
   fallback chain above makes this a performance degradation, not an
   outage.
 - **`youtubei.js` parser warnings** for novel UI nodes
-  (`ShoppingTimelyShelfView`, etc.) spam stdout — non-fatal; a future
+  (`ShoppingTimelyShelfView`, etc.) spam stdout â€” non-fatal; a future
   PR may silence them by redirecting the library's logger.
-- **Ingestion resumability after Gemini quota exhaustion — mitigated
+- **Ingestion resumability after Gemini quota exhaustion â€” mitigated
   (2026-05-15).** Shipped:
   [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md)
   (migration `0004_equal_sauron.sql`). Embed/curator/disambiguator/fetch
   failures write `ingest_runs` with `status='failed'`, `stage`, `error_code`
-  (`quota_exceeded`, `rate_limit`, …), and `retry_after` for quota. Hash
+  (`quota_exceeded`, `rate_limit`, â€¦), and `retry_after` for quota. Hash
   pre-check skips curator + embed when `sources.content_hash` is unchanged.
   `pnpm ingest:auto --resume-failed` + `ingest-resume.yml` (03:20 UTC) retry
   failed / incomplete / empty-corpus phones. **Residual:** runs **before**
-  this deploy have no tagged failure rows — use `--resume-failed` (includes
+  this deploy have no tagged failure rows â€” use `--resume-failed` (includes
   empty corpus + legacy error-text match) or `pnpm ingest --phone <slug>`.
   Multiple API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`) still help avoid
   hitting the daily cap.
@@ -984,9 +984,9 @@ URLs when failure rows exist; otherwise runs full discovery for that phone.
   GitHub Actions job output), not Postgres. Planned: discover-time candidate
   logging.
 - **No long-term central log store for the app.** Structured logs (`pino`) go
-  to stdout only — not written to the database. Vercel deployment logs (if
+  to stdout only â€” not written to the database. Vercel deployment logs (if
   hosted) and GitHub Actions retention apply; there is no built-in Datadog/Loki
-  pipeline unless configured separately. See [§16 Logging](#logging-pino).
+  pipeline unless configured separately. See [Â§16 Logging](#logging-pino).
 
 ---
 
@@ -999,8 +999,8 @@ URLs when failure rows exist; otherwise runs full discovery for that phone.
 
 ```
 LlmProvider
-  ├── GeminiProvider   (real network calls)
-  └── CachedLlmProvider (decorator, sha256-keyed Postgres cache)
+  â”œâ”€â”€ GeminiProvider   (real network calls)
+  â””â”€â”€ CachedLlmProvider (decorator, sha256-keyed Postgres cache)
 ```
 
 ### Model routing
@@ -1024,9 +1024,9 @@ LlmProvider
 
 ### Rate-limit & failure handling
 
-- Any 429 / quota error → single retry after jittered backoff; on second
-  failure → surface to user with a "try again" message.
-- Gemini schema violations → one retry with "your previous response was
+- Any 429 / quota error â†’ single retry after jittered backoff; on second
+  failure â†’ surface to user with a "try again" message.
+- Gemini schema violations â†’ one retry with "your previous response was
   malformed" system nudge (see `GeminiProvider.structured`).
 
 ### Budget guard-rails
@@ -1044,7 +1044,7 @@ LlmProvider
 See [ADR 0002](./adr/0002-design-tokens.md).
 
 - **OKLCH everywhere** for perceptual uniformity.
-- **Semantic tokens only** (`primary`, `muted-foreground`, …) — no hex in
+- **Semantic tokens only** (`primary`, `muted-foreground`, â€¦) â€” no hex in
   feature code.
 - **Dark default**, `next-themes` toggles `data-theme="dark|light"`.
 - **Brand palette.** Primary = orange (OKLCH `0.78 0.17 62` dark / `0.70 0.19
@@ -1074,15 +1074,15 @@ See [ADR 0002](./adr/0002-design-tokens.md).
 
 **Where logs go (nothing is saved in Postgres by default)**
 
-| Context                                                               | Where to look                                                       |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **Local scripts** (`pnpm ingest:auto`, `pnpm dev`)                    | Terminal stdout                                                     |
-| **GitHub Actions** (ingest-tiered, ingest-resume, scorecard-auto, CI) | Repo → Actions → workflow run → job log (~90 day retention)         |
-| **Vercel** (deployed Next.js)                                         | Project → Logs / Observability (per-request API routes)             |
-| **Errors only**                                                       | Optional Sentry (`SENTRY_DSN`) — exceptions, not full ingest traces |
+| Context                                                               | Where to look                                                         |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Local scripts** (`pnpm ingest:auto`, `pnpm dev`)                    | Terminal stdout                                                       |
+| **GitHub Actions** (ingest-tiered, ingest-resume, scorecard-auto, CI) | Repo â†’ Actions â†’ workflow run â†’ job log (~90 day retention)     |
+| **Vercel** (deployed Next.js)                                         | Project â†’ Logs / Observability (per-request API routes)             |
+| **Errors only**                                                       | Optional Sentry (`SENTRY_DSN`) â€” exceptions, not full ingest traces |
 
 **Ingestion vs database audit:** Use **`ingest_runs` + `sources`** for durable
-“what was kept / rejected / failed and why” (see [§13 Ingestion audit trail](#ingestion-audit-trail-database)).
+â€œwhat was kept / rejected / failed and whyâ€ (see [Â§13 Ingestion audit trail](#ingestion-audit-trail-database)).
 Use **logs** for step-by-step narrative: discovery counts, dry-run lines,
 per-URL curator decisions before they hit the DB, and adapter warnings
 (e.g. YouTube `timedtext` empty body).
@@ -1097,7 +1097,7 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 - `@t3-oss/env-nextjs` + Zod at [`src/env.ts`](../src/env.ts).
 - ESLint rule forbids `process.env.*` outside `src/env.ts`, config files,
-  and scripts — prevents a class of configuration drift bugs.
+  and scripts â€” prevents a class of configuration drift bugs.
 
 ### Security
 
@@ -1107,8 +1107,8 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 - **CSP & security headers** in `next.config.ts` (X-Frame-Options DENY,
   nosniff, Referrer-Policy strict-origin, Permissions-Policy locked down,
   HSTS 2y preload).
-- **No raw IPs stored** — sha256 hash only.
-- **No raw PII** — we never store emails / names (no auth in MVP).
+- **No raw IPs stored** â€” sha256 hash only.
+- **No raw PII** â€” we never store emails / names (no auth in MVP).
 - **Service-role key** never exposed to the client; only used in server
   route handlers + ingestion jobs.
 
@@ -1116,33 +1116,33 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 ## 17. Testing Strategy
 
-| Layer             | Tool                      | Scope                                             | CI?              |
-| ----------------- | ------------------------- | ------------------------------------------------- | ---------------- |
-| Unit              | Vitest + `jsdom`          | Pure functions, components without DB             | ✓                |
-| Integration (DB)  | Vitest with live Supabase | Migrations, RLS, retrieval helpers                | ✓ (env-gated)    |
-| E2E               | Playwright                | Phone SSR + mocked `/api/ask` NDJSON client path  | ✓ CI (`e2e` job) |
-| Retrieval eval    | `pnpm eval:retrieval`     | Fixture JSON vs hybrid search (embed cost)        | Local / staging  |
-| LLM eval (Tier 3) | TBD script                | Live `runPhoneQna` citation overlap vs golden set | Manual / cron    |
+| Layer             | Tool                      | Scope                                             | CI?                |
+| ----------------- | ------------------------- | ------------------------------------------------- | ------------------ |
+| Unit              | Vitest + `jsdom`          | Pure functions, components without DB             | âœ“                |
+| Integration (DB)  | Vitest with live Supabase | Migrations, RLS, retrieval helpers                | âœ“ (env-gated)    |
+| E2E               | Playwright                | Phone SSR + mocked `/api/ask` NDJSON client path  | âœ“ CI (`e2e` job) |
+| Retrieval eval    | `pnpm eval:retrieval`     | Fixture JSON vs hybrid search (embed cost)        | Local / staging    |
+| LLM eval (Tier 3) | TBD script                | Live `runPhoneQna` citation overlap vs golden set | Manual / cron      |
 
 ### Evaluation layout
 
-- **ADR [0005](./adr/0005-e2e-and-evaluation.md)** — why CI mocks Gemini for
+- **ADR [0005](./adr/0005-e2e-and-evaluation.md)** â€” why CI mocks Gemini for
   browser tests, why `eval:retrieval` is tier 2, and how LLM rerank fails open.
-- **`docs/eval/README.md`** — fixture schema, command matrix, Tier-3 notes.
+- **`docs/eval/README.md`** â€” fixture schema, command matrix, Tier-3 notes.
 
 ### Conventions
 
 - Tests sit next to the unit under test: `foo.ts` + `foo.test.ts`.
-- **Scorecard** — pure helpers (`query-build`, `definitions`, `recency`,
+- **Scorecard** â€” pure helpers (`query-build`, `definitions`, `recency`,
   `extraction-schema`) are covered by Vitest; the full agent path needs DB +
   Gemini (manual / script).
-- **Recommender** — `match.ts`, `vector-utils`, `spec-embedding-text`, and
+- **Recommender** â€” `match.ts`, `vector-utils`, `spec-embedding-text`, and
   `extract-requirements` (mock `LlmProvider`) have unit tests; full `/api/recommend`
   path still needs DB + live Gemini for an integration test (manual for now).
-- **`spec-embed:backfill`** — not in CI; run locally/staging when seeds or
+- **`spec-embed:backfill`** â€” not in CI; run locally/staging when seeds or
   `buildSpecDocumentForEmbedding` change.
 - Integration tests live under `tests/integration/` and are excluded from the
-  default `pnpm test` — run with `pnpm test:integration` (added when first
+  default `pnpm test` â€” run with `pnpm test:integration` (added when first
   DB-touching test lands in Phase 3).
 - Coverage target: **80% on `src/services/`** (the plumbing that _must_
   not regress). Product code gets lighter coverage on the happy path.
@@ -1160,7 +1160,7 @@ On every PR and `main` push:
 3. Typecheck (`tsc --noEmit`, strict)
 4. Vitest unit suite
 5. `next build` (verifies production build)
-6. **Playwright** (`e2e` job) — Postgres service container, `scripts/db-setup.ts`,
+6. **Playwright** (`e2e` job) â€” Postgres service container, `scripts/db-setup.ts`,
    Chromium, `pnpm e2e` (SSR phone page + mocked ask). Uses real env-shaped
    dummy values (not `SKIP_ENV_VALIDATION`) so `next dev` matches production
    validation.
@@ -1171,11 +1171,11 @@ inline. `NEXT_PUBLIC_COMMIT_SHA` is injected from `github.sha` where applicable.
 
 ### Deployment
 
-- **Vercel Hobby** — auto-deploys `main` to production, PR branches to
+- **Vercel Hobby** â€” auto-deploys `main` to production, PR branches to
   preview URLs.
 - **Migrations** are applied via a GitHub Action on `main` push (Phase 1
   deliverable) against Supabase production.
-- **Rollback** — Vercel's instant rollback for code; schema changes are
+- **Rollback** â€” Vercel's instant rollback for code; schema changes are
   forward-only (we don't rollback migrations in prod; we write compensating
   migrations).
 
@@ -1194,10 +1194,10 @@ justifies it.
 
 Beyond `ci.yml`, production-adjacent cron jobs include:
 
-- **`ingest-tiered.yml`** — daily 02:17 UTC: four parallel shards call `pnpm exec tsx scripts/ingest-auto.ts` with **`--tier all`** on `schedule` (manual dispatch may pass `--tier hot|warm|cold|all`). Tier priority (hot → warm → cold) remains inside `pickPhones`; the workflow no longer gates **cold** to Sundays only (that pattern starved cold-tier catalogs on weekdays).
-- **`ingest-resume.yml`** — daily **03:20 UTC** (1h after tiered ingest): four shards, `pnpm ingest:auto --resume-failed` to retry quota failures, incomplete `last_ingest_status`, and empty-corpus phones. Manual `workflow_dispatch` with optional `limit`.
-- **`scorecard-auto.yml`** — **daily 02:17 UTC**; `secrets-gate` then `pnpm exec tsx scripts/scorecard-auto.ts` (default **`--limit 20`**). Does **not** score the full catalog each run — see [§12 Automated batch scheduling](#automated-batch-scheduling-scorecardauto). Optional `workflow_dispatch`: `limit`, `force`.
-- **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** — per ADR 0014 / operator docs.
+- **`ingest-tiered.yml`** â€” daily 02:17 UTC: four parallel shards call `pnpm exec tsx scripts/ingest-auto.ts` with **`--tier all`** on `schedule` (manual dispatch may pass `--tier hot|warm|cold|all`). Tier priority (hot â†’ warm â†’ cold) remains inside `pickPhones`; the workflow no longer gates **cold** to Sundays only (that pattern starved cold-tier catalogs on weekdays).
+- **`ingest-resume.yml`** â€” daily **03:20 UTC** (1h after tiered ingest): four shards, `pnpm ingest:auto --resume-failed` to retry quota failures, incomplete `last_ingest_status`, and empty-corpus phones. Manual `workflow_dispatch` with optional `limit`.
+- **`scorecard-auto.yml`** â€” **daily 02:17 UTC**; `secrets-gate` then `pnpm exec tsx scripts/scorecard-auto.ts` (default **`--limit 20`**). Does **not** score the full catalog each run â€” see [Â§12 Automated batch scheduling](#automated-batch-scheduling-scorecardauto). Optional `workflow_dispatch`: `limit`, `force`.
+- **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** â€” per ADR 0014 / operator docs.
 
 **DB migrations locally:** `pnpm db:migrate` / `db:generate` / `db:studio` load
 `DATABASE_URL` from `.env.local` via `node --env-file=.env.local` and a
@@ -1208,27 +1208,27 @@ used to fail with an empty URL).
 
 ## 19. Project Phases & Progress
 
-| Phase                       | Scope                                                    | Status         | Notes                                                                                                                    |
-| --------------------------- | -------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 0 — Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | ✓ (2026-04-19) | See change log                                                                                                           |
-| 1 — Database                | Extensions, migrations, RLS, aspect + phone seeds        | ✓ (2026-04-21) | All gates green; 6/6 smoke                                                                                               |
-| 2 — Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | ✓ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                                                              |
-| 3 — Retrieval + phone pages | Hybrid search, Q&A with citations                        | ✓ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups                                         |
-| 4 — Aspect scorecard        | Agent graph, aspects rows, phone UI                      | ✓ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred; automation hardened 2026-05-15 (see §22)                              |
-| 5 — Recommender             | Intake, candidate gen, ranker                            | ✓ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                                                                   |
-| 6 — Browse                  | URL faceted filters, server-side list                    | ✓ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                                                         |
-| 7 — Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | ▲              | ADR 0009 + 0010: manifest, SEO, OG, analytics, compare pickers, sample images; SW offline + optional eval job follow-ups |
+| Phase                         | Scope                                                    | Status           | Notes                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 0 â€” Scaffold                | Next.js, TS strict, design tokens, services skeleton, CI | âœ“ (2026-04-19) | See change log                                                                                                           |
+| 1 â€” Database                | Extensions, migrations, RLS, aspect + phone seeds        | âœ“ (2026-04-21) | All gates green; 6/6 smoke                                                                                               |
+| 2 â€” Ingestion               | TS adapters (YT/Reddit/Article), idempotency, CI cron    | âœ“ (2026-04-21) | Article e2e 10/10; YT fallback shipped, IP-throttled in dev                                                              |
+| 3 â€” Retrieval + phone pages | Hybrid search, Q&A with citations                        | âœ“ (2026-04-21) | MVP: `/api/ask`, `/p/[slug]`, rate limit, `retrieval:smoke`; E2E/eval follow-ups                                         |
+| 4 â€” Aspect scorecard        | Agent graph, aspects rows, phone UI                      | âœ“ (2026-04-21) | MVP: ADR 0006; calibration + multi-query deferred; automation hardened 2026-05-15 (see Â§22)                             |
+| 5 â€” Recommender             | Intake, candidate gen, ranker                            | âœ“ (2026-04-21) | MVP: ADR 0007; spec_embedding + Pro tie-break deferred                                                                   |
+| 6 â€” Browse                  | URL faceted filters, server-side list                    | âœ“ (2026-04-21) | MVP: ADR 0008; `search-params` + Drizzle `where`                                                                         |
+| 7 â€” Polish                  | Compare/About/phone UX, PWA, SEO, OG, analytics          | â–²              | ADR 0009 + 0010: manifest, SEO, OG, analytics, compare pickers, sample images; SW offline + optional eval job follow-ups |
 
 Acceptance for every phase: green CI + ADR(s) for non-obvious decisions +
 this document updated.
 
-### Phase 1 acceptance — met
+### Phase 1 acceptance â€” met
 
-- ✅ `pnpm db:setup` idempotently: extensions → migrate → RLS → seed (7 aspects, 20 phones).
-- ✅ `pnpm db:smoke` returns 6/6: extensions, 12 tables, aspect/phone seeds, vector
+- âœ… `pnpm db:setup` idempotently: extensions â†’ migrate â†’ RLS â†’ seed (7 aspects, 20 phones).
+- âœ… `pnpm db:smoke` returns 6/6: extensions, 12 tables, aspect/phone seeds, vector
   round-trip (cosine distance `0.00e+0` on identity match), and HNSW index plan.
-- ✅ `pnpm typecheck` · `lint` · `format:check` · `test` · `build` all green.
-- ✅ This document updated.
+- âœ… `pnpm typecheck` Â· `lint` Â· `format:check` Â· `test` Â· `build` all green.
+- âœ… This document updated.
 
 ### Phase 2 progress (Ingestion)
 
@@ -1239,67 +1239,67 @@ consequences: [ADR 0003](./adr/0003-ingestion-typescript.md).
 
 **Shipped (code, tests, infra, docs):**
 
-- `src/services/ingest/types.ts` — `SourceAdapter` protocol + Zod-
+- `src/services/ingest/types.ts` â€” `SourceAdapter` protocol + Zod-
   validated DTOs (`SourceCandidate`, `RawSource`, `RawChunk`,
   `AdapterRunSummary`).
-- `src/services/ingest/chunking.ts` — sentence-aligned token-bounded
+- `src/services/ingest/chunking.ts` â€” sentence-aligned token-bounded
   chunker. 9 unit tests (splitSentences, chunkText, countTokens) passing.
-- `src/services/ingest/hashing.ts` — sha256 helper + 4 unit tests.
-- `src/services/ingest/embedder.ts` — `ChunkEmbedder` batches 50
+- `src/services/ingest/hashing.ts` â€” sha256 helper + 4 unit tests.
+- `src/services/ingest/embedder.ts` â€” `ChunkEmbedder` batches 50
   texts/call, `p-limit` concurrency, `p-retry` with exponential backoff.
-- `src/services/ingest/writer.ts` — `IngestionWriter`: transactional,
+- `src/services/ingest/writer.ts` â€” `IngestionWriter`: transactional,
   idempotent via `content_hash`; writes `sources` + `chunks` + one
   `ingest_runs` telemetry row per attempt.
-- `src/services/ingest/adapters/article.ts` — `linkedom` +
+- `src/services/ingest/adapters/article.ts` â€” `linkedom` +
   `@mozilla/readability`; discovery is a no-op (CLI `--url` only).
-- `src/services/ingest/adapters/youtube.ts` — `youtubei.js` Innertube;
+- `src/services/ingest/adapters/youtube.ts` â€” `youtubei.js` Innertube;
   timestamp-aware chunking with `?t=<sec>` deep-link anchors.
-- `src/services/ingest/adapters/reddit.ts` — Reddit's public JSON API;
+- `src/services/ingest/adapters/reddit.ts` â€” Reddit's public JSON API;
   allowlisted subreddits with score/spam floors.
-- `src/services/ingest/orchestrator.ts` — isolates adapter failures,
+- `src/services/ingest/orchestrator.ts` â€” isolates adapter failures,
   aggregates telemetry per-phone.
-- `scripts/ingest.ts` + `pnpm ingest` CLI — `--phone`, `--adapter`,
+- `scripts/ingest.ts` + `pnpm ingest` CLI â€” `--phone`, `--adapter`,
   `--url`, `--limit`, `--hint`, `--dry-run`.
-- `.github/workflows/ingest.yml` — `workflow_dispatch` + 03:17 UTC cron,
+- `.github/workflows/ingest.yml` â€” `workflow_dispatch` + 03:17 UTC cron,
   per-phone concurrency keys, secrets-aware.
-- `docs/ingest/README.md` — operator's guide.
+- `docs/ingest/README.md` â€” operator's guide.
 
-**Phase 2 acceptance — met (2026-04-21):**
+**Phase 2 acceptance â€” met (2026-04-21):**
 
-- ✅ **Embedding model migrated.** `text-embedding-004` was retired on
+- âœ… **Embedding model migrated.** `text-embedding-004` was retired on
   Gemini's v1beta endpoint; switched to `gemini-embedding-001` with
   `outputDimensionality: 768` (matches the `vector(768)` schema) and
   `taskType: 'RETRIEVAL_DOCUMENT'`. Dimension is hardcoded in
-  `src/services/llm/gemini.ts` as `EMBEDDING_DIMENSIONS` — coupling it
+  `src/services/llm/gemini.ts` as `EMBEDDING_DIMENSIONS` â€” coupling it
   tightly to the DB schema prevents a class of env-var drift bugs.
-- ✅ **YouTube transcript fallback.** Three-tier chain implemented
-  (Innertube `getTranscript` → Info-object captions → watch-page HTML
-  scrape). Ranks tracks (manual EN → ASR EN → any EN → any) and walks
+- âœ… **YouTube transcript fallback.** Three-tier chain implemented
+  (Innertube `getTranscript` â†’ Info-object captions â†’ watch-page HTML
+  scrape). Ranks tracks (manual EN â†’ ASR EN â†’ any EN â†’ any) and walks
   the list until a non-empty response lands. See
   `src/services/ingest/adapters/youtube-transcript.ts` + unit tests
   (`rankCaptionTracks`, `parseJson3Transcript`,
   `extractCaptionTracksArray`, `normaliseRawTrack`).
-- ✅ **Live article end-to-end** (`pnpm ingest:smoke`). Runs a full
-  `discover → fetch → chunk → embed → write` pass against a real
+- âœ… **Live article end-to-end** (`pnpm ingest:smoke`). Runs a full
+  `discover â†’ fetch â†’ chunk â†’ embed â†’ write` pass against a real
   Wikipedia article for `google-pixel-9-pro-xl`, then reruns to verify
   idempotency. 10/10 checks pass: 1 source + 23 chunks written on
   pass 1, all embeddings are 768-dim, chunk indices are contiguous,
   pass 2 records `skipped: unchanged-content` with zero new chunks and
   an advanced `last_fetched_at`, and `ingest_runs` logs both passes.
-- ✅ **Graceful YouTube degradation.** Where YouTube refuses captions
-  (datacenter-IP throttling — see §13 Known Issues), the adapter skips
+- âœ… **Graceful YouTube degradation.** Where YouTube refuses captions
+  (datacenter-IP throttling â€” see Â§13 Known Issues), the adapter skips
   the source cleanly; the orchestrator counts `skippedUnusable` and
-  continues (usually **no** `ingest_runs` row for not-found — see audit
+  continues (usually **no** `ingest_runs` row for not-found â€” see audit
   trail gaps). No hangs, no data corruption.
-- ✅ **Ingestion resumability (2026-05-15).** `ingest_runs` gains
+- âœ… **Ingestion resumability (2026-05-15).** `ingest_runs` gains
   `stage`, `error_code`, `retry_after`, `candidate_title`; `phones.last_ingest_status`;
   `recordFailedRun` + hash pre-check; `pickResumePhones` / `--resume-failed`;
   `ingest-resume.yml`; `pnpm ingest:report` quota + status sections.
   Plan: [`ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md).
-- ✅ **Unit tests.** 42/42 green across 4 ingestion test files.
-- ✅ **`pnpm typecheck`** green (`gemini-embedding-001` migration
-  surfaced a `p-retry` v8 `RetryContext` API change — fixed).
-- ✅ **CI.** `.github/workflows/ingest.yml` provides manual dispatch +
+- âœ… **Unit tests.** 42/42 green across 4 ingestion test files.
+- âœ… **`pnpm typecheck`** green (`gemini-embedding-001` migration
+  surfaced a `p-retry` v8 `RetryContext` API change â€” fixed).
+- âœ… **CI.** `.github/workflows/ingest.yml` provides manual dispatch +
   nightly 03:17 UTC cron; concurrency keyed per-phone.
 
 **Deferred to Phase 3 (by design, not blockers):**
@@ -1309,15 +1309,15 @@ consequences: [ADR 0003](./adr/0003-ingestion-typescript.md).
   ad-hoc by `ingest-smoke.ts`). Worth folding into `db:smoke` once the
   retrieval layer exists and exercises the same rows.
 - Residential-IP proxy evaluation for YouTube (only matters when we
-  actually need higher YouTube coverage — currently articles + Reddit
+  actually need higher YouTube coverage â€” currently articles + Reddit
   cover our corpus needs).
 
 ### Phase 3 progress (Retrieval + phone pages)
 
 **Locked-in design.** [ADR 0004](./adr/0004-hybrid-retrieval.md)
 ratifies the hybrid retrieval pipeline: vector (cosine, pgvector
-HNSW) + FTS (tsvector + `pg_trgm` fallback) → RRF fusion → MMR
-rerank → source-coverage clamp. Parameter defaults and non-goals
+HNSW) + FTS (tsvector + `pg_trgm` fallback) â†’ RRF fusion â†’ MMR
+rerank â†’ source-coverage clamp. Parameter defaults and non-goals
 (no HyDE, no cross-encoder, no external vector DB) are frozen.
 
 **Shipped (code, tests, migration, docs):**
@@ -1333,7 +1333,7 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
   - `types.ts`, `vector.ts`, `fts.ts`, `rrf.ts`, `mmr.ts`,
     `coverage.ts`, `retriever.ts`, `index.ts` barrel.
   - 3 pure-function test files: `rrf.test.ts`, `mmr.test.ts`,
-    `coverage.test.ts` — 26 tests, including a bug caught in
+    `coverage.test.ts` â€” 26 tests, including a bug caught in
     review (default `maxPerSource` was using `floor`, should be
     `ceil`, else k=4/min=3 returns 3 chunks instead of 4).
 - `docs/retrieval/README.md` operator guide with call-site
@@ -1355,43 +1355,43 @@ rerank → source-coverage clamp. Parameter defaults and non-goals
 - Playwright (`pnpm e2e`): seeded phone SSR smoke + client NDJSON parsing with
   `POST /api/ask` mocked (no Gemini in CI). See [ADR 0005](./adr/0005-e2e-and-evaluation.md).
 - Retrieval fixtures: `fixtures/eval/retrieval-fixtures.json` + `pnpm eval:retrieval`
-  (DB + embeddings; local/staging — not default `quality` CI).
+  (DB + embeddings; local/staging â€” not default `quality` CI).
 - Optional structured LLM rerank after MMR when `RETRIEVAL_LLM_RERANK=true`
   (extra Flash call; automatic fallback to MMR + coverage on failure).
 
 **Still open:**
 
 - Token-true streaming while preserving citation guarantees.
-- Tier-3 generative citation eval (threshold TBD — see Q4).
+- Tier-3 generative citation eval (threshold TBD â€” see Q4).
 
 **Phase 3 quality gates as of 2026-04-21:**
 
-- ✅ `pnpm typecheck` clean.
-- ✅ `pnpm test` (Vitest) + `pnpm e2e` (Playwright) in CI.
-- ✅ `pnpm lint` clean.
-- ✅ `pnpm db:smoke` 8/8 green (includes rate-limit unique index).
+- âœ… `pnpm typecheck` clean.
+- âœ… `pnpm test` (Vitest) + `pnpm e2e` (Playwright) in CI.
+- âœ… `pnpm lint` clean.
+- âœ… `pnpm db:smoke` 8/8 green (includes rate-limit unique index).
 
 ### Phase 6 progress (Browse + filter)
 
-**Locked-in design.** [ADR 0008](./adr/0008-browse-filters-mvp.md) — query string
+**Locked-in design.** [ADR 0008](./adr/0008-browse-filters-mvp.md) â€” query string
 is the filter source of truth; `GET` form; parsed `BrowseFilterState` drives
 Drizzle, not ad hoc string SQL for user-supplied values.
 
 **Shipped (code, tests, docs):**
 
-- `src/features/browse/search-params.ts` — `parseBrowseSearchParams`,
+- `src/features/browse/search-params.ts` â€” `parseBrowseSearchParams`,
   `browseFiltersToQueryString`, `isDefaultBrowseState`; unit tests
   `search-params.test.ts`.
-- `src/features/browse/query.ts` — `browseWhereFromState` (active rows, optional
+- `src/features/browse/query.ts` â€” `browseWhereFromState` (active rows, optional
   brand `inArray`, MSRP bounds with null exclusion, foldable from JSONB
   `spec_json`).
-- `src/app/browse/` — `page.tsx` (distinct brands for checkboxes, filtered list),
+- `src/app/browse/` â€” `page.tsx` (distinct brands for checkboxes, filtered list),
   `browse-filters-form.tsx`, `search-params-helpers.ts`.
 
 **Phase 6 quality gates as of 2026-04-21:**
 
-- ✅ `pnpm typecheck` · `test` · `lint` · `build` green.
-- ✅ [`docs/browse/README.md`](./browse/README.md) operator note.
+- âœ… `pnpm typecheck` Â· `test` Â· `lint` Â· `build` green.
+- âœ… [`docs/browse/README.md`](./browse/README.md) operator note.
 
 ---
 
@@ -1403,52 +1403,52 @@ Drizzle, not ad hoc string SQL for user-supplied values.
 | Q2  | Do we need auth for feedback signals?                          | Deferred. Cookie-based anonymous sessions suffice until feedback volume demands dedup.                                               |
 | Q3  | How do we keep the corpus fresh without blowing the free tier? | GitHub Actions cron writing via service-role; 50-100 new chunks / day cap.                                                           |
 | Q4  | What's the LLM eval harness's "fail" threshold?                | Tier 3 only: define after first `runPhoneQna` golden set exists; start with strict cited-chunk-id overlap before BLEU-style metrics. |
-| Q5  | Multi-language support?                                        | Deferred indefinitely — scope creep for a learning project.                                                                          |
+| Q5  | Multi-language support?                                        | Deferred indefinitely â€” scope creep for a learning project.                                                                        |
 | Q6  | Sponsorship-detection for sources?                             | Schema leaves room (`sources.raw_json` can hold signals). Implemented only if a clear, lightweight signal emerges.                   |
 
 ### Feature and approach risk register (living)
 
-Non-exhaustive. **Status** is updated in place when we mitigate or ship a fix —
-rows are not deleted so history stays visible in the “Notes” column.
+Non-exhaustive. **Status** is updated in place when we mitigate or ship a fix â€”
+rows are not deleted so history stays visible in the â€œNotesâ€ column.
 
-| Area                  | Issue / limit                                                                       | Status                         | Notes                                                                                                                                                                                                                                                   |
-| --------------------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Recommender — Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query       | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
-| Recommender — Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only                | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
-| Recommender — Stage A | Gemini `UserRequirements` JSON often drifts (casing, nulls, string numbers)         | **Mitigated (MVP)**            | Lenient `userRequirementsSchema` + `normalizeUserRequirements` + one retry. See `docs/recommender/README.md` and ADR 0007 supplement. On persistent `LLM_SCHEMA_VIOLATION`, inspect Zod `cause` and extend the schema, not the ranker.                  |
-| Recommender - Stage A | LLM merge could drop prior budget / camera / platform facts during clarification    | **Mitigated (2026-05-18)**     | `requirements-merge.ts` deterministically preserves budget, priorities, platform, brands, and reset intent after structured extraction; the orchestrator also caps back-to-back clarification. See `docs/recommender/README.md`.                        |
-| Recommender           | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
-| Scorecard             | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
-| Ingestion             | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in §13 and Issues log; not a code defect.                                                                                                                                                                                                    |
-| Ingestion             | Quota mid-run left no DB audit / wasted LLM on re-run                               | **Mitigated (2026-05-15)**     | `ingest_runs` failure rows, hash pre-check, `--resume-failed`, `ingest-resume.yml`. Pre-deploy runs still lack `error_code`.                                                                                                                            |
-| Ingestion             | Discover list and not-found skips not in `ingest_runs`                              | **Open**                       | Kept/rejected/failed **after fetch** are in DB; early drops are log-only. Future: discover-time rows.                                                                                                                                                   |
-| Observability         | No durable log aggregation (ingest traces only in CI/local stdout)                  | **Open**                       | `pino` → stdout; Vercel/GH retention only. DB audit for ingest outcomes in §13. Optional Sentry for errors.                                                                                                                                             |
-| DB / RLS              | Service-role routes bypass RLS; anon read scope must stay aligned with product      | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
-| Browse                | Untrusted query params; risk of log noise or injection if filter values hit raw SQL | **Mitigated (MVP)**            | Parsers map to `BrowseFilterState` (int bounds, brand list); Drizzle parameterises values; foldable filter uses a fixed JSON path expression. See ADR 0008. Do not ship raw full-query logging as analytics without redaction.                          |
+| Area                    | Issue / limit                                                                       | Status                         | Notes                                                                                                                                                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recommender â€” Stage B | `phones.spec_embedding` not populated at seed; no cosine signal vs user query       | **Mitigated (code + op path)** | `pnpm spec-embed:backfill` (`scripts/backfill-spec-embeddings.ts`); `runRecommendationPipeline` embeds `buildRecommenderQueryText` when any phone has a vector and adds `specSemanticBonus` (bounded). If no rows have embeddings, no extra embed call. |
+| Recommender â€” Stage C | No Gemini Pro (or similar) tie-break; ordering is deterministic only                | **Open**                       | ADR 0007; add when eval thresholds + budget exist.                                                                                                                                                                                                      |
+| Recommender â€” Stage A | Gemini `UserRequirements` JSON often drifts (casing, nulls, string numbers)         | **Mitigated (MVP)**            | Lenient `userRequirementsSchema` + `normalizeUserRequirements` + one retry. See `docs/recommender/README.md` and ADR 0007 supplement. On persistent `LLM_SCHEMA_VIOLATION`, inspect Zod `cause` and extend the schema, not the ranker.                  |
+| Recommender - Stage A   | LLM merge could drop prior budget / camera / platform facts during clarification    | **Mitigated (2026-05-18)**     | `requirements-merge.ts` deterministically preserves budget, priorities, platform, brands, and reset intent after structured extraction; the orchestrator also caps back-to-back clarification. See `docs/recommender/README.md`.                        |
+| Recommender             | Must-haves / deal-breakers use keyword heuristics over a short haystack             | **Open**                       | Can misfire; clarify path + soft must-haves reduce empty sets, not semantic correctness.                                                                                                                                                                |
+| Scorecard               | No peer z-score or price-bracket calibration; `score` == `raw_score`                | **Open**                       | ADR 0006; product copy must not imply bracket-relative scores.                                                                                                                                                                                          |
+| Ingestion               | YouTube `timedtext` often empty from datacentre / non-residential IPs               | **Open** (external)            | Documented in Â§13 and Issues log; not a code defect.                                                                                                                                                                                                   |
+| Ingestion               | Quota mid-run left no DB audit / wasted LLM on re-run                               | **Mitigated (2026-05-15)**     | `ingest_runs` failure rows, hash pre-check, `--resume-failed`, `ingest-resume.yml`. Pre-deploy runs still lack `error_code`.                                                                                                                            |
+| Ingestion               | Discover list and not-found skips not in `ingest_runs`                              | **Open**                       | Kept/rejected/failed **after fetch** are in DB; early drops are log-only. Future: discover-time rows.                                                                                                                                                   |
+| Observability           | No durable log aggregation (ingest traces only in CI/local stdout)                  | **Open**                       | `pino` â†’ stdout; Vercel/GH retention only. DB audit for ingest outcomes in Â§13. Optional Sentry for errors.                                                                                                                                          |
+| DB / RLS                | Service-role routes bypass RLS; anon read scope must stay aligned with product      | **Ongoing**                    | Migrations + `db:smoke` as regression guard.                                                                                                                                                                                                            |
+| Browse                  | Untrusted query params; risk of log noise or injection if filter values hit raw SQL | **Mitigated (MVP)**            | Parsers map to `BrowseFilterState` (int bounds, brand list); Drizzle parameterises values; foldable filter uses a fixed JSON path expression. See ADR 0008. Do not ship raw full-query logging as analytics without redaction.                          |
 
 ---
 
 ## 21. Glossary
 
-- **Aspect** — one of the 7 canonical evaluation axes (camera, battery,
+- **Aspect** â€” one of the 7 canonical evaluation axes (camera, battery,
   performance, display, build, software, value). Data-driven via
   `aspect_definitions`.
-- **Chunk** — a retrievable segment of a source (transcript slice, Reddit
+- **Chunk** â€” a retrievable segment of a source (transcript slice, Reddit
   comment, article paragraph). Has its own embedding.
-- **Source** — one ingested artefact (a video, a thread, an article).
+- **Source** â€” one ingested artefact (a video, a thread, an article).
   Produces N chunks.
-- **Consensus** — the aggregated opinion across sources for a given phone ×
+- **Consensus** â€” the aggregated opinion across sources for a given phone Ã—
   aspect. Expressed as `(score, confidence, supporting_quotes,
 dissenting_quotes)`.
-- **Scorecard** — the full 7-aspect consensus snapshot for a phone,
+- **Scorecard** â€” the full 7-aspect consensus snapshot for a phone,
   rendered on its page.
-- **RRF** — Reciprocal Rank Fusion. Merges ranked lists from different
+- **RRF** â€” Reciprocal Rank Fusion. Merges ranked lists from different
   retrievers (vector + FTS) without score normalisation.
-- **MMR** — Maximal Marginal Relevance. Reranks to trade relevance for
+- **MMR** â€” Maximal Marginal Relevance. Reranks to trade relevance for
   diversity.
-- **HyDE** — Hypothetical Document Embedding. Generate a pseudo-answer and
+- **HyDE** â€” Hypothetical Document Embedding. Generate a pseudo-answer and
   embed _that_ to improve recall on short queries.
-- **MCP-style adapter** — a `SourceAdapter` class implementing the standard
+- **MCP-style adapter** â€” a `SourceAdapter` class implementing the standard
   discover/fingerprint/fetch/chunk protocol. Name riffs on Anthropic's
   Model Context Protocol without claiming full compatibility.
 
@@ -1477,7 +1477,7 @@ dissenting_quotes)`.
   LLM calls.
 - **Pure catalog modules** - identity normalization, snapshot hashing,
   `PhoneSpec` projection, validation, conservative alias generation, and the
-  Wikidata/MobileAPI adapters are covered by focused Vitest suites under
+  Wikidata/MobileAPI/OEM page adapters are covered by focused Vitest suites under
   `src/services/catalog`.
 - **Promotion and structured-source path** - `pnpm catalog:import-specs --file
 <path> --promote`, `pnpm catalog:sync-mobileapi --since-years 2 --promote`,
@@ -1530,6 +1530,18 @@ dissenting_quotes)`.
     covered by `brand-priority.test.ts`. Current ranks are Apple, Samsung,
     Xiaomi/Redmi/POCO, vivo/iQOO, OPPO/OnePlus/Realme, Transsion-family
     Tecno/Infinix/itel, and Nothing/CMF.
+- **OEM page enrichment path** - `pnpm catalog:enrich-oem --from-candidates
+--promote --update-existing` fetches official manufacturer URLs already present
+  on staged candidates, extracts JSON-LD/meta/visible spec text with
+  `src/services/catalog/adapters/oem-page.ts`, validates the same strict
+  `PhoneSpecSchema` projection, stages extracted records as `sourceKey:
+  oem_page`, and promotes only complete T0 official records. It also supports
+  `--url <official-product-url>` for one-off enrichment. This path makes no LLM
+  calls, defaults to a 2s delay between OEM page fetches, and is now wired into
+  `.github/workflows/catalog-refresh.yml` after discovery/sync. If an OEM page
+  does not expose fields such as display, RAM, cameras, charging, weight, OS,
+  Wi-Fi, Bluetooth, and NFC, the candidate remains quarantined rather than
+  polluting `phones`.
 - **MobileAPI key setup** - Sign up at
   [mobileapi.dev/signup](https://mobileapi.dev/signup), confirm/sign in, copy
   the API key from the profile/dashboard page, add
@@ -1540,13 +1552,104 @@ dissenting_quotes)`.
 - **Monthly workflow** - `.github/workflows/catalog-refresh.yml` runs at
   01:17 UTC on the first day of each month and supports manual dispatch. It
   backfills identities, stages Wikidata, optionally syncs/promotes MobileAPI
-  when `MOBILEAPI_API_KEY` is configured, and prints `catalog:report`. If the
-  selected source is `both` or `mobileapi` and the GitHub repository secret
-  `MOBILEAPI_API_KEY` is missing, the workflow emits a GitHub Actions error and
-  fails instead of silently skipping MobileAPI. Run with `source=wikidata` for a
-  deliberate no-MobileAPI workflow.
+  when `MOBILEAPI_API_KEY` is configured, runs OEM enrichment from candidates by
+  default, and prints `catalog:report`. If the selected source is `both` or
+  `mobileapi` and the GitHub repository secret `MOBILEAPI_API_KEY` is missing,
+  the workflow emits a GitHub Actions error and fails instead of silently
+  skipping MobileAPI. Run with `source=wikidata` for a deliberate no-MobileAPI
+  workflow; use the `oem_enrich` workflow input to disable OEM page fetches.
 - **Operator report** - `pnpm catalog:report --days 30` summarizes run status,
   staged candidate state, request counts, and LLM call counts.
+- **Automatic catalog refresh operating flow**:
+  1. **Backfill legacy identities** - the workflow starts with
+     `pnpm catalog:backfill-identities` so existing seeded rows have
+     `canonical_key` and `phone_identities`. This prevents the refresh from
+     creating duplicate rows for phones already in `phones`.
+  2. **Discover candidates** - `pnpm catalog:refresh --source wikidata` finds
+     recent phone-like entities and writes/updates `catalog_candidates` plus
+     snapshots. These records are identity/discovery evidence only; they remain
+     `discovered`/`pending_review` because Wikidata does not provide enough
+     structured fields for `PhoneSpecSchema`.
+  3. **Fetch licensed structured candidates** - when configured,
+     `pnpm catalog:sync-mobileapi --promote --update-existing` calls the
+     MobileAPI by-year endpoint under the free-plan budget. MobileAPI rows are
+     prioritized by complete specs first, then mainstream brand priority. Rows
+     that satisfy `PhoneSpecSchema` become `ready_to_promote` and can be
+     promoted immediately; incomplete rows are staged/quarantined with exact
+     missing field codes. The by-year endpoint often behaves like a listing
+     feed, so `promoted=0 quarantined=N` is expected when it returns partial
+     specs.
+  4. **Enrich from official OEM pages** - the OEM enrichment command scans
+     staged candidates for official product URLs, fetches those pages politely,
+     extracts JSON-LD/meta/visible spec text, and creates `oem_page` T0
+     promotion claims. This is the main path that turns discovery candidates
+     into promotable catalog rows when official pages expose full specs. The
+     normal automated command is
+     `pnpm catalog:enrich-oem --from-candidates --promote --update-existing`;
+     one-off official URLs can be processed with
+     `pnpm catalog:enrich-oem --url <official-url> --promote --update-existing`.
+  5. **Validate before write** - every potential promotion runs through
+     `buildPromotionPlan`, `projectPhoneSpec`, plausibility checks, identity
+     dedupe, and strict `PhoneSpecSchema`. Missing display, RAM, storage,
+     cameras, battery, charging, weight, OS, Wi-Fi, Bluetooth, or NFC blocks
+     promotion. The system prefers quarantine over corrupting `phones`.
+  6. **Promote valid candidates** - valid candidates are written via
+     `promoteCatalogCandidate`, which upserts/updates `phones`, identities,
+     aliases, configurations, source claims, and remote-only media metadata.
+     Different RAM/storage/color SKUs go into `phone_configurations`; they do
+     not create separate canonical phones.
+  7. **Downstream automation picks up new phones** - promoted active phones have
+     `next_ingest_at = NULL`, so the existing tiered ingestion scheduler can
+     ingest them immediately. Scorecards use the catalog-created grace window
+     and normal ingest/scorecard scheduling so the recommender does not get a
+     premature neutral scorecard before evidence exists.
+  8. **Report and retry** - `pnpm catalog:report --days 30` shows created,
+     updated, quarantined, request, and LLM counts. Quarantined candidates are
+     not promoted automatically until another trusted source supplies the
+     missing fields, an OEM extractor improves, or a reviewed structured import
+     is supplied through `catalog:import-specs`.
+
+### 2026-05-19 â€” Automated catalog pipeline hardening
+
+- **Identity match scoped to `(source_key, external_id)`** â€” `findExistingPhoneMatches`
+  in `promote.ts` previously queried `phone_identities` by `external_id` alone,
+  allowing false-positive deduplication when two adapters happen to share a short
+  numeric ID. The lookup now filters by both `source_key` and `external_id`, making
+  cross-adapter collisions impossible.
+- **`phoneUpdateValues` no longer resets `next_ingest_at`** â€” catalog metadata
+  refreshes (`catalog:enrich-oem --update-existing`, `catalog:sync-mobileapi
+--update-existing`) previously wiped `next_ingest_at` to `NULL` on every update,
+  immediately re-qualifying a phone for ingest and burning daily quota. The field is
+  now intentionally excluded from the update set.
+- **Scorecard-on-data-available design confirmed** â€” new phones are promoted with
+  `next_scorecard_at = NULL` (eligible immediately) but the scorecard scheduler's
+  own `active_chunk_count > 0` guard prevents premature neutral rows. No artificial
+  7-day delay is added. Aspect scores appear as soon as the first ingest run
+  produces chunks (typically within 24â€“48h via the ingest â†’ 24h nudge chain).
+- **Spec-embedding backfill added to workflow** â€” `catalog-refresh.yml` now runs
+  `backfill-spec-embeddings.ts` after the promotion step so promoted phones have
+  their `spec_embedding` generated before the workflow exits and appear in semantic
+  recommender results immediately.
+- **`failed_transient` status removed** â€” `catalog-enrich-oem.ts` queried a
+  `failed_transient` candidate status that doesn't exist per the plan (Â§13.1
+  specifies `status='failed'` + `error_code`). Removed to prevent potential DB
+  enum errors.
+- **`isLikelyOfficialPage` hardened** â€” added an explicit blocklist of known
+  aggregator, review, and social-platform hostnames (GSMArena, PhoneArena, Reddit,
+  YouTube, Amazon, etc.) so that Wikidata-sourced `officialWebsite` values pointing
+  to non-OEM sites don't trigger unintended fetches.
+- **`parseWeightG` regex hardened** â€” the OEM page adapter's weight parser
+  previously matched any `{number}g` token, producing false values from "5G" or
+  "128GB". The pattern now requires a value in the 80â€“399g range and uses a
+  negative lookahead to exclude `b` (GB) and `hz` suffixes.
+- **Wikidata discovery expanded to `P571 âˆª P577`** â€” the SPARQL query previously
+  used only `P577` (publication date, primarily for books/media). Smartphones use
+  `P571` (inception / hardware release date). The query now unions both properties
+  so phones with only one property set are still discovered.
+- **`updatedCount` double-counting fixed** â€” `catalog-sync-mobileapi.ts` was
+  computing `updatedCount = updated + promoted`, conflating candidate upserts with
+  phone promotions in the `catalog_runs` telemetry row. Now `updatedCount` tracks
+  candidate upserts only; promotions are separately visible in the log output.
 
 ### 2026-05-18 - Recommender multi-turn clarification hardening
 
@@ -1578,39 +1681,39 @@ dissenting_quotes)`.
   follow-ups preserving prior budget/camera facts, explicit reset behavior,
   one-clarify cap behavior, and platform-filter scoring.
 
-### 2026-05-15 — CI success gate, secrets-gate hardening, recommend state persistence, Gemini rotation
+### 2026-05-15 â€” CI success gate, secrets-gate hardening, recommend state persistence, Gemini rotation
 
-- **Required CI success gate** ([`59edc99`](https://github.com/rohang1411/RECSY/commit/59edc99)) — `ci.yml` gains a `required` job that acts as a single merge gate, aggregating all lanes (`quality`, `e2e`, `retrieval-eval`). Workflows now also run on `master` pushes so the gate fires on direct merges.
-- **Secrets-gate for ingestion / scorecard workflows** ([`c4724d8`](https://github.com/rohang1411/RECSY/commit/c4724d8), [`18cdd6d`](https://github.com/rohang1411/RECSY/commit/18cdd6d)) — A reusable `secrets-gate` job checks for `GEMINI_API_KEY`, `DATABASE_URL`, and Supabase secrets before running the heavy jobs. On forks or environments without secrets, workflows skip cleanly instead of failing env validation or making unauthenticated LLM calls.
-- **Recommend page state persisted in `sessionStorage`** ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02)) — `RecommendClient` now serializes the conversation history to `sessionStorage` on every update and hydrates from it on mount. A full browser refresh no longer wipes the pick cards and chat turns.
-- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) — `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
-- **Scorecard chunk-id UUID validation regression fix** ([`3eee6f9`](https://github.com/rohang1411/RECSY/commit/3eee6f9)) — The scorecard extraction schema had lost its UUID format check on evidence `chunkId` fields. This allowed non-UUID strings to pass validation and produced silent evidence mismatches downstream. Restored strict `z.string().uuid()` validation.
+- **Required CI success gate** ([`59edc99`](https://github.com/rohang1411/RECSY/commit/59edc99)) â€” `ci.yml` gains a `required` job that acts as a single merge gate, aggregating all lanes (`quality`, `e2e`, `retrieval-eval`). Workflows now also run on `master` pushes so the gate fires on direct merges.
+- **Secrets-gate for ingestion / scorecard workflows** ([`c4724d8`](https://github.com/rohang1411/RECSY/commit/c4724d8), [`18cdd6d`](https://github.com/rohang1411/RECSY/commit/18cdd6d)) â€” A reusable `secrets-gate` job checks for `GEMINI_API_KEY`, `DATABASE_URL`, and Supabase secrets before running the heavy jobs. On forks or environments without secrets, workflows skip cleanly instead of failing env validation or making unauthenticated LLM calls.
+- **Recommend page state persisted in `sessionStorage`** ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02)) â€” `RecommendClient` now serializes the conversation history to `sessionStorage` on every update and hydrates from it on mount. A full browser refresh no longer wipes the pick cards and chat turns.
+- **Multi-key Gemini rotation + client-side pacing** ([`902d8bb`](https://github.com/rohang1411/RECSY/commit/902d8bb)) â€” `GeminiProvider` cycles through `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4` on 429 / quota errors. `GeminiRequestGovernor` adds optional client-side token-bucket pacing (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) to spread requests within free-tier caps before hitting the server-side limit.
+- **Scorecard chunk-id UUID validation regression fix** ([`3eee6f9`](https://github.com/rohang1411/RECSY/commit/3eee6f9)) â€” The scorecard extraction schema had lost its UUID format check on evidence `chunkId` fields. This allowed non-UUID strings to pass validation and produced silent evidence mismatches downstream. Restored strict `z.string().uuid()` validation.
 
-### 2026-05-14 — Internal Pipeline Observatory dashboard
+### 2026-05-14 â€” Internal Pipeline Observatory dashboard
 
-- **Initial dashboard** ([`d11c7ab`](https://github.com/rohang1411/RECSY/commit/d11c7ab)) — `/internal/pipeline` ships behind `INTERNAL_DASHBOARD_ENABLED`. Features: live DB stats (phone count, source count, chunk count, aspect coverage), corpus overview, metric cards.
-- **Phone evidence + retrieval pipeline components** ([`c225079`](https://github.com/rohang1411/RECSY/commit/c225079)) — `PhoneEvidenceSection`, `RetrievalFunnel`, `RetrievalSection`, `RecommendSection`, `GuidedWalkthrough`, `EvidenceTimeline`, `ScoreBreakdown`, `ScorecardRadar`, `RequirementsViewer`, `ChunkViewer`, `SourceCard`, `DatabaseMap` — all backed by `src/services/internal/{pipeline-snapshot,phone-evidence,retrieval-explain,recommend-explain}.ts`. Full ADR: [0016](./adr/0016-internal-pipeline-observatory.md).
+- **Initial dashboard** ([`d11c7ab`](https://github.com/rohang1411/RECSY/commit/d11c7ab)) â€” `/internal/pipeline` ships behind `INTERNAL_DASHBOARD_ENABLED`. Features: live DB stats (phone count, source count, chunk count, aspect coverage), corpus overview, metric cards.
+- **Phone evidence + retrieval pipeline components** ([`c225079`](https://github.com/rohang1411/RECSY/commit/c225079)) â€” `PhoneEvidenceSection`, `RetrievalFunnel`, `RetrievalSection`, `RecommendSection`, `GuidedWalkthrough`, `EvidenceTimeline`, `ScoreBreakdown`, `ScorecardRadar`, `RequirementsViewer`, `ChunkViewer`, `SourceCard`, `DatabaseMap` â€” all backed by `src/services/internal/{pipeline-snapshot,phone-evidence,retrieval-explain,recommend-explain}.ts`. Full ADR: [0016](./adr/0016-internal-pipeline-observatory.md).
 
-### 2026-05-14 — Automated scorecard generation (ADR 0015)
+### 2026-05-14 â€” Automated scorecard generation (ADR 0015)
 
-- **Initial roll-out** ([`7082ee0`](https://github.com/rohang1411/RECSY/commit/7082ee0)) — `scripts/scorecard-auto.ts`, `src/services/scorecard/scheduler.ts`, `staleness.ts`; `phones.{last,next}_scorecard_at`; `scorecard_runs` telemetry table; `scorecard-auto.yml` cron (daily 02:17 UTC). Full ADR: [0015](./adr/0015-automated-aspect-scorecard.md).
-- **Telemetry + scheduling improvements** ([`a73a484`](https://github.com/rohang1411/RECSY/commit/a73a484)) — `markScorecardComplete` only fires when `updated > 0`; staleness skip writes seven `scorecard_runs` rows (one per aspect); GeminiProvider schema/API error differentiation; debug logging for validation errors ([`281be83`](https://github.com/rohang1411/RECSY/commit/281be83), [`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79)).
+- **Initial roll-out** ([`7082ee0`](https://github.com/rohang1411/RECSY/commit/7082ee0)) â€” `scripts/scorecard-auto.ts`, `src/services/scorecard/scheduler.ts`, `staleness.ts`; `phones.{last,next}_scorecard_at`; `scorecard_runs` telemetry table; `scorecard-auto.yml` cron (daily 02:17 UTC). Full ADR: [0015](./adr/0015-automated-aspect-scorecard.md).
+- **Telemetry + scheduling improvements** ([`a73a484`](https://github.com/rohang1411/RECSY/commit/a73a484)) â€” `markScorecardComplete` only fires when `updated > 0`; staleness skip writes seven `scorecard_runs` rows (one per aspect); GeminiProvider schema/API error differentiation; debug logging for validation errors ([`281be83`](https://github.com/rohang1411/RECSY/commit/281be83), [`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79)).
 
-### 2026-05-15 — Tiered ingest cron + automated scorecard hardening
+### 2026-05-15 â€” Tiered ingest cron + automated scorecard hardening
 
-- **`.github/workflows/ingest-tiered.yml`** — Removed the `plan` job that selected tiers by day-of-week and matrixed `tier × shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes “cron runs but picks zero phones” when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
-- **`scripts/scorecard-auto.ts`** — **`markScorecardComplete`** runs only when **`runScorecardForPhone` returns `updated > 0`**; if every aspect fails, the phone stays due, a **warn** is logged, and **`failures`** increments for exit-code semantics. Staleness path (`chunks_unchanged`) inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) instead of a single `aspect: 'camera'` sentinel.
-- **Documentation** — [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations). **[§12](#12-aspect-scorecard-agent)** now documents automated scorecard **frequency**, **batch limit**, **due-phone selection**, **+3 / +7 d** rescheduling, **staleness fingerprint**, and **ingest 24 h nudge** in full.
+- **`.github/workflows/ingest-tiered.yml`** â€” Removed the `plan` job that selected tiers by day-of-week and matrixed `tier Ã— shard`. Scheduled runs now use a **shard-only matrix** (`shard: [0..3]`) and pass **`--tier all`** so `pickPhones` can return **cold**-tier phones every day; `workflow_dispatch` still allows `--tier hot|warm|cold|all`. Fixes â€œcron runs but picks zero phonesâ€ when the catalog is mostly **cold** (>365d since launch) while the matrix only invoked `--tier hot` (or hot+warm) six days a week.
+- **`scripts/scorecard-auto.ts`** â€” **`markScorecardComplete`** runs only when **`runScorecardForPhone` returns `updated > 0`**; if every aspect fails, the phone stays due, a **warn** is logged, and **`failures`** increments for exit-code semantics. Staleness path (`chunks_unchanged`) inserts **seven** `scorecard_runs` rows (one per `ASPECT_NAMES`) instead of a single `aspect: 'camera'` sentinel.
+- **Documentation** â€” [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md) updated (status, verification plan, mitigations). **[Â§12](#12-aspect-scorecard-agent)** now documents automated scorecard **frequency**, **batch limit**, **due-phone selection**, **+3 / +7 d** rescheduling, **staleness fingerprint**, and **ingest 24 h nudge** in full.
 
-### 2026-05-15 — Ingestion resumability, audit telemetry, and operator tooling
+### 2026-05-15 â€” Ingestion resumability, audit telemetry, and operator tooling
 
-- **Schema** (`drizzle/migrations/0004_equal_sauron.sql`) — `ingest_runs`: `stage`, `error_code`, `retry_after`, `candidate_title`; `phones.last_ingest_status`; indexes for resume queries.
-- **Orchestrator** — Hash pre-check before curator/embed; `recordFailedRun` for curator, embed, disambiguator, and fetch failures with classified `error_code`.
-- **Scheduler** — `pickResumePhones`, `pickPhonesEmptyCorpus`, `getFailedCandidatesForPhone`; legacy quota errors matched via `error` text when `error_code` is null.
-- **CLI** — `pnpm ingest:auto --resume-failed`, `--resume-window-days`; `ingest:report` sections for quota failures and `last_ingest_status`.
-- **CI** — [`.github/workflows/ingest-resume.yml`](../.github/workflows/ingest-resume.yml) at 03:20 UTC.
-- **DX** — `pnpm db:migrate` / `db:generate` / `db:studio` load `.env.local` for `DATABASE_URL`.
-- **Documentation** — [`ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md) (implemented); **[§13](#13-ingestion-pipeline-mcp-style-adapters)** audit trail + **[§16](#16-observability-ops--security)** log locations.
+- **Schema** (`drizzle/migrations/0004_equal_sauron.sql`) â€” `ingest_runs`: `stage`, `error_code`, `retry_after`, `candidate_title`; `phones.last_ingest_status`; indexes for resume queries.
+- **Orchestrator** â€” Hash pre-check before curator/embed; `recordFailedRun` for curator, embed, disambiguator, and fetch failures with classified `error_code`.
+- **Scheduler** â€” `pickResumePhones`, `pickPhonesEmptyCorpus`, `getFailedCandidatesForPhone`; legacy quota errors matched via `error` text when `error_code` is null.
+- **CLI** â€” `pnpm ingest:auto --resume-failed`, `--resume-window-days`; `ingest:report` sections for quota failures and `last_ingest_status`.
+- **CI** â€” [`.github/workflows/ingest-resume.yml`](../.github/workflows/ingest-resume.yml) at 03:20 UTC.
+- **DX** â€” `pnpm db:migrate` / `db:generate` / `db:studio` load `.env.local` for `DATABASE_URL`.
+- **Documentation** â€” [`ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md) (implemented); **[Â§13](#13-ingestion-pipeline-mcp-style-adapters)** audit trail + **[Â§16](#16-observability-ops--security)** log locations.
 
 ### 2026-05-13 - YouTube transcript fallback chain hardening
 
@@ -1645,19 +1748,19 @@ dissenting_quotes)`.
   `NotFoundError` is counted as unusable while unexpected failures remain
   errors.
 
-### 2026-04-22 — Automated, tiered ingestion with LLM curation (ADR 0014)
+### 2026-04-22 â€” Automated, tiered ingestion with LLM curation (ADR 0014)
 
-- **ADR 0014** — [automated tiered ingestion with LLM curation](./adr/0014-automated-ingestion-curation.md). Extends ADR 0003 (TypeScript ingestion) with a scheduling + curation layer so the corpus refreshes without operator involvement.
-- **Freshness tiers** (`src/services/ingest/scheduler/tiers.ts`) — `classifyTier(launchDate)` → `hot` (≤60d, ~3.5d cadence) | `warm` (60–365d, 7d) | `cold` (>365d, 14d). `computeNextIngestAt(tier)` returns the next refresh timestamp. Single source of truth for the scheduler, cron, and UI.
-- **Scheduler** (`src/services/ingest/scheduler/{pick-phones,enqueue}.ts`) — `pickPhones({ tiers, shard, totalShards, limit })` picks phones where `next_ingest_at <= now()` (or null = immediately due), filters by tier, shards deterministically via FNV-32 on phone id, orders hot → warm → cold. `markIngested` writes `last_ingest_at=now` + `next_ingest_at=now + interval(tier)`; `bootstrapNextIngestAt` jitters a fresh cohort across the first interval.
-- **CuratorAgent** (`src/services/ingest/agents/curator.ts`) — Gemini Flash gatekeeper between `chunk()` and `embed()`. Scores `relevance`/`quality` (0–10), extracts `aspectsCovered`, emits `sentimentSummary`. Dropped sources skip embedding; `rejectedReason` lands in `ingest_runs`. Permissive fallback on LLM error (keep un-enriched) — we'd rather have raw content than lose it.
-- **DisambiguatorAgent** (`src/services/ingest/agents/disambiguator.ts`) — only invoked when heuristic alias matching finds ≥2 distinct phones in the title+description. Picks a primary (confidence + reason) and secondaries (relevance). Orchestrator reassigns the primary phone via `phoneLookup(slug)` when the LLM's pick differs from the ingesting phone, and writes `source_phone_links` rows with `role='primary' | 'secondary'`.
-- **Alias matcher** (`src/services/ingest/agents/alias-match.ts`) — longest-match-wins so "Galaxy S25 Ultra" suppresses "S25" for the same span. Aliases are cached once per orchestrator run.
-- **Polite HTTP** (`src/services/ingest/http.ts` + `rate-limit.ts`) — per-host token-bucket persisted in `rate_limit_state` so parallel GH Actions shards cooperate via UPSERT; UA pool of 3 self-identifying variants; robots.txt cache (24h in `domain_profiles` + in-memory); `Retry-After` honoring on 429/503 capped at 30s; timeout + `p-retry` exp backoff with jitter. Default limits: gsmarena 4s, reddit 2s, youtube 1s, everything else 3s.
+- **ADR 0014** â€” [automated tiered ingestion with LLM curation](./adr/0014-automated-ingestion-curation.md). Extends ADR 0003 (TypeScript ingestion) with a scheduling + curation layer so the corpus refreshes without operator involvement.
+- **Freshness tiers** (`src/services/ingest/scheduler/tiers.ts`) â€” `classifyTier(launchDate)` â†’ `hot` (â‰¤60d, ~3.5d cadence) | `warm` (60â€“365d, 7d) | `cold` (>365d, 14d). `computeNextIngestAt(tier)` returns the next refresh timestamp. Single source of truth for the scheduler, cron, and UI.
+- **Scheduler** (`src/services/ingest/scheduler/{pick-phones,enqueue}.ts`) â€” `pickPhones({ tiers, shard, totalShards, limit })` picks phones where `next_ingest_at <= now()` (or null = immediately due), filters by tier, shards deterministically via FNV-32 on phone id, orders hot â†’ warm â†’ cold. `markIngested` writes `last_ingest_at=now` + `next_ingest_at=now + interval(tier)`; `bootstrapNextIngestAt` jitters a fresh cohort across the first interval.
+- **CuratorAgent** (`src/services/ingest/agents/curator.ts`) â€” Gemini Flash gatekeeper between `chunk()` and `embed()`. Scores `relevance`/`quality` (0â€“10), extracts `aspectsCovered`, emits `sentimentSummary`. Dropped sources skip embedding; `rejectedReason` lands in `ingest_runs`. Permissive fallback on LLM error (keep un-enriched) â€” we'd rather have raw content than lose it.
+- **DisambiguatorAgent** (`src/services/ingest/agents/disambiguator.ts`) â€” only invoked when heuristic alias matching finds â‰¥2 distinct phones in the title+description. Picks a primary (confidence + reason) and secondaries (relevance). Orchestrator reassigns the primary phone via `phoneLookup(slug)` when the LLM's pick differs from the ingesting phone, and writes `source_phone_links` rows with `role='primary' | 'secondary'`.
+- **Alias matcher** (`src/services/ingest/agents/alias-match.ts`) â€” longest-match-wins so "Galaxy S25 Ultra" suppresses "S25" for the same span. Aliases are cached once per orchestrator run.
+- **Polite HTTP** (`src/services/ingest/http.ts` + `rate-limit.ts`) â€” per-host token-bucket persisted in `rate_limit_state` so parallel GH Actions shards cooperate via UPSERT; UA pool of 3 self-identifying variants; robots.txt cache (24h in `domain_profiles` + in-memory); `Retry-After` honoring on 429/503 capped at 30s; timeout + `p-retry` exp backoff with jitter. Default limits: gsmarena 4s, reddit 2s, youtube 1s, everything else 3s.
 - **New adapters:**
-  - `GsmArenaAdapter` — discovery via `phones.raw_json.gsmarenaUrl` override + `res.php3?sSearch=<brand> <model>` → device page → in-site `*-review-*.php` links. Fetch reuses Readability through `http.ts`.
-  - `YouTubeChannelAdapter` — RSS-based discovery from `creator_profiles` allowlist (MKBHD, Mrwhosetheboss, TheTechChap, SuperSaf, TheUnlockr, MrMobile). Matches entries against `phone_aliases` and only emits candidates where the target phone is mentioned. Reuses `YouTubeAdapter.fetch/chunk` for transcripts. Per-run RSS cache.
-- **Reddit extension** (`src/services/ingest/adapters/reddit.ts`) — subreddit allowlist now DB-driven from `subreddit_profiles` with a hardcoded fallback for tests. Discovery adds `/r/<sub>/new.json` polling alongside `/search.json` — enabled for `scope='device'` subs and for general-scope subs when the phone is fresh.
+  - `GsmArenaAdapter` â€” discovery via `phones.raw_json.gsmarenaUrl` override + `res.php3?sSearch=<brand> <model>` â†’ device page â†’ in-site `*-review-*.php` links. Fetch reuses Readability through `http.ts`.
+  - `YouTubeChannelAdapter` â€” RSS-based discovery from `creator_profiles` allowlist (MKBHD, Mrwhosetheboss, TheTechChap, SuperSaf, TheUnlockr, MrMobile). Matches entries against `phone_aliases` and only emits candidates where the target phone is mentioned. Reuses `YouTubeAdapter.fetch/chunk` for transcripts. Per-run RSS cache.
+- **Reddit extension** (`src/services/ingest/adapters/reddit.ts`) â€” subreddit allowlist now DB-driven from `subreddit_profiles` with a hardcoded fallback for tests. Discovery adds `/r/<sub>/new.json` polling alongside `/search.json` â€” enabled for `scope='device'` subs and for general-scope subs when the phone is fresh.
 - **Schema additions** (`src/services/db/schema.ts`):
   - `phones.lastIngestAt`, `phones.nextIngestAt`, `phones.ingestTier`.
   - New tables: `phone_aliases`, `creator_profiles`, `subreddit_profiles`, `domain_profiles`, `source_phone_links`, `crawl_queue`, `rate_limit_state`.
@@ -1666,157 +1769,157 @@ dissenting_quotes)`.
   - `source_type` enum extended with `'gsmarena'`.
   - Seed scripts for the four profile tables (`scripts/seed/{phone-aliases,creator-profiles,subreddit-profiles,domain-profiles}.ts`).
 - **Scripts + workflows:**
-  - `scripts/ingest-auto.ts` (`pnpm ingest:auto`) — tiered CLI: `--tier hot|warm|cold|all --shard K --total-shards N --limit N --per-phone-limit N --dry-run`. Wires the full agent stack, updates `next_ingest_at` via `markIngested` on success.
-  - `scripts/creator-watch.ts` (`pnpm creator:watch`) — RSS-only poll. Enqueues hot-tier rows into `crawl_queue` with alias-matched URLs. No embedding. Cheap enough for 4×/day.
-  - `scripts/ingest-report.ts` (`pnpm ingest:report [--days N]`) — weekly audit: runs by adapter×status, by tier, top `rejected_reason`, avg relevance/quality on new sources, phones overdue relative to 2× their tier's interval.
-  - `.github/workflows/ingest.yml` — retired the hand-coded nightly roster; now only a manual `workflow_dispatch` entrypoint.
-  - `.github/workflows/ingest-tiered.yml` — daily 02:17 UTC, four-shard matrix calling `ingest-auto.ts` (**as of 2026-05-14**: `schedule` uses `--tier all`; earlier revision used a `plan` job + day-of-week tier matrix, which skipped cold-tier phones on non-Sundays). `max-parallel: 4`.
-  - `.github/workflows/creator-watch.yml` — every 6h, 23 minutes past the hour.
-  - `.github/workflows/ingest-on-new-phone.yml` — `workflow_dispatch` bootstrap for admin-added phones.
-- **Empty-corpus UX, time-aware** (`src/services/chat/answer.ts`) — `buildNoContextMessage(phoneMeta)` names brand + model, mentions days-since-last-ingest, and surfaces the next scheduled refresh window (e.g. "Next refresh is scheduled in about 12h"). `POST /api/ask` passes `{brand, model, lastIngestAt, nextIngestAt}` from the same row it already fetches. No more developer-oriented `pnpm ingest --phone <slug>` in user-facing text. ADR 0012's short-circuit + `NO_CONTEXT_MODEL='no-context@v1'` sentinel stay.
+  - `scripts/ingest-auto.ts` (`pnpm ingest:auto`) â€” tiered CLI: `--tier hot|warm|cold|all --shard K --total-shards N --limit N --per-phone-limit N --dry-run`. Wires the full agent stack, updates `next_ingest_at` via `markIngested` on success.
+  - `scripts/creator-watch.ts` (`pnpm creator:watch`) â€” RSS-only poll. Enqueues hot-tier rows into `crawl_queue` with alias-matched URLs. No embedding. Cheap enough for 4Ã—/day.
+  - `scripts/ingest-report.ts` (`pnpm ingest:report [--days N]`) â€” weekly audit: runs by adapterÃ—status, by tier, top `rejected_reason`, avg relevance/quality on new sources, phones overdue relative to 2Ã— their tier's interval.
+  - `.github/workflows/ingest.yml` â€” retired the hand-coded nightly roster; now only a manual `workflow_dispatch` entrypoint.
+  - `.github/workflows/ingest-tiered.yml` â€” daily 02:17 UTC, four-shard matrix calling `ingest-auto.ts` (**as of 2026-05-14**: `schedule` uses `--tier all`; earlier revision used a `plan` job + day-of-week tier matrix, which skipped cold-tier phones on non-Sundays). `max-parallel: 4`.
+  - `.github/workflows/creator-watch.yml` â€” every 6h, 23 minutes past the hour.
+  - `.github/workflows/ingest-on-new-phone.yml` â€” `workflow_dispatch` bootstrap for admin-added phones.
+- **Empty-corpus UX, time-aware** (`src/services/chat/answer.ts`) â€” `buildNoContextMessage(phoneMeta)` names brand + model, mentions days-since-last-ingest, and surfaces the next scheduled refresh window (e.g. "Next refresh is scheduled in about 12h"). `POST /api/ask` passes `{brand, model, lastIngestAt, nextIngestAt}` from the same row it already fetches. No more developer-oriented `pnpm ingest --phone <slug>` in user-facing text. ADR 0012's short-circuit + `NO_CONTEXT_MODEL='no-context@v1'` sentinel stay.
 - **Verification**: 112/112 tests green across `src/services/chat` + `src/services/ingest` (15 test files). Linter clean. New unit tests: `alias-match.test.ts`, `disambiguator.test.ts`, `gsmarena.test.ts`, `youtube-channel.test.ts`, `reddit.test.ts` (extensions), `tiers.test.ts`, `pick-phones.test.ts` (`shardIndex`), plus `buildNoContextMessage` cases on `answer.test.ts`.
 
-### 2026-04-22 — Context-aware recommender summaries, tie honesty, client settings (ADR 0013)
+### 2026-04-22 â€” Context-aware recommender summaries, tie honesty, client settings (ADR 0013)
 
-- **ADR 0013** — [context-aware recommender summaries, tie/no-data honesty, and a client settings surface](./adr/0013-recommender-summary-context-tie-honesty-settings.md).
-- **`src/services/recommender/match.ts`** — `rankCandidates` now returns a richer `RankResult` with `scoresTied`, `scorecardMissing`, and normalised `weights`. New helpers `hasRealAspectData`, `aspectsByWeight`, and `SCORE_TIE_EPSILON`. `pickSummaryLine(entry, context)` takes a `SummaryContext { weights, refined, corpusScorecardMissing }` and emits one of four explicit strings: refined + data (primary and secondary aspects), refined + no data, fresh + no data, fresh + data (existing behavior).
-- **`src/services/recommender/run-recommendation.ts`** — threads `refined` into `rankCandidates`, computes `topAspects` from the normalised weights, and surfaces the new flags on `RecommendPipelineResult.results`.
-- **`POST /api/recommend`** — response gains `scoresTied: boolean`, `scorecardMissing: boolean`, `topAspects: string[]` alongside `refined`.
-- **`/recommend`** — picks header appends the top ranking aspects (`· by camera then performance`); a new `role="note"` banner between the header and the pick list names ties and no-data states; an honest chat bubble is appended to the conversation when ranking could not separate picks.
-- **`src/lib/client-settings.ts`** — new `useClientSetting<T>(key, fallback)` hook backed by `localStorage` via `useSyncExternalStore`, with a module-level emitter for same-tab sync and a `storage` listener for cross-tab sync. `CLIENT_SETTING_KEYS` + `CLIENT_SETTING_DEFAULTS` are the canonical registry.
-- **`/settings`** — new route with an accessible toggle (`role="switch"`, `aria-checked`) for “Enter key sends message.” Header nav gains a Settings link.
-- **`/recommend` + `/p/[slug]`** — both chat inputs now read the `enterToSend` setting and gate their Enter-submit handler on it. Shift+Enter always inserts a newline; disabling the setting makes Enter insert a newline as well.
-- **Tests** — `src/services/recommender/match-summary.test.ts` covers `hasRealAspectData`, `aspectsByWeight`, the four `pickSummaryLine` branches, and `rankCandidates` tie/missing-scorecard flag propagation.
-- **Issues log** — §23 adds entries for “three identical 5.00 scores, same ‘camera’ line on refine” and “no user control over Enter-to-send.”
+- **ADR 0013** â€” [context-aware recommender summaries, tie/no-data honesty, and a client settings surface](./adr/0013-recommender-summary-context-tie-honesty-settings.md).
+- **`src/services/recommender/match.ts`** â€” `rankCandidates` now returns a richer `RankResult` with `scoresTied`, `scorecardMissing`, and normalised `weights`. New helpers `hasRealAspectData`, `aspectsByWeight`, and `SCORE_TIE_EPSILON`. `pickSummaryLine(entry, context)` takes a `SummaryContext { weights, refined, corpusScorecardMissing }` and emits one of four explicit strings: refined + data (primary and secondary aspects), refined + no data, fresh + no data, fresh + data (existing behavior).
+- **`src/services/recommender/run-recommendation.ts`** â€” threads `refined` into `rankCandidates`, computes `topAspects` from the normalised weights, and surfaces the new flags on `RecommendPipelineResult.results`.
+- **`POST /api/recommend`** â€” response gains `scoresTied: boolean`, `scorecardMissing: boolean`, `topAspects: string[]` alongside `refined`.
+- **`/recommend`** â€” picks header appends the top ranking aspects (`Â· by camera then performance`); a new `role="note"` banner between the header and the pick list names ties and no-data states; an honest chat bubble is appended to the conversation when ranking could not separate picks.
+- **`src/lib/client-settings.ts`** â€” new `useClientSetting<T>(key, fallback)` hook backed by `localStorage` via `useSyncExternalStore`, with a module-level emitter for same-tab sync and a `storage` listener for cross-tab sync. `CLIENT_SETTING_KEYS` + `CLIENT_SETTING_DEFAULTS` are the canonical registry.
+- **`/settings`** â€” new route with an accessible toggle (`role="switch"`, `aria-checked`) for â€œEnter key sends message.â€ Header nav gains a Settings link.
+- **`/recommend` + `/p/[slug]`** â€” both chat inputs now read the `enterToSend` setting and gate their Enter-submit handler on it. Shift+Enter always inserts a newline; disabling the setting makes Enter insert a newline as well.
+- **Tests** â€” `src/services/recommender/match-summary.test.ts` covers `hasRealAspectData`, `aspectsByWeight`, the four `pickSummaryLine` branches, and `rankCandidates` tie/missing-scorecard flag propagation.
+- **Issues log** â€” Â§23 adds entries for â€œthree identical 5.00 scores, same â€˜cameraâ€™ line on refineâ€ and â€œno user control over Enter-to-send.â€
 
-### 2026-04-24 — Recommender refine path, rank UI, empty-corpus honesty (ADR 0012)
+### 2026-04-24 â€” Recommender refine path, rank UI, empty-corpus honesty (ADR 0012)
 
-- **ADR 0012** — [recommender refine, rank UI, empty-corpus](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
-- **`src/services/recommender/refine-intent.ts`** — new heuristic `detectRefineIntent(message)` with positive refine patterns and new-query hints; conservative by design.
-- **`src/services/recommender/session.ts`** — new `getLatestRecommendPickIds` helper (reads `candidatePhoneIds` from the most recent `recommend` turn).
-- **`src/services/recommender/run-recommendation.ts`** — when refine is detected and prior picks exist, narrows the catalog to those ids before ranking; sets `refined: true` on the result; falls back to full catalog if filters exclude all prior picks.
-- **`POST /api/recommend`** — response now carries `refined: boolean`.
-- **`/recommend`** — explicit `Top pick / Runner-up / 3rd` rank badges on every card; list header states the count honestly (“Showing 2 picks, ranked”); “Re-ranked your earlier picks” label appears when the server signals a refine.
-- **`src/services/chat/answer.ts`** — empty-corpus short-circuit: if hybrid retrieval returns zero chunks, `runPhoneQna` returns a deterministic message (routed to Recommend / Compare) **without calling the LLM**, `model: 'no-context@v1'`, `tokensIn/tokensOut: 0`. Fixes the “every answer says there is no info” behavior on phones with no ingested sources.
-- **`src/app/p/[slug]/phone-chat.tsx`** — forwards `retrievalTrace` from the NDJSON `done` event into React state; the “Show retrieval pipeline & sources” disclosure now actually renders (was dropped on the client despite the server sending it).
-- **Tests** — `refine-intent.test.ts` (positive + negative + long-message + new-query-hint) and `answer.test.ts` (zero-chunk short-circuit asserts no LLM call + sentinel model).
-- **Issues log** — §23 adds entries for “follow-ups feel repetitive,” “phone ask reports no info for everything,” and “retrieval trace button missing.”
+- **ADR 0012** â€” [recommender refine, rank UI, empty-corpus](./adr/0012-recommender-refine-rank-ui-and-empty-corpus-honesty.md).
+- **`src/services/recommender/refine-intent.ts`** â€” new heuristic `detectRefineIntent(message)` with positive refine patterns and new-query hints; conservative by design.
+- **`src/services/recommender/session.ts`** â€” new `getLatestRecommendPickIds` helper (reads `candidatePhoneIds` from the most recent `recommend` turn).
+- **`src/services/recommender/run-recommendation.ts`** â€” when refine is detected and prior picks exist, narrows the catalog to those ids before ranking; sets `refined: true` on the result; falls back to full catalog if filters exclude all prior picks.
+- **`POST /api/recommend`** â€” response now carries `refined: boolean`.
+- **`/recommend`** â€” explicit `Top pick / Runner-up / 3rd` rank badges on every card; list header states the count honestly (â€œShowing 2 picks, rankedâ€); â€œRe-ranked your earlier picksâ€ label appears when the server signals a refine.
+- **`src/services/chat/answer.ts`** â€” empty-corpus short-circuit: if hybrid retrieval returns zero chunks, `runPhoneQna` returns a deterministic message (routed to Recommend / Compare) **without calling the LLM**, `model: 'no-context@v1'`, `tokensIn/tokensOut: 0`. Fixes the â€œevery answer says there is no infoâ€ behavior on phones with no ingested sources.
+- **`src/app/p/[slug]/phone-chat.tsx`** â€” forwards `retrievalTrace` from the NDJSON `done` event into React state; the â€œShow retrieval pipeline & sourcesâ€ disclosure now actually renders (was dropped on the client despite the server sending it).
+- **Tests** â€” `refine-intent.test.ts` (positive + negative + long-message + new-query-hint) and `answer.test.ts` (zero-chunk short-circuit asserts no LLM call + sentinel model).
+- **Issues log** â€” Â§23 adds entries for â€œfollow-ups feel repetitive,â€ â€œphone ask reports no info for everything,â€ and â€œretrieval trace button missing.â€
 
-### 2026-04-22 — Compare: direct `/compare` + invalid slugs
+### 2026-04-22 â€” Compare: direct `/compare` + invalid slugs
 
-- **`/compare`** — GET form to enter two slugs (no empty “dead end” on direct
+- **`/compare`** â€” GET form to enter two slugs (no empty â€œdead endâ€ on direct
   navigation); invalid slugs show a clear message + form instead of `notFound()`.
 
-### 2026-04-21 — Phone UX, About, Compare, images & price (ADR 0009)
+### 2026-04-21 â€” Phone UX, About, Compare, images & price (ADR 0009)
 
-- **ADR 0009** — [phone page detail, about, compare, recommender price](./adr/0009-phone-ux-images-compare.md).
-- **`/p/[slug]`** — `PhoneSpecSummary`, header shows `msrp` + `PhoneImage` (placeholder if no `image_url`).
-- **`/about`**, **`/compare?a&b=…`** — static about; server compare table + 404 when a slug is missing.
-- **API** — `RecommendApiPick` + `ScoredCandidate` include `msrpUsd`, `imageUrl` (`src/services/recommender/catalog.ts` loads `image_url`).
-- **UI** — Browse + recommend cards use `PhoneImage`; recommender “Compare the top 2” deep-link; nav shows Browse / About / Compare on mobile.
-- **`docs/compare/README.md`** — operator one-pager.
+- **ADR 0009** â€” [phone page detail, about, compare, recommender price](./adr/0009-phone-ux-images-compare.md).
+- **`/p/[slug]`** â€” `PhoneSpecSummary`, header shows `msrp` + `PhoneImage` (placeholder if no `image_url`).
+- **`/about`**, **`/compare?a&b=â€¦`** â€” static about; server compare table + 404 when a slug is missing.
+- **API** â€” `RecommendApiPick` + `ScoredCandidate` include `msrpUsd`, `imageUrl` (`src/services/recommender/catalog.ts` loads `image_url`).
+- **UI** â€” Browse + recommend cards use `PhoneImage`; recommender â€œCompare the top 2â€ deep-link; nav shows Browse / About / Compare on mobile.
+- **`docs/compare/README.md`** â€” operator one-pager.
 
-### 2026-04-21 — Recommender: Gemini `responseSchema` + retry fix
+### 2026-04-21 â€” Recommender: Gemini `responseSchema` + retry fix
 
-- **Form factor** — Llm Zod no longer uses a 2-tuple for screen size
-  (Gemini/JSON “items” / protobuf limitation); use
-  `screen_size_min_in` / `screen_size_max_in` → `normalize` →
+- **Form factor** â€” Llm Zod no longer uses a 2-tuple for screen size
+  (Gemini/JSON â€œitemsâ€ / protobuf limitation); use
+  `screen_size_min_in` / `screen_size_max_in` â†’ `normalize` â†’
   `screen_size_range_in` for `match.ts`. Legacy tuple / DB JSON still round-trip
   via preprocess.
-- **Retry** — second structured attempt appends a **`user`** nudge, not
+- **Retry** â€” second structured attempt appends a **`user`** nudge, not
   `system` (Gemini: system only at the start of the conversation).
-- **Docs** — `docs/recommender/README.md`, ADR 0007 supplement, §11 comment.
+- **Docs** â€” `docs/recommender/README.md`, ADR 0007 supplement, Â§11 comment.
 
-### 2026-04-21 — Recommender: Stage A Zod hardening (structured extraction)
+### 2026-04-21 â€” Recommender: Stage A Zod hardening (structured extraction)
 
-- **`userRequirementsSchema`** — tolerate typical Gemini/JSON output (lowercase
-  aspect names after trim, 0–100 relative weights, currency-shaped `min`/`max`,
+- **`userRequirementsSchema`** â€” tolerate typical Gemini/JSON output (lowercase
+  aspect names after trim, 0â€“100 relative weights, currency-shaped `min`/`max`,
   `null` for optional nested objects, coerced `confidence`) before
   `normalizeUserRequirements`; `requirements-schema.test.ts` locks examples.
-- **`docs/recommender/README.md`** — documents `LLM_SCHEMA_VIOLATION` (double
+- **`docs/recommender/README.md`** â€” documents `LLM_SCHEMA_VIOLATION` (double
   validation failure) and the lenient-parse pattern.
-- **§11** in this file — “runtime `UserRequirements`” vs Zod+LLM input clarified.
+- **Â§11** in this file â€” â€œruntime `UserRequirements`â€ vs Zod+LLM input clarified.
 
-### 2026-04-21 — Phase 6 MVP (browse + faceted filters)
+### 2026-04-21 â€” Phase 6 MVP (browse + faceted filters)
 
-- **ADR 0008** — [browse filters: URL contract, server SQL, logging note](./adr/0008-browse-filters-mvp.md).
-- **`src/features/browse/`** — `search-params` + `query` (`browseWhereFromState`).
-- **`src/app/browse/`** — `GET` filter form, list + count, distinct brands.
-- **Tests** — `search-params.test.ts` (parse + query string round-trip).
-- **`docs/browse/README.md`** — operator map; **§20** risk register row for
-  untrusted URL params marked mitigated; §6 and §19 updated.
+- **ADR 0008** â€” [browse filters: URL contract, server SQL, logging note](./adr/0008-browse-filters-mvp.md).
+- **`src/features/browse/`** â€” `search-params` + `query` (`browseWhereFromState`).
+- **`src/app/browse/`** â€” `GET` filter form, list + count, distinct brands.
+- **Tests** â€” `search-params.test.ts` (parse + query string round-trip).
+- **`docs/browse/README.md`** â€” operator map; **Â§20** risk register row for
+  untrusted URL params marked mitigated; Â§6 and Â§19 updated.
 
-### 2026-04-21 — Recommender: `spec_embedding` backfill + semantic bump
+### 2026-04-21 â€” Recommender: `spec_embedding` backfill + semantic bump
 
-- **`pnpm spec-embed:backfill`** — `scripts/backfill-spec-embeddings.ts`; fills
+- **`pnpm spec-embed:backfill`** â€” `scripts/backfill-spec-embeddings.ts`; fills
   `phones.spec_embedding` from `buildSpecDocumentForEmbedding` + Gemini
   embeddings (default: null columns only; `--force` re-embeds active phones).
-- **`src/services/recommender/spec-embedding-text.ts`**, **`vector-utils.ts`** —
+- **`src/services/recommender/spec-embedding-text.ts`**, **`vector-utils.ts`** â€”
   query/spec text for aligned cosine, `parseVectorColumn` + cosine helper.
-- **`match.ts`** — `specSemanticBonus`, `rankCandidates(..., { queryEmbedding })`;
+- **`match.ts`** â€” `specSemanticBonus`, `rankCandidates(..., { queryEmbedding })`;
   catalogue loads `spec_embedding`.
-- **Tests** — `extract-requirements.test.ts` (mock `LlmProvider`), plus unit
+- **Tests** â€” `extract-requirements.test.ts` (mock `LlmProvider`), plus unit
   tests for vector + spec text.
-- **[ADR 0007](./adr/0007-recommender-mvp.md)** + **§20 risk register** updated
+- **[ADR 0007](./adr/0007-recommender-mvp.md)** + **Â§20 risk register** updated
   (mitigated row for spec vectors; entries kept when status changes).
 
-### 2026-04-21 — Phase 5 MVP (conversational recommender)
+### 2026-04-21 â€” Phase 5 MVP (conversational recommender)
 
-- **`src/services/recommender/`** — `UserRequirements` Zod schema + merge
+- **`src/services/recommender/`** â€” `UserRequirements` Zod schema + merge
   normalisation, Flash structured extract, phone catalog + aspect join,
   filters, weighted score, diversity, relaxation ladder.
-- **`POST /api/recommend`** — session cookie, `recommendation_turns` persistence,
+- **`POST /api/recommend`** â€” session cookie, `recommendation_turns` persistence,
   `consumeRecommendRateLimit`, clarify vs results response shape.
-- **`/recommend`** + **`/browse`** — user-facing intake and active-phone list.
-- **[ADR 0007](./adr/0007-recommender-mvp.md)** — MVP vs §11 full vision.
-- **`docs/recommender/README.md`** — operator / developer map.
+- **`/recommend`** + **`/browse`** â€” user-facing intake and active-phone list.
+- **[ADR 0007](./adr/0007-recommender-mvp.md)** â€” MVP vs Â§11 full vision.
+- **`docs/recommender/README.md`** â€” operator / developer map.
 
-### 2026-04-21 — Phase 4 MVP (aspect scorecard)
+### 2026-04-21 â€” Phase 4 MVP (aspect scorecard)
 
-- **`src/services/scorecard/`** — combined-query retrieval per aspect, Zod
+- **`src/services/scorecard/`** â€” combined-query retrieval per aspect, Zod
   extraction schema, chunk-id validation with one retry + strip, recency
   confidence bump, upsert into `aspects`.
-- **`pnpm scorecard:auto`** — automated daily pipeline (`scripts/scorecard-auto.ts`).
-- **`pnpm scorecard:run`** — manual CLI `scripts/scorecard-run.ts`; `--phone <slug>` or
+- **`pnpm scorecard:auto`** â€” automated daily pipeline (`scripts/scorecard-auto.ts`).
+- **`pnpm scorecard:run`** â€” manual CLI `scripts/scorecard-run.ts`; `--phone <slug>` or
   `--all` (active phones only).
-- **`ScorecardSection`** on `/p/[slug]` — renders when at least one aspect row
+- **`ScorecardSection`** on `/p/[slug]` â€” renders when at least one aspect row
   exists; seven-axis list with score, confidence, evidence counts, summary.
-- **[ADR 0006](./adr/0006-aspect-scorecard-mvp.md)** — MVP scope, deferred
+- **[ADR 0006](./adr/0006-aspect-scorecard-mvp.md)** â€” MVP scope, deferred
   calibration / multi-query / cron.
-- **`docs/scorecard/README.md`** — operator guide.
+- **`docs/scorecard/README.md`** â€” operator guide.
 
-### 2026-04-24 — Phone Q&A scope, product images, landing IA, ask retrieval trace
+### 2026-04-24 â€” Phone Q&A scope, product images, landing IA, ask retrieval trace
 
-- **[ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)** — Chat `SYSTEM_PREAMBLE`
+- **[ADR 0011](./adr/0011-phone-qa-scope-images-home-ask-trace.md)** â€” Chat `SYSTEM_PREAMBLE`
   (single-phone scope, redirect cross-catalog questions); `phone-chat` help copy; `PhoneImage`
-  `<img>` + `referrerPolicy="no-referrer"`; home page “What you can do” cards;
+  `<img>` + `referrerPolicy="no-referrer"`; home page â€œWhat you can doâ€ cards;
   `buildAskRetrievalTrace` + `retrievalTrace` on NDJSON `done`; collapsible UI.
-- **Docs** — this file (feature table + backlog), `docs/RECSY_V2_PROJECT_GUIDE.md` §4/§6/§9/§13/§16,
-  `docs/retrieval/README.md` §9.
+- **Docs** â€” this file (feature table + backlog), `docs/RECSY_V2_PROJECT_GUIDE.md` Â§4/Â§6/Â§9/Â§13/Â§16,
+  `docs/retrieval/README.md` Â§9.
 
-### 2026-04-21 — Phase 3 MVP (phone Q&A + rate limit + smoke)
+### 2026-04-21 â€” Phase 3 MVP (phone Q&A + rate limit + smoke)
 
-- **`POST /api/ask`** — Zod body, IP-hashed rate limit, hybrid retrieval,
+- **`POST /api/ask`** â€” Zod body, IP-hashed rate limit, hybrid retrieval,
   citation validation + single retry, NDJSON response, `chat_queries` log.
-- **`/p/[slug]`** — `PhoneHeader` + ask UI with inline citation chips.
-- **`pnpm retrieval:smoke`** — live DB hybrid retrieval sanity check.
-- **`rate_limits` unique index** — enables atomic upserts (see Issues Log).
-- **`getPostgres()`** — exposes the raw `postgres` driver for retrieval SQL.
+- **`/p/[slug]`** â€” `PhoneHeader` + ask UI with inline citation chips.
+- **`pnpm retrieval:smoke`** â€” live DB hybrid retrieval sanity check.
+- **`rate_limits` unique index** â€” enables atomic upserts (see Issues Log).
+- **`getPostgres()`** â€” exposes the raw `postgres` driver for retrieval SQL.
 
-### 2026-04-21 — Phase 3+ (Playwright, eval tiers, optional LLM rerank)
+### 2026-04-21 â€” Phase 3+ (Playwright, eval tiers, optional LLM rerank)
 
-- **[ADR 0005](./adr/0005-e2e-and-evaluation.md)** — CI E2E strategy, evaluation
+- **[ADR 0005](./adr/0005-e2e-and-evaluation.md)** â€” CI E2E strategy, evaluation
   tiers, rerank fail-open semantics.
-- **`pnpm e2e` / `playwright.config.ts`** — SSR phone page + mocked `/api/ask`
+- **`pnpm e2e` / `playwright.config.ts`** â€” SSR phone page + mocked `/api/ask`
   NDJSON; CI job uses `pgvector/pgvector` + `db-setup`.
-- **`docs/eval/README.md` + `pnpm eval:retrieval`** — fixture-driven hybrid
+- **`docs/eval/README.md` + `pnpm eval:retrieval`** â€” fixture-driven hybrid
   retrieval checks (local / staging; embedding cost).
-- **`RETRIEVAL_LLM_RERANK`** env + `src/services/retrieval/llm-rerank.ts` —
+- **`RETRIEVAL_LLM_RERANK`** env + `src/services/retrieval/llm-rerank.ts` â€”
   structured Flash rerank after MMR; telemetry on `RetrievalDebug.llmRerank`.
-- **`drizzle/extensions.sql`** — `CREATE SCHEMA IF NOT EXISTS extensions` for
+- **`drizzle/extensions.sql`** â€” `CREATE SCHEMA IF NOT EXISTS extensions` for
   portable extension installs.
 
-### 2026-04-21 — Phase 3 in progress (retrieval layer landed)
+### 2026-04-21 â€” Phase 3 in progress (retrieval layer landed)
 
 - **ADR 0004** written:
   [`docs/adr/0004-hybrid-retrieval.md`](./adr/0004-hybrid-retrieval.md).
@@ -1834,56 +1937,56 @@ dissenting_quotes)`.
   including the generated column + both indexes.
 - **`src/services/retrieval/`** full module landed and wired through
   the barrel:
-  - `types.ts` — public contracts (`RetrievedChunk`, `Retriever`,
+  - `types.ts` â€” public contracts (`RetrievedChunk`, `Retriever`,
     `RetrievalOptions`, `RetrievalResult`, telemetry shape).
-  - `vector.ts` — `VectorSearch` retriever: cosine via pgvector HNSW,
+  - `vector.ts` â€” `VectorSearch` retriever: cosine via pgvector HNSW,
     joined with `sources`, optional embedding passthrough for MMR.
     Includes a pedantic `toVectorLiteral` helper so the `postgres`
     driver can't mangle `number[]` into `text[]`.
-  - `fts.ts` — `FtsSearch` retriever: tsvector match via
+  - `fts.ts` â€” `FtsSearch` retriever: tsvector match via
     `websearch_to_tsquery` with a trigram similarity fallback when
     tsvector returns zero matches. Query sanitisation strips control
     characters and clamps to 2 KB.
-  - `rrf.ts` + `rrf.test.ts` — pure Reciprocal Rank Fusion, 8 unit
+  - `rrf.ts` + `rrf.test.ts` â€” pure Reciprocal Rank Fusion, 8 unit
     tests covering empty input, tie-breaking stability,
     contribution tracking, input immutability, and k behaviour.
-  - `mmr.ts` + `mmr.test.ts` — pure MMR rerank + cosine similarity,
-    12 unit tests including identity at λ=1, diversity at λ=0,
+  - `mmr.ts` + `mmr.test.ts` â€” pure MMR rerank + cosine similarity,
+    12 unit tests including identity at Î»=1, diversity at Î»=0,
     missing-embedding penalty path, and the `cosineSimilarity` edge
     cases (antipodal, zero, dimension mismatch).
-  - `coverage.ts` + `coverage.test.ts` — source-coverage clamp with
+  - `coverage.ts` + `coverage.test.ts` â€” source-coverage clamp with
     a displace-and-promote second pass. Bug caught by tests: the
     default `maxPerSource` uses `ceil(k / minDistinctSources)`, not
     `floor`, so `k=4 min=3` yields `max=2` and actually fills all 4
     slots.
-  - `retriever.ts` — `HybridRetriever` orchestrator: embeds the query
+  - `retriever.ts` â€” `HybridRetriever` orchestrator: embeds the query
     once via `LlmProvider.embed`, runs vector + FTS in parallel
     (with per-retriever error containment), fuses with RRF, reranks
     via MMR, clamps via coverage. Emits rich per-stage telemetry
     (`vector.ms`, `fts.ms`, `rrf.ms`, `mmr.ms`, `coverage.relaxed`,
     `totalMs`) at info + debug levels.
-- **`docs/retrieval/README.md`** written — operator/developer guide
+- **`docs/retrieval/README.md`** written â€” operator/developer guide
   with a call-site example, tuning knobs table, observability guide,
   and a debugging playbook ("answer cites the wrong chunk", "MMR
   dropped chunks I wanted", "I get `relaxed: true` everywhere").
-- **Issues Log (§23) introduced** as a permanent section, ordered by
+- **Issues Log (Â§23) introduced** as a permanent section, ordered by
   severity, cataloguing every non-trivial issue we've hit so far
   (Phase 0 through 2) plus the known external limitations that
   aren't bugs. Maintain going forward: every non-trivial breakage
   gets a severity-sorted entry with symptom, root cause, fix, and
   hardening notes.
 - **Doc hygiene**: purged the last remaining stale references to the
-  old Python ingestion plan and `text-embedding-004` from §6, §7,
-  §8, §13, §14 (and the system-architecture diagram). The project
+  old Python ingestion plan and `text-embedding-004` from Â§6, Â§7,
+  Â§8, Â§13, Â§14 (and the system-architecture diagram). The project
   context now matches reality everywhere.
 - **Verification**: `pnpm typecheck` clean; `pnpm test` 69/69 green
   (7 test files); `pnpm lint` clean; `pnpm db:smoke` 7/7 green.
 
-### 2026-04-21 — Phase 2 shipped (ingestion closed out)
+### 2026-04-21 â€” Phase 2 shipped (ingestion closed out)
 
 - **Live end-to-end verified**: `pnpm ingest:smoke` drives a complete
   article-adapter round-trip against a real Wikipedia article, then
-  reruns to assert idempotency. **10/10 checks green** — 1 source,
+  reruns to assert idempotency. **10/10 checks green** â€” 1 source,
   23 chunks, 768-dim embeddings, contiguous indices, skipped re-run,
   advanced `last_fetched_at`, telemetry rows.
 - **Embedding model migrated** to `gemini-embedding-001` (Gemini
@@ -1891,29 +1994,29 @@ dissenting_quotes)`.
   locked to 768 via a hardcoded constant in
   `src/services/llm/gemini.ts` (matches the `vector(768)` column),
   `taskType: 'RETRIEVAL_DOCUMENT'` for better retrieval recall.
-  `LLM_EMBEDDING_DIMS` env var removed — a Zod transform was
+  `LLM_EMBEDDING_DIMS` env var removed â€” a Zod transform was
   unreliable across `tsx`/Next's env loaders, and coupling the
   dimension to the code is safer than to an env file.
 - **YouTube transcript fallback** shipped:
-  `src/services/ingest/adapters/youtube-transcript.ts` — utilities
+  `src/services/ingest/adapters/youtube-transcript.ts` â€” utilities
   for JSON3 parsing, track ranking, watch-page HTML scraping, and
   bracket-balanced `captionTracks` extraction (13 new unit tests).
   `youtube.ts` now walks a three-tier chain
-  (Innertube → Info captions → watch-page scrape) and iterates
+  (Innertube â†’ Info captions â†’ watch-page scrape) and iterates
   ranked English candidates within tiers 2/3 via
   `rankCaptionTracks`, because YouTube often lists a manual English
   track that returns empty while the real content lives on the ASR
   track one position lower.
 - **Bug fixes uncovered by the live run:**
-  - `src/services/ingest/adapters/article.ts` — em-dash in
+  - `src/services/ingest/adapters/article.ts` â€” em-dash in
     `User-Agent` crashed Node's `fetch` (HTTP headers are
     ByteStrings; Unicode throws `TypeError`). Replaced with ASCII
     hyphen. Added the same guard to `youtube-transcript.ts`.
-  - `src/services/ingest/embedder.ts` — `p-retry@8`'s
+  - `src/services/ingest/embedder.ts` â€” `p-retry@8`'s
     `onFailedAttempt` callback now receives `RetryContext` (with
     `ctx.error`) instead of the error directly. Updated accordingly
     and now surfaces `err.cause` to give actionable retry logs.
-  - `src/services/ingest/writer.ts` — inlined the `recordRun` helper
+  - `src/services/ingest/writer.ts` â€” inlined the `recordRun` helper
     into both transaction paths to resolve a `PgTransaction` vs
     `PostgresJsDatabase` type mismatch.
 - **Known blocker acknowledged, not addressed:** YouTube's
@@ -1921,28 +2024,28 @@ dissenting_quotes)`.
   datacenter IPs (and many residential dynamic IPs). The adapter
   detects the empty-body case, walks all ranked tracks, and
   ultimately records a `NotFoundError` so ingestion degrades
-  cleanly. A residential-IP proxy is the production answer —
+  cleanly. A residential-IP proxy is the production answer â€”
   deferred as out-of-budget. Article and Reddit adapters are
   unaffected, so our corpus coverage doesn't suffer.
 - **`scripts/ingest-smoke.ts`** added to lock in the e2e expectation
-  — future regressions will surface immediately.
+  â€” future regressions will surface immediately.
 - **`commitlint.config.mjs`**: relaxed `body-max-line-length` and
   `footer-max-line-length` (the 100-char cap rejected legitimate
   bullet lists with package names and URLs). Header limit
   unchanged.
-- **`.gitignore`**: reorganised and hardened — anchored IDE/editor
+- **`.gitignore`**: reorganised and hardened â€” anchored IDE/editor
   rules (`/.vscode/`, `/.idea/`, `/.cursor/`) to the repo root so
   they stop shadowing tracked files inside `legacy/`; removed
   conflicting `Icon?` pattern; added caches
   (`.turbo/`, `.swc/`, `.eslintcache`, `.prettiercache`, etc.),
   Husky internals (`.husky/_/`), and common editor scratch files.
-- **Docs**: §13 rewritten with the fallback chain details,
+- **Docs**: Â§13 rewritten with the fallback chain details,
   `docs/ingest/README.md` updated (YouTube IP-throttling
   disclaimer, Gemini embedding model, troubleshooting entries for
   the two classes of embedding errors we hit this session), and
-  Phase 2 marked ✓ in §19.
+  Phase 2 marked âœ“ in Â§19.
 
-### 2026-04-21 — Phase 2 code complete (ingestion)
+### 2026-04-21 â€” Phase 2 code complete (ingestion)
 
 - **ADR 0003** written: consolidated ingestion onto TypeScript instead of a
   Python sidecar. Reuses Drizzle schema, `LlmProvider`, `pino`, `@/env`,
@@ -1953,36 +2056,36 @@ dissenting_quotes)`.
   `index.ts`.
 - **Dependencies added:** `youtubei.js@17.0.1`, `@mozilla/readability@0.6`,
   `linkedom@0.18`, `gpt-tokenizer@3.4`, `p-retry@8`, `p-limit@7`.
-- **CLI**: `pnpm ingest --phone <slug> [--adapter …] [--url …] [--dry-run]`.
+- **CLI**: `pnpm ingest --phone <slug> [--adapter â€¦] [--url â€¦] [--dry-run]`.
   Entry point `scripts/ingest.ts` with arg parsing + summary print + non-
   zero exit on any adapter error.
-- **CI**: `.github/workflows/ingest.yml` — manual dispatch with inputs
+- **CI**: `.github/workflows/ingest.yml` â€” manual dispatch with inputs
   (`phone`, `adapter`, `limit`) and nightly 03:17 UTC cron over a curated
   seed roster.
-- **Tests**: 13 new unit tests (chunking × 9, hashing × 4). 23/23 total
+- **Tests**: 13 new unit tests (chunking Ã— 9, hashing Ã— 4). 23/23 total
   passing. `tsc --noEmit` and `eslint` clean.
 - **Docs**: `docs/ingest/README.md` written (architecture, per-adapter
-  notes, idempotency, troubleshooting table). §13 of this document
+  notes, idempotency, troubleshooting table). Â§13 of this document
   rewritten around the TS implementation.
 - **Known blocker to Phase 2 acceptance**: `youtubei.js`'s
   `getTranscript()` returns HTTP 400 for the discovered Pixel 9 Pro XL
   review video. Orchestrator correctly degrades these to a skipped
   source, but we need a fallback transcript path before calling Phase 2
-  done. Options tracked in §13 "Known issues".
+  done. Options tracked in Â§13 "Known issues".
 
-### 2026-04-21 — Phase 1 shipped
+### 2026-04-21 â€” Phase 1 shipped
 
-- Postgres extensions installed: `vector`, `pg_trgm`, `pgcrypto` (pg_cron deferred — needs Supabase dashboard enable on free tier).
+- Postgres extensions installed: `vector`, `pg_trgm`, `pgcrypto` (pg_cron deferred â€” needs Supabase dashboard enable on free tier).
 - Drizzle migration `0000_light_bromley.sql` applied to Supabase: 12 tables, 8 enums, all FKs, btree + 2 HNSW (cosine) indexes.
 - RLS enabled on every table; anon role granted `SELECT` on the public-facing
   set (`phones [active]`, `aspect_definitions`, `aspects`, `sources [active]`,
   `chunks`). Operational tables (logs, cache, rate-limits) remain
   service-role-only.
-- `src/features/phones/schema.ts` — Zod `PhoneSpec` schema for runtime validation
+- `src/features/phones/schema.ts` â€” Zod `PhoneSpec` schema for runtime validation
   of `phones.spec_json`. Decimal weights (e.g. 185.9 g) supported.
 - 7 `aspect_definitions` seeded with retrieval prompts; default weights sum to 1.0
   (validated at seed time).
-- 20 phones seeded across budget → flagship → foldable, six brands, 2024–2025
+- 20 phones seeded across budget â†’ flagship â†’ foldable, six brands, 2024â€“2025
   launches. Spec JSON validated by `PhoneSpec`.
 - Orchestrator scripts: `scripts/db-setup.ts` (idempotent), `scripts/db-reset.ts`
   (guarded by `RECSY_ALLOW_DB_RESET=1`), `scripts/db-smoke.ts` (6 acceptance
@@ -1990,14 +2093,14 @@ dissenting_quotes)`.
 - New package scripts: `db:setup`, `db:reset`, `db:smoke`.
 - All Phase 0 quality gates remain green.
 
-### 2026-04-21 — Repository re-rooted
+### 2026-04-21 â€” Repository re-rooted
 
 - Moved Phase 0 scaffold from `recsy-v2/` subdirectory to the repo root.
 - Old Flutter project preserved under `legacy/`.
 - CI workflow + `.gitignore` updated accordingly.
 - Husky hooks now bind to the repo `.git/`.
 
-### 2026-04-19 — Phase 0 shipped
+### 2026-04-19 â€” Phase 0 shipped
 
 - Next.js 16 + React 19 + Tailwind v4 + TS strict scaffolded.
 - Design tokens (OKLCH, dark default, AA) wired via `@theme inline`.
@@ -2012,22 +2115,22 @@ dissenting_quotes)`.
 ## 23. Issues Log
 
 > **Purpose.** A running log of every non-trivial issue we've hit during
-> development — the symptom, where it happened, what actually caused it,
+> development â€” the symptom, where it happened, what actually caused it,
 > and what we did about it. Ordered by severity within each phase so the
 > nasty ones stay visible. Add new entries as they come up; don't let
 > lessons rot.
 >
 > **Severity rubric:**
 >
-> - **CRITICAL** — blocks deploys, breaks production, or risks data loss.
-> - **HIGH** — blocks a user-facing feature or a full dev pipeline (build,
+> - **CRITICAL** â€” blocks deploys, breaks production, or risks data loss.
+> - **HIGH** â€” blocks a user-facing feature or a full dev pipeline (build,
 >   CI, ingestion end-to-end).
-> - **MEDIUM** — breaks typecheck / tests / lint, or materially slows dev
+> - **MEDIUM** â€” breaks typecheck / tests / lint, or materially slows dev
 >   velocity and observability.
-> - **LOW** — cosmetic, dev-only annoyance, or one-time papercut.
+> - **LOW** â€” cosmetic, dev-only annoyance, or one-time papercut.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
-> fixed it, and — where possible — how we've made it harder to recur.
+> fixed it, and â€” where possible â€” how we've made it harder to recur.
 
 ### Ops - automated scorecard generation (2026-05-18)
 
@@ -2120,7 +2223,7 @@ dissenting_quotes)`.
   ranking. Operators should continue running `scorecard:auto`, but the
   repeated-question bug was a Stage A/session-state issue.
 
-### Operations — GitHub Actions ingestion (2026-04-29)
+### Operations â€” GitHub Actions ingestion (2026-04-29)
 
 #### CRITICAL
 
@@ -2200,13 +2303,13 @@ dissenting_quotes)`.
     missing required secrets fail fast instead of producing undefined runtime
     config.
 
-### Ops — Automated scorecard + ingestion hardening (2026-05-14 – 2026-05-15)
+### Ops â€” Automated scorecard + ingestion hardening (2026-05-14 â€“ 2026-05-15)
 
 #### HIGH
 
 - **GeminiProvider could not differentiate schema violations from API-level errors, causing wrong retry path and excessive debug noise.**
   A schema-validation failure (model returned malformed JSON) and a network/API error both triggered the same generic retry logic. Operators saw confusing log output and retries that could not succeed (e.g. retrying a schema error with no prompt adjustment). ([`be5df79`](https://github.com/rohang1411/RECSY/commit/be5df79), debug logging [`281be83`](https://github.com/rohang1411/RECSY/commit/281be83))
-  - **Fix.** `GeminiProvider` now catches `AISDKError` subtypes separately: schema violations → single retry with error-feedback nudge; API / network errors → jittered backoff. Debug-level logging for validation errors added to aid diagnosis without spamming production.
+  - **Fix.** `GeminiProvider` now catches `AISDKError` subtypes separately: schema violations â†’ single retry with error-feedback nudge; API / network errors â†’ jittered backoff. Debug-level logging for validation errors added to aid diagnosis without spamming production.
   - **Hardening.** `GeminiProvider` type narrowing covers the two error paths so a future SDK upgrade that changes the error hierarchy is caught by typecheck.
 
 - **Scorecard agent missing type imports caused build failure on automated roll-out.**
@@ -2229,7 +2332,7 @@ dissenting_quotes)`.
 - **Recommend page lost all conversation state on browser refresh.**
   `/recommend` held chat turns and pick cards in React state only. A full page refresh cleared everything. ([`88dec02`](https://github.com/rohang1411/RECSY/commit/88dec02))
   - **Fix.** `RecommendClient` serializes conversation state to `sessionStorage` on every update and hydrates on mount.
-  - **Hardening.** No PII stored — only UI state (chat messages, pick slugs). State clears when the browser session ends.
+  - **Hardening.** No PII stored â€” only UI state (chat messages, pick slugs). State clears when the browser session ends.
 
 - **GSMArena Cloudflare Turnstile blocked automated discovery; broken creator channel IDs re-ingested stale feeds.**
   The GSMArena adapter hit a Cloudflare Turnstile challenge on discovery. Separately, several `creator_profiles` seed rows had wrong YouTube channel IDs; corrected IDs did not retire old active rows due to upsert keying on `(platform, external_id)`. ([`2f18ff1`](https://github.com/rohang1411/RECSY/commit/2f18ff1))
@@ -2250,21 +2353,21 @@ dissenting_quotes)`.
 #### LOW
 
 - **GitHub Actions `secrets` context was invalid in job-level `if:` conditionals.**
-  `secrets.*` is unavailable in `job.if:` expressions — only in step-level conditions. Workflows silently skipped instead of failing with a clear error. ([`a7af86f`](https://github.com/rohang1411/RECSY/commit/a7af86f))
+  `secrets.*` is unavailable in `job.if:` expressions â€” only in step-level conditions. Workflows silently skipped instead of failing with a clear error. ([`a7af86f`](https://github.com/rohang1411/RECSY/commit/a7af86f))
   - **Fix.** Replaced inline secret checks with the `secrets-gate` reusable job pattern; downstream jobs key off the boolean output.
 
 - **CI workflows declared an explicit pnpm version that drifted from `package.json`'s `packageManager` field.**
   Pinned `pnpm@10.x` in workflows drifted when `package.json` bumped the patch version. ([`8cce9ac`](https://github.com/rohang1411/RECSY/commit/8cce9ac))
   - **Fix.** Removed all explicit `pnpm-version:` from workflow steps; Corepack reads `packageManager` automatically.
 
-### Phase 7 polish — Context-aware summaries, tie honesty, client settings (2026-04-22)
+### Phase 7 polish â€” Context-aware summaries, tie honesty, client settings (2026-04-22)
 
 #### HIGH
 
-- **Refined turns still looked “dumb”: three picks with identical 5.00 scores and an identical summary naming the **first** turn’s priority.**
-  With ADR 0012’s refine-over-prior-picks path live, a session with three picks followed by “which one should I choose if performance is my 2nd priority?” produced the right _shape_ (three prior phones, re-ranked) but every card showed the same score and the summary still said `Strongest on camera…`. Two layers contributed:
-  1. **Data layer:** the running instance had `phones` + `aspect_definitions` seeded, but **no ingested chunks** → no `aspects` rows. `weightedAspectScore` substitutes a neutral `5` for missing aspects, so `score = Σ wᵢ · 5 = 5` for every phone regardless of priority. The ranker was mathematically correct; the inputs were empty.
-  2. **Presentation layer:** `pickSummaryLine(entry, weights)` only looked at the top-weighted aspect, so refined turns could not surface the user’s **new** (secondary) priority, and the “no reviewer data” case was indistinguishable in output from “strongest on camera with rich data.”
+- **Refined turns still looked â€œdumbâ€: three picks with identical 5.00 scores and an identical summary naming the **first** turnâ€™s priority.**
+  With ADR 0012â€™s refine-over-prior-picks path live, a session with three picks followed by â€œwhich one should I choose if performance is my 2nd priority?â€ produced the right _shape_ (three prior phones, re-ranked) but every card showed the same score and the summary still said `Strongest on cameraâ€¦`. Two layers contributed:
+  1. **Data layer:** the running instance had `phones` + `aspect_definitions` seeded, but **no ingested chunks** â†’ no `aspects` rows. `weightedAspectScore` substitutes a neutral `5` for missing aspects, so `score = Î£ wáµ¢ Â· 5 = 5` for every phone regardless of priority. The ranker was mathematically correct; the inputs were empty.
+  2. **Presentation layer:** `pickSummaryLine(entry, weights)` only looked at the top-weighted aspect, so refined turns could not surface the userâ€™s **new** (secondary) priority, and the â€œno reviewer dataâ€ case was indistinguishable in output from â€œstrongest on camera with rich data.â€
   - **Fix.** `rankCandidates` now returns a richer `RankResult` with `scoresTied` (top picks within `SCORE_TIE_EPSILON = 0.05`), `scorecardMissing` (no pick has real aspect data), and normalised `weights`. `pickSummaryLine` takes a `SummaryContext` and emits a different string for each of: refined + data (names **primary and secondary** priority aspects with their scores), refined + no-data, fresh + no-data, fresh + data. A new banner on `/recommend` names ties and no-data states in English; an assistant chat bubble explains the tie reason (missing scorecard vs. genuinely identical weighted scores).
   - **Hardening.** `src/services/recommender/match-summary.test.ts` locks the four summary branches, the `hasRealAspectData` detector, and the tie/missing-scorecard flag propagation through `rankCandidates`. `aspectsByWeight` has a deterministic canonical tie-break so the summary string is stable across renders.
 
@@ -2272,40 +2375,40 @@ dissenting_quotes)`.
 
 - **No user-visible control over Enter-to-send; inconsistent across surfaces.**
   `/recommend` used Enter = send; `/p/[slug]` chat did not have any key binding. Users asked for a global toggle.
-  - **Fix.** New `src/lib/client-settings.ts` with `useClientSetting<T>(key, fallback)` on `useSyncExternalStore` + `localStorage`. New `/settings` route with an accessible `role="switch"` toggle for “Enter key sends message.” Both chat inputs now read the setting and gate their Enter handler on it; Shift+Enter always inserts a newline regardless of the setting.
-  - **Hardening.** Implemented via `useSyncExternalStore` rather than `useEffect` + `setState` so the hook is SSR-safe (hydration returns the fallback, then transitions to the stored value on commit — no hydration mismatch). `CLIENT_SETTING_KEYS` + `CLIENT_SETTING_DEFAULTS` are frozen objects so adding a new toggle is a 3-line change at a single location.
+  - **Fix.** New `src/lib/client-settings.ts` with `useClientSetting<T>(key, fallback)` on `useSyncExternalStore` + `localStorage`. New `/settings` route with an accessible `role="switch"` toggle for â€œEnter key sends message.â€ Both chat inputs now read the setting and gate their Enter handler on it; Shift+Enter always inserts a newline regardless of the setting.
+  - **Hardening.** Implemented via `useSyncExternalStore` rather than `useEffect` + `setState` so the hook is SSR-safe (hydration returns the fallback, then transitions to the stored value on commit â€” no hydration mismatch). `CLIENT_SETTING_KEYS` + `CLIENT_SETTING_DEFAULTS` are frozen objects so adding a new toggle is a 3-line change at a single location.
 
-### Phase 7 polish — Recommender refine + empty-corpus UX (2026-04-24)
+### Phase 7 polish â€” Recommender refine + empty-corpus UX (2026-04-24)
 
 #### HIGH
 
-- **Phone Q&A returned “the excerpts do not contain information” for every question, including basic ones (“how is the camera?”, “how is the charging speed?”).**
-  The retrieval pipeline itself was correct. Root cause was an **ops-state gap leaking into product UX**: `pnpm db:setup` only seeds `phones` + `aspect_definitions`, not `sources` / `chunks` (by design — ingestion is a separate phase, see ADR 0003). On a freshly set up env, the `chunks` table is empty; hybrid retrieval returns zero candidates; `runPhoneQna` still called Gemini with an empty `SOURCE EXCERPTS` block, and the model correctly — but unhelpfully — reported the absence. To a user, this looked like the product was broken.
-  - **Fix.** `src/services/chat/answer.ts` now short-circuits in `runPhoneQna` when `retrieval.chunks.length === 0`: it returns a deterministic, non-LLM message that names the missing data, gives a developer hint (`pnpm ingest --phone <slug>`), and routes the user to Recommend / Compare. Uses a sentinel `model: 'no-context@v1'` (`NO_CONTEXT_MODEL`) so analytics can find affected turns cheaply. `usage: { tokensIn: 0, tokensOut: 0 }` — no LLM spend on empty-corpus questions.
-  - **Hardening.** `src/services/chat/answer.test.ts` asserts the LLM client’s `.chat` is never called in the zero-chunk case. The retrieval trace still serializes (all stages `count: 0`), so the client’s debug panel remains usable.
+- **Phone Q&A returned â€œthe excerpts do not contain informationâ€ for every question, including basic ones (â€œhow is the camera?â€, â€œhow is the charging speed?â€).**
+  The retrieval pipeline itself was correct. Root cause was an **ops-state gap leaking into product UX**: `pnpm db:setup` only seeds `phones` + `aspect_definitions`, not `sources` / `chunks` (by design â€” ingestion is a separate phase, see ADR 0003). On a freshly set up env, the `chunks` table is empty; hybrid retrieval returns zero candidates; `runPhoneQna` still called Gemini with an empty `SOURCE EXCERPTS` block, and the model correctly â€” but unhelpfully â€” reported the absence. To a user, this looked like the product was broken.
+  - **Fix.** `src/services/chat/answer.ts` now short-circuits in `runPhoneQna` when `retrieval.chunks.length === 0`: it returns a deterministic, non-LLM message that names the missing data, gives a developer hint (`pnpm ingest --phone <slug>`), and routes the user to Recommend / Compare. Uses a sentinel `model: 'no-context@v1'` (`NO_CONTEXT_MODEL`) so analytics can find affected turns cheaply. `usage: { tokensIn: 0, tokensOut: 0 }` â€” no LLM spend on empty-corpus questions.
+  - **Hardening.** `src/services/chat/answer.test.ts` asserts the LLM clientâ€™s `.chat` is never called in the zero-chunk case. The retrieval trace still serializes (all stages `count: 0`), so the clientâ€™s debug panel remains usable.
 
-- **Recommender did not refine: “which of these is best for performance?” returned the same list.**
-  `POST /api/recommend` loaded the previous turn’s `UserRequirements` and asked the LLM to merge. The merge worked — `priorities.performance` went up — but the **ranker then ran over the entire catalog**. With a top-K of three, brand-diversity caps, and only small shifts in aspect weights, the output slugs were almost always the same. To the user, the recommender looked stateless.
-  - **Fix.** New `src/services/recommender/refine-intent.ts` with `detectRefineIntent(message)`. New session helper `getLatestRecommendPickIds`. In `runRecommendationPipeline`, when refine intent is detected **and** a previous `recommend` turn has pick ids, the catalog is filtered to those ids before `rankCandidates`. The API response carries `refined: true`; the `/recommend` client shows “Re-ranked your earlier picks.”
+- **Recommender did not refine: â€œwhich of these is best for performance?â€ returned the same list.**
+  `POST /api/recommend` loaded the previous turnâ€™s `UserRequirements` and asked the LLM to merge. The merge worked â€” `priorities.performance` went up â€” but the **ranker then ran over the entire catalog**. With a top-K of three, brand-diversity caps, and only small shifts in aspect weights, the output slugs were almost always the same. To the user, the recommender looked stateless.
+  - **Fix.** New `src/services/recommender/refine-intent.ts` with `detectRefineIntent(message)`. New session helper `getLatestRecommendPickIds`. In `runRecommendationPipeline`, when refine intent is detected **and** a previous `recommend` turn has pick ids, the catalog is filtered to those ids before `rankCandidates`. The API response carries `refined: true`; the `/recommend` client shows â€œRe-ranked your earlier picks.â€
   - **Safety.** The detector is conservative: messages with **new-query hints** (`under $X`, `instead`, `forget those`, `show me something else`, `start over`) skip the refine path entirely, even if refine-like wording is also present. Long messages need a strong refine signal to qualify. If the narrowed catalog produces no picks after filters (e.g., a newly tightened budget excludes all prior picks), we fall back to the full-catalog path and clear `refined`.
-  - **Hardening.** `refine-intent.test.ts` locks down positive examples (“rank them,” “of these,” “between the top two”), long-message rejection, and new-query override.
+  - **Hardening.** `refine-intent.test.ts` locks down positive examples (â€œrank them,â€ â€œof these,â€ â€œbetween the top twoâ€), long-message rejection, and new-query override.
 
 #### MEDIUM
 
-- **“Show retrieval pipeline & sources” button never rendered.**
-  The server was emitting `retrievalTrace` on the NDJSON `done` line, but the client’s `done` handler in `src/app/p/[slug]/phone-chat.tsx` built its `meta` state with only `{ retrievalMs, model }`, silently dropping `retrievalTrace`. The `<details>` disclosure was gated on `meta?.retrievalTrace` and so never appeared.
-  - **Fix.** Extended the `StreamEvent` union’s `done` variant to carry `retrievalTrace?: AskRetrievalTrace`, and the handler now forwards it into `setMeta`.
+- **â€œShow retrieval pipeline & sourcesâ€ button never rendered.**
+  The server was emitting `retrievalTrace` on the NDJSON `done` line, but the clientâ€™s `done` handler in `src/app/p/[slug]/phone-chat.tsx` built its `meta` state with only `{ retrievalMs, model }`, silently dropping `retrievalTrace`. The `<details>` disclosure was gated on `meta?.retrievalTrace` and so never appeared.
+  - **Fix.** Extended the `StreamEvent` unionâ€™s `done` variant to carry `retrievalTrace?: AskRetrievalTrace`, and the handler now forwards it into `setMeta`.
   - **Hardening.** A typed `StreamEvent` union is the contract with the server; the compiler will catch the next instance of this regression if we keep narrowing via the union.
 
-- **List of recommender picks implied “always 3” and had no explicit rank labels.**
-  `pickDiverseTop` already returned ≤ 3, but the UI rendered cards generically. Two matches looked like “we could not find a third,” and rank was implied only by list order.
-  - **Fix.** `/recommend` card headers now carry explicit `Top pick` / `Runner-up` / `3rd` badges, and a pre-list line states the count honestly (“Showing 2 picks, ranked”). Chat intro text says “one match,” “top 2,” or “top 3” as appropriate.
+- **List of recommender picks implied â€œalways 3â€ and had no explicit rank labels.**
+  `pickDiverseTop` already returned â‰¤ 3, but the UI rendered cards generically. Two matches looked like â€œwe could not find a third,â€ and rank was implied only by list order.
+  - **Fix.** `/recommend` card headers now carry explicit `Top pick` / `Runner-up` / `3rd` badges, and a pre-list line states the count honestly (â€œShowing 2 picks, rankedâ€). Chat intro text says â€œone match,â€ â€œtop 2,â€ or â€œtop 3â€ as appropriate.
 
-### Phase 3 — Retrieval + phone Q&A (2026-04-21)
+### Phase 3 â€” Retrieval + phone Q&A (2026-04-21)
 
 #### MEDIUM
 
-- **`rate_limits` had no composite UNIQUE — `onConflictDoUpdate` unsafe.**
+- **`rate_limits` had no composite UNIQUE â€” `onConflictDoUpdate` unsafe.**
   The table only carried a non-unique btree on `(key, window_start)`, so
   Drizzle could not atomically increment per-window counts; duplicate rows
   were possible under concurrency.
@@ -2320,10 +2423,10 @@ dissenting_quotes)`.
   `db-setup` failed on `CREATE EXTENSION ... WITH SCHEMA extensions` because
   stock images don't pre-create that namespace (Supabase does).
   - **Fix.** `CREATE SCHEMA IF NOT EXISTS extensions` at the top of
-    `drizzle/extensions.sql`, plus `set_config('search_path', …)` for the
+    `drizzle/extensions.sql`, plus `set_config('search_path', â€¦)` for the
     `db-setup` session so migrations resolve `vector`.
 
-### Phase 2 — Ingestion (2026-04-21)
+### Phase 2 â€” Ingestion (2026-04-21)
 
 #### CRITICAL
 
@@ -2337,7 +2440,7 @@ API version v1beta`. Google retired the model on `v1beta` in early 2026.
     `taskType: 'RETRIEVAL_DOCUMENT'` (better retrieval recall than the
     default `SEMANTIC_SIMILARITY`).
   - **Hardening.** The 768 dimension is now hardcoded as
-    `EMBEDDING_DIMENSIONS` inside `gemini.ts` rather than an env var —
+    `EMBEDDING_DIMENSIONS` inside `gemini.ts` rather than an env var â€”
     the DB schema is `vector(768)`, so the dimension belongs in code next
     to the callsite, not in a dotenv where it can drift silently.
 
@@ -2400,11 +2503,11 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
   `TypeError: Cannot convert argument to a ByteString because the character at index 71 has a value of 8212`.
   Node's `fetch` treats HTTP header values as ByteStrings (ASCII-only);
   the em-dash (U+2014) triggered a hard throw.
-  - **Fix.** Replaced `—` with `-` in
+  - **Fix.** Replaced `â€”` with `-` in
     `src/services/ingest/adapters/article.ts` and added an explanatory
     comment.
   - **Hardening.** The same bug recurred silently in
-    `src/services/ingest/adapters/youtube-transcript.ts` — we only found
+    `src/services/ingest/adapters/youtube-transcript.ts` â€” we only found
     it because all three YouTube fallbacks returned 0 tracks despite the
     JSON being well-formed. Added the same guard + comment there.
     Consider a lint rule banning non-ASCII bytes in string literals that
@@ -2438,10 +2541,10 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
   rotates the Innertube transcript endpoint occasionally and the library
   hasn't caught up. Would have made YouTube ingestion a no-op.
   - **Fix.** Implemented a three-tier transcript fallback chain
-    (Innertube → Info-object captions → watch-page HTML scrape) in
+    (Innertube â†’ Info-object captions â†’ watch-page HTML scrape) in
     `youtube.ts` + `youtube-transcript.ts`. First non-empty wins.
   - **Hardening.** Graceful `NotFoundError` degradation: when _all_ tiers
-    fail, the orchestrator records a skipped-source row and moves on —
+    fail, the orchestrator records a skipped-source row and moves on â€”
     ingestion never aborts the whole phone.
 
 - **`next build` failing on CI with `Invalid URL` on `metadataBase`.**
@@ -2468,7 +2571,7 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
   tracked files in the Flutter subtree, which `git status` then reported
   as staged deletions.
   - **Fix.** Anchored all IDE/OS rules to the repo root with a leading
-    `/` (`/.vscode/`, `/.idea/`, `/.cursor/`, …) so they don't recurse;
+    `/` (`/.vscode/`, `/.idea/`, `/.cursor/`, â€¦) so they don't recurse;
     dropped the `Icon?` pattern (it was a macOS metadata leftover and
     conflicts with image assets in `legacy/web/icons/`).
   - **Hardening.** `.gitignore` is now sectioned, alphabetised, and
@@ -2489,7 +2592,7 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
     `ctx.error.message` and `ctx.error.cause`. Now logs both the retry
     message and the underlying SDK cause.
   - **Hardening.** The improved logging pays for itself whenever Gemini
-    returns a schema error mid-batch — we see the actual cause instead
+    returns a schema error mid-batch â€” we see the actual cause instead
     of a generic retry wrap.
 
 - **`PgTransaction` vs `PostgresJsDatabase` mismatch in ingestion
@@ -2503,7 +2606,7 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
 
 - **Vitest worker timeout when run in parallel with ESLint.** Random
   flakes locally on Windows under heavy concurrent I/O.
-  - **Fix.** Run lint → vitest sequentially in dev scripts. CI already
+  - **Fix.** Run lint â†’ vitest sequentially in dev scripts. CI already
     runs them in separate jobs so no change needed there.
 
 - **Drizzle seed rejecting `weight_g` as integer.** Starter phones have
@@ -2585,43 +2688,43 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
     structured `pino` logs and avoid dumping parser-generated class bodies
     into operator output.
 
-### Phase 1 — Database (2026-04-21)
+### Phase 1 â€” Database (2026-04-21)
 
 #### MEDIUM
 
-- **Zod `weight_g` integer violation** — covered in the Phase 2 log
+- **Zod `weight_g` integer violation** â€” covered in the Phase 2 log
   above because the fix landed alongside Phase 2 seeding churn.
 
-(Phase 1 was otherwise clean — all 6/6 smoke checks green on first run.)
+(Phase 1 was otherwise clean â€” all 6/6 smoke checks green on first run.)
 
-### Phase 0 — Scaffold (2026-04-19)
+### Phase 0 â€” Scaffold (2026-04-19)
 
 #### HIGH
 
-- **CI `next build` Invalid URL on `metadataBase`** — covered above.
-- **Fresh-Windows `pnpm` PATH** — covered above.
+- **CI `next build` Invalid URL on `metadataBase`** â€” covered above.
+- **Fresh-Windows `pnpm` PATH** â€” covered above.
 
 #### MEDIUM
 
-- **Husky re-root** — covered above.
-- **ESLint over-scanning `legacy/`** — covered above.
+- **Husky re-root** â€” covered above.
+- **ESLint over-scanning `legacy/`** â€” covered above.
 
 #### LOW
 
-- **React scaffold lints** — covered above.
-- **`typedRoutes` deprecation** — covered above.
-- **`db-ping` top-level await** — covered above.
+- **React scaffold lints** â€” covered above.
+- **`typedRoutes` deprecation** â€” covered above.
+- **`db-ping` top-level await** â€” covered above.
 
 ### Known external limitations (not bugs, but living here for visibility)
 
 - **YouTube datacenter-IP throttling.** `timedtext?fmt=json3` returns
-  HTTP 200 + zero bytes from most non-residential IPs — including our
+  HTTP 200 + zero bytes from most non-residential IPs â€” including our
   dev machine and GitHub Actions runners. All three transcript fallback
   tiers hit the same ceiling because the signed URLs wrap the same
   underlying resource. The orchestrator records these as `skippedUnusable`,
   not adapter errors. Accepted as out-of-scope for a zero-budget MVP; a
   residential proxy or authenticated transcript provider would fix it at
-  ongoing cost. See §13 "Known issues".
+  ongoing cost. See Â§13 "Known issues".
 - **Gemini free-tier quota.** We stay well within limits in dev, but
   production cadence (nightly ingest of ~20 phones + ongoing chat
   queries) will nudge against rate limits eventually. Mitigations are
@@ -2630,10 +2733,10 @@ reddit --limit 1 --dry-run`; it discovered and fetched one Reddit source
 
 ---
 
-_When updating this document: add a new block to §22, a severity-sorted
-entry to §23 if anything non-trivial broke, bump status markers in §6
-and §19, update the living **§20 risk register** (status/notes) when a
-known limitation is mitigated or a new one appears — do not remove rows,
+_When updating this document: add a new block to Â§22, a severity-sorted
+entry to Â§23 if anything non-trivial broke, bump status markers in Â§6
+and Â§19, update the living **Â§20 risk register** (status/notes) when a
+known limitation is mitigated or a new one appears â€” do not remove rows,
 and keep the ToC in sync._
 
 ---
@@ -2648,13 +2751,13 @@ Every feature, decision, or significant fix must be reflected in documentation *
 
 | Document                           | What to update                                                                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/RECSY_V2_PROJECT_CONTEXT.md` | §6 Feature Inventory status, §22 Change Log entry, §23 Issues Log entry (if something broke), §25 Pending Tasks (if deferred)               |
-| `docs/RECSY_V2_PROJECT_GUIDE.md`   | Routes table, `src/` structure, reading order, phase snapshot — if any of these change                                                      |
+| `docs/RECSY_V2_PROJECT_CONTEXT.md` | Â§6 Feature Inventory status, Â§22 Change Log entry, Â§23 Issues Log entry (if something broke), Â§25 Pending Tasks (if deferred)           |
+| `docs/RECSY_V2_PROJECT_GUIDE.md`   | Routes table, `src/` structure, reading order, phase snapshot â€” if any of these change                                                    |
 | ADR (`docs/adr/*.md`)              | Write a new ADR for every non-obvious technical decision; superseded ADRs must say so with a forward link                                   |
 | Subsystem README                   | Operating notes, status, and command references in `docs/{ingest,retrieval,scorecard,recommender,deployment,browse,compare,eval}/README.md` |
 | Implementation plan                | If a task has an implementation plan, flip its status marker and cross-link the ADR once accepted                                           |
 
-All status flags across §6, §19, §22, §23, and §25 must agree. A feature cannot be "shipped" in §6 and "planned" in the guide.
+All status flags across Â§6, Â§19, Â§22, Â§23, and Â§25 must agree. A feature cannot be "shipped" in Â§6 and "planned" in the guide.
 
 ### 24.2 ADR coverage
 
@@ -2665,29 +2768,29 @@ Every non-obvious technical decision gets an ADR. Criteria for "non-obvious":
 - Accepts a limitation that will surprise a new engineer
 - Reverses or supersedes a prior ADR
 
-Superseded ADRs must link forward: `**Status: Superseded by [ADR NNNN](./NNNN-…).**` at the top of the status block.
+Superseded ADRs must link forward: `**Status: Superseded by [ADR NNNN](./NNNN-â€¦).**` at the top of the status block.
 
 ### 24.3 File-header comments
 
-Every `.ts` / `.tsx` file must open with a `/** … */` JSDoc block that states:
+Every `.ts` / `.tsx` file must open with a `/** â€¦ */` JSDoc block that states:
 
-1. **Purpose** — one sentence: what this file does and why it exists.
-2. **Contents** — key exports or components in the file.
-3. **Implementation notes** — non-obvious design choices (skip for trivial files).
-4. **Used by** — which callers depend on this file.
+1. **Purpose** â€” one sentence: what this file does and why it exists.
+2. **Contents** â€” key exports or components in the file.
+3. **Implementation notes** â€” non-obvious design choices (skip for trivial files).
+4. **Used by** â€” which callers depend on this file.
 
 Model the template on `src/app/api/health/route.ts` and `src/services/llm/gemini.ts`.
 
 ### 24.4 Tests
 
-| Rule                 | Detail                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| Every new module     | ships with at least one `*.test.ts` covering the happy path                               |
-| Bug fixes            | ship with a regression test that would have caught the bug                                |
-| Coverage target      | 80 % statement coverage on `src/services/`                                                |
-| Test environment     | Vitest, Node env; use `vi.mock` / `vi.useFakeTimers` — never live DB or LLM in unit tests |
-| High-value test list | see §25 for modules that are missing tests                                                |
-| E2E                  | Playwright specs in `e2e/`; gate on `pnpm build` succeeding                               |
+| Rule                 | Detail                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| Every new module     | ships with at least one `*.test.ts` covering the happy path                                 |
+| Bug fixes            | ship with a regression test that would have caught the bug                                  |
+| Coverage target      | 80 % statement coverage on `src/services/`                                                  |
+| Test environment     | Vitest, Node env; use `vi.mock` / `vi.useFakeTimers` â€” never live DB or LLM in unit tests |
+| High-value test list | see Â§25 for modules that are missing tests                                                 |
+| E2E                  | Playwright specs in `e2e/`; gate on `pnpm build` succeeding                                 |
 
 ### 24.5 Logging
 
@@ -2724,7 +2827,7 @@ Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
 | No raw IPs or PII in client code  | IP hashing happens server-side in `src/lib/request-ip.ts` + `src/services/rate-limit/ip-hash.ts`                   |
 | No service keys in client bundles | Only `NEXT_PUBLIC_*` vars are safe for the client; everything else lives in `src/env.ts` server-only               |
 | CSP / security headers            | Managed by `next.config.ts`; do not modify without an ADR                                                          |
-| ASCII headers only                | Non-ASCII characters in HTTP headers cause silent failures (see Phase 2 em-dash bug in §23)                        |
+| ASCII headers only                | Non-ASCII characters in HTTP headers cause silent failures (see Phase 2 em-dash bug in Â§23)                       |
 
 ### 24.9 Migration discipline
 
@@ -2739,7 +2842,7 @@ Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
 
 > This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
 
-### P1 — Actionable (high value, next sprint)
+### P1 â€” Actionable (high value, next sprint)
 
 #### Catalog auto-promotion
 
@@ -2790,11 +2893,11 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 | `src/components/PhoneImage.tsx`  | RTL: `referrerPolicy`, fallback rendering, lazy loading  |
 | `src/components/Scorecard.tsx`   | RTL: aspect bar rendering, empty-state                   |
 
-### P2 — Documentation cleanup
+### P2 â€” Documentation cleanup
 
 | Item                                         | Action                                                                       |
 | -------------------------------------------- | ---------------------------------------------------------------------------- |
-| ADR 0001 Python ingestion row                | Replace with TypeScript ingestion + "see ADR 0003" pointer (tracked in §1d)  |
+| ADR 0001 Python ingestion row                | Replace with TypeScript ingestion + "see ADR 0003" pointer (tracked in Â§1d) |
 | `docs/retrieval/README.md` stale header      | Remove "Phase 3, in progress" references; update to shipped state            |
 | `docs/scorecard/README.md` scheduled-job TBD | Replace with live `scorecard:auto` story per ADR 0015                        |
 | `automated_ingestion_pipeline_1.plan.md`     | Add superseded note or archive under `docs/ImplementationPlans/archive/`     |
@@ -2807,7 +2910,7 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 | `0018-llm-response-cache.md` | LLM cache persistence semantics, key derivation (model + prompt hash), invalidation policy, bypass for streaming paths    |
 | `0019-api-rate-limiting.md`  | API rate-limiting policy (separate from ingest polite-HTTP): sliding window, per-IP, per-route limits, 429 response shape |
 
-### P3 — Product backlog
+### P3 â€” Product backlog
 
 | Item                            | Notes                                                                                                                             |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -2819,11 +2922,11 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 | Score calibration               | z-score or price-bracket normalization on aspect scores; prevents budget and flagship phones from sharing the same absolute scale |
 | `discover`-time candidate dedup | Cross-adapter dedup at `discover` time to avoid ingesting the same YouTube video via both channel-feed and direct-search paths    |
 
-### P3 — Code-quality refactors
+### P3 â€” Code-quality refactors
 
 | Item                                    | Notes                                                                                                                                              |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `import type` consolidation             | Several service files use `import` where `import type` is sufficient; ESLint `@typescript-eslint/consistent-type-imports` could auto-fix           |
 | Non-ASCII HTTP header lint rule         | An ESLint rule banning non-ASCII characters in string literals used as HTTP header values would have caught the Phase 2 em-dash bug at commit time |
-| `getDb()` → `useDb()` rename            | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
+| `getDb()` â†’ `useDb()` rename          | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
 | Recommender `session.ts` session expiry | Anonymous sessions never expire from the DB; add a `created_at < NOW() - interval '7 days'` cleanup cron or a `max_age` column                     |

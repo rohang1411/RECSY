@@ -7,7 +7,7 @@
  *
  * Used by: `scripts/catalog-promote.ts` and tests.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import type { AppDb } from '@/services/db/client';
@@ -365,12 +365,19 @@ async function findExistingPhoneMatches(
     .where(eq(phones.canonicalKey, input.canonicalKey));
   for (const row of keyRows) ids.add(row.id);
 
-  const identityExternalIds = input.identities.map((identity) => identity.externalId);
-  if (identityExternalIds.length > 0) {
+  // Match by (source_key, external_id) pair — not external_id alone.
+  // Different sources can reuse the same short IDs, so scoping by source_key
+  // prevents false-positive matches across adapters (e.g. mobileapi vs gsmarena).
+  for (const identity of input.identities) {
     const identityRows = await db
       .select({ phoneId: phoneIdentities.phoneId })
       .from(phoneIdentities)
-      .where(inArray(phoneIdentities.externalId, identityExternalIds));
+      .where(
+        and(
+          eq(phoneIdentities.sourceKey, identity.sourceKey),
+          eq(phoneIdentities.externalId, identity.externalId),
+        ),
+      );
     for (const row of identityRows) ids.add(row.phoneId);
   }
 
@@ -391,9 +398,13 @@ function phoneInsertValues(plan: PromotionPlan) {
     imageUrl: plan.claims.imageUrl ?? null,
     status: plan.claims.status,
     specJson: PhoneSpecSchema.parse(plan.spec) as unknown as Record<string, unknown>,
+    // Spec embedding is cleared so backfill-spec-embeddings picks it up.
     specEmbedding: null,
     regionAvailability: plan.claims.regionAvailability,
+    // null → ingest scheduler treats as immediately due (hot-bootstrap).
     nextIngestAt: null,
+    // null → scorecard scheduler picks this phone up as soon as active_chunk_count > 0,
+    // i.e. after the first successful ingest run. No artificial delay needed.
     nextScorecardAt: null,
     canonicalKey: plan.canonicalKey,
     officialUrl: plan.claims.officialUrl ?? null,
@@ -418,9 +429,12 @@ function phoneUpdateValues(plan: PromotionPlan) {
     imageUrl: values.imageUrl,
     status: values.status,
     specJson: values.specJson,
+    // Clear embedding so backfill-spec-embeddings re-generates it after the spec update.
     specEmbedding: null,
     regionAvailability: values.regionAvailability,
-    nextIngestAt: null,
+    // Intentionally omitted: nextIngestAt. Catalog updates must not reset the
+    // ingest schedule set by the tiered ingest scheduler — that would
+    // immediately re-ingest every updated phone and burn daily quota.
     canonicalKey: values.canonicalKey,
     officialUrl: values.officialUrl,
     announcedAt: values.announcedAt,

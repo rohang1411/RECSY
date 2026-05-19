@@ -360,7 +360,7 @@ async function main(): Promise<void> {
         status: 'success',
         stage: 'done',
         createdCount: created,
-        updatedCount: updated + promoted,
+        updatedCount: updated,
         quarantinedCount: quarantined,
         requestCount: requests,
         llmCallCount: 0,

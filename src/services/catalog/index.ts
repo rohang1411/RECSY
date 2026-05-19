@@ -36,3 +36,4 @@ export type { CatalogDiscoveryCandidate, CatalogSourceTier, WikidataPhoneCandida
 export { buildRecentPhonesQuery, discoverRecentWikidataPhones } from './adapters/wikidata';
 export { fetchMobileApiDevicesByYear, mobileApiDeviceToImportRecord } from './adapters/mobileapi';
 export type { MobileApiByYearPage } from './adapters/mobileapi';
+export { extractOemProductPage, fetchOemPageHtml } from './adapters/oem-page';
