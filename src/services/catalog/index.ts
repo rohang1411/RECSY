@@ -37,3 +37,4 @@ export { buildRecentPhonesQuery, discoverRecentWikidataPhones } from './adapters
 export { fetchMobileApiDevicesByYear, mobileApiDeviceToImportRecord } from './adapters/mobileapi';
 export type { MobileApiByYearPage } from './adapters/mobileapi';
 export { extractOemProductPage, fetchOemPageHtml } from './adapters/oem-page';
+export { fetchWikipediaSpecs, checkWikipediaAvailability } from './adapters/wikipedia';

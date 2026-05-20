@@ -25,7 +25,7 @@ export function PhoneSpecSummary({
     { label: `MSRP ${activeRegion.currency}`, value: price ?? 'TBD', channel: 'Price' },
     {
       label: 'Display',
-      value: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz}Hz`,
+      value: `${spec.display.size_in}" ${spec.display.panel_type ?? ''} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz ?? '?'}Hz`,
       channel: 'Screen',
     },
     { label: 'Chipset', value: spec.chipset, channel: 'Performance' },
@@ -35,14 +35,18 @@ export function PhoneSpecSummary({
       channel: 'Memory',
     },
     { label: 'Rear camera', value: camLine, channel: 'Camera' },
-    { label: 'Front camera', value: `${spec.front_camera.mp}MP`, channel: 'Camera' },
+    {
+      label: 'Front camera',
+      value: spec.front_camera ? `${spec.front_camera.mp}MP` : 'N/A',
+      channel: 'Camera',
+    },
     { label: 'Battery', value: `${spec.battery_mah}mAh`, channel: 'Power' },
     {
       label: 'Charging',
-      value: `${spec.charging.wired_w}W wired${spec.charging.wireless_w > 0 ? ` / ${spec.charging.wireless_w}W wireless` : ''}`,
+      value: `${spec.charging.wired_w ?? '?'}W wired${(spec.charging.wireless_w ?? 0) > 0 ? ` / ${spec.charging.wireless_w}W wireless` : ''}`,
       channel: 'Power',
     },
-    { label: 'Weight', value: `${spec.weight_g}g`, channel: 'Build' },
+    { label: 'Weight', value: `${spec.weight_g ?? '?'}g`, channel: 'Build' },
   ];
 
   if (spec.dimensions_mm) {

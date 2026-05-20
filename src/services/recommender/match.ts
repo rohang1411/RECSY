@@ -101,19 +101,19 @@ export function mustHaveMatchRatio(haystack: string, mustHaves: readonly string[
 
 function matchesPlatformPreference(entry: PhoneCatalogEntry, platform: 'android' | 'ios'): boolean {
   const haystack = buildSearchHaystack(entry);
-  const os = entry.spec?.os.toLowerCase() ?? '';
+  const os = entry.spec?.os?.toLowerCase() ?? '';
 
   if (platform === 'android') {
     const brand = entry.brand.toLowerCase();
     return (
-      os.includes('android') ||
+      (os && os.includes('android')) ||
       haystack.includes('android') ||
       ['google', 'samsung', 'oneplus', 'xiaomi', 'nothing', 'motorola'].includes(brand)
     );
   }
 
   return (
-    os.includes('ios') ||
+    (os && os.includes('ios')) ||
     haystack.includes('ios') ||
     entry.brand.toLowerCase() === 'apple' ||
     entry.model.toLowerCase().includes('iphone')
@@ -144,7 +144,7 @@ export function passesHardFilters(
     if (!spec?.foldable) return false;
   }
 
-  if (ff?.weight_max_g != null && spec != null) {
+  if (ff?.weight_max_g != null && spec != null && spec.weight_g != null) {
     if (spec.weight_g > ff.weight_max_g) return false;
   }
 

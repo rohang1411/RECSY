@@ -40,23 +40,23 @@ export const DisplaySchema = z.object({
   size_in: z.number().positive(),
   /** e.g. "2796x1290". Kept as string because aspect ratios vary. */
   resolution: z.string(),
-  refresh_rate_hz: z.number().int().positive(),
-  panel_type: z.string(),
+  refresh_rate_hz: z.number().int().positive().optional(),
+  panel_type: z.string().optional(),
   peak_brightness_nits: z.number().int().positive().optional(),
   /** LTPO, always-on display, etc. */
   features: z.array(z.string()).default([]),
 });
 
 export const ChargingSchema = z.object({
-  wired_w: z.number().nonnegative(),
-  wireless_w: z.number().nonnegative(),
+  wired_w: z.number().nonnegative().optional(),
+  wireless_w: z.number().nonnegative().optional(),
   reverse_wireless_w: z.number().nonnegative().optional(),
 });
 
 export const ConnectivitySchema = z.object({
-  wifi: z.string(),
-  bluetooth: z.string(),
-  nfc: z.boolean(),
+  wifi: z.string().optional(),
+  bluetooth: z.string().optional(),
+  nfc: z.boolean().optional(),
   ir_blaster: z.boolean().optional(),
   usb: z.string().optional(),
   sim: z.string().optional(),
@@ -68,12 +68,12 @@ export const PhoneSpecSchema = z.object({
   process_nm: z.number().int().positive().optional(),
   ram_gb: z.number().int().positive(),
   storage_options_gb: z.array(z.number().int().positive()).min(1),
-  rear_cameras: z.array(RearCameraSchema).min(1),
-  front_camera: FrontCameraSchema,
+  rear_cameras: z.array(RearCameraSchema).min(1).optional(),
+  front_camera: FrontCameraSchema.optional(),
   battery_mah: z.number().int().positive(),
   charging: ChargingSchema,
   /** Decimal allowed (manufacturers publish e.g. 185.9 g). */
-  weight_g: z.number().positive(),
+  weight_g: z.number().positive().optional(),
   dimensions_mm: z
     .object({
       h: z.number().positive(),
@@ -81,7 +81,7 @@ export const PhoneSpecSchema = z.object({
       d: z.number().positive(),
     })
     .optional(),
-  os: z.string(),
+  os: z.string().optional(),
   /** Committed OS update support, e.g. "7 years of OS + security". */
   update_policy: z.string().optional(),
   connectivity: ConnectivitySchema,
