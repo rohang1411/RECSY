@@ -747,7 +747,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
                       </div>
                       <div className="flex justify-between gap-4">
                         <dt className="text-muted-foreground">Camera</dt>
-                        <dd className="text-primary">{spec.rear_cameras[0]?.mp ?? 'n/a'}MP</dd>
+                        <dd className="text-primary">{spec.rear_cameras?.[0]?.mp ?? 'n/a'}MP</dd>
                       </div>
                     </>
                   ) : null}

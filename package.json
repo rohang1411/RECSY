@@ -46,6 +46,7 @@
     "catalog:promote": "tsx --env-file=.env.local scripts/catalog-promote.ts",
     "catalog:enrich-oem": "tsx --env-file=.env.local scripts/catalog-enrich-oem.ts",
     "catalog:sync-mobileapi": "tsx --env-file=.env.local scripts/catalog-sync-mobileapi.ts",
+    "catalog:auto": "tsx --env-file=.env.local scripts/catalog-auto.ts",
     "catalog:report": "tsx --env-file=.env.local scripts/catalog-report.ts",
     "prepare": "node scripts/prepare-husky.mjs"
   },

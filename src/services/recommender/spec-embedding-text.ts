@@ -13,7 +13,7 @@ export function buildSpecDocumentForEmbedding(input: {
   readonly spec: PhoneSpec;
 }): string {
   const s = input.spec;
-  const cam = s.rear_cameras.map((c) => `${c.mp}MP ${c.type}`).join(', ');
+  const cam = (s.rear_cameras || []).map((c) => `${c.mp}MP ${c.type}`).join(', ');
   const parts = [
     `${input.brand} ${input.model}.`,
     input.tagline ? input.tagline : null,

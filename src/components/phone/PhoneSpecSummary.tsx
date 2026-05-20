@@ -8,7 +8,7 @@ interface PhoneSpecSummaryProps {
 
 export function PhoneSpecSummary({ spec, msrpUsd }: PhoneSpecSummaryProps) {
   const price = formatUsdFromNumericString(msrpUsd);
-  const mainCam = spec.rear_cameras[0];
+  const mainCam = spec.rear_cameras?.find((c) => c.type === 'main') ?? spec.rear_cameras?.[0];
   const camLine = mainCam
     ? `${mainCam.mp}MP${mainCam.zoom ? ` / ${mainCam.zoom}` : ''}${mainCam.type !== 'main' ? ` / ${mainCam.type}` : ''}`
     : 'N/A';
@@ -17,7 +17,7 @@ export function PhoneSpecSummary({ spec, msrpUsd }: PhoneSpecSummaryProps) {
     { label: 'MSRP USD', value: price ?? 'TBD', channel: 'Price' },
     {
       label: 'Display',
-      value: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz}Hz`,
+      value: `${spec.display.size_in}" ${spec.display.panel_type ?? ''} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz ?? '?'}Hz`,
       channel: 'Screen',
     },
     { label: 'Chipset', value: spec.chipset, channel: 'Performance' },
@@ -27,14 +27,18 @@ export function PhoneSpecSummary({ spec, msrpUsd }: PhoneSpecSummaryProps) {
       channel: 'Memory',
     },
     { label: 'Rear camera', value: camLine, channel: 'Camera' },
-    { label: 'Front camera', value: `${spec.front_camera.mp}MP`, channel: 'Camera' },
+    {
+      label: 'Front camera',
+      value: spec.front_camera ? `${spec.front_camera.mp}MP` : 'N/A',
+      channel: 'Camera',
+    },
     { label: 'Battery', value: `${spec.battery_mah}mAh`, channel: 'Power' },
     {
       label: 'Charging',
-      value: `${spec.charging.wired_w}W wired${spec.charging.wireless_w > 0 ? ` / ${spec.charging.wireless_w}W wireless` : ''}`,
+      value: `${spec.charging.wired_w ?? '?'}W wired${(spec.charging.wireless_w ?? 0) > 0 ? ` / ${spec.charging.wireless_w}W wireless` : ''}`,
       channel: 'Power',
     },
-    { label: 'Weight', value: `${spec.weight_g}g`, channel: 'Build' },
+    { label: 'Weight', value: `${spec.weight_g ?? '?'}g`, channel: 'Build' },
   ];
 
   if (spec.dimensions_mm) {
