@@ -4,7 +4,6 @@ import { Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
 import { cn } from '@/lib/utils';
 
 export type ComparePickerOption = {
@@ -14,6 +13,7 @@ export type ComparePickerOption = {
   readonly model: string;
   readonly imageUrl: string | null;
   readonly msrpUsd: string | null;
+  readonly displayPrice: string;
   readonly batteryMah: number | null;
   readonly refreshRateHz: number | null;
   readonly cameraMp: number | null;
@@ -122,7 +122,7 @@ function PickerSlot({
           </h3>
           {selected ? (
             <p className="text-muted-foreground mt-2 font-mono text-[11px] tracking-[0.14em] uppercase">
-              {selected.brand} / {formatUsdFromNumericString(selected.msrpUsd) ?? 'price unknown'}
+              {selected.brand} / {selected.displayPrice}
             </p>
           ) : null}
         </div>
@@ -201,7 +201,7 @@ function PickerSlot({
                     {option.label}
                   </span>
                   <span className="text-muted-foreground mt-1 block text-xs">
-                    {formatUsdFromNumericString(option.msrpUsd) ?? 'price unknown'}
+                    {option.displayPrice}
                   </span>
                   <span className="text-muted-foreground grid grid-cols-3 gap-2 overflow-hidden pt-0 font-mono text-[10px] tracking-[0.1em] uppercase opacity-0 transition-all duration-200 group-hover/option:pt-2 group-hover/option:opacity-100 group-focus-visible/option:pt-2 group-focus-visible/option:opacity-100">
                     <span>{option.batteryMah ? `${option.batteryMah}mAh` : 'battery n/a'}</span>

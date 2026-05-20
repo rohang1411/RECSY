@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { getActiveRegion } from '@/lib/get-active-region';
+import { RegionSelector } from './RegionSelector';
 
 const navItems = [
   { href: '/recommend', label: 'Recommend' },
@@ -8,7 +10,9 @@ const navItems = [
   { href: '/settings', label: 'Settings' },
 ] as const;
 
-export function AppHeader() {
+export async function AppHeader() {
+  const activeRegion = await getActiveRegion();
+
   return (
     <header className="border-outline-variant bg-background/95 sticky top-0 z-40 w-full border-b backdrop-blur">
       <div className="px-grid-margin flex min-h-16 items-center justify-between gap-8">
@@ -32,7 +36,10 @@ export function AppHeader() {
           ))}
         </nav>
 
-        <div className="from-accent/80 hidden h-px w-12 bg-gradient-to-r to-transparent md:block" />
+        <div className="flex items-center gap-4">
+          <RegionSelector activeRegion={activeRegion} />
+          <div className="from-accent/80 hidden h-px w-12 bg-gradient-to-r to-transparent md:block" />
+        </div>
       </div>
       <nav
         aria-label="Primary mobile"

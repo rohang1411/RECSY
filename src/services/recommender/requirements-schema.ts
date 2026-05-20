@@ -56,6 +56,36 @@ const budgetUsdSchema = z.preprocess((v) => {
   return v;
 }, budgetObjectSchema.nullable());
 
+// NEW: Currency-aware budget parser for regional pricing support
+function parseLocalAmount(v: unknown): unknown {
+  if (typeof v === 'string') {
+    const n = Number.parseFloat(v.replace(/[$,₹,]/g, ''));
+    return Number.isFinite(n) ? n : v;
+  }
+  return v;
+}
+
+const budgetLocalObjectSchema = z.object({
+  min: z
+    .preprocess(
+      (v) => (v == null || v === undefined ? undefined : parseLocalAmount(v)),
+      z.coerce.number().nonnegative(),
+    )
+    .optional(),
+  max: z.preprocess(parseLocalAmount, z.coerce.number().positive()),
+  currency: z.string().default('USD'),
+});
+
+const budgetLocalSchema = z.preprocess((v) => {
+  if (v == null) return null;
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return { max: v, currency: 'USD' };
+  if (typeof v === 'string') {
+    const n = Number.parseFloat(v.replace(/[$,₹,]/g, ''));
+    if (Number.isFinite(n) && n > 0) return { max: n, currency: 'USD' };
+  }
+  return v;
+}, budgetLocalObjectSchema.nullable());
+
 const priorityItemSchema = z.object({
   aspect: aspectNameFromLlm,
   /** 0–1 relative weights, or 0–100 style; `normalizeUserRequirements` rescales. */
@@ -126,6 +156,7 @@ const confidenceFromLlm = z.preprocess((v) => {
  */
 export const userRequirementsSchema = z.object({
   budget_usd: budgetUsdSchema.optional().nullable(),
+  budget_local: budgetLocalSchema.optional().nullable(),
   priorities: z
     .preprocess((v) => (Array.isArray(v) ? v : []), z.array(priorityItemSchema).max(7))
     .default([]),
@@ -151,9 +182,10 @@ export type UserRequirementsLlm = z.infer<typeof userRequirementsSchema>;
 /** Normalised for ranking / DB: `form_factor.screen_size_range_in` tuple. */
 export type UserRequirements = Omit<
   UserRequirementsLlm,
-  'form_factor' | 'priorities' | 'budget_usd'
+  'form_factor' | 'priorities' | 'budget_usd' | 'budget_local'
 > & {
   budget_usd: { min?: number; max: number } | null;
+  budget_local?: { min?: number; max: number; currency: string } | null;
   readonly priorities: readonly { aspect: AspectName; weight: number }[];
   form_factor?: {
     screen_size_range_in?: [number, number];
@@ -198,9 +230,19 @@ export function normalizeUserRequirements(raw: UserRequirementsLlm): UserRequire
     budget_usd = { min: budget_usd.max, max: budget_usd.min };
   }
 
+  let budget_local = raw.budget_local ?? null;
+  if (budget_local && budget_local.min != null && budget_local.max < budget_local.min) {
+    budget_local = {
+      min: budget_local.max,
+      max: budget_local.min,
+      currency: budget_local.currency,
+    };
+  }
+
   return {
     ...raw,
     budget_usd,
+    budget_local,
     priorities,
     must_haves,
     deal_breakers,

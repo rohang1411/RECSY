@@ -20,7 +20,9 @@ import {
   phoneIdentities,
   phoneMediaAssets,
   phones,
+  phoneRegionalDetails,
 } from '@/services/db/schema';
+import { FALLBACK_RATES } from '@/lib/regions';
 
 import { generateAliasCandidates } from './aliases';
 import { buildCanonicalKey, buildPhoneSlug, canonicalizeUrl } from './identity';
@@ -291,6 +293,7 @@ export async function promoteCatalogCandidate(
     const configCount = await insertConfigurations(tx, phoneId, plan);
     const mediaCount = await insertMedia(tx, phoneId, plan);
     await insertPromotionClaims(tx, phoneId, candidateId, candidate, plan);
+    await upsertRegionalDetails(tx, phoneId, plan);
 
     await tx
       .update(catalogCandidates)
@@ -624,4 +627,63 @@ function normalizeMoney(value: string | number | undefined): string | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) return null;
   return parsed.toFixed(2);
+}
+
+async function upsertRegionalDetails(
+  tx: CatalogDb,
+  phoneId: string,
+  plan: PromotionPlan,
+): Promise<void> {
+  if (!plan.claims) return;
+  const msrpUsd = plan.claims.msrpUsd ? Number.parseFloat(String(plan.claims.msrpUsd)) : null;
+
+  // 1. Upsert US region
+  if (msrpUsd != null && !Number.isNaN(msrpUsd)) {
+    await tx
+      .insert(phoneRegionalDetails)
+      .values({
+        phoneId,
+        countryCode: 'US',
+        price: String(msrpUsd),
+        currency: 'USD',
+        isAvailable: true,
+        priceSource: 'catalog_pipeline',
+        isEstimated: false,
+      })
+      .onConflictDoUpdate({
+        target: [phoneRegionalDetails.phoneId, phoneRegionalDetails.countryCode],
+        set: {
+          price: String(msrpUsd),
+          isEstimated: false,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // 2. Seed/Upsert estimated India region
+  if (msrpUsd != null && !Number.isNaN(msrpUsd)) {
+    const rate = FALLBACK_RATES['IN'] ?? 83.5;
+    const inrPrice = Math.round(msrpUsd * rate);
+    await tx
+      .insert(phoneRegionalDetails)
+      .values({
+        phoneId,
+        countryCode: 'IN',
+        price: String(inrPrice),
+        currency: 'INR',
+        isAvailable: true,
+        priceSource: 'estimated',
+        isEstimated: true,
+        exchangeRateUsed: String(rate),
+      })
+      .onConflictDoUpdate({
+        target: [phoneRegionalDetails.phoneId, phoneRegionalDetails.countryCode],
+        set: {
+          price: String(inrPrice),
+          isEstimated: true,
+          exchangeRateUsed: String(rate),
+          updatedAt: new Date(),
+        },
+      });
+  }
 }
