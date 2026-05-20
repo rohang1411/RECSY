@@ -16,7 +16,7 @@ export function PhoneSpecSummary({
   activeRegion,
 }: PhoneSpecSummaryProps) {
   const price = formatLocalPrice(localPrice, activeRegion, { isEstimated });
-  const mainCam = spec.rear_cameras[0];
+  const mainCam = spec.rear_cameras?.[0];
   const camLine = mainCam
     ? `${mainCam.mp}MP${mainCam.zoom ? ` / ${mainCam.zoom}` : ''}${mainCam.type !== 'main' ? ` / ${mainCam.type}` : ''}`
     : 'N/A';
