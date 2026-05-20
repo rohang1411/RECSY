@@ -13,12 +13,12 @@
  * Used by: `src/services/recommender/run-recommendation.ts`,
  * `src/app/api/recommend/route.ts` (via run-recommendation).
  */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import type { AspectName } from '@/lib/constants';
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import type { AppDb } from '@/services/db/client';
-import { aspectDefinitions, aspects, phones } from '@/services/db/schema';
+import { aspectDefinitions, aspects, phones, phoneRegionalDetails } from '@/services/db/schema';
 
 import { parseVectorColumn } from './vector-utils';
 
@@ -29,16 +29,21 @@ export interface PhoneCatalogEntry {
   readonly model: string;
   readonly tagline: string | null;
   readonly msrpUsd: string | null;
-  /** Press render URL when seeded or ingested. */
+  readonly localPrice?: string | null;
+  readonly localCurrency?: string | null;
+  readonly isEstimated?: boolean | null;
+  readonly isAvailable?: boolean | null;
   readonly imageUrl: string | null;
   readonly spec: PhoneSpec | null;
-  /** Populated when `phones.spec_embedding` is set (e.g. after `pnpm spec-embed:backfill`). */
   readonly specEmbedding: readonly number[] | null;
   readonly aspectScores: ReadonlyMap<AspectName, number>;
 }
 
 /** Active phones with parsed specs and aspect scores (latest rows in `aspects`). */
-export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalogEntry[]> {
+export async function loadRecommendationCatalog(
+  db: AppDb,
+  regionCode: string = 'US',
+): Promise<PhoneCatalogEntry[]> {
   const rows = await db
     .select({
       phoneId: phones.id,
@@ -47,6 +52,10 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: phones.model,
       tagline: phones.tagline,
       msrpUsd: phones.msrpUsd,
+      localPrice: phoneRegionalDetails.price,
+      localCurrency: phoneRegionalDetails.currency,
+      isEstimated: phoneRegionalDetails.isEstimated,
+      isAvailable: phoneRegionalDetails.isAvailable,
       imageUrl: phones.imageUrl,
       specJson: phones.specJson,
       specEmbRaw: phones.specEmbedding,
@@ -56,6 +65,13 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
     .from(phones)
     .leftJoin(aspects, eq(aspects.phoneId, phones.id))
     .leftJoin(aspectDefinitions, eq(aspectDefinitions.id, aspects.aspectDefinitionId))
+    .leftJoin(
+      phoneRegionalDetails,
+      and(
+        eq(phoneRegionalDetails.phoneId, phones.id),
+        eq(phoneRegionalDetails.countryCode, regionCode),
+      ),
+    )
     .where(eq(phones.status, 'active'));
 
   const byId = new Map<
@@ -67,6 +83,10 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: string;
       tagline: string | null;
       msrpUsd: string | null;
+      localPrice: string | null;
+      localCurrency: string | null;
+      isEstimated: boolean;
+      isAvailable: boolean;
       imageUrl: string | null;
       specJson: unknown;
       specEmbedding: readonly number[] | null;
@@ -77,6 +97,9 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
   for (const r of rows) {
     let e = byId.get(r.phoneId);
     if (!e) {
+      const fallbackPrice = r.msrpUsd;
+      const fallbackCurrency = 'USD';
+
       e = {
         phoneId: r.phoneId,
         slug: r.slug,
@@ -84,6 +107,10 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
         model: r.model,
         tagline: r.tagline,
         msrpUsd: r.msrpUsd,
+        localPrice: r.localPrice ?? fallbackPrice,
+        localCurrency: r.localCurrency ?? fallbackCurrency,
+        isEstimated: r.isEstimated ?? false,
+        isAvailable: r.isAvailable ?? true,
         imageUrl: r.imageUrl,
         specJson: r.specJson,
         specEmbedding: parseVectorColumn(r.specEmbRaw),
@@ -108,6 +135,10 @@ export async function loadRecommendationCatalog(db: AppDb): Promise<PhoneCatalog
       model: e.model,
       tagline: e.tagline,
       msrpUsd: e.msrpUsd,
+      localPrice: e.localPrice,
+      localCurrency: e.localCurrency,
+      isEstimated: e.isEstimated,
+      isAvailable: e.isAvailable,
       imageUrl: e.imageUrl,
       spec: parsed.success ? parsed.data : null,
       specEmbedding: e.specEmbedding,

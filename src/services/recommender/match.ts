@@ -40,6 +40,8 @@ export interface ScoredCandidate {
   readonly model: string;
   readonly tagline: string | null;
   readonly msrpUsd: string | null;
+  readonly localPrice?: string | null;
+  readonly localCurrency?: string | null;
   readonly imageUrl: string | null;
   readonly score: number;
   readonly summary: string;
@@ -154,20 +156,45 @@ export function passesHardFilters(
     if (sz < lo || sz > hi) return false;
   }
 
-  const budget = requirements.budget_usd;
-  if (budget?.max != null) {
+  // Regional Availability Filter
+  if (entry.isAvailable === false) {
+    return false;
+  }
+
+  // Budget filtering: use currency-aware local budget if available, otherwise USD.
+  const localBudget = requirements.budget_local;
+  if (localBudget && localBudget.max != null) {
     const max =
       opts.budgetMaxOverride ??
-      (opts.relaxBudgetMax ? budget.max * RECOMMEND_BUDGET_RELAX_FACTOR : budget.max);
-    if (entry.msrpUsd != null) {
-      const price = Number.parseFloat(entry.msrpUsd);
+      (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
+    if (entry.localPrice != null) {
+      const price = Number.parseFloat(entry.localPrice);
       if (!Number.isNaN(price) && price > max) return false;
+    }
+  } else {
+    const budget = requirements.budget_usd;
+    if (budget?.max != null) {
+      const max =
+        opts.budgetMaxOverride ??
+        (opts.relaxBudgetMax ? budget.max * RECOMMEND_BUDGET_RELAX_FACTOR : budget.max);
+      if (entry.msrpUsd != null) {
+        const price = Number.parseFloat(entry.msrpUsd);
+        if (!Number.isNaN(price) && price > max) return false;
+      }
     }
   }
 
-  if (budget?.min != null && entry.msrpUsd != null) {
-    const price = Number.parseFloat(entry.msrpUsd);
-    if (!Number.isNaN(price) && price < budget.min) return false;
+  if (localBudget && localBudget.min != null) {
+    if (entry.localPrice != null) {
+      const price = Number.parseFloat(entry.localPrice);
+      if (!Number.isNaN(price) && price < localBudget.min) return false;
+    }
+  } else {
+    const budget = requirements.budget_usd;
+    if (budget?.min != null && entry.msrpUsd != null) {
+      const price = Number.parseFloat(entry.msrpUsd);
+      if (!Number.isNaN(price) && price < budget.min) return false;
+    }
   }
 
   return true;
@@ -365,6 +392,8 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
     model: entry.model,
     tagline: entry.tagline,
     msrpUsd: entry.msrpUsd,
+    localPrice: entry.localPrice,
+    localCurrency: entry.localCurrency,
     imageUrl: entry.imageUrl,
     score,
     summary: pickSummaryLine(entry, ctx.summary),

@@ -43,6 +43,13 @@
       "when": 1779148913433,
       "tag": "0005_breezy_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779247487076,
+      "tag": "0006_cuddly_patriot",
+      "breakpoints": true
     }
   ]
 }

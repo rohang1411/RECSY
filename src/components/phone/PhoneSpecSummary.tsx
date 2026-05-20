@@ -1,20 +1,28 @@
 import type { PhoneSpec } from '@/features/phones/schema';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
+import { formatLocalPrice } from '@/lib/format-currency';
+import type { RegionConfig } from '@/lib/regions';
 
 interface PhoneSpecSummaryProps {
   readonly spec: PhoneSpec;
-  readonly msrpUsd: string | null;
+  readonly localPrice: string | null;
+  readonly isEstimated?: boolean;
+  readonly activeRegion: RegionConfig;
 }
 
-export function PhoneSpecSummary({ spec, msrpUsd }: PhoneSpecSummaryProps) {
-  const price = formatUsdFromNumericString(msrpUsd);
+export function PhoneSpecSummary({
+  spec,
+  localPrice,
+  isEstimated,
+  activeRegion,
+}: PhoneSpecSummaryProps) {
+  const price = formatLocalPrice(localPrice, activeRegion, { isEstimated });
   const mainCam = spec.rear_cameras[0];
   const camLine = mainCam
     ? `${mainCam.mp}MP${mainCam.zoom ? ` / ${mainCam.zoom}` : ''}${mainCam.type !== 'main' ? ` / ${mainCam.type}` : ''}`
     : 'N/A';
 
   const rows: { label: string; value: string; channel: string }[] = [
-    { label: 'MSRP USD', value: price ?? 'TBD', channel: 'Price' },
+    { label: `MSRP ${activeRegion.currency}`, value: price ?? 'TBD', channel: 'Price' },
     {
       label: 'Display',
       value: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz}Hz`,

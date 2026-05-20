@@ -14,6 +14,7 @@
  */
 import { env } from '@/env';
 import type { LlmProvider } from '@/services/llm/types';
+import { getRegionConfig, type RegionConfig } from '@/lib/regions';
 
 import {
   normalizeUserRequirements,
@@ -25,12 +26,20 @@ import { mergeUserRequirements, shouldResetRequirementState } from './requiremen
 function buildMessages(input: {
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
+  readonly regionConfig: RegionConfig;
 }): { role: 'system' | 'user'; content: string }[] {
+  const { label, currency, symbol, budgetExampleMax } = input.regionConfig;
   const system = `You are RECSY's preference extractor for phone shoppers.
+The user is shopping in ${label}. The local currency is ${currency} (${symbol}).
 Read the user's message and output structured JSON matching the schema.
 
 Rules:
-- Infer budget in USD when the user mentions price (e.g. "under 800", "about $500").
+- Infer budget_local in ${currency} when the user mentions price.
+  Examples of local price expressions: "under ${symbol}${budgetExampleMax}", "about ${budgetExampleMax} ${currency}", "${(budgetExampleMax / 1000).toFixed(0)}k", "around ${budgetExampleMax / 1000}K".
+- If currency is ambiguous (no symbol, no unit), default to ${currency}.
+- If the user explicitly states a foreign currency (e.g. "200 dollars" when in India), convert it to ${currency} at the approximate market rate.
+- budget_local: { min?: number, max: number, currency: "${currency}" }
+- budget_usd: Set this only if the user explicitly mentions USD or dollars.
 - priorities: up to 7 entries, one per aspect you can infer. Use these exact lowercase slugs: camera, battery, performance, display, build, software, value. Weights may be 0–1 or 0–100 (relative); they are renormalised to sum to 1.
 - must_haves: concrete requirements (e.g. "wireless charging", "3.5mm jack").
 - deal_breakers: things that disqualify a phone for this user.
@@ -59,11 +68,13 @@ export async function extractUserRequirements(input: {
   readonly llm: LlmProvider;
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
+  readonly regionCode?: string;
 }): Promise<UserRequirements> {
   const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
+  const config = getRegionConfig(input.regionCode ?? 'US');
   const out = await input.llm.structured({
     model: env.LLM_CHAT_MODEL,
-    messages: buildMessages({ userMessage: input.userMessage, previous }),
+    messages: buildMessages({ userMessage: input.userMessage, previous, regionConfig: config }),
     schema: userRequirementsSchema,
     schemaName: 'UserRequirements',
     schemaDescription: 'Merged phone shopper preferences for RECSY recommender Stage A.',

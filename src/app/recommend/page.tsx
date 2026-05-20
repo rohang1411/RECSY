@@ -1,10 +1,13 @@
 import { SideNav } from '@/components/ui/side-nav';
+import { getActiveRegion } from '@/lib/get-active-region';
 
 import { RecommendClient } from './recommend-client';
 
 export const dynamic = 'force-dynamic';
 
-export default function RecommendPage() {
+export default async function RecommendPage() {
+  const activeRegion = await getActiveRegion();
+
   return (
     <div className="bg-background flex">
       <SideNav active="/recommend" />
@@ -19,7 +22,7 @@ export default function RecommendPage() {
             RECSY will turn that into a ranked shortlist.
           </p>
         </header>
-        <RecommendClient />
+        <RecommendClient activeRegion={activeRegion} />
       </div>
     </div>
   );

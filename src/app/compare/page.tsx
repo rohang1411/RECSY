@@ -6,9 +6,11 @@ import { appSearchParamsToURLSearchParams } from '@/app/browse/search-params-hel
 import { ComparePhonePickers, type ComparePickerOption } from '@/app/compare/compare-phone-pickers';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
+import { getActiveRegion } from '@/lib/get-active-region';
+import { formatLocalPrice } from '@/lib/format-currency';
+import type { RegionConfig } from '@/lib/regions';
 import { getDb } from '@/services/db/client';
-import { phones } from '@/services/db/schema';
+import { phones, phoneRegionalDetails } from '@/services/db/schema';
 
 export const metadata: Metadata = {
   title: 'Compare',
@@ -31,6 +33,9 @@ type PhoneRow = {
   imageUrl: string | null;
   specJson: unknown;
   status: 'active' | 'discontinued' | 'upcoming';
+  localPrice: string | null;
+  localCurrency: string | null;
+  isEstimated: boolean | null;
 };
 
 type MetricValue = {
@@ -39,7 +44,9 @@ type MetricValue = {
   numericValue?: number | null;
 };
 
-async function loadComparePickerOptions(): Promise<ComparePickerOption[]> {
+async function loadComparePickerOptions(
+  activeRegion: RegionConfig,
+): Promise<ComparePickerOption[]> {
   try {
     const db = getDb();
     const rows = await db
@@ -50,12 +57,27 @@ async function loadComparePickerOptions(): Promise<ComparePickerOption[]> {
         imageUrl: phones.imageUrl,
         msrpUsd: phones.msrpUsd,
         specJson: phones.specJson,
+        localPrice: phoneRegionalDetails.price,
+        isEstimated: phoneRegionalDetails.isEstimated,
       })
       .from(phones)
+      .leftJoin(
+        phoneRegionalDetails,
+        and(
+          eq(phoneRegionalDetails.phoneId, phones.id),
+          eq(phoneRegionalDetails.countryCode, activeRegion.countryCode),
+        ),
+      )
       .where(eq(phones.status, 'active'))
       .orderBy(asc(phones.brand), asc(phones.model));
+
     return rows.map((row) => {
       const spec = PhoneSpecSchema.safeParse(row.specJson);
+      const displayPrice =
+        formatLocalPrice(row.localPrice ?? row.msrpUsd, activeRegion, {
+          isEstimated: row.isEstimated ?? false,
+        }) ?? 'price unknown';
+
       return {
         slug: row.slug,
         label: `${row.brand} ${row.model}`,
@@ -63,6 +85,7 @@ async function loadComparePickerOptions(): Promise<ComparePickerOption[]> {
         model: row.model,
         imageUrl: row.imageUrl,
         msrpUsd: row.msrpUsd,
+        displayPrice,
         batteryMah: spec.success ? spec.data.battery_mah : null,
         refreshRateHz: spec.success ? spec.data.display.refresh_rate_hz : null,
         cameraMp: spec.success ? (spec.data.rear_cameras[0]?.mp ?? null) : null,
@@ -145,7 +168,9 @@ export default async function ComparePage({ searchParams }: PageProps) {
   const raw = await searchParams;
   const sp = appSearchParamsToURLSearchParams(raw);
   const slugs = uniqueSlugs(sp.get('a') ?? '', sp.get('b') ?? '', sp.get('c') ?? '');
-  const compareOptions = await loadComparePickerOptions();
+
+  const activeRegion = await getActiveRegion();
+  const compareOptions = await loadComparePickerOptions(activeRegion);
 
   if (slugs.length < 2) {
     return (
@@ -177,8 +202,18 @@ export default async function ComparePage({ searchParams }: PageProps) {
       imageUrl: phones.imageUrl,
       specJson: phones.specJson,
       status: phones.status,
+      localPrice: phoneRegionalDetails.price,
+      localCurrency: phoneRegionalDetails.currency,
+      isEstimated: phoneRegionalDetails.isEstimated,
     })
     .from(phones)
+    .leftJoin(
+      phoneRegionalDetails,
+      and(
+        eq(phoneRegionalDetails.phoneId, phones.id),
+        eq(phoneRegionalDetails.countryCode, activeRegion.countryCode),
+      ),
+    )
     .where(and(eq(phones.status, 'active'), inArray(phones.slug, slugs)))) as PhoneRow[];
 
   const bySlug = new Map(list.map((row) => [row.slug, row]));
@@ -297,12 +332,18 @@ export default async function ComparePage({ searchParams }: PageProps) {
           </thead>
           <tbody>
             {metricRow(
-              'MSRP USD',
-              compared.map((phone) => ({
-                slug: phone.slug,
-                displayValue: formatUsdFromNumericString(phone.msrpUsd) ?? 'N/A',
-                numericValue: phone.msrpUsd ? Number.parseFloat(phone.msrpUsd) : null,
-              })),
+              `MSRP ${activeRegion.currency}`,
+              compared.map((phone) => {
+                const displayPrice = phone.localPrice ?? phone.msrpUsd;
+                const formatted = formatLocalPrice(displayPrice, activeRegion, {
+                  isEstimated: phone.isEstimated ?? false,
+                });
+                return {
+                  slug: phone.slug,
+                  displayValue: formatted ?? 'N/A',
+                  numericValue: displayPrice ? Number.parseFloat(displayPrice) : null,
+                };
+              }),
               false,
             )}
             {validSpecs ? (

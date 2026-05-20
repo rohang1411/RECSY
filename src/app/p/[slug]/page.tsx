@@ -1,12 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 
 import { PhoneSpecSchema } from '@/features/phones/schema';
 import { PhoneHeader } from '@/components/phone/PhoneHeader';
 import { PhoneSpecSummary } from '@/components/phone/PhoneSpecSummary';
 import { ScorecardSection } from '@/components/phone/ScorecardSection';
+import { getActiveRegion } from '@/lib/get-active-region';
 import { getDb } from '@/services/db/client';
-import { phones } from '@/services/db/schema';
+import { phones, phoneRegionalDetails } from '@/services/db/schema';
 
 import { PhoneChat } from './phone-chat';
 
@@ -18,6 +19,8 @@ interface PageProps {
 
 export default async function PhonePage({ params }: PageProps) {
   const { slug } = await params;
+  const activeRegion = await getActiveRegion();
+
   const db = getDb();
   const [phone] = await db
     .select({
@@ -30,8 +33,17 @@ export default async function PhonePage({ params }: PageProps) {
       msrpUsd: phones.msrpUsd,
       imageUrl: phones.imageUrl,
       specJson: phones.specJson,
+      localPrice: phoneRegionalDetails.price,
+      isEstimated: phoneRegionalDetails.isEstimated,
     })
     .from(phones)
+    .leftJoin(
+      phoneRegionalDetails,
+      and(
+        eq(phoneRegionalDetails.phoneId, phones.id),
+        eq(phoneRegionalDetails.countryCode, activeRegion.countryCode),
+      ),
+    )
     .where(eq(phones.slug, slug))
     .limit(1);
 
@@ -48,10 +60,17 @@ export default async function PhonePage({ params }: PageProps) {
         model={phone.model}
         tagline={phone.tagline}
         imageUrl={phone.imageUrl}
-        msrpUsd={phone.msrpUsd}
+        localPrice={phone.localPrice ?? phone.msrpUsd}
+        isEstimated={phone.isEstimated ?? false}
+        activeRegion={activeRegion}
       />
       {specParsed.success ? (
-        <PhoneSpecSummary spec={specParsed.data} msrpUsd={phone.msrpUsd} />
+        <PhoneSpecSummary
+          spec={specParsed.data}
+          localPrice={phone.localPrice ?? phone.msrpUsd}
+          isEstimated={phone.isEstimated ?? false}
+          activeRegion={activeRegion}
+        />
       ) : null}
       <ScorecardSection phoneId={phone.id} />
       <PhoneChat phoneSlug={phone.slug} />

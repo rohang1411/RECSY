@@ -1,17 +1,29 @@
 import { PhoneImage } from '@/components/phone/PhoneImage';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
+import { formatLocalPrice } from '@/lib/format-currency';
+import type { RegionConfig } from '@/lib/regions';
 
 interface PhoneHeaderProps {
   readonly brand: string;
   readonly model: string;
   readonly tagline: string | null;
   readonly imageUrl: string | null;
-  readonly msrpUsd: string | null;
+  readonly localPrice: string | null;
+  readonly isEstimated?: boolean;
+  readonly activeRegion: RegionConfig;
 }
 
-export function PhoneHeader({ brand, model, tagline, imageUrl, msrpUsd }: PhoneHeaderProps) {
-  const price = formatUsdFromNumericString(msrpUsd);
+export function PhoneHeader({
+  brand,
+  model,
+  tagline,
+  imageUrl,
+  localPrice,
+  isEstimated,
+  activeRegion,
+}: PhoneHeaderProps) {
+  const price = formatLocalPrice(localPrice, activeRegion, { isEstimated });
   const label = `${brand} ${model}`;
+
   return (
     <header className="grid-bg border-outline-variant px-grid-margin border-b py-10 sm:py-14">
       <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
