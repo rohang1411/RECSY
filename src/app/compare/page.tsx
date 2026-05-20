@@ -64,8 +64,8 @@ async function loadComparePickerOptions(): Promise<ComparePickerOption[]> {
         imageUrl: row.imageUrl,
         msrpUsd: row.msrpUsd,
         batteryMah: spec.success ? spec.data.battery_mah : null,
-        refreshRateHz: spec.success ? spec.data.display.refresh_rate_hz : null,
-        cameraMp: spec.success ? (spec.data.rear_cameras[0]?.mp ?? null) : null,
+        refreshRateHz: spec.success ? (spec.data.display.refresh_rate_hz ?? null) : null,
+        cameraMp: spec.success ? (spec.data.rear_cameras?.[0]?.mp ?? null) : null,
       };
     });
   } catch {
@@ -313,7 +313,7 @@ export default async function ComparePage({ searchParams }: PageProps) {
                     const spec = specs[index]!;
                     return {
                       slug: phone.slug,
-                      displayValue: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz}Hz`,
+                      displayValue: `${spec.display.size_in}" ${spec.display.panel_type} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz ?? '?'}Hz`,
                       numericValue: spec.display.refresh_rate_hz,
                     };
                   }),
@@ -348,7 +348,7 @@ export default async function ComparePage({ searchParams }: PageProps) {
                   'Weight',
                   compared.map((phone, index) => ({
                     slug: phone.slug,
-                    displayValue: `${specs[index]!.weight_g}g`,
+                    displayValue: `${specs[index]!.weight_g ?? '?'}g`,
                     numericValue: specs[index]!.weight_g,
                   })),
                   false,
@@ -357,16 +357,30 @@ export default async function ComparePage({ searchParams }: PageProps) {
                   'Main rear camera MP',
                   compared.map((phone, index) => ({
                     slug: phone.slug,
-                    displayValue: `${specs[index]!.rear_cameras[0]?.mp ?? 'N/A'}MP`,
-                    numericValue: specs[index]!.rear_cameras[0]?.mp ?? null,
+                    displayValue: `${specs[index]!.rear_cameras?.[0]?.mp ?? 'N/A'}MP`,
+                    numericValue: specs[index]!.rear_cameras?.[0]?.mp ?? null,
                   })),
                 )}
                 {metricRow(
                   'OS',
-                  compared.map((phone, index) => ({
-                    slug: phone.slug,
-                    displayValue: specs[index]!.os,
-                  })),
+                  compared.map((phone, index) => {
+                    const spec = specs[index]!;
+                    return { slug: phone.slug, displayValue: spec.os ?? 'N/A' };
+                  }),
+                )}
+                {metricRow(
+                  'Wi-Fi',
+                  compared.map((phone, index) => {
+                    const spec = specs[index]!;
+                    return { slug: phone.slug, displayValue: spec.connectivity.wifi ?? 'N/A' };
+                  }),
+                )}
+                {metricRow(
+                  'Bluetooth',
+                  compared.map((phone, index) => {
+                    const spec = specs[index]!;
+                    return { slug: phone.slug, displayValue: spec.connectivity.bluetooth ?? 'N/A' };
+                  }),
                 )}
                 {metricRow(
                   'Foldable',

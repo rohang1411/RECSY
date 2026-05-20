@@ -16,6 +16,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 
 import {
+  brandPriorityRank,
   buildCanonicalKey,
   discoverRecentWikidataPhones,
   hashJson,
@@ -175,9 +176,16 @@ async function main(): Promise<void> {
       limit: args.limit,
     });
 
+    // Sort by brand priority: Apple, Samsung, Nothing, OnePlus, vivo, Xiaomi first
+    const sortedCandidates = [...candidates].sort((a, b) => {
+      const rankA = brandPriorityRank(a.brand);
+      const rankB = brandPriorityRank(b.brand);
+      return rankA - rankB;
+    });
+
     let created = 0;
     let updated = 0;
-    for (const candidate of candidates) {
+    for (const candidate of sortedCandidates) {
       const stableKey = stableCandidateKey({
         sourceKey: candidate.sourceKey,
         externalId: candidate.externalId,

@@ -45,6 +45,13 @@ gracefully to a skipped-source telemetry row. Phase 1 (DB, data
 model, seed corpus) and Phase 0 (scaffold, design system, service
 skeletons) shipped 2026-04-21 and 2026-04-19 respectively.
 
+**Catalog spec enrichment pipeline (2026-05-19).** The automated catalog pipeline now uses a three-tier enrichment strategy to promote `pending_review` candidates into the `phones` table with zero paid API dependencies:
+
+1. **Wikipedia API** (primary) — free, open, policy-compliant; extracts `{{Infobox mobile phone}}` wikitext via the MediaWiki `action=parse` API and converts it to `PhoneSpec` via LLM (`src/services/catalog/adapters/wikipedia.ts`).
+2. **MobileAPI** (secondary fallback) — 50 requests/month free tier; structured JSON for phones not well-documented on Wikipedia.
+3. **GSMArena adapter** (warm standby) — technically implemented but currently blocked by Cloudflare Turnstile at the search endpoint; will activate automatically if the bot-protection is lifted.
+   All three tiers are tried in order by `scripts/catalog-enrich-gsmarena.ts` and `catalog-auto.ts`. Brand priority is enforced across all scripts: Apple → Samsung → Nothing → OnePlus → vivo → Xiaomi → Google → Motorola → others.
+
 **Ops / automation (2026-05-14â€”15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an allâ€“cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text â€” see [Â§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip â€” full detail in [Â§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [Â§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
 ---
@@ -248,7 +255,7 @@ Lands on `/internal/pipeline` to inspect the system architecture, live corpus me
 | `PhoneSpec` Zod schema                     | âœ“    | 1     | `src/features/phones/schema.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Aspect definitions seeded                  | âœ“    | 1     | 7 aspects, weights sum to 1.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Starter phone corpus (20 phones)           | âœ“    | 1     | budgetâ†’flagship, 6 brands, 1 foldable                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Automated catalog refresh foundation       | â–²    | 8     | Catalog schema/migration, legacy identity backfill, no-LLM Wikidata staging (P571âˆªP577), structured import/MobileAPI sync, promotion CLI, report CLI. **2026-05-19 hardening:** identity match scoped to `(source_key, external_id)`, `phoneUpdateValues` preserves `next_ingest_at`, spec-embedding backfill in workflow, `parseWeightG` tightened, `isLikelyOfficialPage` blocklist, `failed_transient` removed ([plan](./ImplementationPlans/automated-phone-catalog-refresh-pipeline.md)) |
+| Automated catalog refresh foundation       | â–²    | 8     | Catalog schema/migration, legacy identity backfill, no-LLM Wikidata staging (P571âˆªP577), Wikipedia API spec extraction, `catalog:auto` / `catalog:enrich-gsmarena` enrichment (brand-priority order), structured import/MobileAPI sync, promotion CLI, report CLI. **2026-05-19 hardening:** identity match scoped to `(source_key, external_id)`, `phoneUpdateValues` preserves `next_ingest_at`, spec-embedding backfill in workflow, `parseWeightG` tightened, `isLikelyOfficialPage` blocklist, `failed_transient` removed ([plan](./ImplementationPlans/automated-phone-catalog-refresh-pipeline.md)) |
 | `db:setup` orchestrator + `db:smoke`       | âœ“    | 1     | 6/6 smoke checks incl. HNSW round-trip                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | MCP-style ingestion adapters               | âœ“    | 2     | TypeScript; YouTube, YouTube-channel RSS, Reddit, articles, GSMArena (ADR 0014)                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `pnpm ingest` CLI + tiered GH Actions      | âœ“    | 2     | `ingest:auto` / `creator:watch` / `ingest:report`; scheduler picks by `next_ingest_at`; Curator + Disambiguator agents; **2026-05-14** cron uses shard matrix + `--tier all` on schedule (see Â§22)                                                                                                                                                                                                                                                                                             |
@@ -1516,8 +1523,12 @@ dissenting_quotes)`.
     upstream API block. MobileAPI returned a device, but RECSY blocked promotion
     because that record did not satisfy the strict `PhoneSpecSchema`. Dry-run
     output now shows `scanned`, `selected`, `valid`, `blocked`,
-    `mainstream_selected`, `incomplete_scanned`, `unselected`, exact missing
-    fields, request count, monthly usage, and `llm_calls=0`.
+    `mainstream_selected`, `incomplete_scanned`. Brand priority lives in `src/services/catalog/brand-priority.ts` and is
+    covered by `brand-priority.test.ts`. Current ranks are Apple (1), Samsung (2),
+    Nothing/CMF (3), OnePlus/OPPO/Realme (4), vivo/iQOO (5), Xiaomi/Redmi/POCO (6),
+    Google/Pixel (7), Motorola (8), Transsion-family Tecno/Infinix/itel (9),
+    Honor (10), and Sony (11). This ordering is applied consistently across all
+    catalog enrichment scripts.
   - `--limit` selection now scans the fetched batch, prefers complete/promotable
     records first, then applies brand priority, launch date, spec completeness,
     and stable name ordering. This prevents one incomplete niche phone from
@@ -1650,6 +1661,80 @@ dissenting_quotes)`.
   computing `updatedCount = updated + promoted`, conflating candidate upserts with
   phone promotions in the `catalog_runs` telemetry row. Now `updatedCount` tracks
   candidate upserts only; promotions are separately visible in the log output.
+
+### 2026-05-19 — Wikipedia API spec enrichment + GSMArena Cloudflare discovery + brand priority overhaul
+
+- **Root cause: GSMArena Cloudflare Turnstile block** — Investigation confirmed
+  that GSMArena's search endpoint (`/res.php3?sSearch=...`) now serves a
+  Cloudflare Turnstile CAPTCHA challenge to all headless HTTP clients, including
+  our `PoliteHttp` adapter. The challenge page contains no device data, so the
+  regex never matches and all 52 pending candidates logged "Not found" while the
+  `llmCalls` counter was erroneously incremented (fixed: counter only increments
+  when a real LLM call fires). GSMArena direct device pages may still be
+  accessible if their numeric ID is known, but the search path — the only way to
+  resolve brand+model to a page URL without a paid API — is blocked.
+  `isBotChallengePage()` was added to `gsmarena.ts` to detect the Turnstile
+  page early and return `null` immediately, avoiding wasted HTTP requests and
+  falsely-counted LLM calls. The adapter remains in place as a warm standby for
+  if/when access resumes.
+
+- **Why Wikipedia API is the best free alternative:**
+  - **Policy-compliant** — Wikipedia and the Wikimedia Foundation explicitly
+    allow automated API access under the MediaWiki API terms. No ToS violation,
+    no CAPTCHA, no ban risk.
+  - **No paid account required** — Unlike MobileAPI (50/month limit), GSMArena
+    (Cloudflare wall), or any scraping proxy, Wikipedia is completely free for
+    this use case.
+  - **Structured infobox data** — Phone articles on Wikipedia use a standardised
+    `{{Infobox mobile phone}}` template with consistent field names (`ram`,
+    `storage`, `battery`, `camera`, `screen`, `chipset`, etc.), making LLM-based
+    extraction reliable and low-cost.
+  - **Excellent coverage for priority brands** — Apple, Samsung, Nothing,
+    OnePlus, vivo, Xiaomi, Google, and Motorola flagship phones all have detailed
+    Wikipedia articles. Coverage is weakest for niche sub-brands (8849, Acer
+    Sospiro, AGM) — precisely the brands that should be deprioritised.
+  - **Complements Wikidata discovery** — RECSY already uses Wikidata's SPARQL
+    endpoint for phone discovery. Wikipedia articles are a natural extension:
+    same Wikimedia ecosystem, same open access policy, richer structured content.
+  - **Graceful degradation** — If an article has no `{{Infobox mobile phone}}`
+    block, the adapter returns `null` immediately without wasting an LLM call.
+    If the article exists but has an infobox with too few fields, the adapter also
+    skips (threshold: < 3 useful key-value pairs). MobileAPI is then tried as
+    a fallback.
+  - **Rate-limit-safe** — Wikipedia requests include a polite 1-second delay
+    between calls and a descriptive `User-Agent`. Their threshold for bot banning
+    is 200 requests/second — our pipeline runs at roughly 1/10 second.
+
+- **Wikipedia API adapter** (`src/services/catalog/adapters/wikipedia.ts`) —
+  Two-step fetch:
+  1. `action=opensearch&search={brand}+{model}&limit=5` → find the article title
+     with title similarity matching to avoid false positives.
+  2. `action=parse&page={title}&prop=wikitext` → extract `{{Infobox mobile phone}}`
+     block from the wikitext using a regex, then pass only the infobox to the
+     LLM to minimize token spend.
+     Exports:
+  - `fetchWikipediaSpecs(brand, model): Promise<PhoneSpec | null>`
+  - `checkWikipediaAvailability(): Promise<boolean>`
+
+- **Enrichment script updated** (`scripts/catalog-enrich-gsmarena.ts`) —
+  Renamed conceptually to the "enrichment script"; now tries Wikipedia first,
+  then falls through to GSMArena if Wikipedia returns null. Both tiers share the
+  same promotion/quarantine logic. The script also sorts all pending candidates
+  by brand priority before processing, so Apple/Samsung/Nothing appear first.
+
+- **Brand priority overhaul** (`src/services/catalog/brand-priority.ts`) —
+  Revised order to match product strategy: **Apple (1) → Samsung (2) → Nothing (3)
+  → OnePlus/OPPO/Realme (4) → vivo/iQOO (5) → Xiaomi/Redmi/POCO (6) →
+  Google/Pixel (7) → Motorola (8) → Transsion (9) → Honor (10) → Sony (11)**.
+  Priority sorting is now enforced in all three catalog enrichment scripts:
+  `catalog-refresh.ts`, `catalog-enrich-gsmarena.ts`, and `catalog-sync-mobileapi.ts`.
+
+- **Pipeline Observatory fixes** — Resolved 5 TypeScript errors introduced by
+  the `PhoneSpecSchema` field relaxation (optional `rear_cameras`, optional `os`,
+  optional `weight_g`): added `?.` optional chaining in `pipeline/page.tsx`,
+  `compare/page.tsx`, `match.ts`, and `spec-embedding-text.ts`. Added
+  `isBotChallengePage()` guard to `gsmarena.ts`. Fixed `catalog-auto.ts` env
+  cast. All changes verified by `pnpm typecheck` passing with zero errors.
 
 ### 2026-05-18 - Recommender multi-turn clarification hardening
 
