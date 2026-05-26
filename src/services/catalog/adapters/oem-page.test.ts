@@ -89,4 +89,27 @@ describe('OEM product page extractor', () => {
     expect(plan.ok).toBe(false);
     expect(plan.issues.map((issue) => issue.code)).toContain('missing_spec_field');
   });
+
+  it('prefers fallback OEM brand over contract manufacturer metadata', () => {
+    const record = extractOemProductPage({
+      url: 'https://www.apple.com/iphone-17-pro/',
+      fallbackBrand: 'Apple',
+      html: `<!doctype html>
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "Product",
+                "name": "iPhone 17 Pro",
+                "brand": { "@type": "Brand", "name": "Foxconn" }
+              }
+            </script>
+          </head>
+          <body><h1>iPhone 17 Pro</h1></body>
+        </html>`,
+    });
+
+    expect(record.brand).toBe('Apple');
+  });
 });

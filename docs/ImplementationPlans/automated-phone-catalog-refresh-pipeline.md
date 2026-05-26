@@ -1,6 +1,6 @@
 # Automated Phone Catalog Refresh Pipeline
 
-> Status: Foundation partially implemented (2026-05-18)  
+> Status: Foundation partially implemented; scheduled cadence hardened (2026-05-26)
 > Goal: Keep the canonical `phones` catalog current automatically, without
 > duplicate devices, corrupted specs, broken images, or wasted external calls.
 
@@ -20,7 +20,9 @@ Implemented in this slice:
 - Pure catalog foundations: identity/canonical-key helpers, snapshot hashing,
   strict `PhoneSpec` projection, validation, conservative alias generation, and
   Wikidata discovery adapter. The Wikidata query uses direct `P31` instance
-  matches to avoid broad subclass-path timeouts.
+  matches to avoid broad subclass-path timeouts. Duplicate Wikidata bindings now
+  prefer consumer-facing OEM brands over contract manufacturers, so iPhone-like
+  rows normalize to Apple rather than Foxconn/Hon Hai.
 - Promotion foundation: `catalog:promote` validates `claims_json.promotion`,
   blocks incomplete specs, dedupes by slug/canonical key/identities, and writes
   `phones`, identities, aliases, configurations, source claims, and remote-only
@@ -56,16 +58,26 @@ Implemented in this slice:
     fetches official OEM URLs already present on staged candidates, extracts
     structured product/spec claims, and promotes only records that satisfy
     `PhoneSpecSchema`. Also supports `--url <official-product-url>` for one-off
-    enrichment. No LLM calls.
+    enrichment. It also scans duplicate Wikidata bindings for alternate official
+    URLs and prefers cleaner canonical product URLs over localized variants. No
+    LLM calls.
+  - `pnpm catalog:enrich-gsmarena --limit 25` - automatic spec enrichment for
+    staged pending/quarantined candidates. It tries Wikipedia's API first and
+    GSMArena as a warm fallback. This path can make LLM calls, but only after it
+    finds a real structured phone infobox/page; it then converts the returned
+    `PhoneSpec` into catalog projection claims before promotion.
   - `pnpm catalog:promote --ready --limit 20` - promotes staged
     `ready_to_promote` candidates. No LLM calls.
   - `pnpm catalog:report --days 30` - reports runs/candidate status and LLM
     call counts.
 - GitHub Actions:
-  - `.github/workflows/catalog-refresh.yml` - monthly 01:17 UTC plus manual
-    dispatch. Runs legacy identity backfill, Wikidata staging, optional
+  - `.github/workflows/catalog-refresh.yml` - Monday 01:17 UTC lightweight
+    open-source discovery/OEM enrichment, monthly 01:47 UTC full refresh, plus
+    manual dispatch. Runs legacy identity backfill, Wikidata staging, optional
     MobileAPI sync/promotion when `MOBILEAPI_API_KEY` is configured, OEM
-    enrichment from candidates, and a final report. No LLM calls.
+    enrichment from candidates, optional Wikipedia/GSMArena spec enrichment when
+    Gemini is configured, optional Gemini-backed spec embeddings, and a final
+    report. Discovery/sync/promotion/OEM enrichment make no LLM calls.
 
 Still pending before fully hands-off scheduled auto-promotion:
 
@@ -87,6 +99,7 @@ legacy backfill
   -> discovery/staging
   -> licensed structured sync
   -> official OEM enrichment
+  -> optional Wikipedia/GSMArena spec enrichment
   -> strict validation + dedupe
   -> promotion into phones
   -> existing ingestion and scorecard automation
@@ -143,6 +156,9 @@ vivo/iQOO, OPPO/OnePlus/Realme, Transsion-family Tecno/Infinix/itel, and
 Nothing/CMF. If a record is missing required fields, it is staged/quarantined
 with exact issue codes. Output such as `promoted=0 quarantined=50` means the API
 returned candidates, but none passed `PhoneSpecSchema`; it is not an API block.
+Incomplete MobileAPI listing rows do not count as approved catalog entries, and
+later MobileAPI syncs no longer overwrite an already `ready_to_promote` or
+`promoted` candidate with weaker partial claims.
 
 ### Step 4: Official OEM page enrichment
 
@@ -158,7 +174,8 @@ official manufacturer pages provide complete specs.
 The command:
 
 1. scans staged candidates for official product URLs, usually from Wikidata
-   `officialWebsite` or any existing official candidate URL;
+   `officialWebsite`, duplicate Wikidata bindings, normalized identity metadata,
+   or any existing official candidate URL;
 2. fetches pages politely with a default 2 second delay between requests;
 3. extracts Schema.org JSON-LD, OpenGraph/meta tags, and visible spec text via
    `src/services/catalog/adapters/oem-page.ts`;
@@ -178,6 +195,33 @@ display, RAM, storage, cameras, battery, charging, weight, OS, Wi-Fi,
 Bluetooth, or NFC, the candidate remains quarantined. Brand-specific overrides
 and broader sitemap discovery are the next step for pages whose templates do
 not expose enough parseable text.
+
+### Step 4.5: Wikipedia/GSMArena spec enrichment
+
+Command:
+
+```bash
+pnpm catalog:enrich-gsmarena --limit 25
+```
+
+This is the automatic approval path for candidates that discovery or MobileAPI
+found but that do not have complete structured specs yet. The command processes
+pending/quarantined candidates in mainstream brand order, queries Wikipedia's
+API for a matching phone article, extracts the `{{Infobox mobile phone}}` block,
+and uses Gemini to convert that infobox into `PhoneSpec`. If Wikipedia has no
+usable infobox, it tries GSMArena as a warm fallback; GSMArena search is
+currently often blocked by Cloudflare Turnstile, so Wikipedia is the reliable
+first path.
+
+This path can make LLM calls. It makes one LLM call only after a real candidate
+page/infobox is found, then projects the returned snake_case `PhoneSpec` into
+the camelCase `CatalogPromotionClaimsSchema` shape before validation. That
+projection step is required; otherwise valid fetched specs look like missing
+fields to the catalog promotion gate. If the projected spec satisfies
+`PhoneSpecSchema`, the script marks the candidate `ready_to_promote` and
+promotes it immediately. If no trusted article/spec is found, the candidate
+stays quarantined with issue codes and waits for a later OEM extractor,
+structured import, or improved source.
 
 ### Step 5: Validation and dedupe
 
@@ -223,22 +267,62 @@ because `next_ingest_at` is null. Scorecard automation follows the configured
 catalog-created grace behavior so newly added phones do not get scored before
 review evidence exists.
 
-### Step 7: Monthly GitHub Action
+### Why candidates can appear "not approved"
 
-`.github/workflows/catalog-refresh.yml` runs monthly at `01:17 UTC` and supports
-manual dispatch. The default scheduled path is:
+The expected automatic state progression is:
+
+```text
+discovered/pending_review
+  -> enriched with complete trusted specs
+  -> ready_to_promote/promote
+  -> promoted
+```
+
+If a row remains `pending_review` or `quarantined`, it means the system has not
+yet found enough trusted structured fields to satisfy `PhoneSpecSchema`. The
+latest hardening fixed four approval blockers:
+
+1. Incomplete MobileAPI listing rows were being counted as quarantined in logs
+   but stored as `discovered`/`pending_review`. They now persist as
+   `quarantined` with issue codes, so pending rows represent real unresolved
+   candidates.
+2. The auto runner executed Wikipedia/GSMArena enrichment before MobileAPI, so
+   a later partial MobileAPI sync could put rows back into a weaker pending
+   state. The order is now discovery -> MobileAPI -> OEM -> Wikipedia/GSMArena
+   -> final promotion.
+3. Wikipedia/GSMArena enrichment fetched `PhoneSpec` in the runtime
+   snake_case shape but wrote it into the camelCase catalog claim slot. The
+   projection gate interpreted that as missing fields. The script now converts
+   `PhoneSpec` through `phoneSpecToCatalogProjectionInput` before promotion.
+4. Wikidata duplicate bindings sometimes selected a contract manufacturer such
+   as Foxconn as the brand for an iPhone. Discovery now prefers consumer OEM
+   brands, OEM enrichment scans duplicate bindings for better official URLs, and
+   the generic OEM page extractor prefers the staged consumer brand over
+   contract-manufacturer metadata from product JSON-LD.
+
+### Step 7: Scheduled GitHub Action
+
+`.github/workflows/catalog-refresh.yml` runs a lightweight pass every Monday at
+`01:17 UTC`, a full pass on the first day of each month at `01:47 UTC`, and
+supports manual dispatch.
+
+The weekly scheduled path is:
 
 1. `catalog:backfill-identities`
 2. `catalog:refresh --source wikidata`
-3. optional `catalog:sync-mobileapi --promote --update-existing`
-4. `catalog:enrich-oem --from-candidates --promote --update-existing`
+3. `catalog:enrich-oem --from-candidates --promote --update-existing` with a
+   small limit
+4. optional `backfill-spec-embeddings.ts` when Gemini is configured
 5. `catalog:report --days 35`
 
-If `source=both` or `source=mobileapi` and `MOBILEAPI_API_KEY` is missing, the
-workflow fails with a GitHub Actions error instead of silently succeeding.
-Operators can intentionally avoid MobileAPI by dispatching with
-`source=wikidata`. OEM enrichment can be disabled with the workflow
-`oem_enrich=false` input.
+The monthly scheduled path also runs
+`catalog:sync-mobileapi --promote --update-existing` when `MOBILEAPI_API_KEY` is
+configured. If that optional secret is missing on a scheduled run, the workflow
+emits a notice and continues with open sources. If a manual run requests
+`source=both` or `source=mobileapi` and the secret is missing, the workflow fails
+with a GitHub Actions error. Operators can intentionally avoid MobileAPI by
+dispatching with `source=wikidata`. OEM enrichment can be disabled with the
+workflow `oem_enrich=false` input.
 
 ---
 
@@ -413,6 +497,12 @@ Current implementation slice:
 - `pnpm catalog:refresh --source wikidata --since-years 2`: **0 LLM calls**.
 - `pnpm catalog:import-specs --file <path> --promote`: **0 LLM calls**.
 - `pnpm catalog:sync-mobileapi --since-years 2 --promote`: **0 LLM calls**.
+- `pnpm catalog:enrich-oem --from-candidates --promote`: **0 LLM calls**.
+- `pnpm catalog:enrich-gsmarena --limit 25`: **can make LLM calls**. The
+  current script tries Wikipedia first, calls Gemini only when a real phone
+  infobox/page is found, then falls back to GSMArena if accessible. The LLM
+  output is not written directly; it must pass the same strict projection,
+  validation, dedupe, and promotion gate as no-LLM sources.
 - `pnpm catalog:promote --ready`: **0 LLM calls**.
 - `pnpm catalog:report`: **0 LLM calls**.
 
@@ -427,6 +517,10 @@ Important limitation:
   MobileAPI key, or import a trusted structured JSON export with
   `catalog:import-specs --promote`. Promotion still blocks records whose
   structured fields do not satisfy `PhoneSpecSchema`.
+- To automatically approve more staged phones when MobileAPI/OEM sources are
+  incomplete, enable `GEMINI_API_KEY` and run `catalog:enrich-gsmarena --limit
+N`. This uses LLM calls only for spec extraction from already matched
+  Wikipedia/GSMArena source text.
 
 Future LLM use, if enabled, is only for ambiguous identity disambiguation and is
 budget-capped by `catalog_runs.max_llm_calls`. It must never be required for the
@@ -1193,9 +1287,10 @@ Add `market_variant` to normalization and configuration handling:
 
 Main cadence:
 
-- Monthly full refresh: first day of the month at `01:17 UTC`.
-- Optional weekly lightweight discovery: Mondays at `01:17 UTC`, discovery
-  plus snapshot hash checks only, no media and no broad promotion.
+- Weekly lightweight discovery: Mondays at `01:17 UTC`, Wikidata staging plus
+  limited official OEM enrichment, no MobileAPI calls.
+- Monthly full refresh: first day of the month at `01:47 UTC`, including
+  MobileAPI when the optional API key is configured.
 - Manual dispatch: source, brand, limit, dry-run, resume, and force flags.
 
 Reasoning:
@@ -1203,11 +1298,9 @@ Reasoning:
 - The current review ingest cron runs daily at `02:17 UTC`.
 - Running catalog refresh at `01:17 UTC` lets new phones become ingest-due
   before the same day's ingest pass.
-- Monthly is enough for a portfolio-scale catalog, while manual dispatch covers
-  launch events.
-
-The weekly job is optional in v1, but the code path should support it because a
-monthly-only cadence can miss launch-week devices.
+- The weekly job prevents a monthly-only cadence from missing launch-week
+  devices while keeping licensed API usage at zero.
+- The monthly job is the budgeted structured-source pass for deeper promotion.
 
 ### 10.2 CLI
 

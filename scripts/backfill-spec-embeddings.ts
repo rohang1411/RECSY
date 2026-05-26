@@ -13,6 +13,7 @@ import { PhoneSpecSchema } from '@/features/phones/schema';
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
+import { isLikelyGeminiQuotaExhaustedError } from '@/services/llm/gemini-request-governor';
 import { logger } from '@/services/logger';
 import { buildSpecDocumentForEmbedding } from '@/services/recommender/spec-embedding-text';
 const BATCH = 16;
@@ -65,9 +66,24 @@ async function main(): Promise<void> {
   }
 
   let ok = 0;
+  let quotaExhausted = false;
   for (let i = 0; i < work.length; i += BATCH) {
     const batch = work.slice(i, i + BATCH);
-    const { embeddings, model } = await llm.embed(batch.map((b) => b.text));
+    let result: Awaited<ReturnType<typeof llm.embed>>;
+    try {
+      result = await llm.embed(batch.map((b) => b.text));
+    } catch (err) {
+      if (isLikelyGeminiQuotaExhaustedError(err)) {
+        quotaExhausted = true;
+        log.warn(
+          { remaining: work.length - i, err: err instanceof Error ? err.message : String(err) },
+          'Gemini quota exhausted; leaving remaining spec embeddings pending',
+        );
+        break;
+      }
+      throw err;
+    }
+    const { embeddings, model } = result;
     for (let j = 0; j < batch.length; j++) {
       const emb = embeddings[j];
       if (!emb?.length) {
@@ -86,7 +102,9 @@ async function main(): Promise<void> {
     log.info({ batch: Math.floor(i / BATCH) + 1, model, count: batch.length }, 'batch embedded');
   }
 
-  console.log(`[spec-embed:backfill] OK — ${ok}/${work.length} phones (force=${force})`);
+  console.log(
+    `[spec-embed:backfill] OK — ${ok}/${work.length} phones (force=${force}, quotaExhausted=${quotaExhausted})`,
+  );
 }
 
 main().catch((err) => {

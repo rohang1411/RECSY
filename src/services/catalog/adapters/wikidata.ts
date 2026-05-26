@@ -9,6 +9,8 @@
  */
 import { z } from 'zod';
 
+import { brandPriorityRank } from '../brand-priority';
+import { normalizeIdentityText } from '../identity';
 import type { WikidataPhoneCandidate } from '../types';
 
 const WDQS_ENDPOINT = 'https://query.wikidata.org/sparql';
@@ -94,6 +96,8 @@ LIMIT ${boundedLimit}
 
 function mapBinding(binding: z.infer<typeof BindingSchema>): WikidataPhoneCandidate {
   const qid = binding.item.value.split('/').pop() ?? binding.item.value;
+  const title = binding.itemLabel.value;
+  const rawManufacturer = binding.manufacturerLabel?.value ?? null;
   const aliases = binding.aliases?.value
     ? binding.aliases.value
         .split('|')
@@ -105,9 +109,9 @@ function mapBinding(binding: z.infer<typeof BindingSchema>): WikidataPhoneCandid
     sourceType: 'wikidata',
     externalId: qid,
     sourceUrl: `${ENTITY_BASE}${qid}`,
-    title: binding.itemLabel.value,
-    brand: binding.manufacturerLabel?.value ?? null,
-    model: binding.itemLabel.value,
+    title,
+    brand: normalizeWikidataBrand(rawManufacturer, title),
+    model: title,
     releaseDate: binding.releaseDate?.value ?? null,
     officialUrl: binding.officialWebsite?.value ?? null,
     imageUrl: binding.image?.value ?? null,
@@ -115,8 +119,8 @@ function mapBinding(binding: z.infer<typeof BindingSchema>): WikidataPhoneCandid
     raw: {
       qid,
       item: binding.item.value,
-      label: binding.itemLabel.value,
-      manufacturer: binding.manufacturerLabel?.value ?? null,
+      label: title,
+      manufacturer: rawManufacturer,
       releaseDate: binding.releaseDate?.value ?? null,
       officialWebsite: binding.officialWebsite?.value ?? null,
       image: binding.image?.value ?? null,
@@ -136,7 +140,7 @@ function dedupeCandidates(candidates: readonly WikidataPhoneCandidate[]): Wikida
 
     byQid.set(candidate.externalId, {
       ...existing,
-      brand: existing.brand ?? candidate.brand,
+      brand: pickBetterBrand(existing.brand, candidate.brand, existing.title),
       officialUrl: existing.officialUrl ?? candidate.officialUrl,
       imageUrl: existing.imageUrl ?? candidate.imageUrl,
       aliases: [...new Set([...existing.aliases, ...candidate.aliases])],
@@ -151,6 +155,122 @@ function dedupeCandidates(candidates: readonly WikidataPhoneCandidate[]): Wikida
   }
   return [...byQid.values()];
 }
+
+function pickBetterBrand(
+  existing: string | null | undefined,
+  candidate: string | null | undefined,
+  title: string,
+): string | null {
+  const normalizedExisting = normalizeWikidataBrand(existing ?? null, title);
+  const normalizedCandidate = normalizeWikidataBrand(candidate ?? null, title);
+  if (!normalizedExisting) return normalizedCandidate;
+  if (!normalizedCandidate) return normalizedExisting;
+
+  const existingContract = isContractManufacturer(normalizedExisting);
+  const candidateContract = isContractManufacturer(normalizedCandidate);
+  if (existingContract && !candidateContract) return normalizedCandidate;
+  if (!existingContract && candidateContract) return normalizedExisting;
+
+  const existingRank = brandPriorityRank(normalizedExisting);
+  const candidateRank = brandPriorityRank(normalizedCandidate);
+  if (candidateRank < existingRank) return normalizedCandidate;
+  if (existingRank < candidateRank) return normalizedExisting;
+
+  const titleBrand = inferBrandFromTitle(title);
+  if (titleBrand) {
+    if (sameNormalizedBrand(normalizedCandidate, titleBrand)) return normalizedCandidate;
+    if (sameNormalizedBrand(normalizedExisting, titleBrand)) return normalizedExisting;
+  }
+
+  return normalizedExisting;
+}
+
+function normalizeWikidataBrand(brand: string | null, title: string): string | null {
+  const inferred = inferBrandFromTitle(title);
+  const trimmed = brand?.trim();
+  if (!trimmed) return inferred;
+
+  const normalized = normalizeIdentityText(trimmed);
+  const mapped = COMMON_MANUFACTURER_BRANDS.get(normalized);
+  if (mapped) return mapped;
+  if (isContractManufacturer(trimmed)) return inferred ?? trimmed;
+
+  return trimmed
+    .replace(/\s+(?:Inc\.?|Incorporated|Corporation|Corp\.?|Co\.?|Company|Ltd\.?|Limited)$/i, '')
+    .replace(/\s+(?:Electronics|Technologies|Technology)$/i, '')
+    .trim();
+}
+
+function inferBrandFromTitle(title: string): string | null {
+  const normalized = normalizeIdentityText(title);
+  for (const [prefix, brand] of TITLE_BRAND_PREFIXES) {
+    if (normalized === prefix || normalized.startsWith(`${prefix} `)) return brand;
+  }
+  return null;
+}
+
+function isContractManufacturer(brand: string): boolean {
+  return CONTRACT_MANUFACTURERS.has(normalizeIdentityText(brand));
+}
+
+function sameNormalizedBrand(a: string, b: string): boolean {
+  return normalizeIdentityText(a) === normalizeIdentityText(b);
+}
+
+const CONTRACT_MANUFACTURERS = new Set([
+  'foxconn',
+  'hon hai precision industry',
+  'hon hai precision industry co ltd',
+  'pegatron',
+  'wistron',
+  'compal electronics',
+]);
+
+const COMMON_MANUFACTURER_BRANDS = new Map<string, string>([
+  ['apple inc', 'Apple'],
+  ['samsung electronics', 'Samsung'],
+  ['samsung electronics co ltd', 'Samsung'],
+  ['google llc', 'Google'],
+  ['xiaomi corporation', 'Xiaomi'],
+  ['oneplus technology shenzhen co ltd', 'OnePlus'],
+  ['nothing technology', 'Nothing'],
+  ['nothing technology limited', 'Nothing'],
+  ['motorola mobility', 'Motorola'],
+  ['sony mobile communications', 'Sony'],
+  ['honor device co ltd', 'Honor'],
+  ['huawei technologies', 'Huawei'],
+  ['oppo electronics', 'OPPO'],
+  ['vivo mobile communication', 'vivo'],
+]);
+
+const TITLE_BRAND_PREFIXES: readonly (readonly [string, string])[] = [
+  ['iphone', 'Apple'],
+  ['ipad', 'Apple'],
+  ['samsung', 'Samsung'],
+  ['galaxy', 'Samsung'],
+  ['google pixel', 'Google'],
+  ['pixel', 'Google'],
+  ['nothing phone', 'Nothing'],
+  ['cmf phone', 'Nothing'],
+  ['oneplus', 'OnePlus'],
+  ['vivo', 'vivo'],
+  ['iqoo', 'vivo'],
+  ['xiaomi', 'Xiaomi'],
+  ['redmi', 'Xiaomi'],
+  ['poco', 'Xiaomi'],
+  ['motorola', 'Motorola'],
+  ['moto', 'Motorola'],
+  ['honor', 'Honor'],
+  ['huawei', 'Huawei'],
+  ['oppo', 'OPPO'],
+  ['realme', 'Realme'],
+  ['sony xperia', 'Sony'],
+  ['xperia', 'Sony'],
+  ['light phone', 'Light'],
+  ['tecno', 'Tecno'],
+  ['infinix', 'Infinix'],
+  ['itel', 'itel'],
+];
 
 function readDuplicateBindings(value: unknown): readonly Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];

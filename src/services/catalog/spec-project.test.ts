@@ -8,7 +8,11 @@ import { describe, expect, it } from 'vitest';
 
 import { PhoneSpecSchema } from '@/features/phones/schema';
 
-import { projectPhoneSpec, specCompleteness } from './spec-project';
+import {
+  phoneSpecToCatalogProjectionInput,
+  projectPhoneSpec,
+  specCompleteness,
+} from './spec-project';
 
 const completeInput = {
   display: {
@@ -46,5 +50,14 @@ describe('projectPhoneSpec', () => {
   it('calculates completeness from required fields', () => {
     expect(specCompleteness(completeInput)).toBe(1);
     expect(specCompleteness({})).toBe(0);
+  });
+
+  it('round-trips an existing PhoneSpec through catalog projection input', () => {
+    const projected = projectPhoneSpec(completeInput);
+    expect(projected.ok).toBe(true);
+
+    const roundTrip = projectPhoneSpec(phoneSpecToCatalogProjectionInput(projected.spec!));
+    expect(roundTrip.ok).toBe(true);
+    expect(roundTrip.spec).toEqual(PhoneSpecSchema.parse(projected.spec));
   });
 });

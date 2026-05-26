@@ -51,7 +51,6 @@ export class ArticleAdapter implements SourceAdapter {
   private readonly log = logger.child({ component: 'ingest.adapter.article' });
 
   async discover(phone: PhoneRef, opts: DiscoverOpts): Promise<SourceCandidate[]> {
-    const query = `${phone.brand} ${phone.model} review`;
     const limit = opts.limit ?? 5;
 
     const db = getDb();
@@ -69,71 +68,24 @@ export class ArticleAdapter implements SourceAdapter {
 
     if (trustedHosts.size === 0) return [];
 
-    const url = 'https://lite.duckduckgo.com/lite/';
-    const body = new URLSearchParams({ q: query });
-
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-      const res = await fetch(url, {
-        method: 'POST',
-        body,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'text/html,application/xhtml+xml',
-          'Accept-Language': 'en-US,en;q=0.9',
-          Origin: 'https://lite.duckduckgo.com',
-          Referer: 'https://lite.duckduckgo.com/',
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        this.log.warn({ status: res.status, phone: phone.slug }, 'DDG Lite discovery failed');
-        return [];
-      }
-
-      const html = await res.text();
-      const { document } = parseHTML(html);
-
-      // DuckDuckGo Lite uses a.result-link for organic results
-      const links = document.querySelectorAll('a.result-link');
+      const queries = articleDiscoveryQueries(phone);
       const candidates: SourceCandidate[] = [];
       const seen = new Set<string>();
-
-      for (const link of links) {
+      for (const query of queries) {
         if (candidates.length >= limit) break;
-
-        const href = link.getAttribute('href');
-        if (!href) continue;
-
-        try {
-          const parsedUrl = new URL(href);
-          // Standardize hostname by removing leading www.
-          const host = parsedUrl.hostname.replace(/^www\./, '');
-
-          if (trustedHosts.has(host) && !seen.has(href)) {
-            seen.add(href);
-            candidates.push({
-              url: href,
-              title: link.textContent?.trim() || href,
-              author: null,
-              channel: null,
-              language: 'en',
-              publishedAt: null,
-              raw: {},
-            });
-          }
-        } catch {
-          // skip invalid URLs safely
+        const discovered = await discoverDuckDuckGoLite(query, trustedHosts);
+        for (const candidate of discovered) {
+          if (candidates.length >= limit) break;
+          if (seen.has(candidate.url)) continue;
+          seen.add(candidate.url);
+          candidates.push(candidate);
         }
+        if (discovered.length > 0) break;
       }
 
       this.log.info(
-        { phone: phone.slug, count: candidates.length },
+        { phone: phone.slug, count: candidates.length, queriesTried: queries.length },
         'article auto-discovery via DDG',
       );
       return candidates;
@@ -221,6 +173,112 @@ export class ArticleAdapter implements SourceAdapter {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+function articleDiscoveryQueries(phone: PhoneRef): string[] {
+  const values = new Set<string>();
+  const add = (value: string): void => {
+    const normalized = value.trim().replace(/\s+/g, ' ');
+    if (normalized) values.add(normalized);
+  };
+  add(`${phone.brand} ${phone.model} review`);
+  add(`${phone.model} review`);
+  add(`${phone.brand} ${phone.model}`);
+  return [...values];
+}
+
+async function discoverDuckDuckGoLite(
+  query: string,
+  trustedHosts: ReadonlySet<string>,
+): Promise<SourceCandidate[]> {
+  const lite = await discoverDuckDuckGo(
+    'https://lite.duckduckgo.com/lite/',
+    query,
+    trustedHosts,
+    'a.result-link',
+  );
+  if (lite.length > 0) return lite;
+  return discoverDuckDuckGo(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    query,
+    trustedHosts,
+    'a.result__a, a.result-link',
+    false,
+  );
+}
+
+async function discoverDuckDuckGo(
+  url: string,
+  query: string,
+  trustedHosts: ReadonlySet<string>,
+  selector: string,
+  post = true,
+): Promise<SourceCandidate[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: post ? 'POST' : 'GET',
+      body: post ? new URLSearchParams({ q: query }) : undefined,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        Origin: 'https://lite.duckduckgo.com',
+        Referer: 'https://lite.duckduckgo.com/',
+        ...(post ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+      },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new IntegrationError(`DDG Lite discovery failed with HTTP ${res.status}`, {
+        status: res.status,
+        query,
+      });
+    }
+
+    const html = await res.text();
+    const { document } = parseHTML(html);
+    const links = document.querySelectorAll(selector);
+    const out: SourceCandidate[] = [];
+    for (const link of links) {
+      const href = unwrapDuckDuckGoLink(link.getAttribute('href'));
+      if (!href) continue;
+      try {
+        const parsedUrl = new URL(href);
+        const host = parsedUrl.hostname.replace(/^www\./, '');
+        if (host === 'duckduckgo.com' || !trustedHosts.has(host)) continue;
+        out.push({
+          url: href,
+          title: link.textContent?.trim() || href,
+          author: null,
+          channel: null,
+          language: 'en',
+          publishedAt: null,
+          raw: { discoveredVia: 'ddg-lite', query },
+        });
+      } catch {
+        // skip invalid URLs safely
+      }
+    }
+    return out;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function unwrapDuckDuckGoLink(href: string | null): string | null {
+  if (!href) return null;
+  try {
+    const absolute = href.startsWith('//') ? `https:${href}` : href;
+    const parsed = new URL(absolute);
+    const uddg = parsed.searchParams.get('uddg');
+    return uddg ? decodeURIComponent(uddg) : absolute;
+  } catch {
+    return href;
   }
 }
 

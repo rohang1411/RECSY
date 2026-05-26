@@ -320,7 +320,7 @@ async function readCandidateSeeds(
   const seeds: CandidateSeed[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    const url = officialUrlFromCandidate(row.raw, row.normalized, row.sourceUrl);
+    const url = bestOfficialUrlFromCandidate(row.raw, row.normalized, row.sourceUrl);
     if (!url || seen.has(url)) continue;
     seen.add(url);
     seeds.push({
@@ -358,18 +358,46 @@ function stagePlan(record: CatalogImportRecord) {
   return { record, externalId, canonicalKey, stableKey, claimsJson, plan };
 }
 
-function officialUrlFromCandidate(
+function bestOfficialUrlFromCandidate(
   raw: Record<string, unknown>,
   normalized: Record<string, unknown>,
   sourceUrl: string | null,
 ): string | null {
-  const url =
-    stringValue(raw.officialWebsite) ??
-    stringValue(raw.officialUrl) ??
-    stringValue(raw.url) ??
-    stringValue(normalized.officialUrl) ??
-    (sourceUrl && isLikelyOfficialPage(sourceUrl) ? sourceUrl : null);
-  return url && isLikelyOfficialPage(url) ? url : null;
+  const urls = [
+    stringValue(raw.officialWebsite),
+    stringValue(raw.officialUrl),
+    stringValue(raw.url),
+    ...duplicateBindingOfficialUrls(raw.duplicateBindings),
+    stringValue(normalized.officialUrl),
+    ...(sourceUrl && isLikelyOfficialPage(sourceUrl) ? [sourceUrl] : []),
+  ].filter((url): url is string => typeof url === 'string' && isLikelyOfficialPage(url));
+
+  const deduped = [...new Set(urls)];
+  if (deduped.length === 0) return null;
+  return deduped.sort((a, b) => officialUrlScore(b) - officialUrlScore(a))[0] ?? null;
+}
+
+function duplicateBindingOfficialUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (item == null || typeof item !== 'object' || Array.isArray(item)) return undefined;
+      return stringValue((item as Record<string, unknown>).officialWebsite);
+    })
+    .filter((url): url is string => Boolean(url));
+}
+
+function officialUrlScore(url: string): number {
+  try {
+    const parsed = new URL(url);
+    let score = 0;
+    if (parsed.hostname.startsWith('www.')) score += 1;
+    if (!/[/?&](?:[a-z]{2}(?:-[a-z]{2})?|[a-z]{2,5})[/?&-]/i.test(parsed.pathname)) score += 1;
+    if (!parsed.search) score += 1;
+    return score;
+  } catch {
+    return 0;
+  }
 }
 
 // Known aggregator, review, and social-platform hostnames that are NOT

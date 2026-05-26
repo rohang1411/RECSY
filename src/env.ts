@@ -74,6 +74,8 @@ export const env = createEnv({
       .default('true')
       .transform((v) => v.toLowerCase() !== 'false'),
     YOUTUBE_TRANSCRIPT_PYTHON: z.string().default('python'),
+    REDDIT_CLIENT_ID: z.string().optional(),
+    REDDIT_CLIENT_SECRET: z.string().optional(),
 
     /**
      * When true, hybrid retrieval runs the optional Gemini structured rerank
@@ -144,6 +146,8 @@ export const env = createEnv({
     YTDLP_SLEEP_REQUESTS_SECONDS: process.env.YTDLP_SLEEP_REQUESTS_SECONDS ?? '2',
     YOUTUBE_TRANSCRIPT_API_ENABLED: process.env.YOUTUBE_TRANSCRIPT_API_ENABLED ?? 'true',
     YOUTUBE_TRANSCRIPT_PYTHON: process.env.YOUTUBE_TRANSCRIPT_PYTHON ?? 'python',
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
     INTERNAL_DASHBOARD_ENABLED: process.env.INTERNAL_DASHBOARD_ENABLED ?? 'false',
     MOBILEAPI_API_KEY: process.env.MOBILEAPI_API_KEY,

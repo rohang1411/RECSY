@@ -94,6 +94,29 @@ export function projectPhoneSpec(input: CatalogSpecProjectionInput): ProjectionR
   return { ok: true, spec: parsed.data, missing: [], issues: [] };
 }
 
+export function phoneSpecToCatalogProjectionInput(spec: PhoneSpec): CatalogSpecProjectionInput {
+  return {
+    display: spec.display,
+    chipset: spec.chipset,
+    processNm: spec.process_nm,
+    ramGb: spec.ram_gb,
+    storageOptionsGb: spec.storage_options_gb,
+    rearCameras: spec.rear_cameras,
+    frontCamera: spec.front_camera,
+    batteryMah: spec.battery_mah,
+    charging: spec.charging,
+    weightG: spec.weight_g,
+    dimensionsMm: spec.dimensions_mm,
+    os: spec.os,
+    updatePolicy: spec.update_policy,
+    connectivity: spec.connectivity,
+    ipRating: spec.ip_rating,
+    colors: spec.colors,
+    foldable: spec.foldable,
+    highlights: spec.highlights,
+  };
+}
+
 export function findMissingProjectionFields(input: CatalogSpecProjectionInput): string[] {
   const missing: string[] = [];
   for (const field of REQUIRED_DISPLAY_FIELDS) {

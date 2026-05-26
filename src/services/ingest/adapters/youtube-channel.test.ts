@@ -154,6 +154,26 @@ describe('YouTubeChannelAdapter.discover', () => {
     expect(calls).toBe(1);
   });
 
+  it('bypasses robots only for the public feed request', async () => {
+    let bypassRobots: boolean | undefined;
+    const http: PoliteHttp = {
+      async get(url, opts) {
+        bypassRobots = opts?.bypassRobots;
+        return { url, status: 200, body: MKBHD_FEED, headers: new Headers() };
+      },
+      async isAllowed() {
+        return true;
+      },
+    };
+    const adapter = new YouTubeChannelAdapter({
+      http,
+      creators: [mkbhd],
+      aliases: ALIASES,
+    });
+    await adapter.discover(s25Ultra, { limit: 5 });
+    expect(bypassRobots).toBe(true);
+  });
+
   it('caches failed RSS feeds for the rest of the run', async () => {
     let calls = 0;
     const http: PoliteHttp = {

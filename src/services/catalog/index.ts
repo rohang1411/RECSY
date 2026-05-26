@@ -23,7 +23,11 @@ export {
   mainstreamPriorityBrandLabel,
 } from './brand-priority';
 export type { BrandPriorityEntry } from './brand-priority';
-export { projectPhoneSpec, specCompleteness } from './spec-project';
+export {
+  phoneSpecToCatalogProjectionInput,
+  projectPhoneSpec,
+  specCompleteness,
+} from './spec-project';
 export type { CatalogSpecProjectionInput, ProjectionResult } from './spec-project';
 export { validateCatalogCandidate, validatePlausibility } from './validation';
 export type { CatalogValidationIssue } from './validation';

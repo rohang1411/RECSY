@@ -10,7 +10,7 @@
 import { parseHTML } from 'linkedom';
 
 import type { CatalogImportRecord } from '../import-schema';
-import { canonicalizeUrl } from '../identity';
+import { canonicalizeUrl, normalizeIdentityText } from '../identity';
 
 export interface OemPageExtractionInput {
   readonly url: string;
@@ -52,8 +52,11 @@ export function extractOemProductPage(input: OemPageExtractionInput): CatalogImp
     document.querySelector('h1')?.textContent?.trim() ??
     input.fallbackModel ??
     'Unknown phone';
-  const brand =
-    readBrand(product) ?? input.fallbackBrand ?? inferBrandFromHost(input.url) ?? 'Unknown';
+  const brand = chooseOemBrand(
+    readBrand(product),
+    input.fallbackBrand,
+    inferBrandFromHost(input.url),
+  );
   const model = stripLeadingBrand(cleanTitle(name), brand);
   const canonicalUrl = canonicalizeUrl(input.url);
   const description =
@@ -177,6 +180,21 @@ function readBrand(product: Record<string, unknown> | null): string | undefined 
   const brand = product.brand;
   if (isRecord(brand)) return stringValue(brand.name);
   return stringValue(brand);
+}
+
+function chooseOemBrand(
+  productBrand: string | undefined,
+  fallbackBrand: string | null | undefined,
+  hostBrand: string | undefined,
+): string {
+  const candidates = [productBrand, fallbackBrand ?? undefined, hostBrand].filter(
+    (brand): brand is string => Boolean(brand?.trim()),
+  );
+  return candidates.find((brand) => !isContractManufacturer(brand)) ?? candidates[0] ?? 'Unknown';
+}
+
+function isContractManufacturer(brand: string): boolean {
+  return CONTRACT_MANUFACTURERS.has(normalizeIdentityText(brand));
 }
 
 function parseDisplay(value: string): CatalogImportRecord['spec']['display'] {
@@ -361,6 +379,15 @@ function inferBrandFromHost(url: string): string | undefined {
   const firstPart = host.split('.')[0];
   return firstPart ? firstPart[0]!.toUpperCase() + firstPart.slice(1) : undefined;
 }
+
+const CONTRACT_MANUFACTURERS = new Set([
+  'foxconn',
+  'hon hai precision industry',
+  'hon hai precision industry co ltd',
+  'pegatron',
+  'wistron',
+  'compal electronics',
+]);
 
 function cleanTitle(value: string): string {
   return value

@@ -185,3 +185,51 @@ describe('RedditAdapter.discover — /new path', () => {
     expect(calls.some((u) => u.includes('/new.json'))).toBe(false);
   });
 });
+
+describe('RedditAdapter OAuth', () => {
+  it('uses oauth.reddit.com when app credentials are configured', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      calls.push(url);
+      if (url === 'https://www.reddit.com/api/v1/access_token') {
+        expect(init?.method).toBe('POST');
+        return new Response(
+          JSON.stringify({
+            access_token: 'token-123',
+            token_type: 'bearer',
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('https://oauth.reddit.com/r/GalaxyS25/search')) {
+        return new Response(
+          JSON.stringify(listing([{ id: 'a', title: 'S25 Ultra review', score: 50 }])),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      }
+      if (url.includes('https://oauth.reddit.com/r/GalaxyS25/new')) {
+        return new Response(JSON.stringify(listing([])), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('', { status: 404 });
+    });
+    const adapter = new RedditAdapter({
+      subredditProfiles: [{ name: 'GalaxyS25', scope: 'device', minScore: 10 }],
+      oauth: { clientId: 'cid', clientSecret: 'secret' },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const got = await adapter.discover(phone, { limit: 5 });
+    expect(got).toHaveLength(1);
+    expect(calls[0]).toBe('https://www.reddit.com/api/v1/access_token');
+    expect(calls.some((u) => u.startsWith('https://oauth.reddit.com/r/GalaxyS25/search'))).toBe(
+      true,
+    );
+  });
+});
