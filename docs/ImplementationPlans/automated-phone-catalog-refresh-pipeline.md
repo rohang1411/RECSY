@@ -221,7 +221,15 @@ fields to the catalog promotion gate. If the projected spec satisfies
 `PhoneSpecSchema`, the script marks the candidate `ready_to_promote` and
 promotes it immediately. If no trusted article/spec is found, the candidate
 stays quarantined with issue codes and waits for a later OEM extractor,
-structured import, or improved source.
+structured import, or improved source. Obvious non-phone devices, such as
+iPads/tablets/watches/laptops, are skipped so they do not consume phone
+enrichment batches. Candidates with no Wikipedia or GSMArena source are marked
+`spec_source_not_found` and get a 30-day `retry_after` so scheduled runs do not
+repeatedly spend requests on the same dead end. Manual operators can pass
+`--retry-all` to ignore that retry window when they intentionally want to
+reattempt priority brands after extractor/source improvements. Candidate
+selection uses the shared mainstream brand priority first, then newest
+`launchDate`/`releaseDate`, then pending state, then title as a stable fallback.
 
 ### Step 5: Validation and dedupe
 

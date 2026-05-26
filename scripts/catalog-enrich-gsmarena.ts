@@ -18,7 +18,7 @@
  *   pnpm catalog:enrich-gsmarena
  *   npm run catalog:enrich-gsmarena
  */
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
 import { fetchGsmarenaSpecs } from '../src/services/catalog/adapters/gsmarena';
@@ -41,25 +41,30 @@ type CatalogCandidateRow = typeof catalogCandidates.$inferSelect;
 
 interface CliArgs {
   readonly limit: number;
+  readonly retryAll: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
   let limit = 25;
+  let retryAll = false;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     switch (flag) {
       case '--limit':
         limit = parsePositiveInt(argv[++i], '--limit');
         break;
+      case '--retry-all':
+        retryAll = true;
+        break;
       case '--help':
       case '-h':
-        console.log('Usage: pnpm catalog:enrich-gsmarena [--limit 25]');
+        console.log('Usage: pnpm catalog:enrich-gsmarena [--limit 25] [--retry-all]');
         process.exit(0);
       default:
         throw new Error(`Unknown flag: ${flag}`);
     }
   }
-  return { limit };
+  return { limit, retryAll };
 }
 
 function hasBrandAndModel(c: CatalogCandidateRow): c is CatalogCandidateRow & {
@@ -80,16 +85,39 @@ async function main() {
   const candidates = await db
     .select()
     .from(catalogCandidates)
-    .where(inArray(catalogCandidates.decision, ['pending_review', 'quarantine', 'skip']));
+    .where(
+      and(
+        inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
+        args.retryAll
+          ? undefined
+          : or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
+      ),
+    );
 
-  // Filter out candidates without brand/model, then sort by brand priority
-  // so Apple, Samsung, Nothing, OnePlus, vivo, Xiaomi are always processed first.
-  const pending = candidates
-    .filter(hasBrandAndModel)
+  const candidateRows = candidates.filter(hasBrandAndModel);
+  const skippedNonPhones = candidateRows.filter((candidate) => !isLikelyPhoneCandidate(candidate));
+  for (const candidate of skippedNonPhones) {
+    await markSkippedNonPhone(db, candidate);
+  }
+
+  // Filter out candidates without brand/model and obvious non-phone devices,
+  // then sort by the shared catalog priority: mainstream brand first, newest
+  // release next, then unresolved pending rows before older quarantines.
+  const pending = candidateRows
+    .filter(isLikelyPhoneCandidate)
     .sort((a, b) => {
       const rankA = brandPriorityRank(a.normalizedIdentityJson.brand);
       const rankB = brandPriorityRank(b.normalizedIdentityJson.brand);
       if (rankA !== rankB) return rankA - rankB;
+
+      const dateA = candidateReleaseTime(a);
+      const dateB = candidateReleaseTime(b);
+      if (dateA !== dateB) return dateB - dateA;
+
+      const stateA = candidateStatePriority(a);
+      const stateB = candidateStatePriority(b);
+      if (stateA !== stateB) return stateA - stateB;
+
       return a.candidateTitle.localeCompare(b.candidateTitle);
     })
     .slice(0, args.limit);
@@ -99,7 +127,9 @@ async function main() {
     return;
   }
 
-  console.log(`${LOG} Processing ${pending.length} candidates in brand-priority order.`);
+  console.log(
+    `${LOG} Processing ${pending.length} candidates in brand-priority + newest-first order.`,
+  );
 
   const [run] = await db
     .insert(catalogRuns)
@@ -119,6 +149,7 @@ async function main() {
   let updated = 0;
   let promoted = 0;
   let quarantined = 0;
+  const skipped = skippedNonPhones.length;
   let llmCalls = 0;
   let wikiHits = 0;
   let gsmarenaHits = 0;
@@ -159,6 +190,7 @@ async function main() {
       } else {
         console.log(`  -> Not found on either source — quarantining.`);
         quarantined++;
+        await markNoSpecSourceFound(db, candidate);
         continue;
       }
     }
@@ -220,6 +252,7 @@ async function main() {
         status: 'success',
         stage: 'done',
         updatedCount: updated,
+        skippedCount: skipped,
         quarantinedCount: quarantined,
         llmCallCount: llmCalls,
         finishedAt: sql`now()`,
@@ -229,7 +262,7 @@ async function main() {
 
   console.log(
     `${LOG} Done. Updated=${updated}, Promoted=${promoted}, Quarantined=${quarantined}, ` +
-      `LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
+      `Skipped=${skipped}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
   );
 }
 
@@ -240,6 +273,80 @@ function parsePositiveInt(value: string | undefined, flag: string): number {
   }
   return parsed;
 }
+
+function isLikelyPhoneCandidate(
+  candidate: CatalogCandidateRow & {
+    normalizedIdentityJson: { brand: string; model: string };
+  },
+): boolean {
+  const text =
+    `${candidate.candidateTitle} ${candidate.normalizedIdentityJson.model}`.toLowerCase();
+  return !NON_PHONE_TITLE_RE.test(text);
+}
+
+function candidateReleaseTime(candidate: CatalogCandidateRow): number {
+  const normalized = candidate.normalizedIdentityJson;
+  const raw = candidate.rawCandidateJson;
+  const value =
+    recordString(normalized, 'launchDate') ??
+    recordString(normalized, 'releaseDate') ??
+    recordString(raw, 'launchDate') ??
+    recordString(raw, 'releaseDate') ??
+    recordString(raw, 'releasedAt');
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function candidateStatePriority(candidate: CatalogCandidateRow): number {
+  if (candidate.decision === 'pending_review') return 0;
+  if (candidate.status === 'discovered') return 1;
+  if (candidate.status === 'quarantined') return 2;
+  return 3;
+}
+
+function recordString(value: unknown, key: string): string | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const item = (value as Record<string, unknown>)[key];
+  return typeof item === 'string' && item.trim() ? item.trim() : undefined;
+}
+
+async function markSkippedNonPhone(
+  db: ReturnType<typeof getDb>,
+  candidate: CatalogCandidateRow,
+): Promise<void> {
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: 'skip',
+      status: 'skipped',
+      issueCodes: ['non_phone_device'],
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidate.id));
+}
+
+async function markNoSpecSourceFound(
+  db: ReturnType<typeof getDb>,
+  candidate: CatalogCandidateRow,
+): Promise<void> {
+  const retryAfter = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: 'quarantine',
+      status: 'quarantined',
+      issueCodes: ['spec_source_not_found'],
+      retryAfter,
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidate.id));
+}
+
+const NON_PHONE_TITLE_RE =
+  /\b(?:ipad|tablet|pad|etpad|acepad|iconia|watch|macbook|laptop|chromebook|earbuds|headphones|smart\s+tv)\b/i;
 
 main().catch((err) => {
   console.error(`${LOG} FAILED`);

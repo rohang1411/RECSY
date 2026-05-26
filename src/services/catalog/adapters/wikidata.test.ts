@@ -123,4 +123,42 @@ describe('Wikidata catalog adapter', () => {
       model: 'Light Phone III',
     });
   });
+
+  it('filters obvious non-phone devices from discovery', async () => {
+    const candidates = await discoverRecentWikidataPhones({
+      since: new Date('2026-01-01T00:00:00Z'),
+      limit: 2,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            results: {
+              bindings: [
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q100' },
+                  itemLabel: { value: 'iPad Air 11 2026' },
+                  manufacturerLabel: { value: 'Apple Inc.' },
+                  releaseDate: { value: '2026-05-01T00:00:00Z' },
+                },
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q102' },
+                  itemLabel: { value: '8849 Tank Pad' },
+                  manufacturerLabel: { value: '8849' },
+                  releaseDate: { value: '2026-01-01T00:00:00Z' },
+                },
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q101' },
+                  itemLabel: { value: 'iPhone 17 Pro Max' },
+                  manufacturerLabel: { value: 'Apple Inc.' },
+                  releaseDate: { value: '2025-09-19T00:00:00Z' },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.title).toBe('iPhone 17 Pro Max');
+  });
 });
