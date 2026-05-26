@@ -1,12 +1,13 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { parseBrowseSearchParams } from '@/features/browse/search-params';
 import { browseWhereFromState } from '@/features/browse/query';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
+import { getActiveRegion } from '@/lib/get-active-region';
+import { formatLocalPrice } from '@/lib/format-currency';
 import { getDb } from '@/services/db/client';
-import { phones } from '@/services/db/schema';
+import { phones, phoneRegionalDetails } from '@/services/db/schema';
 
 import { BrowseFiltersForm } from './browse-filters-form';
 import { appSearchParamsToURLSearchParams } from './search-params-helpers';
@@ -21,7 +22,9 @@ export default async function BrowsePage({ searchParams }: PageProps) {
   const raw = await searchParams;
   const urlParams = appSearchParamsToURLSearchParams(raw);
   const filter = parseBrowseSearchParams(urlParams);
-  const where = browseWhereFromState(filter);
+
+  const activeRegion = await getActiveRegion();
+  const where = browseWhereFromState(filter, activeRegion.countryCode);
 
   const db = getDb();
   const [rows, brandRows] = await Promise.all([
@@ -33,8 +36,19 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         tagline: phones.tagline,
         msrpUsd: phones.msrpUsd,
         imageUrl: phones.imageUrl,
+        localPrice: phoneRegionalDetails.price,
+        localCurrency: phoneRegionalDetails.currency,
+        isEstimated: phoneRegionalDetails.isEstimated,
+        isAvailable: phoneRegionalDetails.isAvailable,
       })
       .from(phones)
+      .leftJoin(
+        phoneRegionalDetails,
+        and(
+          eq(phoneRegionalDetails.phoneId, phones.id),
+          eq(phoneRegionalDetails.countryCode, activeRegion.countryCode),
+        ),
+      )
       .where(where)
       .orderBy(asc(phones.brand), asc(phones.model)),
     db
@@ -57,7 +71,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
               Browse Phones
             </h1>
             <p className="text-muted-foreground mt-4 max-w-2xl text-sm leading-6">
-              Filter the active corpus by brand, US MSRP, and form factor. Open a phone for its
+              Filter the active corpus by brand, MSRP, and form factor. Open a phone for its
               scorecard and Q&A.
             </p>
           </div>
@@ -67,11 +81,20 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      <BrowseFiltersForm allBrands={allBrands} current={filter} hasResults={rows.length > 0} />
+      <BrowseFiltersForm
+        allBrands={allBrands}
+        current={filter}
+        hasResults={rows.length > 0}
+        activeRegion={activeRegion}
+      />
 
       <ul className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((p, index) => {
-          const price = formatUsdFromNumericString(p.msrpUsd);
+          const displayPrice = p.localPrice ?? p.msrpUsd;
+          const price = formatLocalPrice(displayPrice, activeRegion, {
+            isEstimated: p.isEstimated ?? false,
+          });
+
           return (
             <li key={p.slug}>
               <Link

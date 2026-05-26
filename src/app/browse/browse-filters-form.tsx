@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
 import type { BrowseFilterState } from '@/features/browse/search-params';
+import type { RegionConfig } from '@/lib/regions';
 
 import { filterStateToInputDefaults, foldableSelectValue } from './search-params-helpers';
 
@@ -9,19 +10,28 @@ interface BrowseFiltersFormProps {
   readonly allBrands: readonly string[];
   readonly current: BrowseFilterState;
   readonly hasResults: boolean;
+  readonly activeRegion: RegionConfig;
 }
 
-export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFiltersFormProps) {
+export function BrowseFiltersForm({
+  allBrands,
+  current,
+  hasResults,
+  activeRegion,
+}: BrowseFiltersFormProps) {
   const { minInput, maxInput } = filterStateToInputDefaults(current);
   const foldableVal = foldableSelectValue(current);
+
+  const curSymbol = activeRegion.symbol;
+  const curCode = activeRegion.currency;
 
   return (
     <section className="border-outline-variant bg-background mt-8 border">
       <div className="border-outline-variant border-b p-5">
         <h2 className="meta-label text-primary">Filters</h2>
         <p className="text-muted-foreground mt-2 text-xs leading-5">
-          Native GET filters keep the catalog shareable. MSRP is USD; phones without prices are
-          omitted from price bounds.
+          Native GET filters keep the catalog shareable. MSRP is in {curCode}; phones without
+          pricing in this region are omitted from bounds.
         </p>
       </div>
 
@@ -55,33 +65,39 @@ export function BrowseFiltersForm({ allBrands, current, hasResults }: BrowseFilt
         <div className="bg-outline-variant grid gap-px lg:col-span-6 lg:grid-cols-2">
           <div className="bg-background p-5">
             <label htmlFor="b-min" className="meta-label text-primary">
-              Min price USD
+              Min price ({curCode})
             </label>
-            <input
-              id="b-min"
-              name="min"
-              type="number"
-              min={0}
-              step={1}
-              placeholder="ANY"
-              defaultValue={minInput}
-              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary mt-3 w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
-            />
+            <div className="relative mt-3 flex items-center">
+              <span className="text-muted-foreground mr-2 font-mono text-sm">{curSymbol}</span>
+              <input
+                id="b-min"
+                name="min"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="ANY"
+                defaultValue={minInput}
+                className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
+              />
+            </div>
           </div>
           <div className="bg-background p-5">
             <label htmlFor="b-max" className="meta-label text-primary">
-              Max price USD
+              Max price ({curCode})
             </label>
-            <input
-              id="b-max"
-              name="max"
-              type="number"
-              min={0}
-              step={1}
-              placeholder="ANY"
-              defaultValue={maxInput}
-              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary mt-3 w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
-            />
+            <div className="relative mt-3 flex items-center">
+              <span className="text-muted-foreground mr-2 font-mono text-sm">{curSymbol}</span>
+              <input
+                id="b-max"
+                name="max"
+                type="number"
+                min={0}
+                step={1}
+                placeholder="ANY"
+                defaultValue={maxInput}
+                className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full border-b px-0 py-2 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
+              />
+            </div>
           </div>
           <div className="bg-background p-5 lg:col-span-2">
             <label htmlFor="b-fold" className="meta-label text-primary">

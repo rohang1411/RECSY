@@ -10,7 +10,8 @@ import {
   CLIENT_SETTING_KEYS,
   useClientSetting,
 } from '@/lib/client-settings';
-import { formatUsdFromNumericString } from '@/lib/format-usd';
+import { formatLocalPrice } from '@/lib/format-currency';
+import type { RegionConfig } from '@/lib/regions';
 import {
   readRecommendSession,
   type RecommendationSnapshot,
@@ -26,6 +27,8 @@ type ApiPick = {
   readonly score: number;
   readonly summary: string;
   readonly msrpUsd: string | null;
+  readonly localPrice: string | null;
+  readonly localCurrency: string | null;
   readonly imageUrl: string | null;
 };
 
@@ -34,10 +37,10 @@ interface ChatLine {
   readonly text: string;
 }
 
-const INITIAL_LINES: ChatLine[] = [
+const getInitialLines = (symbol: string, countryCode: string): ChatLine[] => [
   {
     role: 'assistant',
-    text: "Just describe the phone you want, the features you'd like, and any price preference. For example: great camera, under $700, strong battery, not too heavy.",
+    text: `Just describe the phone you want, the features you'd like, and any price preference. For example: great camera, under ${symbol}${countryCode === 'IN' ? '60,000' : '700'}, strong battery, not too heavy.`,
   },
 ];
 
@@ -94,7 +97,11 @@ function useClientMounted(): boolean {
   );
 }
 
-export function RecommendClient() {
+interface RecommendClientProps {
+  readonly activeRegion: RegionConfig;
+}
+
+export function RecommendClient({ activeRegion }: RecommendClientProps) {
   const mounted = useClientMounted();
   if (!mounted) {
     return (
@@ -108,10 +115,10 @@ export function RecommendClient() {
       </div>
     );
   }
-  return <RecommendClientLoaded />;
+  return <RecommendClientLoaded activeRegion={activeRegion} />;
 }
 
-function RecommendClientLoaded() {
+function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
   const session = readRecommendSession();
   const initialSnapshots = session?.snapshots?.length
     ? [...session.snapshots]
@@ -122,11 +129,13 @@ function RecommendClientLoaded() {
       ? session.activeSnapshotId
       : (initialSnapshots[0]?.id ?? null);
   const [input, setInput] = useState('');
-  const [lines, setLines] = useState<ChatLine[]>([
-    ...(session?.lines?.length ? (session.lines as ChatLine[]) : INITIAL_LINES),
+  const [lines, setLines] = useState<ChatLine[]>(() => [
+    ...(session?.lines?.length
+      ? (session.lines as ChatLine[])
+      : getInitialLines(activeRegion.symbol, activeRegion.countryCode)),
   ]);
   const [picks, setPicks] = useState<readonly ApiPick[] | null>(
-    initialSnapshots[0]?.picks ?? session?.picks ?? null,
+    (initialSnapshots[0]?.picks as ApiPick[]) ?? (session?.picks as ApiPick[]) ?? null,
   );
   const [relaxed, setRelaxed] = useState<readonly string[] | null>(
     initialSnapshots[0]?.relaxed ?? session?.relaxed ?? null,
@@ -328,7 +337,7 @@ function RecommendClientLoaded() {
   }
 
   const activeSnapshot = snapshots.find((snapshot) => snapshot.id === activeSnapshotId) ?? null;
-  const displayPicks = activeSnapshot?.picks ?? picks;
+  const displayPicks = (activeSnapshot?.picks as ApiPick[]) ?? picks;
   const displayRelaxed = activeSnapshot?.relaxed ?? relaxed;
   const displayRefined = activeSnapshot?.refined ?? refined;
   const displayScoresTied = activeSnapshot?.scoresTied ?? scoresTied;
@@ -336,6 +345,11 @@ function RecommendClientLoaded() {
   const displayTopAspects = activeSnapshot?.topAspects ?? topAspects;
   const topPick = displayPicks?.[0] ?? null;
   const runnerUps = displayPicks?.slice(1) ?? [];
+
+  const placeholderText =
+    activeRegion.countryCode === 'IN'
+      ? 'Under ₹60,000, great camera, long battery, not too heavy...'
+      : 'Under $700, great camera, long battery, not too heavy...';
 
   return (
     <div className="px-grid-margin py-10">
@@ -392,7 +406,7 @@ function RecommendClientLoaded() {
                   void send();
                 }
               }}
-              placeholder="Under $700, great camera, long battery, not too heavy..."
+              placeholder={placeholderText}
               className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-none border-b px-0 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
               disabled={busy}
             />
@@ -488,11 +502,22 @@ function RecommendClientLoaded() {
           {displayPicks && displayPicks.length > 0 ? (
             <div className="bg-outline-variant grid gap-px lg:grid-cols-12" aria-busy={busy}>
               {topPick ? (
-                <RecommendationCard pick={topPick} index={0} featured className="lg:col-span-8" />
+                <RecommendationCard
+                  pick={topPick}
+                  index={0}
+                  featured
+                  className="lg:col-span-8"
+                  activeRegion={activeRegion}
+                />
               ) : null}
               <div className="bg-outline-variant grid gap-px lg:col-span-4">
                 {runnerUps.map((pick, index) => (
-                  <RecommendationCard key={pick.phoneId} pick={pick} index={index + 1} />
+                  <RecommendationCard
+                    key={pick.phoneId}
+                    pick={pick}
+                    index={index + 1}
+                    activeRegion={activeRegion}
+                  />
                 ))}
               </div>
             </div>
@@ -527,13 +552,15 @@ function RecommendationCard({
   index,
   featured = false,
   className,
+  activeRegion,
 }: {
   readonly pick: ApiPick;
   readonly index: number;
   readonly featured?: boolean;
   readonly className?: string;
+  readonly activeRegion: RegionConfig;
 }) {
-  const price = formatUsdFromNumericString(pick.msrpUsd);
+  const price = formatLocalPrice(pick.localPrice ?? pick.msrpUsd, activeRegion);
   return (
     <Link
       href={`/p/${pick.slug}`}

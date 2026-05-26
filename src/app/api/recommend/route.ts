@@ -94,12 +94,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       setSessionCookie = true;
     }
 
+    const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
+
     const t0 = performance.now();
     const result = await runRecommendationPipeline({
       db,
       llm: getLlm(),
       sessionId: session.id,
       userMessage: body.message,
+      regionCode,
       log: log.child({ sessionId: session.id }),
     });
     const latencyMs = Math.round(performance.now() - t0);

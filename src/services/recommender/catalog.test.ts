@@ -86,4 +86,22 @@ describe('loadRecommendationCatalog', () => {
     const result = await loadRecommendationCatalog(db as never);
     expect(result[0]!.specEmbedding).toBeNull();
   });
+
+  it('correctly maps regional pricing details when present', async () => {
+    const db = makeMockDb([
+      {
+        ...baseRow,
+        localPrice: '67000.00',
+        localCurrency: 'INR',
+        isEstimated: true,
+        isAvailable: true,
+      },
+    ]);
+    const result = await loadRecommendationCatalog(db as never, 'IN');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.localPrice).toBe('67000.00');
+    expect(result[0]!.localCurrency).toBe('INR');
+    expect(result[0]!.isEstimated).toBe(true);
+    expect(result[0]!.isAvailable).toBe(true);
+  });
 });
