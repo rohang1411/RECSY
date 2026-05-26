@@ -307,8 +307,8 @@ async function main(): Promise<void> {
           claimsJson: item.claimsJson,
           canonicalKey: item.canonicalKey,
           contentHash: hashJson(item.claimsJson),
-          decision: item.plan.ok ? 'promote' : 'pending_review',
-          status: item.plan.ok ? 'ready_to_promote' : 'discovered',
+          decision: item.plan.ok ? 'promote' : 'quarantine',
+          status: item.plan.ok ? 'ready_to_promote' : 'quarantined',
           confidence: item.plan.ok ? '0.90' : '0.50',
           issueCodes: item.plan.ok ? [] : [...new Set(item.plan.issues.map((issue) => issue.code))],
           lastDecisionAt: new Date(),
@@ -321,13 +321,55 @@ async function main(): Promise<void> {
             candidateTitle: sql`excluded.candidate_title`,
             rawCandidateJson: sql`excluded.raw_candidate_json`,
             normalizedIdentityJson: sql`excluded.normalized_identity_json`,
-            claimsJson: sql`excluded.claims_json`,
+            claimsJson: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.claimsJson}
+                else excluded.claims_json
+              end
+            `,
             canonicalKey: sql`excluded.canonical_key`,
-            contentHash: sql`excluded.content_hash`,
-            decision: sql`excluded.decision`,
-            status: sql`excluded.status`,
-            confidence: sql`excluded.confidence`,
-            issueCodes: sql`excluded.issue_codes`,
+            contentHash: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.contentHash}
+                else excluded.content_hash
+              end
+            `,
+            decision: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.decision}
+                else excluded.decision
+              end
+            `,
+            status: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.status}
+                else excluded.status
+              end
+            `,
+            confidence: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.confidence}
+                else excluded.confidence
+              end
+            `,
+            issueCodes: sql`
+              case
+                when excluded.status = 'quarantined'
+                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.issueCodes}
+                else excluded.issue_codes
+              end
+            `,
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
             lastDecisionAt: sql`now()`,
             updatedAt: sql`now()`,

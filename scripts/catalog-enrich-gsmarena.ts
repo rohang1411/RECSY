@@ -31,12 +31,36 @@ import {
   buildCanonicalKey,
   buildPromotionPlan,
   hashJson,
+  phoneSpecToCatalogProjectionInput,
   promoteCatalogCandidate,
 } from '../src/services/catalog';
 
 const LOG = '[catalog:enrich]';
 
 type CatalogCandidateRow = typeof catalogCandidates.$inferSelect;
+
+interface CliArgs {
+  readonly limit: number;
+}
+
+function parseArgs(argv: readonly string[]): CliArgs {
+  let limit = 25;
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    switch (flag) {
+      case '--limit':
+        limit = parsePositiveInt(argv[++i], '--limit');
+        break;
+      case '--help':
+      case '-h':
+        console.log('Usage: pnpm catalog:enrich-gsmarena [--limit 25]');
+        process.exit(0);
+      default:
+        throw new Error(`Unknown flag: ${flag}`);
+    }
+  }
+  return { limit };
+}
 
 function hasBrandAndModel(c: CatalogCandidateRow): c is CatalogCandidateRow & {
   normalizedIdentityJson: { brand: string; model: string };
@@ -46,6 +70,7 @@ function hasBrandAndModel(c: CatalogCandidateRow): c is CatalogCandidateRow & {
 }
 
 async function main() {
+  const args = parseArgs(process.argv.slice(2));
   const db = getDb();
 
   // Check Wikipedia availability upfront so we know which sources are active.
@@ -59,11 +84,15 @@ async function main() {
 
   // Filter out candidates without brand/model, then sort by brand priority
   // so Apple, Samsung, Nothing, OnePlus, vivo, Xiaomi are always processed first.
-  const pending = candidates.filter(hasBrandAndModel).sort((a, b) => {
-    const rankA = brandPriorityRank(a.normalizedIdentityJson.brand);
-    const rankB = brandPriorityRank(b.normalizedIdentityJson.brand);
-    return rankA - rankB;
-  });
+  const pending = candidates
+    .filter(hasBrandAndModel)
+    .sort((a, b) => {
+      const rankA = brandPriorityRank(a.normalizedIdentityJson.brand);
+      const rankB = brandPriorityRank(b.normalizedIdentityJson.brand);
+      if (rankA !== rankB) return rankA - rankB;
+      return a.candidateTitle.localeCompare(b.candidateTitle);
+    })
+    .slice(0, args.limit);
 
   if (pending.length === 0) {
     console.log(`${LOG} No pending candidates to enrich.`);
@@ -143,7 +172,7 @@ async function main() {
       sourceTier: 'T2' as const,
       brand,
       model,
-      spec,
+      spec: phoneSpecToCatalogProjectionInput(spec),
     };
 
     const canonicalKey = buildCanonicalKey({ brand, model });
@@ -202,6 +231,14 @@ async function main() {
     `${LOG} Done. Updated=${updated}, Promoted=${promoted}, Quarantined=${quarantined}, ` +
       `LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
   );
+}
+
+function parsePositiveInt(value: string | undefined, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${flag}`);
+  }
+  return parsed;
 }
 
 main().catch((err) => {

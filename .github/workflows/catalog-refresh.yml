@@ -1,13 +1,17 @@
 # Automated phone catalog refresh.
 #
-# This workflow makes zero LLM calls. Wikidata is used for open discovery and
-# staging; MobileAPI is optional and can promote only records that satisfy the
-# strict PhoneSpec promotion contract.
+# Scheduled runs are split into a cheap weekly open-source pass and a monthly
+# licensed-source pass. Discovery, MobileAPI sync, OEM enrichment, and promotion
+# make zero LLM calls. Optional Wikipedia/GSMArena enrichment and spec embeddings
+# run only when a Gemini key is configured.
 name: catalog (refresh)
 
 on:
   schedule:
-    - cron: '17 1 1 * *'
+    # Weekly lightweight scout: Wikidata staging + official OEM enrichment.
+    - cron: '17 1 * * 1'
+    # Monthly full pass: includes MobileAPI when the optional secret exists.
+    - cron: '47 1 1 * *'
   workflow_dispatch:
     inputs:
       source:
@@ -61,6 +65,7 @@ jobs:
     outputs:
       configured: ${{ steps.check.outputs.configured }}
       mobileapi: ${{ steps.check.outputs.mobileapi }}
+      gemini: ${{ steps.check.outputs.gemini }}
     steps:
       - id: check
         shell: bash
@@ -70,6 +75,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           MOBILEAPI_API_KEY: ${{ secrets.MOBILEAPI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -82,6 +88,12 @@ jobs:
             echo "mobileapi=true" >> "$GITHUB_OUTPUT"
           else
             echo "mobileapi=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "gemini=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "gemini=false" >> "$GITHUB_OUTPUT"
           fi
 
   catalog:
@@ -98,6 +110,15 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       MOBILEAPI_API_KEY: ${{ secrets.MOBILEAPI_API_KEY }}
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_RATE_LIMIT_PROFILE: google_ai_studio_free
+      GEMINI_FREE_RPM: '5'
+      GEMINI_FREE_TPM_INPUT: '250000'
+      GEMINI_FREE_RPD: '20'
       LOG_LEVEL: info
       SKIP_ENV_VALIDATION: 'true'
     steps:
@@ -123,25 +144,52 @@ jobs:
       - name: Run catalog refresh
         shell: bash
         run: |
-          SOURCE="${{ github.event.inputs.source || 'both' }}"
-          SINCE_YEARS="${{ github.event.inputs.since_years || '2' }}"
-          LIMIT="${{ github.event.inputs.limit || '150' }}"
-          MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
-          OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
-          OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
-          PROMOTE="${{ github.event.inputs.promote || 'true' }}"
+          EVENT_NAME="${{ github.event_name }}"
+          SCHEDULE="${{ github.event.schedule }}"
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            SINCE_YEARS="2"
+            PROMOTE="true"
+            OEM_ENRICH="true"
+
+            if [ "$SCHEDULE" = "47 1 1 * *" ]; then
+              SOURCE="both"
+              LIMIT="150"
+              MOBILEAPI_MAX_REQUESTS="50"
+              OEM_LIMIT="25"
+              echo "[catalog-refresh] monthly full scheduled run"
+            else
+              SOURCE="wikidata"
+              LIMIT="75"
+              MOBILEAPI_MAX_REQUESTS="0"
+              OEM_LIMIT="10"
+              echo "[catalog-refresh] weekly lightweight scheduled run"
+            fi
+          else
+            SOURCE="${{ github.event.inputs.source || 'both' }}"
+            SINCE_YEARS="${{ github.event.inputs.since_years || '2' }}"
+            LIMIT="${{ github.event.inputs.limit || '150' }}"
+            MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
+            OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
+            OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
+            PROMOTE="${{ github.event.inputs.promote || 'true' }}"
+          fi
 
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "wikidata" ]; then
             pnpm exec tsx scripts/catalog-refresh.ts --source wikidata --since-years "$SINCE_YEARS" --limit "$LIMIT"
           fi
 
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "mobileapi" ]; then
-            if [ "${{ needs.secrets-gate.outputs.mobileapi }}" = "true" ]; then
+            if [ "$MOBILEAPI_MAX_REQUESTS" = "0" ]; then
+              echo "[catalog-refresh] MobileAPI skipped for this scheduled cadence."
+            elif [ "${{ needs.secrets-gate.outputs.mobileapi }}" = "true" ]; then
               ARGS="--since-years $SINCE_YEARS --limit $LIMIT --max-requests $MOBILEAPI_MAX_REQUESTS --min-request-gap-ms 12500"
               if [ "$PROMOTE" = "true" ]; then
                 ARGS="$ARGS --promote --update-existing"
               fi
               pnpm exec tsx scripts/catalog-sync-mobileapi.ts $ARGS
+            elif [ "$EVENT_NAME" = "schedule" ]; then
+              echo "::notice title=Skipping MobileAPI::MOBILEAPI_API_KEY is not configured; scheduled catalog refresh will continue with open sources only."
             else
               echo "::error title=Missing MOBILEAPI_API_KEY::Source '$SOURCE' includes MobileAPI, but the MOBILEAPI_API_KEY repository secret is not configured. Add the secret or run the workflow with source=wikidata."
               exit 1
@@ -156,13 +204,25 @@ jobs:
             pnpm exec tsx scripts/catalog-enrich-oem.ts $ARGS
           fi
 
+          if [ "${{ needs.secrets-gate.outputs.gemini }}" = "true" ]; then
+            pnpm exec tsx scripts/catalog-enrich-gsmarena.ts --limit "$OEM_LIMIT"
+            pnpm exec tsx scripts/catalog-promote.ts --ready --limit 50 --update-existing
+          else
+            echo "::notice title=Skipping Wikipedia enrichment::GEMINI_API_KEY is not configured. Pending catalog candidates will remain staged until a no-LLM OEM source or structured import supplies complete specs."
+          fi
+
       - name: Backfill spec embeddings for promoted phones
-        if: success()
+        if: success() && needs.secrets-gate.outputs.gemini == 'true'
         run: |
           # Generate spec_embedding for any phone promoted or updated this run
           # (promotion sets spec_embedding = NULL). The backfill script processes
           # only NULL rows by default so this is safe to run every time.
           pnpm exec tsx scripts/backfill-spec-embeddings.ts
+
+      - name: Skip spec embeddings when Gemini is unavailable
+        if: success() && needs.secrets-gate.outputs.gemini != 'true'
+        run: |
+          echo "::notice title=Skipping spec embeddings::GEMINI_API_KEY is not configured. Catalog refresh completed, but newly promoted phones may need pnpm spec-embed:backfill later."
 
       - name: Catalog report
         if: always()

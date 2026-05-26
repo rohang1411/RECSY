@@ -247,7 +247,9 @@ async function main(): Promise<void> {
           normalizedIdentityJson: {
             brand: candidate.brand ?? null,
             model: candidate.model ?? candidate.title,
+            launchDate: candidate.releaseDate ?? null,
             releaseDate: candidate.releaseDate ?? null,
+            officialUrl: candidate.officialUrl ?? null,
             aliases: candidate.aliases,
           },
           claimsJson: {

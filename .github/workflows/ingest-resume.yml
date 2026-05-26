@@ -72,6 +72,8 @@ jobs:
       YTDLP_PROXY: ${{ secrets.YTDLP_PROXY }}
       YTDLP_EXTRACTOR_ARGS: ${{ secrets.YTDLP_EXTRACTOR_ARGS }}
       YTDLP_SLEEP_REQUESTS_SECONDS: '3'
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
       LOG_LEVEL: info
       SKIP_ENV_VALIDATION: 'false'
     steps:
@@ -107,5 +109,7 @@ jobs:
             --tier all \
             --limit "$LIMIT" \
             --resume-failed \
+            --fail-on-zero-success \
+            --fail-on-empty \
             --shard "${{ matrix.shard }}" \
             --total-shards 4

@@ -19,6 +19,7 @@
  *   2 — bad arguments.
  */
 import { getDb } from '../src/services/db/client';
+import { env } from '../src/env';
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
@@ -59,6 +60,10 @@ interface CliArgs {
   resumeFailed: boolean;
   /** Lookback for resume failures (days). Default 7. */
   resumeWindowDays: number;
+  /** Exit non-zero if the run processed phones but wrote zero content. */
+  failOnZeroSuccess: boolean;
+  /** Exit non-zero if any picked phones remained empty. */
+  failOnEmpty: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -71,6 +76,8 @@ function parseArgs(argv: readonly string[]): CliArgs {
     perPhoneLimit: 5,
     resumeFailed: false,
     resumeWindowDays: 7,
+    failOnZeroSuccess: false,
+    failOnEmpty: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -119,6 +126,12 @@ function parseArgs(argv: readonly string[]): CliArgs {
           exitWithUsage('Invalid --resume-window-days');
         }
         break;
+      case '--fail-on-zero-success':
+        args.failOnZeroSuccess = true;
+        break;
+      case '--fail-on-empty':
+        args.failOnEmpty = true;
+        break;
       case '-h':
       case '--help':
         printUsage();
@@ -147,6 +160,8 @@ function printUsage(): void {
       '  --dry-run                  Discover + fetch + chunk, skip embed/write',
       '  --resume-failed            Retry failed / incomplete / empty-corpus phones first',
       '  --resume-window-days N     Lookback for failure rows (default: 7)',
+      '  --fail-on-zero-success     Exit 1 if the run writes no content for any phone',
+      '  --fail-on-empty            Exit 1 if any picked phones remain empty',
       '  --help                     Print this message',
     ].join('\n'),
   );
@@ -250,7 +265,16 @@ async function main(): Promise<void> {
       aliases,
     }),
     new ArticleAdapter(),
-    new RedditAdapter({ subredditProfiles: subs }),
+    new RedditAdapter({
+      subredditProfiles: subs,
+      oauth:
+        env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET
+          ? {
+              clientId: env.REDDIT_CLIENT_ID,
+              clientSecret: env.REDDIT_CLIENT_SECRET,
+            }
+          : undefined,
+    }),
   ];
 
   const orchestrator = new IngestOrchestrator({
@@ -441,7 +465,15 @@ async function main(): Promise<void> {
   console.log(
     `[ingest:auto] done successes=${successes} empty=${empty} failures=${failures} total=${picked.length}`,
   );
-  process.exit(failures > 0 && successes === 0 && empty === 0 ? 1 : 0);
+  const shouldFail =
+    failures > 0 && successes === 0 && empty === 0
+      ? true
+      : args.failOnZeroSuccess && successes === 0 && picked.length > 0
+        ? true
+        : args.failOnEmpty && empty > 0
+          ? true
+          : false;
+  process.exit(shouldFail ? 1 : 0);
 }
 
 main().catch((err) => {

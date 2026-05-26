@@ -162,6 +162,11 @@ export class YouTubeChannelAdapter implements SourceAdapter {
     const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(creator.channelId)}`;
     const res = await this.http.get(url, {
       accept: 'application/atom+xml,application/xml;q=0.9,text/xml;q=0.8',
+      // YouTube's official channel Atom feed is publicly fetchable and used by
+      // the push-notification docs, but robots.txt disallows crawler traversal
+      // of `/feeds/videos.xml`. We intentionally consume this syndication feed
+      // directly for trusted channels, so bypass robots for this exact request.
+      bypassRobots: true,
     });
     const entries = parseYouTubeRss(res.body);
     this.feedCache.set(creator.channelId, entries);

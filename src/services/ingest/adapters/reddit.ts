@@ -75,11 +75,22 @@ export interface RedditAdapterOptions {
   readonly newPostsLimit?: number;
   /** For testing: override fetch impl. */
   readonly fetchImpl?: typeof fetch;
+  /** Optional official OAuth app credentials for runner-safe API access. */
+  readonly oauth?: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+  };
 }
 
 const MIN_COMMENT_SCORE = 5;
 const MAX_COMMENTS_PER_THREAD = 40;
 const FETCH_TIMEOUT_MS = 15_000;
+const OAUTH_SKEW_MS = 30_000;
+
+interface RedditAccessToken {
+  readonly value: string;
+  readonly expiresAt: number;
+}
 
 export class RedditAdapter implements SourceAdapter {
   readonly type = 'reddit' as const;
@@ -88,12 +99,15 @@ export class RedditAdapter implements SourceAdapter {
   private readonly pollNew: boolean | undefined;
   private readonly newPostsLimit: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly oauth: RedditAdapterOptions['oauth'];
+  private accessToken: RedditAccessToken | null = null;
 
   constructor(opts: RedditAdapterOptions = {}) {
     this.subredditProfiles = opts.subredditProfiles ?? DEFAULT_SUBREDDITS;
     this.pollNew = opts.pollNew;
     this.newPostsLimit = opts.newPostsLimit ?? 25;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+    this.oauth = opts.oauth;
   }
 
   async discover(phone: PhoneRef, opts: DiscoverOpts): Promise<SourceCandidate[]> {
@@ -263,6 +277,9 @@ export class RedditAdapter implements SourceAdapter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
+      const oauthRes = this.oauth ? await this.fetchViaOauth<T>(url, controller.signal) : null;
+      if (oauthRes) return oauthRes;
+
       const res = await this.fetchImpl(url, {
         headers: {
           'User-Agent': USER_AGENT,
@@ -282,6 +299,85 @@ export class RedditAdapter implements SourceAdapter {
       clearTimeout(timeout);
     }
   }
+
+  private async fetchViaOauth<T>(url: string, signal: AbortSignal): Promise<T | null> {
+    try {
+      const token = await this.getAccessToken(signal);
+      const oauthUrl = toOauthUrl(url);
+      const res = await this.fetchImpl(oauthUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json',
+        },
+        signal,
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        throw new IntegrationError(`reddit oauth HTTP ${res.status}`, {
+          url: oauthUrl,
+          status: res.status,
+        });
+      }
+      return (await res.json()) as T;
+    } catch (err) {
+      this.log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'reddit oauth path failed; falling back to public JSON',
+      );
+      return null;
+    }
+  }
+
+  private async getAccessToken(signal: AbortSignal): Promise<string> {
+    const cached = this.accessToken;
+    if (cached && cached.expiresAt - OAUTH_SKEW_MS > Date.now()) {
+      return cached.value;
+    }
+    if (!this.oauth) {
+      throw new IntegrationError('reddit oauth requested without credentials');
+    }
+
+    const auth = Buffer.from(`${this.oauth.clientId}:${this.oauth.clientSecret}`, 'utf8').toString(
+      'base64',
+    );
+    const res = await this.fetchImpl('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'User-Agent': USER_AGENT,
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }),
+      signal,
+    });
+    if (!res.ok) {
+      throw new IntegrationError(`reddit token HTTP ${res.status}`, { status: res.status });
+    }
+    const json = (await res.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      token_type?: string;
+    };
+    if (!json.access_token || json.token_type?.toLowerCase() !== 'bearer') {
+      throw new IntegrationError('reddit token response missing bearer token');
+    }
+    this.accessToken = {
+      value: json.access_token,
+      expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+    };
+    return this.accessToken.value;
+  }
+}
+
+function toOauthUrl(url: string): string {
+  const parsed = new URL(url);
+  parsed.hostname = 'oauth.reddit.com';
+  if (parsed.pathname.endsWith('.json')) {
+    parsed.pathname = parsed.pathname.slice(0, -'.json'.length);
+  }
+  return parsed.toString();
 }
 
 function toCandidate(
