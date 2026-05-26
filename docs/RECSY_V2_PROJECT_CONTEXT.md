@@ -1657,13 +1657,18 @@ dissenting_quotes)`.
      `pnpm catalog:enrich-oem --url <official-url> --promote --update-existing`.
   5. **Enrich from Wikipedia/GSMArena when Gemini is configured** -
      `pnpm catalog:enrich-gsmarena --limit N` processes remaining
-     pending/quarantined candidates in mainstream brand order. It queries
-     Wikipedia first, extracts a phone infobox when present, and calls Gemini
-     only after a real candidate page/infobox is found. GSMArena remains a warm
-     fallback because its search path is often protected by Cloudflare
-     Turnstile. The returned runtime `PhoneSpec` is converted back into the
-     catalog projection input shape before promotion, then validated by the same
-     strict gate.
+     pending/quarantined candidates in shared mainstream brand priority, then
+     newest `launchDate`/`releaseDate`, then pending state. It queries Wikipedia
+     first, extracts a phone infobox when present, and calls Gemini only after a
+     real candidate page/infobox is found. GSMArena remains a warm fallback
+     because its search path is often protected by Cloudflare Turnstile. The
+     returned runtime `PhoneSpec` is converted back into the catalog projection
+     input shape before promotion, then validated by the same strict gate.
+     Obvious non-phone devices such as iPads/tablets/watches are skipped, and
+     candidates with no Wikipedia/GSMArena source are quarantined with
+     `spec_source_not_found` plus a 30-day `retry_after` to avoid repeated
+     dead-end lookups. Manual operators can pass `--retry-all` to reattempt
+     those retry-window candidates after extractor/source improvements.
   6. **Validate before write** - every potential promotion runs through
      `buildPromotionPlan`, `projectPhoneSpec`, plausibility checks, identity
      dedupe, and strict `PhoneSpecSchema`. Missing display, RAM, storage,

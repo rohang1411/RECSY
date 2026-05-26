@@ -9,7 +9,7 @@
  * Usage:
  *   pnpm catalog:report --days 30
  */
-import { desc, gte, sql } from 'drizzle-orm';
+import { asc, desc, gte, sql } from 'drizzle-orm';
 
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
@@ -17,10 +17,12 @@ import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
 
 interface CliArgs {
   readonly days: number;
+  readonly namesLimit: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
   let days = 30;
+  let namesLimit = 5;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     switch (flag) {
@@ -32,15 +34,23 @@ function parseArgs(argv: readonly string[]): CliArgs {
         days = parsed;
         break;
       }
+      case '--names-limit': {
+        const parsed = Number(argv[++i]);
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          throw new Error('Invalid --names-limit');
+        }
+        namesLimit = parsed;
+        break;
+      }
       case '--help':
       case '-h':
-        console.log('Usage: pnpm catalog:report --days 30');
+        console.log('Usage: pnpm catalog:report --days 30 [--names-limit 5]');
         process.exit(0);
       default:
         throw new Error(`Unknown flag: ${flag}`);
     }
   }
-  return { days };
+  return { days, namesLimit };
 }
 
 async function main(): Promise<void> {
@@ -78,6 +88,26 @@ async function main(): Promise<void> {
     .groupBy(catalogCandidates.status, catalogCandidates.decision)
     .orderBy(desc(sql<number>`count(*)`));
 
+  const candidateDetails =
+    args.namesLimit > 0
+      ? await db
+          .select({
+            title: catalogCandidates.candidateTitle,
+            status: catalogCandidates.status,
+            decision: catalogCandidates.decision,
+            issueCodes: catalogCandidates.issueCodes,
+            retryAfter: catalogCandidates.retryAfter,
+            updatedAt: catalogCandidates.updatedAt,
+          })
+          .from(catalogCandidates)
+          .orderBy(
+            asc(catalogCandidates.status),
+            asc(catalogCandidates.decision),
+            desc(catalogCandidates.updatedAt),
+          )
+      : [];
+  const examplesByBucket = groupCandidateExamples(candidateDetails, args.namesLimit);
+
   console.log(`[catalog:report] last ${args.days} days`);
   console.log('\nruns');
   if (runs.length === 0) console.log('  (none)');
@@ -90,10 +120,47 @@ async function main(): Promise<void> {
   console.log('\ncandidates');
   if (candidates.length === 0) console.log('  (none)');
   for (const row of candidates) {
+    const bucketKey = candidateBucketKey(row.status, row.decision);
     console.log(
       `  status=${row.status.padEnd(12)} decision=${(row.decision ?? 'null').padEnd(16)} n=${row.n}`,
     );
+    const examples = examplesByBucket.get(bucketKey) ?? [];
+    for (const example of examples) {
+      const issues = example.issueCodes.length > 0 ? ` issues=${example.issueCodes.join(',')}` : '';
+      const retry = example.retryAfter ? ` retry_after=${example.retryAfter.toISOString()}` : '';
+      console.log(`    - ${example.title}${issues}${retry}`);
+    }
+    if (row.n > examples.length && args.namesLimit > 0) {
+      console.log(`    ... ${row.n - examples.length} more`);
+    }
   }
+}
+
+interface CandidateDetail {
+  readonly title: string;
+  readonly status: string;
+  readonly decision: string | null;
+  readonly issueCodes: readonly string[];
+  readonly retryAfter: Date | null;
+}
+
+function groupCandidateExamples(
+  rows: readonly CandidateDetail[],
+  namesLimit: number,
+): Map<string, CandidateDetail[]> {
+  const buckets = new Map<string, CandidateDetail[]>();
+  for (const row of rows) {
+    const key = candidateBucketKey(row.status, row.decision);
+    const bucket = buckets.get(key) ?? [];
+    if (bucket.length >= namesLimit) continue;
+    bucket.push(row);
+    buckets.set(key, bucket);
+  }
+  return buckets;
+}
+
+function candidateBucketKey(status: string, decision: string | null): string {
+  return `${status}\u0000${decision ?? 'null'}`;
 }
 
 main().catch((err) => {

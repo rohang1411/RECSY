@@ -60,7 +60,9 @@ export async function discoverRecentWikidataPhones(
     throw new Error(`Wikidata query failed: HTTP ${res.status}`);
   }
   const parsed = WikidataResponseSchema.parse(await res.json());
-  return dedupeCandidates(parsed.results.bindings.map(mapBinding));
+  return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter((candidate) =>
+    isLikelyPhoneTitle(candidate.title),
+  );
 }
 
 export function buildRecentPhonesQuery(since: Date, limit: number): string {
@@ -217,6 +219,12 @@ function sameNormalizedBrand(a: string, b: string): boolean {
   return normalizeIdentityText(a) === normalizeIdentityText(b);
 }
 
+function isLikelyPhoneTitle(title: string): boolean {
+  const normalized = normalizeIdentityText(title);
+  if (NON_PHONE_TITLE_TOKENS.some((token) => normalized.includes(token))) return false;
+  return true;
+}
+
 const CONTRACT_MANUFACTURERS = new Set([
   'foxconn',
   'hon hai precision industry',
@@ -225,6 +233,22 @@ const CONTRACT_MANUFACTURERS = new Set([
   'wistron',
   'compal electronics',
 ]);
+
+const NON_PHONE_TITLE_TOKENS = [
+  'ipad',
+  'tablet',
+  'pad',
+  'etpad',
+  'acepad',
+  'iconia',
+  'watch',
+  'macbook',
+  'laptop',
+  'chromebook',
+  'earbuds',
+  'headphones',
+  'smart tv',
+];
 
 const COMMON_MANUFACTURER_BRANDS = new Map<string, string>([
   ['apple inc', 'Apple'],
