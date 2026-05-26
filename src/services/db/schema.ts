@@ -1074,6 +1074,7 @@ export const phonesRelations = relations(phones, ({ many }) => ({
   catalogClaims: many(catalogSourceClaims),
   mediaAssets: many(phoneMediaAssets),
   catalogQualityIssues: many(catalogQualityIssues),
+  regionalDetails: many(phoneRegionalDetails),
 }));
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
@@ -1173,6 +1174,54 @@ export const recommendationTurnsRelations = relations(recommendationTurns, ({ on
   }),
   feedback: many(recommendationFeedback),
 }));
+
+// ---------------------------------------------------------------------------
+// Regional Pricing & Catalog Customization
+// ---------------------------------------------------------------------------
+
+export const phoneRegionalDetails = pgTable(
+  'phone_regional_details',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    phoneId: uuid('phone_id')
+      .notNull()
+      .references(() => phones.id, { onDelete: 'cascade' }),
+    countryCode: text('country_code').notNull(),
+    price: numeric('price', { precision: 12, scale: 2 }),
+    currency: text('currency').notNull(),
+    isAvailable: boolean('is_available').notNull().default(true),
+    officialUrl: text('official_url'),
+    priceSource: text('price_source').notNull().default('catalog_pipeline'),
+    isEstimated: boolean('is_estimated').notNull().default(false),
+    exchangeRateUsed: numeric('exchange_rate_used', { precision: 10, scale: 6 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('phone_regional_details_phone_country_uniq').on(t.phoneId, t.countryCode),
+    index('phone_regional_details_country_available_idx').on(t.countryCode, t.isAvailable),
+    index('phone_regional_details_phone_idx').on(t.phoneId),
+  ],
+);
+
+export const phoneRegionalDetailsRelations = relations(phoneRegionalDetails, ({ one }) => ({
+  phone: one(phones, {
+    fields: [phoneRegionalDetails.phoneId],
+    references: [phones.id],
+  }),
+}));
+
+export const exchangeRates = pgTable(
+  'exchange_rates',
+  {
+    baseCurrency: text('base_currency').notNull(),
+    quoteCurrency: text('quote_currency').notNull(),
+    rate: numeric('rate', { precision: 14, scale: 8 }).notNull(),
+    source: text('source').notNull().default('open.er-api.com'),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('exchange_rates_pair_uniq').on(t.baseCurrency, t.quoteCurrency)],
+);
 
 // `boolean` is now referenced by `domain_profiles.robots_respected`.
 // No placeholder needed anymore.

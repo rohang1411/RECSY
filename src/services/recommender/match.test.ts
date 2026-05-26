@@ -236,4 +236,30 @@ describe('match helpers', () => {
     const picked = pickDiverseTop(ranked, 3, 2);
     expect(picked.map((p) => p.slug)).toEqual(['a', 'b', 'd']);
   });
+
+  it('passesHardFilters respects local budget (budget_local)', () => {
+    const eLocal = entry({ slug: 'x', localPrice: '60000.00', localCurrency: 'INR' });
+    const rLocalPass = req({ budget_local: { max: 70000, currency: 'INR' } });
+    const rLocalFail = req({ budget_local: { max: 50000, currency: 'INR' } });
+
+    expect(
+      passesHardFilters(eLocal, rLocalPass, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(true);
+    expect(
+      passesHardFilters(eLocal, rLocalFail, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(false);
+  });
+
+  it('passesHardFilters respects availability gate (isAvailable)', () => {
+    const available = entry({ slug: 'x', isAvailable: true });
+    const unavailable = entry({ slug: 'y', isAvailable: false });
+    const emptyReq = req({});
+
+    expect(
+      passesHardFilters(available, emptyReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(true);
+    expect(
+      passesHardFilters(unavailable, emptyReq, { relaxBudgetMax: false, ignoreFoldable: false }),
+    ).toBe(false);
+  });
 });

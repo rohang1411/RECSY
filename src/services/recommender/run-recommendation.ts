@@ -41,6 +41,8 @@ export type RecommendApiPick = {
   readonly summary: string;
   /** Postgres `msrp_usd` as string, or `null` */
   readonly msrpUsd: string | null;
+  readonly localPrice: string | null;
+  readonly localCurrency: string | null;
   /** `phones.image_url` */
   readonly imageUrl: string | null;
 };
@@ -91,12 +93,18 @@ function toApiPicks(picks: readonly ScoredCandidate[]): RecommendApiPick[] {
     score: Math.round(p.score * 100) / 100,
     summary: p.summary,
     msrpUsd: p.msrpUsd,
+    localPrice: p.localPrice ?? null,
+    localCurrency: p.localCurrency ?? null,
     imageUrl: p.imageUrl,
   }));
 }
 
 function hasActionableRecommendationInput(requirements: UserRequirements): boolean {
-  const hasBudget = requirements.budget_usd?.max != null || requirements.budget_usd?.min != null;
+  const hasBudget =
+    requirements.budget_usd?.max != null ||
+    requirements.budget_usd?.min != null ||
+    requirements.budget_local?.max != null ||
+    requirements.budget_local?.min != null;
   const hasPreference =
     requirements.priorities.length > 0 ||
     requirements.use_cases.length > 0 ||
@@ -128,6 +136,7 @@ export async function runRecommendationPipeline(input: {
   readonly llm: LlmProvider;
   readonly sessionId: string;
   readonly userMessage: string;
+  readonly regionCode?: string;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
@@ -139,6 +148,7 @@ export async function runRecommendationPipeline(input: {
     llm: input.llm,
     userMessage: input.userMessage,
     previous,
+    regionCode: input.regionCode ?? 'US',
   });
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });
@@ -156,7 +166,7 @@ export async function runRecommendationPipeline(input: {
 
   const defRows = await input.db.select().from(aspectDefinitions);
   const defaultW = buildDefaultAspectWeights(defRows);
-  const fullCatalog = await loadRecommendationCatalog(input.db);
+  const fullCatalog = await loadRecommendationCatalog(input.db, input.regionCode ?? 'US');
 
   const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
   let queryEmbedding: readonly number[] | undefined;
