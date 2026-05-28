@@ -281,6 +281,7 @@ async function main(): Promise<void> {
             status: sql`excluded.status`,
             confidence: sql`excluded.confidence`,
             issueCodes: sql`excluded.issue_codes`,
+            retryAfter: null,
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
             lastDecisionAt: sql`now()`,
             updatedAt: sql`now()`,
