@@ -39,6 +39,14 @@ export interface WikidataCatalogOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+export interface WikidataPhoneNameOptions {
+  readonly brand: string;
+  readonly model: string;
+  readonly limit?: number;
+  readonly userAgent?: string;
+  readonly fetchImpl?: typeof fetch;
+}
+
 export async function discoverRecentWikidataPhones(
   options: WikidataCatalogOptions,
 ): Promise<WikidataPhoneCandidate[]> {
@@ -58,6 +66,32 @@ export async function discoverRecentWikidataPhones(
   });
   if (!res.ok) {
     throw new Error(`Wikidata query failed: HTTP ${res.status}`);
+  }
+  const parsed = WikidataResponseSchema.parse(await res.json());
+  return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter((candidate) =>
+    isLikelyPhoneTitle(candidate.title),
+  );
+}
+
+export async function findWikidataPhonesByName(
+  options: WikidataPhoneNameOptions,
+): Promise<WikidataPhoneCandidate[]> {
+  const fetcher = options.fetchImpl ?? fetch;
+  const query = buildPhoneNameQuery(options.brand, options.model, options.limit ?? 10);
+  const url = new URL(WDQS_ENDPOINT);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('query', query);
+
+  const res = await fetcher(url, {
+    headers: {
+      accept: 'application/sparql-results+json',
+      'user-agent':
+        options.userAgent ??
+        'RECSYBot/0.1 (https://github.com/rohang1411/RECSY; catalog media backfill)',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Wikidata phone lookup failed: HTTP ${res.status}`);
   }
   const parsed = WikidataResponseSchema.parse(await res.json());
   return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter((candidate) =>
@@ -94,6 +128,46 @@ GROUP BY ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?imag
 ORDER BY DESC(?releaseDate)
 LIMIT ${boundedLimit}
 `.trim();
+}
+
+export function buildPhoneNameQuery(brand: string, model: string, limit: number): string {
+  const boundedLimit = Math.max(1, Math.min(limit, 25));
+  const normalizedModel = normalizeIdentityText(stripBrandPrefix(model, brand));
+  const normalizedFull = normalizeIdentityText(`${brand} ${model}`);
+  const needles = [...new Set([normalizedModel, normalizedFull].filter(Boolean))].map(sparqlString);
+
+  return `
+SELECT ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
+       (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
+WHERE {
+  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 }
+  ?item wdt:P31 ?class.
+  ?item rdfs:label ?rawLabel.
+  FILTER(LANG(?rawLabel) = "en")
+  BIND(LCASE(STR(?rawLabel)) AS ?labelLower)
+  FILTER(${needles.map((needle) => `CONTAINS(?labelLower, ${needle})`).join(' || ')})
+  OPTIONAL { ?item wdt:P176 ?manufacturer. }
+  OPTIONAL { ?item wdt:P571 ?inceptionDate. }
+  OPTIONAL { ?item wdt:P577 ?publicationDate. }
+  BIND(COALESCE(?inceptionDate, ?publicationDate) AS ?releaseDate)
+  OPTIONAL { ?item wdt:P856 ?officialWebsite. }
+  OPTIONAL { ?item wdt:P18 ?image. }
+  OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en") }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
+ORDER BY DESC(?releaseDate)
+LIMIT ${boundedLimit}
+`.trim();
+}
+
+function stripBrandPrefix(value: string, brandName: string): string {
+  const escaped = brandName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(new RegExp(`^${escaped}\\s+`, 'i'), '').trim();
+}
+
+function sparqlString(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function mapBinding(binding: z.infer<typeof BindingSchema>): WikidataPhoneCandidate {

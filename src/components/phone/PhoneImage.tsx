@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 interface PhoneImageProps {
   readonly src: string | null;
   /** Accessibility / fallback */
@@ -23,9 +27,12 @@ export function PhoneImage({
   fill = false,
   fit = 'contain',
 }: PhoneImageProps) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const initial = label.trim().charAt(0).toUpperCase() || '?';
   const wrapperStyle = fill ? undefined : { width: size, height: size };
-  if (src && src.length > 0) {
+  const failed = src != null && src === failedSrc;
+
+  if (src && src.length > 0 && !failed) {
     return (
       <div className={className} style={wrapperStyle}>
         {/* eslint-disable-next-line @next/next/no-img-element -- remote product art; see module docstring */}
@@ -37,6 +44,7 @@ export function PhoneImage({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
+          onError={() => setFailedSrc(src)}
           className={`image-reveal bg-surface-container h-full w-full ${
             fit === 'cover' ? 'object-cover' : 'object-contain p-2'
           }`}
