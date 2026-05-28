@@ -9,7 +9,9 @@
 import { eq, sql } from 'drizzle-orm';
 
 import {
+  extractOemProductPage,
   findWikidataPhonesByName,
+  fetchOemPageHtml,
   needsPhoneMediaBackfill,
   selectPhoneMediaCandidate,
   sha256Hex,
@@ -18,6 +20,7 @@ import {
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import {
+  catalogCandidates,
   catalogQualityIssues,
   catalogRuns,
   catalogSourceClaims,
@@ -164,12 +167,25 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const wikidataCandidates = await findWikidataPhonesByName({
-        brand: phone.brand,
-        model: phone.model,
-        limit: args.lookupLimit,
-      });
-      const selected = selectPhoneMediaCandidate(phone, wikidataCandidates);
+      const stagedCandidates = await readStagedImageCandidates(db, phone);
+      let selected = selectPhoneMediaCandidate(phone, stagedCandidates);
+      if (!selected && stagedCandidates.length > 0) {
+        console.log(`[catalog:backfill-media] staged candidates had no exact image ${phone.slug}`);
+      }
+
+      if (!selected) {
+        const oemCandidates = await readOemImageCandidates(phone, stagedCandidates);
+        selected = selectPhoneMediaCandidate(phone, oemCandidates);
+      }
+
+      const wikidataCandidates = selected
+        ? []
+        : await findWikidataPhonesByName({
+            brand: phone.brand,
+            model: phone.model,
+            limit: args.lookupLimit,
+          });
+      selected ??= selectPhoneMediaCandidate(phone, wikidataCandidates);
       if (!selected) {
         skipped += 1;
         console.log(`[catalog:backfill-media] no exact image match ${phone.slug}`);
@@ -239,6 +255,108 @@ async function main(): Promise<void> {
     }
     throw err;
   }
+}
+
+async function readStagedImageCandidates(
+  db: ReturnType<typeof getDb>,
+  phone: PhoneRow,
+): Promise<
+  {
+    readonly sourceKey: string;
+    readonly sourceUrl: string | null;
+    readonly externalId: string | null;
+    readonly brand: string | null;
+    readonly model: string | null;
+    readonly title: string;
+    readonly imageUrl: string | null;
+    readonly officialUrl: string | null;
+    readonly aliases: readonly string[];
+  }[]
+> {
+  const fullName = `${phone.brand} ${phone.model}`.toLowerCase();
+  const model = phone.model.toLowerCase();
+  const rows = await db
+    .select({
+      sourceKey: catalogCandidates.sourceKey,
+      sourceUrl: catalogCandidates.sourceUrl,
+      externalId: catalogCandidates.externalId,
+      title: catalogCandidates.candidateTitle,
+      raw: catalogCandidates.rawCandidateJson,
+      normalized: catalogCandidates.normalizedIdentityJson,
+    })
+    .from(catalogCandidates)
+    .where(
+      sql`${catalogCandidates.sourceKey} = 'wikidata'
+        and (
+          ${catalogCandidates.canonicalKey} = ${phone.canonicalKey}
+          or lower(${catalogCandidates.candidateTitle}) = ${fullName}
+          or lower(${catalogCandidates.candidateTitle}) = ${model}
+        )`,
+    )
+    .limit(10);
+
+  return rows.map((row) => ({
+    sourceKey: row.sourceKey,
+    sourceUrl: row.sourceUrl,
+    externalId: row.externalId,
+    title: row.title,
+    brand: stringValue(row.normalized, 'brand'),
+    model: stringValue(row.normalized, 'model') ?? row.title,
+    imageUrl: stringValue(row.raw, 'image'),
+    officialUrl: stringValue(row.normalized, 'officialUrl'),
+    aliases: arrayValue(row.normalized, 'aliases'),
+  }));
+}
+
+async function readOemImageCandidates(
+  phone: PhoneRow,
+  stagedCandidates: readonly { readonly officialUrl: string | null }[],
+): Promise<
+  {
+    readonly sourceKey: string;
+    readonly sourceUrl: string | null;
+    readonly externalId: string | null;
+    readonly brand: string | null;
+    readonly model: string | null;
+    readonly title: string;
+    readonly imageUrl: string | null;
+    readonly aliases: readonly string[];
+  }[]
+> {
+  const urls = [
+    phone.officialUrl,
+    ...stagedCandidates.map((candidate) => candidate.officialUrl),
+  ].filter((url): url is string => Boolean(url && isLikelyOfficialHttpsUrl(url)));
+
+  const candidates = [];
+  for (const url of [...new Set(urls)].slice(0, 2)) {
+    try {
+      const html = await fetchOemPageHtml({ url });
+      const record = extractOemProductPage({
+        url,
+        html,
+        fallbackBrand: phone.brand,
+        fallbackModel: phone.model,
+      });
+      candidates.push({
+        sourceKey: record.sourceKey,
+        sourceUrl: record.sourceUrl ?? null,
+        externalId: record.externalId ?? null,
+        brand: record.brand,
+        model: record.model,
+        title: `${record.brand} ${record.model}`,
+        imageUrl: record.imageUrl ?? null,
+        aliases: record.aliases,
+      });
+    } catch (err) {
+      console.log(
+        `[catalog:backfill-media] OEM image lookup failed ${phone.slug} ${url}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+  return candidates;
 }
 
 async function markExistingImageOk(
@@ -362,6 +480,29 @@ function parsePositiveInt(value: string | undefined, flag: string): number {
   if (!Number.isInteger(parsed) || parsed <= 0) exitWithUsage(`Invalid ${flag}`);
   return parsed;
 }
+
+function stringValue(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function arrayValue(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function isLikelyOfficialHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !NON_OFFICIAL_HOST_RE.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+const NON_OFFICIAL_HOST_RE =
+  /gsmarena\.com|phonearena\.com|kimovil\.com|notebookcheck|reddit\.com|youtube\.com|youtu\.be|twitter\.com|x\.com|instagram\.com|facebook\.com|tiktok\.com|amazon\.com|bestbuy\.com|walmart\.com|ebay\.com|flipkart\.com|wikidata\.org|wikipedia\.org|api\.mobileapi\.dev|commons\.wikimedia\.org/i;
 
 function printUsage(): void {
   console.log(

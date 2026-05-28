@@ -21,7 +21,10 @@
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
-import { fetchGsmarenaSpecs } from '../src/services/catalog/adapters/gsmarena';
+import {
+  fetchGsmarenaSpecs,
+  isGsmarenaCatalogAvailable,
+} from '../src/services/catalog/adapters/gsmarena';
 import {
   fetchWikipediaSpecs,
   checkWikipediaAvailability,
@@ -78,9 +81,13 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const db = getDb();
 
-  // Check Wikipedia availability upfront so we know which sources are active.
-  const wikiAvailable = await checkWikipediaAvailability();
+  // Check source availability upfront so disabled fallbacks don't spam logs.
+  const [wikiAvailable, gsmarenaAvailable] = await Promise.all([
+    checkWikipediaAvailability(),
+    isGsmarenaCatalogAvailable(),
+  ]);
   console.log(`${LOG} Wikipedia API available: ${wikiAvailable}`);
+  console.log(`${LOG} GSMArena fallback available: ${gsmarenaAvailable}`);
 
   const candidates = await db
     .select()
@@ -142,6 +149,7 @@ async function main() {
         script: 'catalog-enrich',
         sources: ['wikipedia', 'gsmarena'],
         wikiAvailable,
+        gsmarenaAvailable,
       },
     })
     .returning({ id: catalogRuns.id });
@@ -172,15 +180,17 @@ async function main() {
         sourceKey = 'wikipedia_infobox';
         llmCalls++;
         console.log(`  -> Found on Wikipedia ✓`);
-      } else {
+      } else if (gsmarenaAvailable) {
         console.log(`  -> Not found on Wikipedia; trying GSMArena fallback...`);
+      } else {
+        console.log(`  -> Not found on Wikipedia; GSMArena fallback unavailable.`);
       }
     }
 
     // -----------------------------------------------------------------------
     // Tier 2: GSMArena (warm standby — may be blocked by Cloudflare Turnstile)
     // -----------------------------------------------------------------------
-    if (!spec) {
+    if (!spec && gsmarenaAvailable) {
       spec = await fetchGsmarenaSpecs(brand, model);
       if (spec) {
         gsmarenaHits++;
@@ -193,6 +203,13 @@ async function main() {
         await markNoSpecSourceFound(db, candidate);
         continue;
       }
+    }
+
+    if (!spec) {
+      console.log(`  -> Not found on available sources; quarantining.`);
+      quarantined++;
+      await markNoSpecSourceFound(db, candidate);
+      continue;
     }
 
     // -----------------------------------------------------------------------
@@ -281,7 +298,7 @@ function isLikelyPhoneCandidate(
 ): boolean {
   const text =
     `${candidate.candidateTitle} ${candidate.normalizedIdentityJson.model}`.toLowerCase();
-  return !NON_PHONE_TITLE_RE.test(text);
+  return !NON_PHONE_TITLE_RE.test(text) && !MULTI_PHONE_TITLE_RE.test(text);
 }
 
 function candidateReleaseTime(candidate: CatalogCandidateRow): number {
@@ -347,6 +364,9 @@ async function markNoSpecSourceFound(
 
 const NON_PHONE_TITLE_RE =
   /\b(?:ipad|tablet|pad|etpad|acepad|iconia|watch|macbook|laptop|chromebook|earbuds|headphones|smart\s+tv)\b/i;
+
+const MULTI_PHONE_TITLE_RE =
+  /\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b.{0,80}\s(?:and|&)\s.{0,80}\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b/i;
 
 main().catch((err) => {
   console.error(`${LOG} FAILED`);

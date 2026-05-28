@@ -3,6 +3,7 @@ import { env } from '@/env';
 import { llm } from '@/services/llm';
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import { makePoliteHttp } from '@/services/ingest/http';
+import { NotFoundError } from '@/lib/errors';
 
 const GSMARENA_HOST = 'www.gsmarena.com';
 // GSMArena limits requests, 15 per min is a safe budget.
@@ -13,6 +14,14 @@ const http = makePoliteHttp({
     jitter: 0,
   },
 });
+
+export async function isGsmarenaCatalogAvailable(): Promise<boolean> {
+  try {
+    return await http.isAllowed(`https://${GSMARENA_HOST}/res.php3?sSearch=test`);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Check if the response body is a Cloudflare Turnstile / bot-challenge page.
@@ -80,6 +89,9 @@ ${JSON.stringify(specs, null, 2)}`;
 
     return value;
   } catch (err) {
+    if (err instanceof NotFoundError && String(err.message).includes('robots.txt disallowed')) {
+      return null;
+    }
     console.error(`[gsmarena-catalog] Failed to fetch specs for ${brand} ${model}:`, err);
     return null;
   }
