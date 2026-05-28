@@ -4,7 +4,7 @@
 # licensed-source pass. Discovery, MobileAPI sync, OEM enrichment, and promotion
 # make zero LLM calls. Optional Wikipedia/GSMArena enrichment and spec embeddings
 # run only when a Gemini key is configured.
-name: catalog (refresh)
+name: catalog auto (refresh + media backfill)
 
 on:
   schedule:
@@ -53,6 +53,16 @@ on:
         required: false
         default: true
         type: boolean
+      media_backfill:
+        description: 'Validate and fill missing phone images'
+        required: false
+        default: true
+        type: boolean
+      media_limit:
+        description: 'Max phones to check for missing images'
+        required: false
+        default: '50'
+        type: string
 
 concurrency:
   group: catalog-refresh
@@ -151,6 +161,8 @@ jobs:
             SINCE_YEARS="2"
             PROMOTE="true"
             OEM_ENRICH="true"
+            MEDIA_BACKFILL="true"
+            MEDIA_LIMIT="50"
 
             if [ "$SCHEDULE" = "47 1 1 * *" ]; then
               SOURCE="both"
@@ -173,6 +185,8 @@ jobs:
             OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
             OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
             PROMOTE="${{ github.event.inputs.promote || 'true' }}"
+            MEDIA_BACKFILL="${{ github.event.inputs.media_backfill || 'true' }}"
+            MEDIA_LIMIT="${{ github.event.inputs.media_limit || '50' }}"
           fi
 
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "wikidata" ]; then
@@ -209,6 +223,10 @@ jobs:
             pnpm exec tsx scripts/catalog-promote.ts --ready --limit 50 --update-existing
           else
             echo "::notice title=Skipping Wikipedia enrichment::GEMINI_API_KEY is not configured. Pending catalog candidates will remain staged until a no-LLM OEM source or structured import supplies complete specs."
+          fi
+
+          if [ "$MEDIA_BACKFILL" = "true" ]; then
+            pnpm exec tsx scripts/catalog-backfill-media.ts --limit "$MEDIA_LIMIT" --min-request-gap-ms 1250
           fi
 
       - name: Backfill spec embeddings for promoted phones

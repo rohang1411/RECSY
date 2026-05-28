@@ -38,7 +38,14 @@ export { buildPromotionPlan, promoteCatalogCandidate } from './promote';
 export type { PromoteCandidateResult, PromotionPlan } from './promote';
 export type { CatalogDiscoveryCandidate, CatalogSourceTier, WikidataPhoneCandidate } from './types';
 export { buildRecentPhonesQuery, discoverRecentWikidataPhones } from './adapters/wikidata';
+export { findWikidataPhonesByName, buildPhoneNameQuery } from './adapters/wikidata';
 export { fetchMobileApiDevicesByYear, mobileApiDeviceToImportRecord } from './adapters/mobileapi';
 export type { MobileApiByYearPage } from './adapters/mobileapi';
 export { extractOemProductPage, fetchOemPageHtml } from './adapters/oem-page';
 export { fetchWikipediaSpecs, checkWikipediaAvailability } from './adapters/wikipedia';
+export {
+  needsPhoneMediaBackfill,
+  selectPhoneMediaCandidate,
+  mediaCandidateMatchReason,
+  validateRemoteImageUrl,
+} from './media-backfill';

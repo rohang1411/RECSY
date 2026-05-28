@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { buildRecentPhonesQuery, discoverRecentWikidataPhones } from './wikidata';
+import {
+  buildPhoneNameQuery,
+  buildRecentPhonesQuery,
+  discoverRecentWikidataPhones,
+  findWikidataPhonesByName,
+} from './wikidata';
 
 describe('Wikidata catalog adapter', () => {
   it('builds a bounded recent-phone query', () => {
@@ -15,6 +20,14 @@ describe('Wikidata catalog adapter', () => {
     expect(query).toContain('LIMIT 500');
     expect(query).toContain('?item wdt:P31 ?class.');
     expect(query).not.toContain('P279*');
+  });
+
+  it('builds a bounded phone-name lookup query for media backfill', () => {
+    const query = buildPhoneNameQuery('Apple', 'iPhone 16 Pro', 99);
+    expect(query).toContain('iphone 16 pro');
+    expect(query).toContain('apple iphone 16 pro');
+    expect(query).toContain('LIMIT 25');
+    expect(query).toContain('OPTIONAL { ?item wdt:P18 ?image. }');
   });
 
   it('maps fixture response into candidates', async () => {
@@ -55,6 +68,36 @@ describe('Wikidata catalog adapter', () => {
       brand: 'Example',
     });
     expect(candidates[0]?.aliases).toEqual(['Example Pro', 'ExamplePhonePro', 'Example Pro Alt']);
+  });
+
+  it('maps phone-name lookup fixture responses into image candidates', async () => {
+    const candidates = await findWikidataPhonesByName({
+      brand: 'Google',
+      model: 'Pixel 9 Pro',
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            results: {
+              bindings: [
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q789' },
+                  itemLabel: { value: 'Google Pixel 9 Pro' },
+                  manufacturerLabel: { value: 'Google LLC' },
+                  releaseDate: { value: '2024-08-22T00:00:00Z' },
+                  image: { value: 'https://upload.wikimedia.org/pixel-9-pro.jpg' },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    });
+
+    expect(candidates[0]).toMatchObject({
+      externalId: 'Q789',
+      brand: 'Google',
+      imageUrl: 'https://upload.wikimedia.org/pixel-9-pro.jpg',
+    });
   });
 
   it('prefers consumer brands over contract manufacturers for duplicate bindings', async () => {

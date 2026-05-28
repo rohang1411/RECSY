@@ -91,6 +91,12 @@ function main(): void {
       optional: true,
     },
     {
+      label: 'Backfill missing phone media',
+      script: 'scripts/catalog-backfill-media.ts',
+      args: ['--limit', '50', '--min-request-gap-ms', '1250'],
+      optional: true,
+    },
+    {
       label: 'Catalog report',
       script: 'scripts/catalog-report.ts',
       args: ['--days', '35'],
