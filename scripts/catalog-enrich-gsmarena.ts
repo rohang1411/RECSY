@@ -34,6 +34,7 @@ import {
   buildCanonicalKey,
   buildPromotionPlan,
   hashJson,
+  isMainstreamPriorityBrand,
   phoneSpecToCatalogProjectionInput,
   promoteCatalogCandidate,
 } from '../src/services/catalog';
@@ -97,7 +98,11 @@ async function main() {
         inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
         args.retryAll
           ? undefined
-          : or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
+          : or(
+              eq(catalogCandidates.decision, 'pending_review'),
+              isNull(catalogCandidates.retryAfter),
+              lte(catalogCandidates.retryAfter, new Date()),
+            ),
       ),
     );
 
@@ -112,6 +117,7 @@ async function main() {
   // release next, then unresolved pending rows before older quarantines.
   const pending = candidateRows
     .filter(isLikelyPhoneCandidate)
+    .filter(isPriorityOrFreshCandidate)
     .sort((a, b) => {
       const rankA = brandPriorityRank(a.normalizedIdentityJson.brand);
       const rankB = brandPriorityRank(b.normalizedIdentityJson.brand);
@@ -320,6 +326,18 @@ function candidateStatePriority(candidate: CatalogCandidateRow): number {
   if (candidate.status === 'discovered') return 1;
   if (candidate.status === 'quarantined') return 2;
   return 3;
+}
+
+function isPriorityOrFreshCandidate(
+  candidate: CatalogCandidateRow & {
+    normalizedIdentityJson: { brand: string; model: string };
+  },
+): boolean {
+  if (isMainstreamPriorityBrand(candidate.normalizedIdentityJson.brand)) return true;
+  // Long-tail rows get one enrichment attempt while freshly discovered. If
+  // they quarantine, leave them for explicit retry windows so they cannot
+  // crowd out Apple/Samsung/Pixel/Nothing/etc. on every scheduled run.
+  return candidate.decision === 'pending_review' && candidate.status === 'discovered';
 }
 
 function recordString(value: unknown, key: string): string | undefined {
