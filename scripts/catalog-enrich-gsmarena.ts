@@ -18,7 +18,7 @@
  *   pnpm catalog:enrich-gsmarena
  *   npm run catalog:enrich-gsmarena
  */
-import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
 import {
@@ -97,14 +97,7 @@ async function main() {
   const candidates = await db
     .select()
     .from(catalogCandidates)
-    .where(
-      and(
-        inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
-        args.retryAll
-          ? undefined
-          : or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
-      ),
-    );
+    .where(inArray(catalogCandidates.decision, ['pending_review', 'quarantine']));
 
   const candidateRows = candidates.filter(hasBrandAndModel);
   const unreleasedCandidates = candidateRows.filter(isUnreleasedCandidate);
@@ -118,10 +111,12 @@ async function main() {
     await markSkippedNonPhone(db, candidate);
   }
 
+  const retryEligibleRows = releasedRows.filter((candidate) => isRetryEligible(candidate, args));
+
   // Filter out candidates without brand/model and obvious non-phone devices,
   // then sort by the shared catalog priority: mainstream brand first, newest
   // release next, then unresolved pending rows before older quarantines.
-  const pending = releasedRows
+  const pending = retryEligibleRows
     .filter(isLikelyPhoneCandidate)
     .filter(isPriorityOrFreshCandidate)
     .sort((a, b) => {
@@ -357,6 +352,20 @@ function isPriorityOrFreshCandidate(
     candidate.decision === 'pending_review' &&
     (candidate.status === 'discovered' || candidate.status === 'failed_transient')
   );
+}
+
+function isRetryEligible(candidate: CatalogCandidateRow, args: CliArgs): boolean {
+  if (args.retryAll) return true;
+  if (!candidate.retryAfter) return true;
+  if (candidate.retryAfter <= new Date()) return true;
+  if (
+    candidate.decision === 'pending_review' &&
+    candidate.status === 'discovered' &&
+    candidate.issueCodes.includes('spec_projection_missing')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function recordString(value: unknown, key: string): string | undefined {

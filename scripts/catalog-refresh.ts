@@ -276,16 +276,14 @@ async function main(): Promise<void> {
             lastSnapshotId: sql`excluded.last_snapshot_id`,
             decision: sql`
               case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
-                  or ${catalogCandidates.retryAfter} is not null
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
                 then ${catalogCandidates.decision}
                 else excluded.decision
               end
             `,
             status: sql`
               case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
-                  or ${catalogCandidates.retryAfter} is not null
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
                 then ${catalogCandidates.status}
                 else excluded.status
               end
@@ -293,16 +291,14 @@ async function main(): Promise<void> {
             confidence: sql`excluded.confidence`,
             issueCodes: sql`
               case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
-                  or ${catalogCandidates.retryAfter} is not null
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
                 then ${catalogCandidates.issueCodes}
                 else excluded.issue_codes
               end
             `,
             retryAfter: sql`
               case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
-                  or ${catalogCandidates.retryAfter} is not null
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
                 then ${catalogCandidates.retryAfter}
                 else null
               end
@@ -310,8 +306,7 @@ async function main(): Promise<void> {
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
             lastDecisionAt: sql`
               case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
-                  or ${catalogCandidates.retryAfter} is not null
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
                 then ${catalogCandidates.lastDecisionAt}
                 else now()
               end

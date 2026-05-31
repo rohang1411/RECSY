@@ -454,7 +454,10 @@ long-tail brands could consume enrichment slots before released mainstream
 phones. The shared policy prioritizes mainstream brands first, newest released
 phones second, filters obvious non-phones and combined multi-phone titles, and
 defers known future-dated phones with `unreleased_candidate` plus `retry_after`
-instead of quarantining them as failed specs.
+instead of quarantining them as failed specs. The MobileAPI sync also skips
+incomplete non-priority records before staging, so a weak licensed-API page
+cannot fill the quarantine list with low-value rows when it has no complete
+mainstream specs to offer.
 
 This is the best shape for the pipeline because it keeps source discovery broad
 while keeping promotion conservative. The database remains rich and auditable,

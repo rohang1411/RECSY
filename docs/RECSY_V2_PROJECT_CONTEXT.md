@@ -1691,10 +1691,10 @@ dissenting_quotes)`.
      phones; they are filtered before staging when possible or deferred with
      `issueCodes=['unreleased_candidate']` and a `retry_after` just after launch.
      Wikidata rediscovery refreshes identity/snapshot fields without demoting
-     quarantined, skipped, ready-to-promote, or promoted candidates back to
-     `pending_review`, and it preserves rows that already carry `retry_after`,
-     so retry windows remain effective even for candidates touched by older
-     refresh runs.
+     quarantined, skipped, deferred, ready-to-promote, or promoted candidates
+     back to `pending_review`. Plain `discovered`/`pending_review` rows can
+     clear stale `retry_after` during rediscovery, so older backoff values do
+     not hide candidates that still need enrichment.
   6. **Validate before write** - every potential promotion runs through
      `buildPromotionPlan`, `projectPhoneSpec`, plausibility checks, identity
      dedupe, and strict `PhoneSpecSchema`. Missing display, RAM, storage,
@@ -2365,6 +2365,10 @@ dissenting_quotes)`.
     unreleased, combined-title, non-phone, or long-tail rows before released
     mainstream phones. Those rows had little chance of finding complete trusted
     specs, so they inflated quarantine counts and delayed useful approvals.
+  - **Root cause 6 - stale retry windows on discovery rows.** Older runs could
+    leave `retry_after` on rows that were still
+    `discovered`/`pending_review`, causing enrichment to report "No pending
+    candidates" even though the report still showed pending rows.
   - **Fix.** MobileAPI incomplete records now persist as `quarantined` and do
     not overwrite existing promotable/promoted state; `catalog:auto` runs
     discovery -> MobileAPI -> OEM -> Wikipedia/GSMArena -> promote; fetched
@@ -2376,6 +2380,9 @@ dissenting_quotes)`.
     policy now filters future/unreleased rows before staging where possible,
     defers existing future rows with `unreleased_candidate` + `retry_after`, and
     sorts source/enrichment work by brand priority plus newest released date.
+    MobileAPI now skips incomplete non-priority records before staging, and
+    Wikidata rediscovery clears stale retry windows on plain discovery rows
+    while preserving retry windows for quarantined/deferred/promotable rows.
   - **Hardening.** Added regression coverage for `PhoneSpec` projection
     round-tripping and Wikidata contract-manufacturer dedupe. `catalog:auto
 --dry-run` now shows the planned commands without touching the DB, and

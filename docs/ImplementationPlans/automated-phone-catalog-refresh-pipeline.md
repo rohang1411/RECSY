@@ -161,7 +161,10 @@ staged/quarantined with exact issue codes. Output such as
 `PhoneSpecSchema`; it is not an API block. Incomplete MobileAPI listing rows do
 not count as approved catalog entries, and later MobileAPI syncs no longer
 overwrite an already `ready_to_promote` or `promoted` candidate with weaker
-partial claims.
+partial claims. If the fetched batch contains only incomplete non-priority
+records, the sync skips them before staging instead of adding low-value
+quarantine noise; complete records are still eligible even for non-priority
+brands.
 
 ### Step 4: Official OEM page enrichment
 
@@ -247,10 +250,11 @@ phones today. Wikidata discovery also adds an upper release-date bound in the
 SPARQL query and post-filters results, so future/unreleased devices are not
 staged by normal refresh runs.
 Rediscovery from Wikidata updates identity/snapshot fields but must not demote
-already quarantined, skipped, ready-to-promote, or promoted candidates back to
-`pending_review`; this preserves retry windows and prevents scheduled runs from
-reprocessing known dead ends. Rows that already carry `retry_after` are also
-preserved, covering candidates affected by older refresh runs.
+already quarantined, skipped, deferred, ready-to-promote, or promoted candidates
+back to `pending_review`; this preserves retry windows and prevents scheduled
+runs from reprocessing known dead ends. A plain `discovered`/`pending_review`
+row is allowed to clear stale `retry_after` during rediscovery, because those
+rows still need enrichment rather than a failure backoff.
 
 ### Step 5: Validation and dedupe
 

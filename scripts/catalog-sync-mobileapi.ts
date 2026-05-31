@@ -263,7 +263,7 @@ async function main(): Promise<void> {
 
     if (args.dryRun) {
       console.log(
-        `[catalog:sync-mobileapi] dry-run years=${years.join(',')} scanned=${selection.scanned} selected=${planned.length} valid=${valid} blocked=${blocked} mainstream_selected=${selection.mainstreamSelected} incomplete_scanned=${selection.incompleteScanned} unselected=${selection.unselected} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
+        `[catalog:sync-mobileapi] dry-run years=${years.join(',')} scanned=${selection.scanned} selected=${planned.length} valid=${valid} blocked=${blocked} mainstream_selected=${selection.mainstreamSelected} incomplete_scanned=${selection.incompleteScanned} non_priority_incomplete_skipped=${selection.nonPriorityIncompleteSkipped} unselected=${selection.unselected} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
       );
       if (futureFiltered > 0) {
         console.log(`  unreleased_filtered=${futureFiltered}`);
@@ -420,6 +420,11 @@ async function main(): Promise<void> {
     console.log(
       `[catalog:sync-mobileapi] done records=${planned.length} created=${created} updated=${updated} promoted=${promoted} quarantined=${quarantined} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
     );
+    if (selection.nonPriorityIncompleteSkipped > 0) {
+      console.log(
+        `[catalog:sync-mobileapi] skipped ${selection.nonPriorityIncompleteSkipped} incomplete non-priority records before staging`,
+      );
+    }
     if (futureFiltered > 0) {
       console.log(
         `[catalog:sync-mobileapi] filtered ${futureFiltered} unreleased/future-dated records before staging`,
@@ -525,11 +530,16 @@ function selectPlansForLimit(
   readonly scanned: number;
   readonly mainstreamSelected: number;
   readonly incompleteScanned: number;
+  readonly nonPriorityIncompleteSkipped: number;
   readonly unselected: number;
 } {
   const allPlans = records.map((record) => stagePlan(record)).sort(comparePlansForSelection);
   const blocked = allPlans.filter((item) => !item.plan.ok);
-  const planned = allPlans.slice(0, limit);
+  const selectablePlans = allPlans.filter(
+    (item) => item.plan.ok || isMainstreamPriorityBrand(item.record.brand),
+  );
+  const planned = selectablePlans.slice(0, limit);
+  const nonPriorityIncompleteSkipped = allPlans.length - selectablePlans.length;
 
   return {
     planned,
@@ -537,7 +547,8 @@ function selectPlansForLimit(
     mainstreamSelected: planned.filter((item) => isMainstreamPriorityBrand(item.record.brand))
       .length,
     incompleteScanned: blocked.length,
-    unselected: allPlans.length - planned.length,
+    nonPriorityIncompleteSkipped,
+    unselected: selectablePlans.length - planned.length,
   };
 }
 
