@@ -38,8 +38,22 @@ export interface ProjectionResult {
 
 const REQUIRED_DISPLAY_FIELDS = ['size_in', 'resolution', 'refresh_rate_hz', 'panel_type'] as const;
 
+export const CORE_SPEC_FIELDS = [
+  'display.size_in',
+  'display.resolution',
+  'chipset',
+  'ram_gb',
+  'storage_options_gb',
+  'battery_mah',
+  'os',
+  'rear_cameras',
+] as const;
+
+export const SPEC_COMPLETENESS_PROMOTE_OK = 1.0;
+export const SPEC_COMPLETENESS_ENRICH_THRESHOLD = 0.7;
+
 export function projectPhoneSpec(input: CatalogSpecProjectionInput): ProjectionResult {
-  const missing = findMissingProjectionFields(input);
+  const missing = findMissingCoreFields(input);
   if (missing.length > 0) {
     return { ok: false, missing, issues: [] };
   }
@@ -61,21 +75,21 @@ export function projectPhoneSpec(input: CatalogSpecProjectionInput): ProjectionR
     front_camera: input.frontCamera,
     battery_mah: input.batteryMah,
     charging: {
-      wired_w: input.charging!.wired_w,
-      wireless_w: input.charging!.wireless_w,
-      reverse_wireless_w: input.charging!.reverse_wireless_w,
+      wired_w: input.charging?.wired_w,
+      wireless_w: input.charging?.wireless_w,
+      reverse_wireless_w: input.charging?.reverse_wireless_w,
     },
     weight_g: input.weightG,
     dimensions_mm: input.dimensionsMm,
     os: input.os,
     update_policy: input.updatePolicy,
     connectivity: {
-      wifi: input.connectivity!.wifi,
-      bluetooth: input.connectivity!.bluetooth,
-      nfc: input.connectivity!.nfc,
-      ir_blaster: input.connectivity!.ir_blaster,
-      usb: input.connectivity!.usb,
-      sim: input.connectivity!.sim,
+      wifi: input.connectivity?.wifi,
+      bluetooth: input.connectivity?.bluetooth,
+      nfc: input.connectivity?.nfc,
+      ir_blaster: input.connectivity?.ir_blaster,
+      usb: input.connectivity?.usb,
+      sim: input.connectivity?.sim,
     },
     ip_rating: input.ipRating,
     colors: [...(input.colors ?? [])],
@@ -115,6 +129,21 @@ export function phoneSpecToCatalogProjectionInput(spec: PhoneSpec): CatalogSpecP
     foldable: spec.foldable,
     highlights: spec.highlights,
   };
+}
+
+export function findMissingCoreFields(input: CatalogSpecProjectionInput): string[] {
+  const missing: string[] = [];
+  if (input.display?.size_in == null) missing.push('display.size_in');
+  if (!input.display?.resolution) missing.push('display.resolution');
+  if (!input.chipset) missing.push('chipset');
+  if (input.ramGb == null) missing.push('ram_gb');
+  if (!input.storageOptionsGb || input.storageOptionsGb.length === 0) {
+    missing.push('storage_options_gb');
+  }
+  if (input.batteryMah == null) missing.push('battery_mah');
+  if (!input.os) missing.push('os');
+  if (!input.rearCameras || input.rearCameras.length === 0) missing.push('rear_cameras');
+  return missing;
 }
 
 export function findMissingProjectionFields(input: CatalogSpecProjectionInput): string[] {

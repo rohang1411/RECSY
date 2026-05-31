@@ -88,6 +88,18 @@ async function main(): Promise<void> {
     .groupBy(catalogCandidates.status, catalogCandidates.decision)
     .orderBy(desc(sql<number>`count(*)`));
 
+  const [signals] = await db
+    .select({
+      promotedLastWindow: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted' and ${catalogCandidates.updatedAt} >= ${since})::int`,
+      readyToPromote: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'ready_to_promote')::int`,
+      needsEnrichment: sql<number>`count(*) filter (where 'needs_enrichment' = any(${catalogCandidates.issueCodes}))::int`,
+      lowCompletenessPromoted: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted' and 'low_completeness' = any(${catalogCandidates.issueCodes}))::int`,
+      nonPhoneSkipped: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'skipped' and 'non_phone_device' = any(${catalogCandidates.issueCodes}))::int`,
+      longTailPruned: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'skipped' and 'long_tail_pruned' = any(${catalogCandidates.issueCodes}))::int`,
+      unreleasedBlocked: sql<number>`count(*) filter (where 'unreleased_candidate' = any(${catalogCandidates.issueCodes}))::int`,
+    })
+    .from(catalogCandidates);
+
   const candidateDetails =
     args.namesLimit > 0
       ? await db
@@ -114,6 +126,16 @@ async function main(): Promise<void> {
   for (const row of runs) {
     console.log(
       `  status=${row.status.padEnd(10)} runs=${row.n} requests=${row.requests} llm_calls=${row.llmCalls}`,
+    );
+  }
+
+  console.log('\nsignals');
+  if (signals) {
+    console.log(
+      `  promoted_last_${args.days}d=${signals.promotedLastWindow} ready_to_promote=${signals.readyToPromote} needs_enrichment=${signals.needsEnrichment} low_completeness_promoted=${signals.lowCompletenessPromoted}`,
+    );
+    console.log(
+      `  skipped_non_phone=${signals.nonPhoneSkipped} long_tail_pruned=${signals.longTailPruned} unreleased_blocked=${signals.unreleasedBlocked}`,
     );
   }
 

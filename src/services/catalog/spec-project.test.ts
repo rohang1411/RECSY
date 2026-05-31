@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { PhoneSpecSchema } from '@/features/phones/schema';
 
 import {
+  findMissingCoreFields,
   phoneSpecToCatalogProjectionInput,
   projectPhoneSpec,
   specCompleteness,
@@ -45,6 +46,45 @@ describe('projectPhoneSpec', () => {
     expect(result.ok).toBe(false);
     expect(result.missing).toContain('display.size_in');
     expect(result.missing).toContain('battery_mah');
+  });
+
+  it('accepts core specs while leaving enrichment fields optional', () => {
+    const result = projectPhoneSpec({
+      display: { size_in: 6.1, resolution: '1179x2556' },
+      chipset: 'Apple A18',
+      ramGb: 8,
+      storageOptionsGb: [128, 256],
+      rearCameras: [{ type: 'main' as const, mp: 48 }],
+      batteryMah: 3561,
+      os: 'iOS 18',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(() => PhoneSpecSchema.parse(result.spec)).not.toThrow();
+    expect(
+      specCompleteness({
+        display: { size_in: 6.1, resolution: '1179x2556' },
+        chipset: 'Apple A18',
+        ramGb: 8,
+        storageOptionsGb: [128, 256],
+        rearCameras: [{ type: 'main' as const, mp: 48 }],
+        batteryMah: 3561,
+        os: 'iOS 18',
+      }),
+    ).toBeLessThan(1);
+  });
+
+  it('reports only core gaps for promotion blocking', () => {
+    const missing = findMissingCoreFields({
+      display: { size_in: 6.1, resolution: '1179x2556' },
+      chipset: 'Apple A18',
+      ramGb: 8,
+      storageOptionsGb: [128],
+      rearCameras: [{ type: 'main' as const, mp: 48 }],
+      batteryMah: 3561,
+      os: 'iOS 18',
+    });
+    expect(missing).toEqual([]);
   });
 
   it('calculates completeness from required fields', () => {

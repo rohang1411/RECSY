@@ -7,7 +7,8 @@
  * Used by: catalog promotion, tests, reports.
  */
 import type { CatalogSpecProjectionInput } from './spec-project';
-import { findMissingProjectionFields } from './spec-project';
+import { isFutureCatalogDate } from './candidate-policy';
+import { findMissingCoreFields } from './spec-project';
 
 export interface CatalogValidationIssue {
   readonly severity: 'info' | 'warn' | 'blocker';
@@ -20,6 +21,7 @@ export interface CandidateValidationInput {
   readonly brand?: string | null;
   readonly model?: string | null;
   readonly launchDate?: Date | string | null;
+  readonly releasedAt?: Date | string | null;
   readonly status?: 'active' | 'upcoming' | 'discontinued' | string | null;
   readonly spec: CatalogSpecProjectionInput;
   readonly sourceTier: 'T0' | 'T1' | 'T2' | 'T3' | 'T4';
@@ -36,13 +38,22 @@ export function validateCatalogCandidate(
     issues.push(blocker('missing_model', 'model is required', 'model'));
   }
 
-  for (const missing of findMissingProjectionFields(input.spec)) {
+  for (const missing of findMissingCoreFields(input.spec)) {
     issues.push(
       blocker('missing_spec_field', `required PhoneSpec field missing: ${missing}`, missing),
     );
   }
 
   issues.push(...validatePlausibility(input.spec, input.launchDate));
+
+  if (
+    isFutureCatalogDate(toDateString(input.launchDate)) ||
+    isFutureCatalogDate(toDateString(input.releasedAt))
+  ) {
+    issues.push(
+      blocker('unreleased_candidate', 'launch/release date is in the future', 'launchDate'),
+    );
+  }
 
   if (input.status === 'upcoming' && input.sourceTier !== 'T0' && input.sourceTier !== 'T2') {
     issues.push(
@@ -55,6 +66,12 @@ export function validateCatalogCandidate(
   }
 
   return issues;
+}
+
+function toDateString(value: Date | string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
 }
 
 export function validatePlausibility(

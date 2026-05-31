@@ -63,6 +63,12 @@ function main(): void {
         ]
       : []),
     {
+      label: 'Prune stale catalog candidates',
+      script: 'scripts/catalog-prune.ts',
+      args: [],
+      optional: true,
+    },
+    {
       label: 'Enrich from official OEM pages',
       script: 'scripts/catalog-enrich-oem.ts',
       args: [

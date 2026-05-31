@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { CatalogImportRecord } from '../import-schema';
 
 const BASE_URL = 'https://api.mobileapi.dev';
+const PHONE_DEVICE_TYPES = new Set(['', 'phone', 'smartphone', 'mobile']);
 
 const MobileApiDeviceSchema = z.record(z.string(), z.unknown());
 
@@ -146,6 +147,14 @@ export function mobileApiDeviceToImportRecord(
   };
 }
 
+export function mobileApiDeviceType(device: Record<string, unknown>): string {
+  return (stringValue(device.device_type) ?? '').trim().toLowerCase();
+}
+
+export function isMobileApiPhone(device: Record<string, unknown>): boolean {
+  return PHONE_DEVICE_TYPES.has(mobileApiDeviceType(device));
+}
+
 function readBrand(device: Record<string, unknown>): string {
   const brandObject = device.brand;
   if (brandObject && typeof brandObject === 'object' && !Array.isArray(brandObject)) {
@@ -251,7 +260,7 @@ function parseMah(value: string | undefined): number | undefined {
 }
 
 function parseCharging(device: Record<string, unknown>): CatalogImportRecord['spec']['charging'] {
-  const value = [device.charging, device.battery, device.battery_charging]
+  const value = [device.charging, device.battery, device.battery_charging, device.battery_capacity]
     .map(stringValue)
     .filter(Boolean)
     .join(' ');
@@ -307,15 +316,31 @@ function parsePriceUsd(device: Record<string, unknown>): string | undefined {
   return match ? Number(match[1]).toFixed(2) : undefined;
 }
 
-function parseReleaseDate(value: string | undefined): string | undefined {
+export function parseReleaseDate(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const iso = value.match(/\d{4}-\d{2}-\d{2}/)?.[0];
   if (iso) return iso;
+  const quarter = value.match(/(?:Q\s*([1-4])\s*,?\s*(20\d{2}))|(?:([1-4])Q\s*,?\s*(20\d{2}))/i);
+  if (quarter) {
+    const quarterNumber = Number(quarter[1] ?? quarter[3]);
+    const year = quarter[2] ?? quarter[4];
+    const month = String((quarterNumber - 1) * 3 + 1).padStart(2, '0');
+    return `${year}-${month}-01`;
+  }
+  const monthYear = value.match(/\b([A-Za-z]+)\s+(20\d{2})\b/);
+  if (monthYear && !/\b(?:released|announced)\s+20\d{2}/i.test(value)) {
+    const parsed = new Date(`${monthYear[1]} 1, ${monthYear[2]} UTC`);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  }
   const released = value.match(/(\d{4}),?\s+([A-Za-z]+)(?:\s+(\d{1,2}))?/);
-  if (!released) return undefined;
-  const day = released[3] ?? '01';
-  const parsed = new Date(`${released[2]} ${day}, ${released[1]} UTC`);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 10);
+  if (released) {
+    const day = released[3] ?? '01';
+    const parsed = new Date(`${released[2]} ${day}, ${released[1]} UTC`);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  }
+  const bareYear = value.match(/\b(20\d{2})\b/)?.[1];
+  if (bareYear) return `${bareYear}-01-01`;
+  return undefined;
 }
 
 function buildConfigurations(

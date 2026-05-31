@@ -1610,12 +1610,14 @@ dissenting_quotes)`.
   `src/services/catalog/adapters/oem-page.ts`, validates the same strict
   `PhoneSpecSchema` projection, stages extracted records as `sourceKey:
   oem_page`, and promotes only complete T0 official records. It also supports
-  `--url <official-product-url>` for one-off enrichment. This path makes no LLM
-  calls, defaults to a 2s delay between OEM page fetches, and is now wired into
-  `.github/workflows/catalog-refresh.yml` after discovery/sync. If an OEM page
-  does not expose fields such as display, RAM, cameras, charging, weight, OS,
-  Wi-Fi, Bluetooth, and NFC, the candidate remains quarantined rather than
-  polluting `phones`.
+  `--url <official-product-url>` for one-off enrichment. When staged candidates
+  do not already contain an official URL, the conservative no-LLM OEM resolver
+  can derive official Apple, Samsung, Google, and Nothing URLs; resolver-derived
+  pages are accepted only after brand/model verification. This path makes no
+  LLM calls, defaults to a 2s delay between OEM page fetches, and is now wired
+  into `.github/workflows/catalog-refresh.yml` after discovery/sync. If an OEM
+  page does not expose enough CORE fields, the candidate remains pending for
+  enrichment rather than polluting `phones`.
 - **MobileAPI key setup** - Sign up at
   [mobileapi.dev/signup](https://mobileapi.dev/signup), confirm/sign in, copy
   the API key from the profile/dashboard page, add
@@ -1659,11 +1661,13 @@ dissenting_quotes)`.
      specs.
   4. **Enrich from official OEM pages** - the OEM enrichment command scans
      staged candidates for official product URLs, including alternate URLs held
-     in duplicate Wikidata bindings, applies the shared released-only
-     brand-priority/newest-first policy, fetches selected pages politely,
-     extracts JSON-LD/meta/visible spec text, and creates `oem_page` T0
-     promotion claims. This is the main path that turns discovery candidates
-     into promotable catalog rows when official pages expose full specs. The
+     in duplicate Wikidata bindings, and can resolve conservative official URL
+     patterns for Apple, Samsung, Google, and Nothing when a candidate has no
+     source URL. It applies the shared released-only brand-priority/newest-first
+     policy, fetches selected pages politely, extracts JSON-LD/meta/visible spec
+     text, and creates `oem_page` T0 promotion claims. This is the main path
+     that turns discovery candidates into promotable catalog rows when official
+     pages expose full specs. The
      normal automated command is
      `pnpm catalog:enrich-oem --from-candidates --promote --update-existing`;
      one-off official URLs can be processed with
@@ -1691,10 +1695,10 @@ dissenting_quotes)`.
      phones; they are filtered before staging when possible or deferred with
      `issueCodes=['unreleased_candidate']` and a `retry_after` just after launch.
      Wikidata rediscovery refreshes identity/snapshot fields without demoting
-     quarantined, skipped, ready-to-promote, or promoted candidates back to
-     `pending_review`, and it preserves rows that already carry `retry_after`,
-     so retry windows remain effective even for candidates touched by older
-     refresh runs.
+     quarantined, skipped, deferred, ready-to-promote, or promoted candidates
+     back to `pending_review`. Plain `discovered`/`pending_review` rows can
+     clear stale `retry_after` during rediscovery, so older backoff values do
+     not hide candidates that still need enrichment.
   6. **Validate before write** - every potential promotion runs through
      `buildPromotionPlan`, `projectPhoneSpec`, plausibility checks, identity
      dedupe, and strict `PhoneSpecSchema`. Missing display, RAM, storage,
@@ -2365,6 +2369,10 @@ dissenting_quotes)`.
     unreleased, combined-title, non-phone, or long-tail rows before released
     mainstream phones. Those rows had little chance of finding complete trusted
     specs, so they inflated quarantine counts and delayed useful approvals.
+  - **Root cause 6 - stale retry windows on discovery rows.** Older runs could
+    leave `retry_after` on rows that were still
+    `discovered`/`pending_review`, causing enrichment to report "No pending
+    candidates" even though the report still showed pending rows.
   - **Fix.** MobileAPI incomplete records now persist as `quarantined` and do
     not overwrite existing promotable/promoted state; `catalog:auto` runs
     discovery -> MobileAPI -> OEM -> Wikipedia/GSMArena -> promote; fetched
@@ -2376,6 +2384,9 @@ dissenting_quotes)`.
     policy now filters future/unreleased rows before staging where possible,
     defers existing future rows with `unreleased_candidate` + `retry_after`, and
     sorts source/enrichment work by brand priority plus newest released date.
+    MobileAPI now skips incomplete non-priority records before staging, and
+    Wikidata rediscovery clears stale retry windows on plain discovery rows
+    while preserving retry windows for quarantined/deferred/promotable rows.
   - **Hardening.** Added regression coverage for `PhoneSpec` projection
     round-tripping and Wikidata contract-manufacturer dedupe. `catalog:auto
 --dry-run` now shows the planned commands without touching the DB, and

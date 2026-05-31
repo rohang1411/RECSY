@@ -18,8 +18,10 @@ import {
   buildPromotionPlan,
   fetchMobileApiDevicesByYear,
   hashJson,
-  isReleasedCatalogCandidate,
+  isLikelyCatalogPhoneTitle,
   isMainstreamPriorityBrand,
+  isMobileApiPhone,
+  isReleasedCatalogCandidate,
   mainstreamPriorityBrandLabel,
   mobileApiDeviceToImportRecord,
   promoteCatalogCandidate,
@@ -230,6 +232,7 @@ async function main(): Promise<void> {
   let updated = 0;
   let promoted = 0;
   let quarantined = 0;
+  let needsEnrichment = 0;
   let requests = 0;
 
   try {
@@ -254,25 +257,23 @@ async function main(): Promise<void> {
       },
     });
 
-    const releasedRecords = records.filter(isReleasedMobileApiRecord);
-    const futureFiltered = records.length - releasedRecords.length;
+    const phoneRecords = records.filter(isLikelyMobileApiPhoneRecord);
+    const droppedNonPhone = records.length - phoneRecords.length;
+    const releasedRecords = phoneRecords.filter(isReleasedMobileApiRecord);
+    const droppedUnreleased = phoneRecords.length - releasedRecords.length;
     const selection = selectPlansForLimit(releasedRecords, args.limit);
     const planned = selection.planned;
     const valid = planned.filter((item) => item.plan.ok).length;
-    const blocked = planned.length - valid;
+    const enrichmentBound = planned.filter(isEnrichmentRoutablePlan).length;
+    const blocked = planned.length - valid - enrichmentBound;
 
     if (args.dryRun) {
       console.log(
-        `[catalog:sync-mobileapi] dry-run years=${years.join(',')} scanned=${selection.scanned} selected=${planned.length} valid=${valid} blocked=${blocked} mainstream_selected=${selection.mainstreamSelected} incomplete_scanned=${selection.incompleteScanned} unselected=${selection.unselected} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
+        `[catalog:sync-mobileapi] dry-run years=${years.join(',')} scanned=${records.length} phone_scanned=${selection.scanned} selected=${planned.length} valid=${valid} needs_enrichment=${enrichmentBound} blocked=${blocked} mainstream_selected=${selection.mainstreamSelected} incomplete_scanned=${selection.incompleteScanned} dropped_non_phone=${droppedNonPhone} dropped_unreleased=${droppedUnreleased} non_priority_incomplete_skipped=${selection.nonPriorityIncompleteSkipped} unselected=${selection.unselected} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
       );
-      if (futureFiltered > 0) {
-        console.log(`  unreleased_filtered=${futureFiltered}`);
-      }
       console.log(`  priority_brands=${mainstreamPriorityBrandLabel()}`);
       for (const item of planned.slice(0, 20)) {
-        const state = item.plan.ok
-          ? 'valid'
-          : `blocked:${item.plan.issues[0]?.code ?? 'unknown'} ${formatIssueSummary(item.plan.issues)}`;
+        const state = formatPlanState(item);
         console.log(
           `  ${state} ${formatBrandPriority(item.record.brand)} ${item.record.brand} ${item.record.model}`,
         );
@@ -292,6 +293,7 @@ async function main(): Promise<void> {
       if (prior.length === 0) created += 1;
       else updated += 1;
 
+      const stage = classifyStagePlan(item);
       const [candidate] = await db
         .insert(catalogCandidates)
         .values({
@@ -313,10 +315,11 @@ async function main(): Promise<void> {
           claimsJson: item.claimsJson,
           canonicalKey: item.canonicalKey,
           contentHash: hashJson(item.claimsJson),
-          decision: item.plan.ok ? 'promote' : 'quarantine',
-          status: item.plan.ok ? 'ready_to_promote' : 'quarantined',
-          confidence: item.plan.ok ? '0.90' : '0.50',
-          issueCodes: item.plan.ok ? [] : [...new Set(item.plan.issues.map((issue) => issue.code))],
+          decision: stage.decision,
+          status: stage.status,
+          confidence: stage.confidence,
+          issueCodes: [...stage.issueCodes],
+          retryAfter: stage.retryAfter,
           lastDecisionAt: new Date(),
         })
         .onConflictDoUpdate({
@@ -329,8 +332,7 @@ async function main(): Promise<void> {
             normalizedIdentityJson: sql`excluded.normalized_identity_json`,
             claimsJson: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.claimsJson}
                 else excluded.claims_json
               end
@@ -338,42 +340,44 @@ async function main(): Promise<void> {
             canonicalKey: sql`excluded.canonical_key`,
             contentHash: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.contentHash}
                 else excluded.content_hash
               end
             `,
             decision: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.decision}
                 else excluded.decision
               end
             `,
             status: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.status}
                 else excluded.status
               end
             `,
             confidence: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.confidence}
                 else excluded.confidence
               end
             `,
             issueCodes: sql`
               case
-                when excluded.status = 'quarantined'
-                  and ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
                 then ${catalogCandidates.issueCodes}
                 else excluded.issue_codes
+              end
+            `,
+            retryAfter: sql`
+              case
+                when ${catalogCandidates.status} in ('ready_to_promote', 'promoted')
+                then ${catalogCandidates.retryAfter}
+                else excluded.retry_after
               end
             `,
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
@@ -384,7 +388,11 @@ async function main(): Promise<void> {
         .returning({ id: catalogCandidates.id });
 
       if (!candidate) throw new Error('candidate upsert returned no row');
-      if (!item.plan.ok) {
+      if (stage.kind === 'needs_enrichment') {
+        needsEnrichment += 1;
+        continue;
+      }
+      if (stage.kind === 'quarantine') {
         quarantined += 1;
         continue;
       }
@@ -409,6 +417,7 @@ async function main(): Promise<void> {
         stage: 'done',
         createdCount: created,
         updatedCount: updated,
+        skippedCount: droppedNonPhone + droppedUnreleased + selection.nonPriorityIncompleteSkipped,
         quarantinedCount: quarantined,
         requestCount: requests,
         llmCallCount: 0,
@@ -418,11 +427,11 @@ async function main(): Promise<void> {
       .where(eq(catalogRuns.id, run.id));
 
     console.log(
-      `[catalog:sync-mobileapi] done records=${planned.length} created=${created} updated=${updated} promoted=${promoted} quarantined=${quarantined} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
+      `[catalog:sync-mobileapi] done records=${planned.length} created=${created} updated=${updated} promoted=${promoted} needs_enrichment=${needsEnrichment} quarantined=${quarantined} dropped_non_phone=${droppedNonPhone} dropped_unreleased=${droppedUnreleased} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
     );
-    if (futureFiltered > 0) {
+    if (selection.nonPriorityIncompleteSkipped > 0) {
       console.log(
-        `[catalog:sync-mobileapi] filtered ${futureFiltered} unreleased/future-dated records before staging`,
+        `[catalog:sync-mobileapi] skipped ${selection.nonPriorityIncompleteSkipped} incomplete non-priority records before staging`,
       );
     }
   } catch (err) {
@@ -517,19 +526,91 @@ function stagePlan(record: CatalogImportRecord) {
   return { record, externalId, canonicalKey, stableKey, claimsJson, plan };
 }
 
+type StagedPlan = ReturnType<typeof stagePlan>;
+
+type StageClassification =
+  | {
+      readonly kind: 'promote';
+      readonly decision: 'promote';
+      readonly status: 'ready_to_promote';
+      readonly confidence: string;
+      readonly issueCodes: readonly string[];
+      readonly retryAfter: Date | null;
+    }
+  | {
+      readonly kind: 'needs_enrichment';
+      readonly decision: 'pending_review';
+      readonly status: 'discovered';
+      readonly confidence: string;
+      readonly issueCodes: readonly string[];
+      readonly retryAfter: Date | null;
+    }
+  | {
+      readonly kind: 'quarantine';
+      readonly decision: 'quarantine';
+      readonly status: 'quarantined';
+      readonly confidence: string;
+      readonly issueCodes: readonly string[];
+      readonly retryAfter: Date | null;
+    };
+
+function classifyStagePlan(item: StagedPlan): StageClassification {
+  if (item.plan.ok) {
+    return {
+      kind: 'promote',
+      decision: 'promote',
+      status: 'ready_to_promote',
+      confidence: '0.90',
+      issueCodes: [],
+      retryAfter: null,
+    };
+  }
+  const issueCodes = [...new Set(item.plan.issues.map((issue) => issue.code))];
+  if (isEnrichmentRoutablePlan(item)) {
+    return {
+      kind: 'needs_enrichment',
+      decision: 'pending_review',
+      status: 'discovered',
+      confidence: '0.50',
+      issueCodes: [...new Set([...issueCodes, 'needs_enrichment'])],
+      retryAfter: null,
+    };
+  }
+  return {
+    kind: 'quarantine',
+    decision: 'quarantine',
+    status: 'quarantined',
+    confidence: '0.50',
+    issueCodes,
+    retryAfter: null,
+  };
+}
+
+function isEnrichmentRoutablePlan(item: StagedPlan): boolean {
+  if (item.plan.ok) return false;
+  if (!isMainstreamPriorityBrand(item.record.brand)) return false;
+  const blockers = item.plan.issues.filter((issue) => issue.severity === 'blocker');
+  return blockers.length > 0 && blockers.every((issue) => issue.code === 'missing_spec_field');
+}
+
 function selectPlansForLimit(
   records: readonly CatalogImportRecord[],
   limit: number,
 ): {
-  readonly planned: ReturnType<typeof stagePlan>[];
+  readonly planned: StagedPlan[];
   readonly scanned: number;
   readonly mainstreamSelected: number;
   readonly incompleteScanned: number;
+  readonly nonPriorityIncompleteSkipped: number;
   readonly unselected: number;
 } {
   const allPlans = records.map((record) => stagePlan(record)).sort(comparePlansForSelection);
   const blocked = allPlans.filter((item) => !item.plan.ok);
-  const planned = allPlans.slice(0, limit);
+  const selectablePlans = allPlans.filter(
+    (item) => item.plan.ok || isMainstreamPriorityBrand(item.record.brand),
+  );
+  const planned = selectablePlans.slice(0, limit);
+  const nonPriorityIncompleteSkipped = allPlans.length - selectablePlans.length;
 
   return {
     planned,
@@ -537,19 +618,17 @@ function selectPlansForLimit(
     mainstreamSelected: planned.filter((item) => isMainstreamPriorityBrand(item.record.brand))
       .length,
     incompleteScanned: blocked.length,
-    unselected: allPlans.length - planned.length,
+    nonPriorityIncompleteSkipped,
+    unselected: selectablePlans.length - planned.length,
   };
 }
 
-function comparePlansForSelection(
-  a: ReturnType<typeof stagePlan>,
-  b: ReturnType<typeof stagePlan>,
-): number {
-  if (a.plan.ok !== b.plan.ok) return a.plan.ok ? -1 : 1;
+function comparePlansForSelection(a: StagedPlan, b: StagedPlan): number {
   const brandRank = brandPriorityRank(a.record.brand) - brandPriorityRank(b.record.brand);
   if (brandRank !== 0) return brandRank;
   const launchDateRank = compareLaunchDateDesc(a.record.launchDate, b.record.launchDate);
   if (launchDateRank !== 0) return launchDateRank;
+  if (a.plan.ok !== b.plan.ok) return a.plan.ok ? -1 : 1;
   const completenessRank = b.plan.specCompleteness - a.plan.specCompleteness;
   if (completenessRank !== 0) return completenessRank;
   return `${a.record.brand} ${a.record.model}`.localeCompare(`${b.record.brand} ${b.record.model}`);
@@ -561,6 +640,11 @@ function compareLaunchDateDesc(a: string | undefined, b: string | undefined): nu
   return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
 }
 
+function isLikelyMobileApiPhoneRecord(record: CatalogImportRecord): boolean {
+  if (!isMobileApiPhone(record.raw)) return false;
+  return isLikelyCatalogPhoneTitle(`${record.brand} ${record.model}`);
+}
+
 function isReleasedMobileApiRecord(record: CatalogImportRecord): boolean {
   if (record.status === 'upcoming') return false;
   return isReleasedCatalogCandidate({
@@ -569,6 +653,14 @@ function isReleasedMobileApiRecord(record: CatalogImportRecord): boolean {
     launchDate: record.launchDate,
     releasedAt: record.releasedAt,
   });
+}
+
+function formatPlanState(item: StagedPlan): string {
+  if (item.plan.ok) return 'valid';
+  if (isEnrichmentRoutablePlan(item)) {
+    return `needs_enrichment ${formatIssueSummary(item.plan.issues)}`;
+  }
+  return `blocked:${item.plan.issues[0]?.code ?? 'unknown'} ${formatIssueSummary(item.plan.issues)}`;
 }
 
 function formatBrandPriority(brand: string): string {

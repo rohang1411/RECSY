@@ -3,7 +3,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { fetchMobileApiDevicesByYear, mobileApiDeviceToImportRecord } from './mobileapi';
+import {
+  fetchMobileApiDevicesByYear,
+  isMobileApiPhone,
+  mobileApiDeviceToImportRecord,
+  mobileApiDeviceType,
+  parseReleaseDate,
+} from './mobileapi';
 
 describe('MobileAPI adapter', () => {
   it('fetches devices by year with token auth', async () => {
@@ -66,6 +72,19 @@ describe('MobileAPI adapter', () => {
     });
     expect(record.spec.rearCameras?.[0]).toMatchObject({ type: 'main', mp: 50 });
     expect(record.spec.charging).toMatchObject({ wired_w: 45, wireless_w: 15 });
+  });
+
+  it('filters explicit non-phone device types', () => {
+    expect(isMobileApiPhone({ device_type: 'phone' })).toBe(true);
+    expect(isMobileApiPhone({ device_type: 'smartphone' })).toBe(true);
+    expect(isMobileApiPhone({ device_type: 'tablet' })).toBe(false);
+    expect(mobileApiDeviceType({ device_type: 'Tablet' })).toBe('tablet');
+  });
+
+  it('parses quarter and bare-year release dates conservatively', () => {
+    expect(parseReleaseDate('Q3 2025')).toBe('2025-07-01');
+    expect(parseReleaseDate('1Q 2026')).toBe('2026-01-01');
+    expect(parseReleaseDate('2024')).toBe('2024-01-01');
   });
 
   it('uses description and mixed hardware fields as fallback spec evidence', () => {
