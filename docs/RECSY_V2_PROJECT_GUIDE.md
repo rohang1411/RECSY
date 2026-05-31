@@ -126,6 +126,7 @@ aspirational than the current code.
 | Compare                    | `/compare?a=<slug>&b=<slug>` plus direct slug entry and pickers                                                                                         | A path like `/compare/<a>-vs-<b>` is not the live implementation                                    |
 | PWA                        | Manifest and icons are shipped; the app is installable where supported                                                                                  | No service worker, no offline shell yet                                                             |
 | Feedback loop              | `recommendation_feedback` table exists in the schema                                                                                                    | Feedback capture UI and evaluation loop are not yet wired                                           |
+| Catalog refresh            | Automated staged catalog refresh with Wikidata discovery, optional MobileAPI, OEM enrichment, Wikipedia/GSMArena enrichment, and strict promotion gates | More brand-specific OEM extractors and an internal candidate review UI                              |
 | Streaming chat             | `/api/ask` returns NDJSON and the client replays it incrementally                                                                                       | The answer is generated and citation-validated first, then replayed; it is not token-true streaming |
 | Middleware / edge logic    | Mentioned in planning docs as future boundary                                                                                                           | No current `middleware.ts` in the live app                                                          |
 | Forms library              | Some docs mention `react-hook-form` as a future/possible choice                                                                                         | Current recommend and ask UIs use plain React client state                                          |
@@ -318,17 +319,18 @@ flowchart TD
 
 ### Most important code locations by subsystem
 
-| Subsystem     | Key files                                                                              |
-| ------------- | -------------------------------------------------------------------------------------- |
-| Recommender   | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*`  |
-| Retrieval     | `src/services/retrieval/*`                                                             |
-| Phone Q-and-A | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`                |
-| Scorecard     | `src/services/scorecard/*`, `scripts/scorecard-auto.ts`, `scripts/scorecard-run.ts`    |
-| Ingestion     | `src/services/ingest/*`, `scripts/{ingest,ingest-auto,creator-watch,ingest-report}.ts` |
-| Database      | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                  |
-| Seeds         | `scripts/seed/*`                                                                       |
-| Browse        | `src/features/browse/*`, `src/app/browse/*`                                            |
-| Compare       | `src/app/compare/*`                                                                    |
+| Subsystem       | Key files                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| Recommender     | `src/services/recommender/*`, `src/app/api/recommend/route.ts`, `src/app/recommend/*`     |
+| Retrieval       | `src/services/retrieval/*`                                                                |
+| Phone Q-and-A   | `src/services/chat/*`, `src/app/api/ask/route.ts`, `src/app/p/[slug]/*`                   |
+| Scorecard       | `src/services/scorecard/*`, `scripts/scorecard-auto.ts`, `scripts/scorecard-run.ts`       |
+| Ingestion       | `src/services/ingest/*`, `scripts/{ingest,ingest-auto,creator-watch,ingest-report}.ts`    |
+| Catalog refresh | `src/services/catalog/*`, `scripts/catalog-*.ts`, `.github/workflows/catalog-refresh.yml` |
+| Database        | `src/services/db/schema.ts`, `src/services/db/client.ts`, `drizzle/*`                     |
+| Seeds           | `scripts/seed/*`                                                                          |
+| Browse          | `src/features/browse/*`, `src/app/browse/*`                                               |
+| Compare         | `src/app/compare/*`                                                                       |
 
 ## 7. Core Data Model and Domain Concepts
 
@@ -362,6 +364,11 @@ flowchart TD
 | `chat_queries`            | Grounded Q-and-A logs               | `phone_id`, `query`, `answer`, `citations`, `retrieved_chunk_ids`, `latency_ms`, `model`                  |
 | `llm_cache`               | Cached LLM outputs                  | `prompt_hash`, `model`, `response`, `hits`, `last_hit_at`                                                 |
 | `ingest_runs`             | Ingestion telemetry                 | `adapter`, `phone_id`, `source_url`, `status`, `chunks_created`, `error`                                  |
+| `catalog_runs`            | Catalog refresh telemetry           | `kind`, `status`, `stage`, request/LLM budgets, counts, checkpoint, error                                 |
+| `catalog_candidates`      | Staged phone candidates             | source identity, normalized identity, claims JSON, decision/status, issue codes, retry window             |
+| `catalog_snapshots`       | Durable source snapshots            | source key, canonical URL, content hash, headers/body refs, fetched timestamp                             |
+| `phone_identities`        | External identities for phones      | phone ID, source key, external ID, identity type, confidence                                              |
+| `phone_configurations`    | SKU/config variants                 | phone ID, region, model number, RAM/storage/color, market/network variants                                |
 | `rate_limits`             | Sliding-window counters             | `key`, `window_start`, `count`                                                                            |
 
 ### Enums
@@ -402,6 +409,57 @@ The validated phone spec shape includes:
 - colors
 - foldable flag
 - highlight strings used by the recommender and UI
+
+### Automated Catalog Refresh
+
+The catalog refresh pipeline keeps `phones` updated without letting weak source
+data corrupt the canonical catalog. It deliberately uses a staged workflow:
+
+```mermaid
+flowchart LR
+  A["Discover candidates"] --> B["Stage in catalog_candidates"]
+  B --> C["Enrich from trusted sources"]
+  C --> D{"Pass PhoneSpecSchema?"}
+  D -- Yes --> E["Promote into phones"]
+  D -- No --> F["Quarantine/defer with issue codes"]
+  E --> G["Existing ingest + scorecard jobs pick up phone"]
+```
+
+The issue this solves is that discovery sources are uneven. Wikidata is good at
+finding that a phone exists but does not carry the full spec contract.
+MobileAPI's free by-year endpoint can return listing-level records, not complete
+spec sheets. OEM pages are authoritative but many templates omit fields in a
+machine-readable way. If any of these sources wrote directly to `phones`, the app
+would get duplicate phones, incomplete specs, unreleased devices, and noisy
+recommendation results.
+
+The fix is a strict staged promotion gate:
+
+- `catalog:refresh` discovers recent phone-like Wikidata entities with no LLM
+  calls and stages them as `pending_review`.
+- `catalog:sync-mobileapi` optionally fetches licensed structured records under
+  the free-plan budget of 50 requests/month and 5 requests/minute.
+- `catalog:enrich-oem` fetches official OEM product pages and promotes only
+  complete T0 records.
+- `catalog:enrich-gsmarena` can use Gemini only after it finds a real Wikipedia
+  phone infobox or GSMArena page; it converts the result through the same
+  projection and validation gate before promotion.
+- `catalog:promote` writes valid phones, identities, aliases, configurations,
+  source claims, and media metadata.
+
+Candidate ordering is centralized in `src/services/catalog/candidate-policy.ts`.
+This was added because each script previously had its own partial filtering,
+which allowed bad queue shape: unreleased phones, tablets, combined titles, and
+long-tail brands could consume enrichment slots before released mainstream
+phones. The shared policy prioritizes mainstream brands first, newest released
+phones second, filters obvious non-phones and combined multi-phone titles, and
+defers known future-dated phones with `unreleased_candidate` plus `retry_after`
+instead of quarantining them as failed specs.
+
+This is the best shape for the pipeline because it keeps source discovery broad
+while keeping promotion conservative. The database remains rich and auditable,
+but the user-facing catalog changes only when a trusted source satisfies
+`PhoneSpecSchema` and dedupe rules.
 
 ### Indexing strategy
 
