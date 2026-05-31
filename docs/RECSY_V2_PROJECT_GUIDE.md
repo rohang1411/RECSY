@@ -440,7 +440,10 @@ The fix is a strict staged promotion gate:
 - `catalog:sync-mobileapi` optionally fetches licensed structured records under
   the free-plan budget of 50 requests/month and 5 requests/minute.
 - `catalog:enrich-oem` fetches official OEM product pages and promotes only
-  complete T0 records.
+  complete T0 records. It can also derive conservative official product URLs
+  for Apple, Samsung, Google, and Nothing when discovery has brand/model but no
+  official URL; resolver-derived pages are verified against brand/model before
+  any candidate is written.
 - `catalog:enrich-gsmarena` can use Gemini only after it finds a real Wikipedia
   phone infobox or GSMArena page; it converts the result through the same
   projection and validation gate before promotion.

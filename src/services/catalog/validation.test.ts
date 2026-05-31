@@ -32,6 +32,38 @@ describe('catalog validation', () => {
     expect(issues.some((i) => i.code === 'upcoming_untrusted_source')).toBe(true);
   });
 
+  it('blocks future-dated candidates even when source labels them active', () => {
+    const issues = validateCatalogCandidate({
+      brand: 'Example',
+      model: 'Phone Future',
+      status: 'active',
+      sourceTier: 'T2',
+      launchDate: '2099-01-01',
+      releasedAt: '2099-01-01',
+      spec: {},
+    });
+    expect(issues.some((i) => i.code === 'unreleased_candidate')).toBe(true);
+  });
+
+  it('does not block missing enrichment-only fields', () => {
+    const issues = validateCatalogCandidate({
+      brand: 'Example',
+      model: 'Phone Core',
+      status: 'active',
+      sourceTier: 'T2',
+      spec: {
+        display: { size_in: 6.1, resolution: '1179x2556' },
+        chipset: 'Example X1',
+        ramGb: 8,
+        storageOptionsGb: [128],
+        rearCameras: [{ type: 'main' as const, mp: 48 }],
+        batteryMah: 3561,
+        os: 'Android 16',
+      },
+    });
+    expect(issues.some((i) => i.code === 'missing_spec_field')).toBe(false);
+  });
+
   it('flags implausible values', () => {
     const issues = validatePlausibility({
       display: { size_in: 20, refresh_rate_hz: 120 },

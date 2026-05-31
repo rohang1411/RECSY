@@ -73,4 +73,39 @@ describe('buildPromotionPlan', () => {
     expect(plan.issues.map((issue) => issue.code)).toContain('untrusted_promotion_source');
     expect(plan.issues.map((issue) => issue.code)).toContain('missing_spec_field');
   });
+
+  it('accepts core-only specs and marks them for later enrichment', () => {
+    const plan = buildPromotionPlan({
+      sourceKey: 'mobileapi',
+      externalId: 'core-only',
+      sourceUrl: 'https://api.mobileapi.dev/devices/core-only/',
+      claimsJson: {
+        promotion: {
+          sourceTier: 'T2',
+          brand: 'Example',
+          model: 'Phone Core',
+          launchDate: '2026-01-05',
+          status: 'active',
+          spec: {
+            display: { size_in: 6.1, resolution: '1179x2556' },
+            chipset: 'Example X1',
+            ramGb: 8,
+            storageOptionsGb: [128],
+            rearCameras: [{ type: 'main', mp: 48 }],
+            batteryMah: 3561,
+            os: 'Android 16',
+          },
+        },
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.issues).toContainEqual(expect.objectContaining({ code: 'low_completeness' }));
+    expect(plan.spec).toMatchObject({
+      chipset: 'Example X1',
+      battery_mah: 3561,
+      charging: {},
+      connectivity: {},
+    });
+  });
 });

@@ -31,7 +31,11 @@ import {
   type CatalogImportIdentity,
   type CatalogPromotionClaims,
 } from './import-schema';
-import { projectPhoneSpec, specCompleteness } from './spec-project';
+import {
+  projectPhoneSpec,
+  SPEC_COMPLETENESS_ENRICH_THRESHOLD,
+  specCompleteness,
+} from './spec-project';
 import { sha256Hex } from './snapshots';
 import { validateCatalogCandidate, type CatalogValidationIssue } from './validation';
 
@@ -92,6 +96,7 @@ export function buildPromotionPlan(input: PromotionPlanInput): PromotionPlan {
     brand: claims.brand,
     model: claims.model,
     launchDate: claims.launchDate,
+    releasedAt: claims.releasedAt,
     status: claims.status,
     sourceTier: claims.sourceTier,
     spec: claims.spec,
@@ -117,6 +122,15 @@ export function buildPromotionPlan(input: PromotionPlanInput): PromotionPlan {
       code: 'untrusted_promotion_source',
       message: 'auto-promotion requires official (T0) or licensed structured (T2) source data',
       fieldPath: 'sourceTier',
+    });
+  }
+
+  const completeness = specCompleteness(claims.spec);
+  if (completeness < SPEC_COMPLETENESS_ENRICH_THRESHOLD) {
+    issues.push({
+      severity: 'info',
+      code: 'low_completeness',
+      message: `spec completeness ${completeness.toFixed(2)} below enrich threshold`,
     });
   }
 
@@ -167,7 +181,7 @@ export function buildPromotionPlan(input: PromotionPlanInput): PromotionPlan {
     spec: projectedSpec,
     slug,
     canonicalKey,
-    specCompleteness: specCompleteness(claims.spec),
+    specCompleteness: completeness,
     identities,
     issues,
   };
@@ -295,14 +309,18 @@ export async function promoteCatalogCandidate(
     await insertPromotionClaims(tx, phoneId, candidateId, candidate, plan);
     await upsertRegionalDetails(tx, phoneId, plan);
 
+    const lowCompleteness = plan.specCompleteness < SPEC_COMPLETENESS_ENRICH_THRESHOLD;
+
     await tx
       .update(catalogCandidates)
       .set({
         matchedPhoneId: phoneId,
         status: 'promoted',
         decision: existingPhoneId ? 'update_existing' : 'promote',
-        confidence: '0.95',
-        issueCodes: [],
+        confidence: lowCompleteness ? '0.70' : '0.95',
+        issueCodes: lowCompleteness ? ['low_completeness'] : [],
+        attempts: sql`${catalogCandidates.attempts} + 1`,
+        retryAfter: lowCompleteness ? sql`now() + interval '3 days'` : null,
         lastDecisionAt: sql`now()`,
         updatedAt: sql`now()`,
       })
@@ -312,7 +330,7 @@ export async function promoteCatalogCandidate(
       action: existingPhoneId ? 'updated' : 'created',
       phoneId,
       slug: plan.slug,
-      issues: [],
+      issues: plan.issues.filter((issue) => issue.severity !== 'blocker'),
       aliasesInserted: aliasCount,
       configurationsInserted: configCount,
       mediaInserted: mediaCount,
@@ -415,7 +433,8 @@ function phoneInsertValues(plan: PromotionPlan) {
     releasedAt: parseDateOrNull(plan.claims.releasedAt ?? plan.claims.launchDate),
     catalogLastSeenAt: new Date(),
     lastCatalogRefreshAt: new Date(),
-    metadataConfidence: '0.95',
+    metadataConfidence:
+      plan.specCompleteness < SPEC_COMPLETENESS_ENRICH_THRESHOLD ? '0.70' : '0.95',
     specCompleteness: plan.specCompleteness.toFixed(2),
     mediaStatus: plan.claims.imageUrl ? ('remote_only' as const) : ('missing' as const),
   };

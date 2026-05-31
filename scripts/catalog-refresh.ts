@@ -114,19 +114,19 @@ async function main(): Promise<void> {
   if (args.dryRun) {
     const candidates = await discoverRecentWikidataPhones({
       since,
-      limit: args.limit,
+      limit: discoveryFetchLimit(args.limit),
     });
-    const sortedCandidates = sortWikidataCandidates(candidates);
+    const sortedCandidates = sortWikidataCandidates(candidates).slice(0, args.limit);
     console.log(
-      `[catalog:refresh] dry-run source=${args.source} discovered=${candidates.length} promoted=0 llm_calls=0`,
+      `[catalog:refresh] dry-run source=${args.source} discovered=${sortedCandidates.length} scanned=${candidates.length} promoted=0 llm_calls=0`,
     );
     for (const candidate of sortedCandidates.slice(0, 10)) {
       console.log(
         `  ${candidate.externalId} ${candidate.title} (${candidate.releaseDate ?? 'unknown date'})`,
       );
     }
-    if (candidates.length > 10) {
-      console.log(`  ... ${candidates.length - 10} more`);
+    if (sortedCandidates.length > 10) {
+      console.log(`  ... ${sortedCandidates.length - 10} more`);
     }
     return;
   }
@@ -174,11 +174,11 @@ async function main(): Promise<void> {
 
     const candidates = await discoverRecentWikidataPhones({
       since,
-      limit: args.limit,
+      limit: discoveryFetchLimit(args.limit),
     });
 
     // Sort by shared policy: priority brands first, newest released phones next.
-    const sortedCandidates = sortWikidataCandidates(candidates);
+    const sortedCandidates = sortWikidataCandidates(candidates).slice(0, args.limit);
 
     let created = 0;
     let updated = 0;
@@ -374,6 +374,10 @@ function sortWikidataCandidates<
       { brand: b.brand, model: b.model, title: b.title, releaseDate: b.releaseDate },
     ),
   );
+}
+
+function discoveryFetchLimit(limit: number): number {
+  return Math.max(limit, Math.min(limit * 4, 500));
 }
 
 function parsePositiveInt(value: string | undefined, flag: string): number {

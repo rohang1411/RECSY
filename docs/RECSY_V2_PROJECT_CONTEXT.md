@@ -1610,12 +1610,14 @@ dissenting_quotes)`.
   `src/services/catalog/adapters/oem-page.ts`, validates the same strict
   `PhoneSpecSchema` projection, stages extracted records as `sourceKey:
   oem_page`, and promotes only complete T0 official records. It also supports
-  `--url <official-product-url>` for one-off enrichment. This path makes no LLM
-  calls, defaults to a 2s delay between OEM page fetches, and is now wired into
-  `.github/workflows/catalog-refresh.yml` after discovery/sync. If an OEM page
-  does not expose fields such as display, RAM, cameras, charging, weight, OS,
-  Wi-Fi, Bluetooth, and NFC, the candidate remains quarantined rather than
-  polluting `phones`.
+  `--url <official-product-url>` for one-off enrichment. When staged candidates
+  do not already contain an official URL, the conservative no-LLM OEM resolver
+  can derive official Apple, Samsung, Google, and Nothing URLs; resolver-derived
+  pages are accepted only after brand/model verification. This path makes no
+  LLM calls, defaults to a 2s delay between OEM page fetches, and is now wired
+  into `.github/workflows/catalog-refresh.yml` after discovery/sync. If an OEM
+  page does not expose enough CORE fields, the candidate remains pending for
+  enrichment rather than polluting `phones`.
 - **MobileAPI key setup** - Sign up at
   [mobileapi.dev/signup](https://mobileapi.dev/signup), confirm/sign in, copy
   the API key from the profile/dashboard page, add
@@ -1659,11 +1661,13 @@ dissenting_quotes)`.
      specs.
   4. **Enrich from official OEM pages** - the OEM enrichment command scans
      staged candidates for official product URLs, including alternate URLs held
-     in duplicate Wikidata bindings, applies the shared released-only
-     brand-priority/newest-first policy, fetches selected pages politely,
-     extracts JSON-LD/meta/visible spec text, and creates `oem_page` T0
-     promotion claims. This is the main path that turns discovery candidates
-     into promotable catalog rows when official pages expose full specs. The
+     in duplicate Wikidata bindings, and can resolve conservative official URL
+     patterns for Apple, Samsung, Google, and Nothing when a candidate has no
+     source URL. It applies the shared released-only brand-priority/newest-first
+     policy, fetches selected pages politely, extracts JSON-LD/meta/visible spec
+     text, and creates `oem_page` T0 promotion claims. This is the main path
+     that turns discovery candidates into promotable catalog rows when official
+     pages expose full specs. The
      normal automated command is
      `pnpm catalog:enrich-oem --from-candidates --promote --update-existing`;
      one-off official URLs can be processed with

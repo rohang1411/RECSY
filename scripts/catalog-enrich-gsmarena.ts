@@ -18,7 +18,7 @@
  *   pnpm catalog:enrich-gsmarena
  *   npm run catalog:enrich-gsmarena
  */
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
 import {
@@ -39,6 +39,7 @@ import {
   isFutureCatalogDate,
   isLikelyCatalogPhoneTitle,
   isMainstreamPriorityBrand,
+  normalizeIdentityText,
   phoneSpecToCatalogProjectionInput,
   promoteCatalogCandidate,
 } from '../src/services/catalog';
@@ -50,11 +51,13 @@ type CatalogCandidateRow = typeof catalogCandidates.$inferSelect;
 interface CliArgs {
   readonly limit: number;
   readonly retryAll: boolean;
+  readonly maxLlmCalls: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
   let limit = 25;
   let retryAll = false;
+  let maxLlmCalls = 5;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
     switch (flag) {
@@ -64,22 +67,34 @@ function parseArgs(argv: readonly string[]): CliArgs {
       case '--retry-all':
         retryAll = true;
         break;
+      case '--max-llm-calls':
+        maxLlmCalls = parseNonNegativeInt(argv[++i], '--max-llm-calls');
+        break;
       case '--help':
       case '-h':
-        console.log('Usage: pnpm catalog:enrich-gsmarena [--limit 25] [--retry-all]');
+        console.log(
+          'Usage: pnpm catalog:enrich-gsmarena [--limit 25] [--max-llm-calls 5] [--retry-all]',
+        );
         process.exit(0);
       default:
         throw new Error(`Unknown flag: ${flag}`);
     }
   }
-  return { limit, retryAll };
+  return { limit, retryAll, maxLlmCalls };
 }
 
-function hasBrandAndModel(c: CatalogCandidateRow): c is CatalogCandidateRow & {
-  normalizedIdentityJson: { brand: string; model: string };
-} {
+interface ResolvedCatalogCandidate {
+  readonly row: CatalogCandidateRow;
+  readonly brand: string;
+  readonly model: string;
+}
+
+function resolveBrandModel(c: CatalogCandidateRow): ResolvedCatalogCandidate | null {
   const id = c.normalizedIdentityJson;
-  return typeof id.brand === 'string' && typeof id.model === 'string';
+  const brand = recordString(id, 'brand') ?? inferBrandFromTitle(c.candidateTitle);
+  const model = recordString(id, 'model') ?? c.candidateTitle;
+  if (!brand || !model) return null;
+  return { row: c, brand, model };
 }
 
 async function main() {
@@ -97,18 +112,36 @@ async function main() {
   const candidates = await db
     .select()
     .from(catalogCandidates)
-    .where(inArray(catalogCandidates.decision, ['pending_review', 'quarantine']));
+    .where(
+      or(
+        inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
+        and(
+          eq(catalogCandidates.status, 'promoted'),
+          sql`'low_completeness' = any(${catalogCandidates.issueCodes})`,
+          args.retryAll
+            ? undefined
+            : or(
+                isNull(catalogCandidates.retryAfter),
+                lte(catalogCandidates.retryAfter, new Date()),
+              ),
+        ),
+      ),
+    );
 
-  const candidateRows = candidates.filter(hasBrandAndModel);
-  const unreleasedCandidates = candidateRows.filter(isUnreleasedCandidate);
+  const candidateRows = candidates
+    .map(resolveBrandModel)
+    .filter((candidate): candidate is ResolvedCatalogCandidate => candidate != null);
+  const unreleasedCandidates = candidateRows.filter((candidate) =>
+    isUnreleasedCandidate(candidate.row),
+  );
   for (const candidate of unreleasedCandidates) {
-    await markDeferredUnreleased(db, candidate);
+    await markDeferredUnreleased(db, candidate.row);
   }
 
-  const releasedRows = candidateRows.filter((candidate) => !isUnreleasedCandidate(candidate));
+  const releasedRows = candidateRows.filter((candidate) => !isUnreleasedCandidate(candidate.row));
   const skippedNonPhones = releasedRows.filter((candidate) => !isLikelyPhoneCandidate(candidate));
   for (const candidate of skippedNonPhones) {
-    await markSkippedNonPhone(db, candidate);
+    await markSkippedNonPhone(db, candidate.row);
   }
 
   const retryEligibleRows = releasedRows.filter((candidate) => isRetryEligible(candidate, args));
@@ -120,19 +153,19 @@ async function main() {
     .filter(isLikelyPhoneCandidate)
     .filter(isPriorityOrFreshCandidate)
     .sort((a, b) => {
-      const rankA = brandPriorityRank(a.normalizedIdentityJson.brand);
-      const rankB = brandPriorityRank(b.normalizedIdentityJson.brand);
+      const rankA = brandPriorityRank(a.brand);
+      const rankB = brandPriorityRank(b.brand);
       if (rankA !== rankB) return rankA - rankB;
 
-      const dateA = candidateReleaseTime(a);
-      const dateB = candidateReleaseTime(b);
+      const dateA = candidateReleaseTime(a.row);
+      const dateB = candidateReleaseTime(b.row);
       if (dateA !== dateB) return dateB - dateA;
 
-      const stateA = candidateStatePriority(a);
-      const stateB = candidateStatePriority(b);
+      const stateA = candidateStatePriority(a.row);
+      const stateB = candidateStatePriority(b.row);
       if (stateA !== stateB) return stateA - stateB;
 
-      return a.candidateTitle.localeCompare(b.candidateTitle);
+      return a.row.candidateTitle.localeCompare(b.row.candidateTitle);
     })
     .slice(0, args.limit);
 
@@ -153,7 +186,7 @@ async function main() {
       kind: 'manual',
       status: 'running',
       stage: 'import_promote',
-      maxLlmCalls: pending.length,
+      maxLlmCalls: args.maxLlmCalls,
       checkpointJson: {
         script: 'catalog-enrich',
         sources: ['wikipedia', 'gsmarena'],
@@ -167,6 +200,7 @@ async function main() {
   let updated = 0;
   let promoted = 0;
   let quarantined = 0;
+  let needsEnrichment = 0;
   const skipped = skippedNonPhones.length;
   const deferred = unreleasedCandidates.length;
   let llmCalls = 0;
@@ -174,8 +208,13 @@ async function main() {
   let gsmarenaHits = 0;
 
   for (const candidate of pending) {
-    const brand = String(candidate.normalizedIdentityJson.brand);
-    const model = String(candidate.normalizedIdentityJson.model);
+    const brand = candidate.brand;
+    const model = candidate.model;
+    if (llmCalls >= args.maxLlmCalls) {
+      console.log(`  -> LLM budget exhausted; leaving remaining candidates pending.`);
+      await markLlmBudgetExhausted(db, candidate.row);
+      continue;
+    }
     console.log(`${LOG} [${brand} ${model}] Fetching specs...`);
 
     let spec = null;
@@ -190,6 +229,12 @@ async function main() {
         wikiHits++;
         sourceKey = 'wikipedia_infobox';
         llmCalls++;
+        if (run) {
+          await db
+            .update(catalogRuns)
+            .set({ llmCallCount: llmCalls })
+            .where(eq(catalogRuns.id, run.id));
+        }
         console.log(`  -> Found on Wikipedia`);
       } else if (gsmarenaAvailable) {
         console.log(`  -> Not found on Wikipedia; trying GSMArena fallback...`);
@@ -207,11 +252,17 @@ async function main() {
         gsmarenaHits++;
         sourceKey = 'gsmarena_specs';
         llmCalls++;
+        if (run) {
+          await db
+            .update(catalogRuns)
+            .set({ llmCallCount: llmCalls })
+            .where(eq(catalogRuns.id, run.id));
+        }
         console.log(`  -> Found on GSMArena`);
       } else {
         console.log(`  -> Not found on either source - quarantining.`);
         quarantined++;
-        await markNoSpecSourceFound(db, candidate);
+        await markNoSpecSourceFound(db, candidate.row);
         continue;
       }
     }
@@ -219,7 +270,7 @@ async function main() {
     if (!spec) {
       console.log(`  -> Not found on available sources; quarantining.`);
       quarantined++;
-      await markNoSpecSourceFound(db, candidate);
+      await markNoSpecSourceFound(db, candidate.row);
       continue;
     }
 
@@ -232,42 +283,59 @@ async function main() {
       sourceTier: 'T2' as const,
       brand,
       model,
+      launchDate: candidateReleaseValue(candidate.row),
       spec: phoneSpecToCatalogProjectionInput(spec),
     };
 
-    const canonicalKey = buildCanonicalKey({ brand, model });
+    const canonicalKey = buildCanonicalKey({ brand, model, launchDate: record.launchDate });
     const claimsJson = { promotion: record };
 
     const plan = buildPromotionPlan({
       sourceKey,
-      externalId: candidate.externalId ?? candidate.stableKey,
-      sourceUrl: candidate.sourceUrl ?? undefined,
+      externalId: candidate.row.externalId ?? candidate.row.stableKey,
+      sourceUrl: candidate.row.sourceUrl ?? undefined,
       canonicalKey,
       claimsJson,
     });
+    const coreIncomplete = isCoreIncompletePlan(plan.issues);
 
     await db
       .update(catalogCandidates)
       .set({
         claimsJson,
         contentHash: hashJson(claimsJson),
-        decision: plan.ok ? 'promote' : 'quarantine',
-        status: plan.ok ? 'ready_to_promote' : 'quarantined',
-        issueCodes: plan.ok ? [] : [...new Set(plan.issues.map((i) => i.code))],
+        decision: plan.ok ? 'promote' : coreIncomplete ? 'pending_review' : 'quarantine',
+        status: plan.ok ? 'ready_to_promote' : coreIncomplete ? 'discovered' : 'quarantined',
+        issueCodes: plan.ok
+          ? []
+          : [
+              ...new Set([
+                ...plan.issues.map((i) => i.code),
+                ...(coreIncomplete ? ['needs_enrichment', 'core_spec_incomplete'] : []),
+              ]),
+            ],
+        retryAfter: plan.ok ? null : catalogReleaseRetryAfter(null),
         lastDecisionAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(catalogCandidates.id, candidate.id));
+      .where(eq(catalogCandidates.id, candidate.row.id));
 
     updated++;
 
     if (plan.ok) {
-      const result = await promoteCatalogCandidate(db, candidate.id, { updateExisting: true });
+      const result = await promoteCatalogCandidate(db, candidate.row.id, { updateExisting: true });
       if (result.action === 'created' || result.action === 'updated') {
         promoted++;
         console.log(`  -> Promoted to catalog (action=${result.action})`);
       }
     } else {
+      if (coreIncomplete) {
+        needsEnrichment++;
+        console.log(
+          `  -> Source found but core spec is incomplete: ${plan.issues.map((i) => i.code).join(', ')}`,
+        );
+        continue;
+      }
       quarantined++;
       console.log(`  -> Blocked by validation: ${plan.issues.map((i) => i.code).join(', ')}`);
     }
@@ -290,7 +358,7 @@ async function main() {
 
   console.log(
     `${LOG} Done. Updated=${updated}, Promoted=${promoted}, Quarantined=${quarantined}, ` +
-      `Skipped=${skipped}, Deferred=${deferred}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
+      `NeedsEnrichment=${needsEnrichment}, Skipped=${skipped}, Deferred=${deferred}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
   );
 }
 
@@ -302,13 +370,16 @@ function parsePositiveInt(value: string | undefined, flag: string): number {
   return parsed;
 }
 
-function isLikelyPhoneCandidate(
-  candidate: CatalogCandidateRow & {
-    normalizedIdentityJson: { brand: string; model: string };
-  },
-): boolean {
-  const text =
-    `${candidate.candidateTitle} ${candidate.normalizedIdentityJson.model}`.toLowerCase();
+function parseNonNegativeInt(value: string | undefined, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid ${flag}`);
+  }
+  return parsed;
+}
+
+function isLikelyPhoneCandidate(candidate: ResolvedCatalogCandidate): boolean {
+  const text = `${candidate.row.candidateTitle} ${candidate.model}`.toLowerCase();
   return isLikelyCatalogPhoneTitle(text);
 }
 
@@ -339,33 +410,50 @@ function candidateStatePriority(candidate: CatalogCandidateRow): number {
   return 3;
 }
 
-function isPriorityOrFreshCandidate(
-  candidate: CatalogCandidateRow & {
-    normalizedIdentityJson: { brand: string; model: string };
-  },
-): boolean {
-  if (isMainstreamPriorityBrand(candidate.normalizedIdentityJson.brand)) return true;
+function isPriorityOrFreshCandidate(candidate: ResolvedCatalogCandidate): boolean {
+  if (isMainstreamPriorityBrand(candidate.brand)) return true;
+  if (
+    candidate.row.status === 'promoted' &&
+    candidate.row.issueCodes.includes('low_completeness')
+  ) {
+    return true;
+  }
   // Long-tail rows get one enrichment attempt while freshly discovered. If
   // they quarantine, leave them for explicit retry windows so they cannot
   // crowd out Apple/Samsung/Pixel/Nothing/etc. on every scheduled run.
   return (
-    candidate.decision === 'pending_review' &&
-    (candidate.status === 'discovered' || candidate.status === 'failed_transient')
+    candidate.row.decision === 'pending_review' &&
+    (candidate.row.status === 'discovered' || candidate.row.status === 'failed_transient')
   );
 }
 
-function isRetryEligible(candidate: CatalogCandidateRow, args: CliArgs): boolean {
+function isRetryEligible(candidate: ResolvedCatalogCandidate, args: CliArgs): boolean {
   if (args.retryAll) return true;
-  if (!candidate.retryAfter) return true;
-  if (candidate.retryAfter <= new Date()) return true;
+  if (isMainstreamPriorityBrand(candidate.brand) && !isUnreleasedCandidate(candidate.row))
+    return true;
+  if (!candidate.row.retryAfter) return true;
+  if (candidate.row.retryAfter <= new Date()) return true;
   if (
-    candidate.decision === 'pending_review' &&
-    candidate.status === 'discovered' &&
-    candidate.issueCodes.includes('spec_projection_missing')
+    candidate.row.decision === 'pending_review' &&
+    candidate.row.status === 'discovered' &&
+    candidate.row.issueCodes.includes('spec_projection_missing')
   ) {
     return true;
   }
   return false;
+}
+
+function isCoreIncompletePlan(issues: readonly { severity: string; code: string }[]): boolean {
+  const blockers = issues.filter((issue) => issue.severity === 'blocker');
+  return blockers.length > 0 && blockers.every((issue) => issue.code === 'missing_spec_field');
+}
+
+function inferBrandFromTitle(value: string): string | null {
+  const normalized = normalizeIdentityText(value);
+  for (const [needle, brand] of TITLE_BRAND_HINTS) {
+    if (normalized === needle || normalized.startsWith(`${needle} `)) return brand;
+  }
+  return null;
 }
 
 function recordString(value: unknown, key: string): string | undefined {
@@ -408,6 +496,23 @@ async function markDeferredUnreleased(
     .where(eq(catalogCandidates.id, candidate.id));
 }
 
+async function markLlmBudgetExhausted(
+  db: ReturnType<typeof getDb>,
+  candidate: CatalogCandidateRow,
+): Promise<void> {
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: candidate.decision ?? 'pending_review',
+      status: candidate.status === 'promoted' ? 'promoted' : 'failed_transient',
+      issueCodes: [...new Set([...candidate.issueCodes, 'llm_budget_exhausted'])],
+      retryAfter: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidate.id));
+}
+
 async function markNoSpecSourceFound(
   db: ReturnType<typeof getDb>,
   candidate: CatalogCandidateRow,
@@ -425,6 +530,33 @@ async function markNoSpecSourceFound(
     })
     .where(eq(catalogCandidates.id, candidate.id));
 }
+
+const TITLE_BRAND_HINTS: readonly (readonly [string, string])[] = [
+  ['iphone', 'Apple'],
+  ['samsung', 'Samsung'],
+  ['galaxy', 'Samsung'],
+  ['google pixel', 'Google'],
+  ['pixel', 'Google'],
+  ['nothing phone', 'Nothing'],
+  ['cmf phone', 'Nothing'],
+  ['oneplus', 'OnePlus'],
+  ['oppo', 'OPPO'],
+  ['realme', 'Realme'],
+  ['vivo', 'vivo'],
+  ['iqoo', 'vivo'],
+  ['xiaomi', 'Xiaomi'],
+  ['redmi', 'Xiaomi'],
+  ['poco', 'Xiaomi'],
+  ['motorola', 'Motorola'],
+  ['moto', 'Motorola'],
+  ['honor', 'Honor'],
+  ['sony xperia', 'Sony'],
+  ['xperia', 'Sony'],
+  ['huawei', 'Huawei'],
+  ['tecno', 'Tecno'],
+  ['infinix', 'Infinix'],
+  ['itel', 'itel'],
+];
 
 main().catch((err) => {
   console.error(`${LOG} FAILED`);

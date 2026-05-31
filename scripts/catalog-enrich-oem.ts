@@ -21,7 +21,9 @@ import {
   hashJson,
   isLikelyCatalogPhoneTitle,
   isReleasedCatalogCandidate,
+  normalizeIdentityText,
   promoteCatalogCandidate,
+  resolveOemUrls,
   stableCandidateKey,
 } from '../src/services/catalog';
 import type { CatalogImportRecord } from '../src/services/catalog';
@@ -44,6 +46,7 @@ interface CandidateSeed {
   readonly url: string;
   readonly fallbackBrand?: string | null;
   readonly fallbackModel?: string | null;
+  readonly derivedFromResolver?: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -157,20 +160,46 @@ async function main(): Promise<void> {
   let valid = 0;
   let quarantined = 0;
   let promoted = 0;
+  let skipped = 0;
+  let failedFetches = 0;
 
   try {
     for (const seed of seeds) {
       if (fetched > 0) {
         await sleep(args.minRequestGapMs);
       }
-      const html = await fetchOemPageHtml({ url: seed.url });
+      let html: string;
+      try {
+        html = await fetchOemPageHtml({ url: seed.url });
+      } catch (err) {
+        fetched += 1;
+        failedFetches += 1;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[catalog:enrich-oem] skip fetch_failed ${seed.url}: ${message}`);
+        continue;
+      }
       fetched += 1;
-      const record = extractOemProductPage({
-        url: seed.url,
-        html,
-        fallbackBrand: seed.fallbackBrand,
-        fallbackModel: seed.fallbackModel,
-      });
+      let record: CatalogImportRecord;
+      try {
+        record = extractOemProductPage({
+          url: seed.url,
+          html,
+          fallbackBrand: seed.fallbackBrand,
+          fallbackModel: seed.fallbackModel,
+        });
+      } catch (err) {
+        failedFetches += 1;
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[catalog:enrich-oem] skip extract_failed ${seed.url}: ${message}`);
+        continue;
+      }
+      if (seed.derivedFromResolver && !isVerifiedResolvedRecord(seed, record)) {
+        skipped += 1;
+        console.warn(
+          `[catalog:enrich-oem] skip resolver_mismatch ${record.brand} ${record.model} ${seed.url}`,
+        );
+        continue;
+      }
       const item = stagePlan(record);
       if (item.plan.ok) valid += 1;
 
@@ -272,6 +301,7 @@ async function main(): Promise<void> {
         updatedCount: updated + promoted,
         quarantinedCount: quarantined,
         requestCount: fetched,
+        skippedCount: skipped + failedFetches,
         llmCallCount: 0,
         finishedAt: sql`now()`,
         durationMs: Date.now() - startedAt,
@@ -279,7 +309,7 @@ async function main(): Promise<void> {
       .where(eq(catalogRuns.id, run.id));
 
     console.log(
-      `[catalog:enrich-oem] done fetched=${fetched} created=${created} updated=${updated} valid=${valid} promoted=${promoted} quarantined=${quarantined} llm_calls=0`,
+      `[catalog:enrich-oem] done fetched=${fetched} created=${created} updated=${updated} valid=${valid} promoted=${promoted} quarantined=${quarantined} skipped=${skipped} failed_fetches=${failedFetches} llm_calls=0`,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -315,7 +345,12 @@ async function readCandidateSeeds(
     .from(catalogCandidates)
     .where(
       and(
-        inArray(catalogCandidates.status, ['discovered', 'quarantined', 'failed']),
+        inArray(catalogCandidates.status, [
+          'discovered',
+          'quarantined',
+          'failed',
+          'failed_transient',
+        ]),
         isNotNull(catalogCandidates.rawCandidateJson),
       ),
     )
@@ -360,18 +395,46 @@ async function readCandidateSeeds(
   const seeds: CandidateSeed[] = [];
   const seen = new Set<string>();
   for (const row of sortedRows) {
-    const url = bestOfficialUrlFromCandidate(row.raw, row.normalized, row.sourceUrl);
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    seeds.push({
-      candidateId: row.id,
-      url,
-      fallbackBrand: stringValue(row.normalized.brand),
-      fallbackModel: stringValue(row.normalized.model),
-    });
-    if (seeds.length >= limit) break;
+    const brand = stringValue(row.normalized.brand);
+    const model = stringValue(row.normalized.model);
+    const directUrl = bestOfficialUrlFromCandidate(row.raw, row.normalized, row.sourceUrl);
+    const resolvedUrls = directUrl ? [] : resolveOemUrls(brand, model);
+    const urlCandidates = [
+      ...(directUrl ? [{ url: directUrl, derivedFromResolver: false }] : []),
+      ...resolvedUrls.map((candidate) => ({ url: candidate.url, derivedFromResolver: true })),
+    ];
+
+    for (const urlCandidate of urlCandidates) {
+      if (seen.has(urlCandidate.url)) continue;
+      seen.add(urlCandidate.url);
+      seeds.push({
+        candidateId: row.id,
+        url: urlCandidate.url,
+        fallbackBrand: brand,
+        fallbackModel: model,
+        derivedFromResolver: urlCandidate.derivedFromResolver,
+      });
+      if (seeds.length >= limit) return seeds;
+    }
   }
   return seeds;
+}
+
+function isVerifiedResolvedRecord(seed: CandidateSeed, record: CatalogImportRecord): boolean {
+  const expectedBrand = normalizeIdentityText(seed.fallbackBrand ?? '');
+  const actualBrand = normalizeIdentityText(record.brand);
+  if (!expectedBrand || expectedBrand !== actualBrand) return false;
+
+  const expectedTokens = meaningfulModelTokens(seed.fallbackModel ?? '');
+  const actualTokens = meaningfulModelTokens(record.model);
+  if (expectedTokens.length === 0 || actualTokens.length === 0) return false;
+  return expectedTokens.some((token) => actualTokens.includes(token));
+}
+
+function meaningfulModelTokens(value: string): string[] {
+  return normalizeIdentityText(value)
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 && !['5g', 'pro', 'plus', 'ultra', 'max'].includes(token));
 }
 
 function stagePlan(record: CatalogImportRecord) {
