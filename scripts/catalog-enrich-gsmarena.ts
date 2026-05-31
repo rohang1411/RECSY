@@ -5,9 +5,9 @@
  * For each `pending_review` / `quarantine` candidate in the DB, this script
  * attempts to fetch structured specs from two free sources in priority order:
  *
- *   1. Wikipedia API (primary) — policy-compliant, no auth required, structured
+ *   1. Wikipedia API (primary) - policy-compliant, no auth required, structured
  *      {{Infobox mobile phone}} wikitext converted to PhoneSpec via LLM.
- *   2. GSMArena (warm standby) — currently blocked by Cloudflare Turnstile, but
+ *   2. GSMArena (warm standby) - currently blocked by Cloudflare Turnstile, but
  *      kept in place so it activates automatically if access resumes.
  *
  * Both tiers share the same promotion/quarantine logic. Candidates are processed
@@ -33,7 +33,11 @@ import {
   brandPriorityRank,
   buildCanonicalKey,
   buildPromotionPlan,
+  catalogReleaseRetryAfter,
+  catalogReleaseTimestamp,
   hashJson,
+  isFutureCatalogDate,
+  isLikelyCatalogPhoneTitle,
   isMainstreamPriorityBrand,
   phoneSpecToCatalogProjectionInput,
   promoteCatalogCandidate,
@@ -98,16 +102,18 @@ async function main() {
         inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
         args.retryAll
           ? undefined
-          : or(
-              eq(catalogCandidates.decision, 'pending_review'),
-              isNull(catalogCandidates.retryAfter),
-              lte(catalogCandidates.retryAfter, new Date()),
-            ),
+          : or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
       ),
     );
 
   const candidateRows = candidates.filter(hasBrandAndModel);
-  const skippedNonPhones = candidateRows.filter((candidate) => !isLikelyPhoneCandidate(candidate));
+  const unreleasedCandidates = candidateRows.filter(isUnreleasedCandidate);
+  for (const candidate of unreleasedCandidates) {
+    await markDeferredUnreleased(db, candidate);
+  }
+
+  const releasedRows = candidateRows.filter((candidate) => !isUnreleasedCandidate(candidate));
+  const skippedNonPhones = releasedRows.filter((candidate) => !isLikelyPhoneCandidate(candidate));
   for (const candidate of skippedNonPhones) {
     await markSkippedNonPhone(db, candidate);
   }
@@ -115,7 +121,7 @@ async function main() {
   // Filter out candidates without brand/model and obvious non-phone devices,
   // then sort by the shared catalog priority: mainstream brand first, newest
   // release next, then unresolved pending rows before older quarantines.
-  const pending = candidateRows
+  const pending = releasedRows
     .filter(isLikelyPhoneCandidate)
     .filter(isPriorityOrFreshCandidate)
     .sort((a, b) => {
@@ -136,7 +142,9 @@ async function main() {
     .slice(0, args.limit);
 
   if (pending.length === 0) {
-    console.log(`${LOG} No pending candidates to enrich.`);
+    console.log(
+      `${LOG} No pending candidates to enrich. Skipped=${skippedNonPhones.length}, Deferred=${unreleasedCandidates.length}`,
+    );
     return;
   }
 
@@ -156,6 +164,7 @@ async function main() {
         sources: ['wikipedia', 'gsmarena'],
         wikiAvailable,
         gsmarenaAvailable,
+        deferredUnreleased: unreleasedCandidates.length,
       },
     })
     .returning({ id: catalogRuns.id });
@@ -164,6 +173,7 @@ async function main() {
   let promoted = 0;
   let quarantined = 0;
   const skipped = skippedNonPhones.length;
+  const deferred = unreleasedCandidates.length;
   let llmCalls = 0;
   let wikiHits = 0;
   let gsmarenaHits = 0;
@@ -185,7 +195,7 @@ async function main() {
         wikiHits++;
         sourceKey = 'wikipedia_infobox';
         llmCalls++;
-        console.log(`  -> Found on Wikipedia ✓`);
+        console.log(`  -> Found on Wikipedia`);
       } else if (gsmarenaAvailable) {
         console.log(`  -> Not found on Wikipedia; trying GSMArena fallback...`);
       } else {
@@ -194,7 +204,7 @@ async function main() {
     }
 
     // -----------------------------------------------------------------------
-    // Tier 2: GSMArena (warm standby — may be blocked by Cloudflare Turnstile)
+    // Tier 2: GSMArena (warm standby - may be blocked by Cloudflare Turnstile)
     // -----------------------------------------------------------------------
     if (!spec && gsmarenaAvailable) {
       spec = await fetchGsmarenaSpecs(brand, model);
@@ -202,9 +212,9 @@ async function main() {
         gsmarenaHits++;
         sourceKey = 'gsmarena_specs';
         llmCalls++;
-        console.log(`  -> Found on GSMArena ✓`);
+        console.log(`  -> Found on GSMArena`);
       } else {
-        console.log(`  -> Not found on either source — quarantining.`);
+        console.log(`  -> Not found on either source - quarantining.`);
         quarantined++;
         await markNoSpecSourceFound(db, candidate);
         continue;
@@ -260,7 +270,7 @@ async function main() {
       const result = await promoteCatalogCandidate(db, candidate.id, { updateExisting: true });
       if (result.action === 'created' || result.action === 'updated') {
         promoted++;
-        console.log(`  -> Promoted to catalog ✓ (action=${result.action})`);
+        console.log(`  -> Promoted to catalog (action=${result.action})`);
       }
     } else {
       quarantined++;
@@ -285,7 +295,7 @@ async function main() {
 
   console.log(
     `${LOG} Done. Updated=${updated}, Promoted=${promoted}, Quarantined=${quarantined}, ` +
-      `Skipped=${skipped}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
+      `Skipped=${skipped}, Deferred=${deferred}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
   );
 }
 
@@ -304,21 +314,27 @@ function isLikelyPhoneCandidate(
 ): boolean {
   const text =
     `${candidate.candidateTitle} ${candidate.normalizedIdentityJson.model}`.toLowerCase();
-  return !NON_PHONE_TITLE_RE.test(text) && !MULTI_PHONE_TITLE_RE.test(text);
+  return isLikelyCatalogPhoneTitle(text);
 }
 
 function candidateReleaseTime(candidate: CatalogCandidateRow): number {
+  return catalogReleaseTimestamp(candidateReleaseValue(candidate));
+}
+
+function candidateReleaseValue(candidate: CatalogCandidateRow): string | undefined {
   const normalized = candidate.normalizedIdentityJson;
   const raw = candidate.rawCandidateJson;
-  const value =
+  return (
     recordString(normalized, 'launchDate') ??
     recordString(normalized, 'releaseDate') ??
     recordString(raw, 'launchDate') ??
     recordString(raw, 'releaseDate') ??
-    recordString(raw, 'releasedAt');
-  if (!value) return 0;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : 0;
+    recordString(raw, 'releasedAt')
+  );
+}
+
+function isUnreleasedCandidate(candidate: CatalogCandidateRow): boolean {
+  return isFutureCatalogDate(candidateReleaseValue(candidate));
 }
 
 function candidateStatePriority(candidate: CatalogCandidateRow): number {
@@ -337,7 +353,10 @@ function isPriorityOrFreshCandidate(
   // Long-tail rows get one enrichment attempt while freshly discovered. If
   // they quarantine, leave them for explicit retry windows so they cannot
   // crowd out Apple/Samsung/Pixel/Nothing/etc. on every scheduled run.
-  return candidate.decision === 'pending_review' && candidate.status === 'discovered';
+  return (
+    candidate.decision === 'pending_review' &&
+    (candidate.status === 'discovered' || candidate.status === 'failed_transient')
+  );
 }
 
 function recordString(value: unknown, key: string): string | undefined {
@@ -362,6 +381,24 @@ async function markSkippedNonPhone(
     .where(eq(catalogCandidates.id, candidate.id));
 }
 
+async function markDeferredUnreleased(
+  db: ReturnType<typeof getDb>,
+  candidate: CatalogCandidateRow,
+): Promise<void> {
+  const releaseValue = candidateReleaseValue(candidate);
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: 'pending_review',
+      status: 'failed_transient',
+      issueCodes: ['unreleased_candidate'],
+      retryAfter: catalogReleaseRetryAfter(releaseValue),
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidate.id));
+}
+
 async function markNoSpecSourceFound(
   db: ReturnType<typeof getDb>,
   candidate: CatalogCandidateRow,
@@ -379,12 +416,6 @@ async function markNoSpecSourceFound(
     })
     .where(eq(catalogCandidates.id, candidate.id));
 }
-
-const NON_PHONE_TITLE_RE =
-  /\b(?:ipad|tablet|pad|etpad|acepad|iconia|watch|macbook|laptop|chromebook|earbuds|headphones|smart\s+tv)\b/i;
-
-const MULTI_PHONE_TITLE_RE =
-  /\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b.{0,80}\s(?:and|&)\s.{0,80}\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b/i;
 
 main().catch((err) => {
   console.error(`${LOG} FAILED`);

@@ -150,15 +150,18 @@ the free-plan limits:
   the `MOBILEAPI_API_KEY` secret is missing
 
 MobileAPI's by-year endpoint may return listing-level records rather than full
-spec sheets. The sync therefore prioritizes complete/promotable records first,
-then ranks by mainstream brand priority: Apple, Samsung, Xiaomi/Redmi/POCO,
-vivo/iQOO, OPPO/OnePlus/Realme, Transsion-family Tecno/Infinix/itel, and
-Nothing/CMF. If a record is missing required fields, it is staged/quarantined
-with exact issue codes. Output such as `promoted=0 quarantined=50` means the API
-returned candidates, but none passed `PhoneSpecSchema`; it is not an API block.
-Incomplete MobileAPI listing rows do not count as approved catalog entries, and
-later MobileAPI syncs no longer overwrite an already `ready_to_promote` or
-`promoted` candidate with weaker partial claims.
+spec sheets. The sync filters known future/upcoming records before staging,
+then prioritizes complete/promotable records first and ranks by the shared
+mainstream brand priority: Apple, Samsung, Nothing/CMF, OnePlus/OPPO/Realme,
+vivo/iQOO, Xiaomi/Redmi/POCO, Google/Pixel, Motorola/Moto, and then the
+remaining priority brands. Within each brand bucket, newest released
+`launchDate` wins. If a record is missing required fields, it is
+staged/quarantined with exact issue codes. Output such as
+`promoted=0 quarantined=50` means the API returned candidates, but none passed
+`PhoneSpecSchema`; it is not an API block. Incomplete MobileAPI listing rows do
+not count as approved catalog entries, and later MobileAPI syncs no longer
+overwrite an already `ready_to_promote` or `promoted` candidate with weaker
+partial claims.
 
 ### Step 4: Official OEM page enrichment
 
@@ -176,12 +179,15 @@ The command:
 1. scans staged candidates for official product URLs, usually from Wikidata
    `officialWebsite`, duplicate Wikidata bindings, normalized identity metadata,
    or any existing official candidate URL;
-2. fetches pages politely with a default 2 second delay between requests;
-3. extracts Schema.org JSON-LD, OpenGraph/meta tags, and visible spec text via
+2. applies the same released-only, brand-priority, newest-first candidate
+   policy before choosing URLs, so official page fetches are spent on current
+   mainstream phones before long-tail or stale rows;
+3. fetches pages politely with a default 2 second delay between requests;
+4. extracts Schema.org JSON-LD, OpenGraph/meta tags, and visible spec text via
    `src/services/catalog/adapters/oem-page.ts`;
-4. builds a T0 `CatalogImportRecord` with `sourceKey='oem_page'`;
-5. runs the same promotion validation as every other path;
-6. stages valid records as `ready_to_promote` and, when `--promote` is set,
+5. builds a T0 `CatalogImportRecord` with `sourceKey='oem_page'`;
+6. runs the same promotion validation as every other path;
+7. stages valid records as `ready_to_promote` and, when `--promote` is set,
    promotes them immediately.
 
 One-off enrichment is available for manually found official URLs:
@@ -228,8 +234,23 @@ enrichment batches. Candidates with no Wikipedia or GSMArena source are marked
 repeatedly spend requests on the same dead end. Manual operators can pass
 `--retry-all` to ignore that retry window when they intentionally want to
 reattempt priority brands after extractor/source improvements. Candidate
-selection uses the shared mainstream brand priority first, then newest
-`launchDate`/`releaseDate`, then pending state, then title as a stable fallback.
+selection uses the shared catalog candidate policy in
+`src/services/catalog/candidate-policy.ts`: priority brands first, then newest
+released `launchDate`/`releaseDate`, then pending state, then title as a stable
+fallback. The same policy filters obvious non-phone titles and combined
+multi-phone titles before enrichment, so iPads/tablets/watches and rows such as
+`iPhone 17 Pro and iPhone 17 Pro Max` do not consume phone enrichment batches.
+Known future-dated rows are not quarantined as bad data; they are deferred with
+`issueCodes=['unreleased_candidate']` and `retry_after` set just after the
+release date, so they can be retried after launch without blocking released
+phones today. Wikidata discovery also adds an upper release-date bound in the
+SPARQL query and post-filters results, so future/unreleased devices are not
+staged by normal refresh runs.
+Rediscovery from Wikidata updates identity/snapshot fields but must not demote
+already quarantined, skipped, ready-to-promote, or promoted candidates back to
+`pending_review`; this preserves retry windows and prevents scheduled runs from
+reprocessing known dead ends. Rows that already carry `retry_after` are also
+preserved, covering candidates affected by older refresh runs.
 
 ### Step 5: Validation and dedupe
 

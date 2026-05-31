@@ -1635,19 +1635,23 @@ dissenting_quotes)`.
      recent phone-like entities and writes/updates `catalog_candidates` plus
      snapshots. These records are identity/discovery evidence only; they remain
      `discovered`/`pending_review` because Wikidata does not provide enough
-     structured fields for `PhoneSpecSchema`.
+     structured fields for `PhoneSpecSchema`. Discovery uses an upper
+     release-date bound and post-filtering, so future/unreleased phones are not
+     staged during normal refresh runs.
   3. **Fetch licensed structured candidates** - when configured,
      `pnpm catalog:sync-mobileapi --promote --update-existing` calls the
      MobileAPI by-year endpoint under the free-plan budget. MobileAPI rows are
-     prioritized by complete specs first, then mainstream brand priority. Rows
-     that satisfy `PhoneSpecSchema` become `ready_to_promote` and can be
+     filtered for known future/upcoming launches, prioritized by complete specs
+     first, then mainstream brand priority and newest released `launchDate`.
+     Rows that satisfy `PhoneSpecSchema` become `ready_to_promote` and can be
      promoted immediately; incomplete rows are staged/quarantined with exact
      missing field codes. The by-year endpoint often behaves like a listing
      feed, so `promoted=0 quarantined=N` is expected when it returns partial
      specs.
   4. **Enrich from official OEM pages** - the OEM enrichment command scans
      staged candidates for official product URLs, including alternate URLs held
-     in duplicate Wikidata bindings, fetches those pages politely,
+     in duplicate Wikidata bindings, applies the shared released-only
+     brand-priority/newest-first policy, fetches selected pages politely,
      extracts JSON-LD/meta/visible spec text, and creates `oem_page` T0
      promotion claims. This is the main path that turns discovery candidates
      into promotable catalog rows when official pages expose full specs. The
@@ -1669,6 +1673,19 @@ dissenting_quotes)`.
      `spec_source_not_found` plus a 30-day `retry_after` to avoid repeated
      dead-end lookups. Manual operators can pass `--retry-all` to reattempt
      those retry-window candidates after extractor/source improvements.
+     Candidate queue shaping is centralized in
+     `src/services/catalog/candidate-policy.ts`: discovery, MobileAPI sync, OEM
+     enrichment, and Wikipedia/GSMArena enrichment all prioritize mainstream
+     brands first and newest released phones second, while filtering obvious
+     non-phones and combined multi-phone titles before they consume enrichment
+     slots. Known future-dated devices are treated as unreleased, not as failed
+     phones; they are filtered before staging when possible or deferred with
+     `issueCodes=['unreleased_candidate']` and a `retry_after` just after launch.
+     Wikidata rediscovery refreshes identity/snapshot fields without demoting
+     quarantined, skipped, ready-to-promote, or promoted candidates back to
+     `pending_review`, and it preserves rows that already carry `retry_after`,
+     so retry windows remain effective even for candidates touched by older
+     refresh runs.
   6. **Validate before write** - every potential promotion runs through
      `buildPromotionPlan`, `projectPhoneSpec`, plausibility checks, identity
      dedupe, and strict `PhoneSpecSchema`. Missing display, RAM, storage,
@@ -2334,6 +2351,10 @@ dissenting_quotes)`.
   - **Root cause 4 - Wikidata brand ambiguity.** Duplicate Wikidata bindings can
     include contract manufacturers; an iPhone row normalized as Foxconn loses
     brand priority and is harder to enrich from OEM/Wikipedia sources.
+  - **Root cause 5 - bad queue shape.** Discovery/enrichment could pick
+    unreleased, combined-title, non-phone, or long-tail rows before released
+    mainstream phones. Those rows had little chance of finding complete trusted
+    specs, so they inflated quarantine counts and delayed useful approvals.
   - **Fix.** MobileAPI incomplete records now persist as `quarantined` and do
     not overwrite existing promotable/promoted state; `catalog:auto` runs
     discovery -> MobileAPI -> OEM -> Wikipedia/GSMArena -> promote; fetched
@@ -2341,7 +2362,10 @@ dissenting_quotes)`.
     workflow runs Wikipedia/GSMArena enrichment when Gemini is configured; and
     Wikidata/OEM URL selection now prefers consumer OEM brands and scans
     duplicate official URLs; OEM page extraction also avoids replacing Apple-like
-    staged brands with contract manufacturer metadata.
+    staged brands with contract manufacturer metadata. The shared candidate
+    policy now filters future/unreleased rows before staging where possible,
+    defers existing future rows with `unreleased_candidate` + `retry_after`, and
+    sorts source/enrichment work by brand priority plus newest released date.
   - **Hardening.** Added regression coverage for `PhoneSpec` projection
     round-tripping and Wikidata contract-manufacturer dedupe. `catalog:auto
 --dry-run` now shows the planned commands without touching the DB, and

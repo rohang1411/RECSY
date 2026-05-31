@@ -24,6 +24,17 @@ export {
 } from './brand-priority';
 export type { BrandPriorityEntry } from './brand-priority';
 export {
+  catalogCandidateReleaseTimestamp,
+  catalogReleaseRetryAfter,
+  catalogReleaseTimestamp,
+  compareCatalogPriorityThenNewest,
+  isFutureCatalogDate,
+  isLikelyCatalogPhoneTitle,
+  isReleasedCatalogCandidate,
+  startOfNextUtcDay,
+} from './candidate-policy';
+export type { CatalogPriorityCandidate } from './candidate-policy';
+export {
   phoneSpecToCatalogProjectionInput,
   projectPhoneSpec,
   specCompleteness,
