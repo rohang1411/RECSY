@@ -10,6 +10,11 @@
 import { z } from 'zod';
 
 import { brandPriorityRank } from '../brand-priority';
+import {
+  isLikelyCatalogPhoneTitle,
+  isReleasedCatalogCandidate,
+  startOfNextUtcDay,
+} from '../candidate-policy';
 import { normalizeIdentityText } from '../identity';
 import type { WikidataPhoneCandidate } from '../types';
 
@@ -35,6 +40,7 @@ const WikidataResponseSchema = z.object({
 export interface WikidataCatalogOptions {
   readonly since: Date;
   readonly limit: number;
+  readonly now?: Date;
   readonly userAgent?: string;
   readonly fetchImpl?: typeof fetch;
 }
@@ -51,7 +57,8 @@ export async function discoverRecentWikidataPhones(
   options: WikidataCatalogOptions,
 ): Promise<WikidataPhoneCandidate[]> {
   const fetcher = options.fetchImpl ?? fetch;
-  const query = buildRecentPhonesQuery(options.since, options.limit);
+  const now = options.now ?? new Date();
+  const query = buildRecentPhonesQuery(options.since, options.limit, now);
   const url = new URL(WDQS_ENDPOINT);
   url.searchParams.set('format', 'json');
   url.searchParams.set('query', query);
@@ -68,8 +75,10 @@ export async function discoverRecentWikidataPhones(
     throw new Error(`Wikidata query failed: HTTP ${res.status}`);
   }
   const parsed = WikidataResponseSchema.parse(await res.json());
-  return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter((candidate) =>
-    isLikelyPhoneTitle(candidate.title),
+  return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter(
+    (candidate) =>
+      isLikelyCatalogPhoneTitle(candidate.title) &&
+      isReleasedCatalogCandidate({ releaseDate: candidate.releaseDate }, now),
   );
 }
 
@@ -95,12 +104,13 @@ export async function findWikidataPhonesByName(
   }
   const parsed = WikidataResponseSchema.parse(await res.json());
   return dedupeCandidates(parsed.results.bindings.map(mapBinding)).filter((candidate) =>
-    isLikelyPhoneTitle(candidate.title),
+    isLikelyCatalogPhoneTitle(candidate.title),
   );
 }
 
-export function buildRecentPhonesQuery(since: Date, limit: number): string {
+export function buildRecentPhonesQuery(since: Date, limit: number, now: Date = new Date()): string {
   const date = since.toISOString().slice(0, 10);
+  const untilExclusive = startOfNextUtcDay(now).toISOString().slice(0, 10);
   const boundedLimit = Math.max(1, Math.min(limit, 500));
   // Use a UNION of P571 (inception / hardware release date, preferred for
   // devices) and P577 (publication date) so phones that only carry one of
@@ -117,7 +127,7 @@ WHERE {
   } UNION {
     ?item wdt:P577 ?releaseDate.
   }
-  FILTER(?releaseDate >= "${date}"^^xsd:dateTime)
+  FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }
   OPTIONAL { ?item wdt:P18 ?image. }
@@ -293,12 +303,6 @@ function sameNormalizedBrand(a: string, b: string): boolean {
   return normalizeIdentityText(a) === normalizeIdentityText(b);
 }
 
-function isLikelyPhoneTitle(title: string): boolean {
-  const normalized = normalizeIdentityText(title);
-  if (NON_PHONE_TITLE_TOKENS.some((token) => normalized.includes(token))) return false;
-  return true;
-}
-
 const CONTRACT_MANUFACTURERS = new Set([
   'foxconn',
   'hon hai precision industry',
@@ -307,22 +311,6 @@ const CONTRACT_MANUFACTURERS = new Set([
   'wistron',
   'compal electronics',
 ]);
-
-const NON_PHONE_TITLE_TOKENS = [
-  'ipad',
-  'tablet',
-  'pad',
-  'etpad',
-  'acepad',
-  'iconia',
-  'watch',
-  'macbook',
-  'laptop',
-  'chromebook',
-  'earbuds',
-  'headphones',
-  'smart tv',
-];
 
 const COMMON_MANUFACTURER_BRANDS = new Map<string, string>([
   ['apple inc', 'Apple'],

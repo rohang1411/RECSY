@@ -16,8 +16,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 
 import {
-  brandPriorityRank,
   buildCanonicalKey,
+  compareCatalogPriorityThenNewest,
   discoverRecentWikidataPhones,
   hashJson,
   stableCandidateKey,
@@ -116,10 +116,11 @@ async function main(): Promise<void> {
       since,
       limit: args.limit,
     });
+    const sortedCandidates = sortWikidataCandidates(candidates);
     console.log(
       `[catalog:refresh] dry-run source=${args.source} discovered=${candidates.length} promoted=0 llm_calls=0`,
     );
-    for (const candidate of candidates.slice(0, 10)) {
+    for (const candidate of sortedCandidates.slice(0, 10)) {
       console.log(
         `  ${candidate.externalId} ${candidate.title} (${candidate.releaseDate ?? 'unknown date'})`,
       );
@@ -176,12 +177,8 @@ async function main(): Promise<void> {
       limit: args.limit,
     });
 
-    // Sort by brand priority: Apple, Samsung, Nothing, OnePlus, vivo, Xiaomi first
-    const sortedCandidates = [...candidates].sort((a, b) => {
-      const rankA = brandPriorityRank(a.brand);
-      const rankB = brandPriorityRank(b.brand);
-      return rankA - rankB;
-    });
+    // Sort by shared policy: priority brands first, newest released phones next.
+    const sortedCandidates = sortWikidataCandidates(candidates);
 
     let created = 0;
     let updated = 0;
@@ -277,13 +274,48 @@ async function main(): Promise<void> {
             canonicalKey: sql`excluded.canonical_key`,
             contentHash: sql`excluded.content_hash`,
             lastSnapshotId: sql`excluded.last_snapshot_id`,
-            decision: sql`excluded.decision`,
-            status: sql`excluded.status`,
+            decision: sql`
+              case
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
+                  or ${catalogCandidates.retryAfter} is not null
+                then ${catalogCandidates.decision}
+                else excluded.decision
+              end
+            `,
+            status: sql`
+              case
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
+                  or ${catalogCandidates.retryAfter} is not null
+                then ${catalogCandidates.status}
+                else excluded.status
+              end
+            `,
             confidence: sql`excluded.confidence`,
-            issueCodes: sql`excluded.issue_codes`,
-            retryAfter: null,
+            issueCodes: sql`
+              case
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
+                  or ${catalogCandidates.retryAfter} is not null
+                then ${catalogCandidates.issueCodes}
+                else excluded.issue_codes
+              end
+            `,
+            retryAfter: sql`
+              case
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
+                  or ${catalogCandidates.retryAfter} is not null
+                then ${catalogCandidates.retryAfter}
+                else null
+              end
+            `,
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
-            lastDecisionAt: sql`now()`,
+            lastDecisionAt: sql`
+              case
+                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted')
+                  or ${catalogCandidates.retryAfter} is not null
+                then ${catalogCandidates.lastDecisionAt}
+                else now()
+              end
+            `,
             updatedAt: sql`now()`,
           },
         });
@@ -331,6 +363,22 @@ async function main(): Promise<void> {
       .where(and(eq(catalogRuns.id, run.id), eq(catalogRuns.status, 'running')));
     throw err;
   }
+}
+
+function sortWikidataCandidates<
+  T extends {
+    brand?: string | null;
+    model?: string | null;
+    title: string;
+    releaseDate?: string | null;
+  },
+>(candidates: readonly T[]): T[] {
+  return [...candidates].sort((a, b) =>
+    compareCatalogPriorityThenNewest(
+      { brand: a.brand, model: a.model, title: a.title, releaseDate: a.releaseDate },
+      { brand: b.brand, model: b.model, title: b.title, releaseDate: b.releaseDate },
+    ),
+  );
 }
 
 function parsePositiveInt(value: string | undefined, flag: string): number {

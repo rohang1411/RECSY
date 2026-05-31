@@ -18,6 +18,7 @@ import {
   buildPromotionPlan,
   fetchMobileApiDevicesByYear,
   hashJson,
+  isReleasedCatalogCandidate,
   isMainstreamPriorityBrand,
   mainstreamPriorityBrandLabel,
   mobileApiDeviceToImportRecord,
@@ -253,7 +254,9 @@ async function main(): Promise<void> {
       },
     });
 
-    const selection = selectPlansForLimit(records, args.limit);
+    const releasedRecords = records.filter(isReleasedMobileApiRecord);
+    const futureFiltered = records.length - releasedRecords.length;
+    const selection = selectPlansForLimit(releasedRecords, args.limit);
     const planned = selection.planned;
     const valid = planned.filter((item) => item.plan.ok).length;
     const blocked = planned.length - valid;
@@ -262,6 +265,9 @@ async function main(): Promise<void> {
       console.log(
         `[catalog:sync-mobileapi] dry-run years=${years.join(',')} scanned=${selection.scanned} selected=${planned.length} valid=${valid} blocked=${blocked} mainstream_selected=${selection.mainstreamSelected} incomplete_scanned=${selection.incompleteScanned} unselected=${selection.unselected} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
       );
+      if (futureFiltered > 0) {
+        console.log(`  unreleased_filtered=${futureFiltered}`);
+      }
       console.log(`  priority_brands=${mainstreamPriorityBrandLabel()}`);
       for (const item of planned.slice(0, 20)) {
         const state = item.plan.ok
@@ -414,6 +420,11 @@ async function main(): Promise<void> {
     console.log(
       `[catalog:sync-mobileapi] done records=${planned.length} created=${created} updated=${updated} promoted=${promoted} quarantined=${quarantined} requests=${requests} monthly_usage=${usedThisMonth + requests}/${monthlyBudget} llm_calls=0`,
     );
+    if (futureFiltered > 0) {
+      console.log(
+        `[catalog:sync-mobileapi] filtered ${futureFiltered} unreleased/future-dated records before staging`,
+      );
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (run) {
@@ -548,6 +559,16 @@ function compareLaunchDateDesc(a: string | undefined, b: string | undefined): nu
   const aTime = a ? Date.parse(a) : 0;
   const bTime = b ? Date.parse(b) : 0;
   return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+}
+
+function isReleasedMobileApiRecord(record: CatalogImportRecord): boolean {
+  if (record.status === 'upcoming') return false;
+  return isReleasedCatalogCandidate({
+    brand: record.brand,
+    model: record.model,
+    launchDate: record.launchDate,
+    releasedAt: record.releasedAt,
+  });
 }
 
 function formatBrandPriority(brand: string): string {

@@ -10,14 +10,17 @@
  *   pnpm catalog:enrich-oem --url https://example.com/product/phone --dry-run
  *   pnpm catalog:enrich-oem --from-candidates --limit 25 --promote --update-existing
  */
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import {
   buildCanonicalKey,
   buildPromotionPlan,
+  compareCatalogPriorityThenNewest,
   extractOemProductPage,
   fetchOemPageHtml,
   hashJson,
+  isLikelyCatalogPhoneTitle,
+  isReleasedCatalogCandidate,
   promoteCatalogCandidate,
   stableCandidateKey,
 } from '../src/services/catalog';
@@ -304,6 +307,7 @@ async function readCandidateSeeds(
   const rows = await db
     .select({
       id: catalogCandidates.id,
+      title: catalogCandidates.candidateTitle,
       sourceUrl: catalogCandidates.sourceUrl,
       raw: catalogCandidates.rawCandidateJson,
       normalized: catalogCandidates.normalizedIdentityJson,
@@ -315,11 +319,47 @@ async function readCandidateSeeds(
         isNotNull(catalogCandidates.rawCandidateJson),
       ),
     )
-    .limit(limit * 4);
+    .orderBy(desc(catalogCandidates.updatedAt))
+    .limit(Math.max(limit * 20, 100));
+
+  const sortedRows = rows
+    .filter((row) =>
+      isLikelyCatalogPhoneTitle(
+        [row.title, stringValue(row.normalized.model)].filter(Boolean).join(' '),
+      ),
+    )
+    .filter((row) =>
+      isReleasedCatalogCandidate({
+        brand: stringValue(row.normalized.brand),
+        model: stringValue(row.normalized.model),
+        title: row.title,
+        launchDate: stringValue(row.normalized.launchDate),
+        releaseDate: stringValue(row.normalized.releaseDate) ?? stringValue(row.raw.releaseDate),
+        releasedAt: stringValue(row.raw.releasedAt),
+      }),
+    )
+    .sort((a, b) =>
+      compareCatalogPriorityThenNewest(
+        {
+          brand: stringValue(a.normalized.brand),
+          model: stringValue(a.normalized.model),
+          title: a.title,
+          launchDate: stringValue(a.normalized.launchDate),
+          releaseDate: stringValue(a.normalized.releaseDate) ?? stringValue(a.raw.releaseDate),
+        },
+        {
+          brand: stringValue(b.normalized.brand),
+          model: stringValue(b.normalized.model),
+          title: b.title,
+          launchDate: stringValue(b.normalized.launchDate),
+          releaseDate: stringValue(b.normalized.releaseDate) ?? stringValue(b.raw.releaseDate),
+        },
+      ),
+    );
 
   const seeds: CandidateSeed[] = [];
   const seen = new Set<string>();
-  for (const row of rows) {
+  for (const row of sortedRows) {
     const url = bestOfficialUrlFromCandidate(row.raw, row.normalized, row.sourceUrl);
     if (!url || seen.has(url)) continue;
     seen.add(url);

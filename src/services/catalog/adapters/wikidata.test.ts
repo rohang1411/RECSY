@@ -15,8 +15,13 @@ import {
 
 describe('Wikidata catalog adapter', () => {
   it('builds a bounded recent-phone query', () => {
-    const query = buildRecentPhonesQuery(new Date('2024-05-18T00:00:00Z'), 999);
+    const query = buildRecentPhonesQuery(
+      new Date('2024-05-18T00:00:00Z'),
+      999,
+      new Date('2026-05-31T12:00:00Z'),
+    );
     expect(query).toContain('2024-05-18');
+    expect(query).toContain('2026-06-01');
     expect(query).toContain('LIMIT 500');
     expect(query).toContain('?item wdt:P31 ?class.');
     expect(query).not.toContain('P279*');
@@ -104,6 +109,7 @@ describe('Wikidata catalog adapter', () => {
     const candidates = await discoverRecentWikidataPhones({
       since: new Date('2026-01-01T00:00:00Z'),
       limit: 2,
+      now: new Date('2026-10-01T00:00:00Z'),
       fetchImpl: async () =>
         new Response(
           JSON.stringify({
@@ -203,5 +209,38 @@ describe('Wikidata catalog adapter', () => {
 
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.title).toBe('iPhone 17 Pro Max');
+  });
+
+  it('filters unreleased future-dated devices from discovery', async () => {
+    const candidates = await discoverRecentWikidataPhones({
+      since: new Date('2026-01-01T00:00:00Z'),
+      limit: 2,
+      now: new Date('2026-05-31T12:00:00Z'),
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            results: {
+              bindings: [
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q200' },
+                  itemLabel: { value: 'iPhone 17 Pro Max' },
+                  manufacturerLabel: { value: 'Apple Inc.' },
+                  releaseDate: { value: '2026-09-19T00:00:00Z' },
+                },
+                {
+                  item: { value: 'http://www.wikidata.org/entity/Q201' },
+                  itemLabel: { value: 'Samsung Galaxy S25 Edge' },
+                  manufacturerLabel: { value: 'Samsung Electronics' },
+                  releaseDate: { value: '2026-05-30T00:00:00Z' },
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.title).toBe('Samsung Galaxy S25 Edge');
   });
 });
