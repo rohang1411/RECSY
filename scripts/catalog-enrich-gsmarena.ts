@@ -266,11 +266,11 @@ async function main() {
         }
         console.log(`  -> Found on GSMArena`);
       } else {
-        const decision = noReleaseDate(candidate.row)
+        const decision = shouldDeferNoSourceCandidate(candidate)
           ? 'deferred(speculative_candidate)'
           : 'quarantined(spec_source_not_found)';
         logCandidateDiagnostics(candidate, wikipediaDiagnostics, [], decision);
-        if (noReleaseDate(candidate.row)) {
+        if (shouldDeferNoSourceCandidate(candidate)) {
           deferred++;
           await markSpeculativeNoSpecSourceFound(db, candidate.row);
         } else {
@@ -282,11 +282,11 @@ async function main() {
     }
 
     if (!spec) {
-      const decision = noReleaseDate(candidate.row)
+      const decision = shouldDeferNoSourceCandidate(candidate)
         ? 'deferred(speculative_candidate)'
         : 'quarantined(spec_source_not_found)';
       logCandidateDiagnostics(candidate, wikipediaDiagnostics, [], decision);
-      if (noReleaseDate(candidate.row)) {
+      if (shouldDeferNoSourceCandidate(candidate)) {
         deferred++;
         await markSpeculativeNoSpecSourceFound(db, candidate.row);
       } else {
@@ -458,6 +458,13 @@ function isPriorityOrFreshCandidate(candidate: ResolvedCatalogCandidate): boolea
 
 function isRetryEligible(candidate: ResolvedCatalogCandidate, args: CliArgs): boolean {
   if (args.retryAll) return true;
+  if (
+    candidate.row.retryAfter &&
+    candidate.row.retryAfter > new Date() &&
+    shouldRespectRetryAfter(candidate.row)
+  ) {
+    return false;
+  }
   if (isMainstreamPriorityBrand(candidate.brand) && !isUnreleasedCandidate(candidate.row))
     return true;
   if (!candidate.row.retryAfter) return true;
@@ -470,6 +477,12 @@ function isRetryEligible(candidate: ResolvedCatalogCandidate, args: CliArgs): bo
     return true;
   }
   return false;
+}
+
+function shouldRespectRetryAfter(candidate: CatalogCandidateRow): boolean {
+  return candidate.issueCodes.some((code) =>
+    ['speculative_candidate', 'unreleased_candidate', 'oem_url_not_found'].includes(code),
+  );
 }
 
 function isCoreIncompletePlan(issues: readonly { severity: string; code: string }[]): boolean {
@@ -508,6 +521,30 @@ function logCandidateDiagnostics(
 
 function noReleaseDate(candidate: CatalogCandidateRow): boolean {
   return catalogReleaseTimestamp(candidateReleaseValue(candidate)) === 0;
+}
+
+function shouldDeferNoSourceCandidate(candidate: ResolvedCatalogCandidate): boolean {
+  if (noReleaseDate(candidate.row)) return true;
+  const raw = candidate.row.rawCandidateJson;
+  const normalized = candidate.row.normalizedIdentityJson;
+  const releaseEvidence = [
+    recordString(raw, 'release_date'),
+    recordString(raw, 'releaseDate'),
+    recordString(raw, 'releasedAt'),
+    recordString(raw, 'launchDate'),
+    recordString(normalized, 'releaseDate'),
+    recordString(normalized, 'launchDate'),
+  ].filter((value): value is string => Boolean(value));
+  const weakDate = releaseEvidence.some((value) => isWeakReleaseDate(value));
+  return weakDate && isMainstreamPriorityBrand(candidate.brand);
+}
+
+function isWeakReleaseDate(value: string): boolean {
+  const normalized = normalizeIdentityText(value);
+  return (
+    /^20\d{2}$/.test(normalized) ||
+    /^(?:expected|rumou?red|upcoming|anticipated|planned)\b/.test(normalized)
+  );
 }
 
 function inferBrandFromTitle(value: string): string | null {

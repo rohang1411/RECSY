@@ -68,6 +68,7 @@ describe('Wikipedia catalog adapter', () => {
   it('rejects mismatched generation titles', () => {
     expect(pickBestTitle(['Apple iPhone 15 Pro Max'], 'Apple', 'iPhone 17 Pro Max')).toBeNull();
     expect(pickBestTitle(['IPhone 17 Pro'], 'Apple', 'iPhone 17 Pro Max')).toBe('IPhone 17 Pro');
+    expect(pickBestTitle(['POWER2'], 'Honor', 'Honor Power2')).toBeNull();
   });
 
   it('prefers canonical full-text results over wrong opensearch matches', async () => {
@@ -154,5 +155,66 @@ describe('Wikipedia catalog adapter', () => {
       llmAttempted: true,
     });
     expect(result.diagnostics.specFieldCount).toBeGreaterThan(0);
+    expect(structuredMock).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: 6000 }));
+  });
+
+  it('extracts core specs deterministically before using the LLM', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.searchParams.get('list') === 'search') {
+          return new Response(
+            JSON.stringify({ query: { search: [{ title: 'Example Phone Pro' }] } }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        if (parsed.searchParams.get('action') === 'opensearch') {
+          return new Response(JSON.stringify(['q', [], [], []]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            parse: {
+              title: 'Example Phone Pro',
+              wikitext: {
+                '*': [
+                  '{{Infobox mobile phone',
+                  '| display = 6.3 in 2622 x 1206 OLED 120 Hz',
+                  '| soc = Example X1',
+                  '| memory = 12 GB RAM',
+                  '| storage = 256 GB, 512 GB, 1 TB',
+                  '| battery = 5000 mAh',
+                  '| rear_camera = 50 MP wide camera with OIS',
+                  '| front_camera = 12 MP',
+                  '| os = Android 16',
+                  '| charging = 45 W wired',
+                  '| connectivity = Wi-Fi 7, Bluetooth 5.4, NFC, USB-C',
+                  '}}',
+                ].join('\n'),
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await fetchWikipediaSpecs('Example', 'Phone Pro');
+
+    expect(result.spec).toMatchObject({
+      chipset: 'Example X1',
+      ram_gb: 12,
+      storage_options_gb: [256, 512, 1024],
+      battery_mah: 5000,
+      os: 'Android 16',
+    });
+    expect(result.diagnostics).toMatchObject({
+      extractionMethod: 'deterministic',
+      llmAttempted: false,
+    });
+    expect(structuredMock).not.toHaveBeenCalled();
   });
 });
