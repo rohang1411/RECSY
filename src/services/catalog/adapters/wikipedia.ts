@@ -2,30 +2,50 @@
  * Wikipedia API adapter for phone spec enrichment.
  *
  * Strategy:
- *   1. Search Wikipedia via `action=opensearch` for the brand + model.
- *   2. Fetch the article wikitext via `action=parse&prop=wikitext`.
+ *   1. Search Wikipedia with model-first query variants.
+ *   2. Resolve redirects while fetching article wikitext.
  *   3. Extract the `{{Infobox mobile phone}}` block from the wikitext.
  *   4. Use the LLM to convert the raw infobox into a `PhoneSpec` object.
- *
- * Wikipedia explicitly allows programmatic API access with a proper User-Agent,
- * so we use native `fetch` instead of the PoliteHttp wrapper. We do add a
- * 1-second sleep between calls to be respectful.
  */
 import { env } from '@/env';
-import { llm } from '@/services/llm';
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
+import { llm } from '@/services/llm';
+
+import { normalizeIdentityText } from '../identity';
 
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 
 const USER_AGENT =
   'RECSYBot/0.1 (https://github.com/rohan; catalog spec enrichment) contact: github issues';
 
-/** Pause execution for `ms` milliseconds. */
+export interface WikipediaDiagnostics {
+  readonly queriesTried: readonly string[];
+  readonly matchedTitle: string | null;
+  readonly infobox: 'found' | 'missing' | 'no-article';
+  readonly specFieldCount: number;
+  readonly failureReason?: 'no-article' | 'no-infobox' | 'llm-empty';
+  readonly llmAttempted: boolean;
+}
+
+export interface WikipediaFetchResult {
+  readonly spec: PhoneSpec | null;
+  readonly diagnostics: WikipediaDiagnostics;
+}
+
+interface SearchTitleResult {
+  readonly title: string | null;
+  readonly queriesTried: readonly string[];
+}
+
+interface WikitextResult {
+  readonly title: string | null;
+  readonly wikitext: string;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Shared fetch wrapper that always sets the required User-Agent header. */
 async function wikiApiFetch(params: Record<string, string>): Promise<Response> {
   const url = new URL(WIKIPEDIA_API);
   for (const [key, value] of Object.entries(params)) {
@@ -39,65 +59,127 @@ async function wikiApiFetch(params: Record<string, string>): Promise<Response> {
   });
 }
 
-/**
- * Search Wikipedia for a phone article and return the best-matching title,
- * or null if none is found.
- */
-async function searchPhoneTitle(brand: string, model: string): Promise<string | null> {
-  const query = `${brand} ${model}`.trim();
+export async function searchPhoneTitle(brand: string, model: string): Promise<string | null> {
+  return (await searchPhoneTitleWithDiagnostics(brand, model)).title;
+}
+
+async function searchPhoneTitleWithDiagnostics(
+  brand: string,
+  model: string,
+): Promise<SearchTitleResult> {
+  const queriesTried: string[] = [];
+  for (const query of buildSearchVariants(brand, model)) {
+    queriesTried.push(query);
+    const titles = [...(await fullTextSearch(query)), ...(await openSearch(query))];
+    const match = pickBestTitle(titles, brand, model);
+    if (match) return { title: match, queriesTried };
+    await sleep(250);
+  }
+  return { title: null, queriesTried };
+}
+
+async function fullTextSearch(query: string): Promise<string[]> {
+  const res = await wikiApiFetch({
+    action: 'query',
+    list: 'search',
+    srsearch: query,
+    srlimit: '5',
+    format: 'json',
+  });
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as { query?: { search?: { title?: string }[] } };
+  return (data.query?.search ?? [])
+    .map((result) => result.title)
+    .filter((title): title is string => Boolean(title));
+}
+
+async function openSearch(query: string): Promise<string[]> {
   const res = await wikiApiFetch({
     action: 'opensearch',
     search: query,
     limit: '5',
     format: 'json',
   });
+  if (!res.ok) return [];
 
-  if (!res.ok) return null;
-
-  // OpenSearch response: [query, [titles], [descriptions], [urls]]
   const data = (await res.json()) as [string, string[], string[], string[]];
-  const titles: string[] = data[1] ?? [];
-
-  const brandLower = brand.toLowerCase();
-  const modelLower = model.toLowerCase();
-
-  // Pick the first result whose title contains either the brand or the model.
-  const match = titles.find((t) => {
-    const tl = t.toLowerCase();
-    return tl.includes(brandLower) || tl.includes(modelLower);
-  });
-
-  return match ?? null;
+  return data[1] ?? [];
 }
 
-/**
- * Fetch the raw wikitext of a Wikipedia article by page title.
- */
-async function fetchWikitext(pageTitle: string): Promise<string | null> {
+export function buildSearchVariants(brand: string, model: string): string[] {
+  const cleanBrand = brand.trim();
+  const cleanModel = model.trim();
+  const strippedModel = stripBrandPrefix(cleanModel, cleanBrand);
+  const modelStartsWithBrand = normalizeIdentityText(cleanModel).startsWith(
+    `${normalizeIdentityText(cleanBrand)} `,
+  );
+  return [
+    cleanModel,
+    strippedModel,
+    ...(modelStartsWithBrand ? [] : [`${cleanBrand} ${cleanModel}`.trim()]),
+  ].filter(dedupeNonEmpty);
+}
+
+export function pickBestTitle(
+  titles: readonly string[],
+  brand: string,
+  model: string,
+): string | null {
+  const modelTokens = tokenizeTitle(stripBrandPrefix(model, brand));
+  const modelNumericTokens = numericTokens(modelTokens);
+  const modelWordTokens = modelTokens.filter((token) => !isIgnoredSearchToken(token));
+  let best: { title: string; score: number } | null = null;
+
+  for (const title of titles) {
+    const titleTokens = tokenizeTitle(stripParenthetical(title));
+    const titleNumericTokens = numericTokens(titleTokens);
+    if (hasConflictingGeneration(modelNumericTokens, titleNumericTokens)) continue;
+
+    const hasAllNumeric =
+      modelNumericTokens.length === 0 ||
+      modelNumericTokens.every((token) => titleNumericTokens.includes(token));
+    if (!hasAllNumeric) continue;
+
+    const sharedWordTokens = modelWordTokens.filter((token) => titleTokens.includes(token));
+    const hasAllModelWords = modelWordTokens.every((token) => titleTokens.includes(token));
+    const isPrefix =
+      titleTokens.length > 0 && titleTokens.every((token, index) => token === modelTokens[index]);
+    if (!hasAllModelWords && !isPrefix) continue;
+
+    const score =
+      (hasAllNumeric ? modelNumericTokens.length * 2 : 0) +
+      sharedWordTokens.length +
+      (isPrefix ? 2 : 0) +
+      (hasAllModelWords ? 2 : 0);
+    if (score < 3) continue;
+    if (!best || score > best.score) best = { title, score };
+  }
+
+  return best?.title ?? null;
+}
+
+export async function fetchWikitext(pageTitle: string): Promise<WikitextResult | null> {
   const res = await wikiApiFetch({
     action: 'parse',
     page: pageTitle,
     prop: 'wikitext',
+    redirects: '1',
     format: 'json',
   });
-
   if (!res.ok) return null;
 
-  const data = (await res.json()) as { parse?: { wikitext?: { '*'?: string } } };
-  return data?.parse?.wikitext?.['*'] ?? null;
+  const data = (await res.json()) as { parse?: { title?: string; wikitext?: { '*'?: string } } };
+  const wikitext = data?.parse?.wikitext?.['*'];
+  if (!wikitext) return null;
+  return { title: data.parse?.title ?? null, wikitext };
 }
 
-/**
- * Extract the `{{Infobox mobile phone}}` (or similar) block from wikitext.
- * Returns null if no infobox is found.
- */
 function extractInfobox(wikitext: string): string | null {
-  // Match case-insensitively: infobox mobile phone, infobox smartphone, etc.
   const startPattern = /\{\{[Ii]nfobox\s+(?:mobile\s+phone|smartphone|phone)/i;
   const startMatch = wikitext.match(startPattern);
   if (!startMatch || startMatch.index === undefined) return null;
 
-  // Walk forward tracking brace depth to find the matching closing `}}`.
   let depth = 0;
   let i = startMatch.index;
   const end = wikitext.length;
@@ -118,9 +200,6 @@ function extractInfobox(wikitext: string): string | null {
   return wikitext.slice(startMatch.index, i);
 }
 
-/**
- * Use the LLM to parse raw infobox wikitext into a structured `PhoneSpec`.
- */
 async function parseInfoboxWithLlm(infoboxWikitext: string): Promise<PhoneSpec | null> {
   const prompt = `You are extracting phone specifications from a raw Wikipedia infobox in wikitext format.
 Convert the infobox data into the required JSON schema for a PhoneSpec object.
@@ -156,59 +235,92 @@ ${infoboxWikitext}`;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Fetch phone specifications from Wikipedia for the given brand + model.
- *
- * @returns A `PhoneSpec` object, or `null` if the article / infobox is not
- *          found or any step fails.
- */
-export async function fetchWikipediaSpecs(brand: string, model: string): Promise<PhoneSpec | null> {
+export async function fetchWikipediaSpecs(
+  brand: string,
+  model: string,
+): Promise<WikipediaFetchResult> {
   try {
-    // Step 1 — find the article title.
-    const pageTitle = await searchPhoneTitle(brand, model);
+    const search = await searchPhoneTitleWithDiagnostics(brand, model);
+    const pageTitle = search.title;
     if (!pageTitle) {
-      return null;
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          infobox: 'no-article',
+          failureReason: 'no-article',
+        }),
+      };
     }
 
     await sleep(1000);
 
-    // Step 2 — fetch the raw wikitext.
-    const wikitext = await fetchWikitext(pageTitle);
-    if (!wikitext) {
-      return null;
+    const wikitextResult = await fetchWikitext(pageTitle);
+    if (!wikitextResult) {
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          matchedTitle: pageTitle,
+          infobox: 'no-article',
+          failureReason: 'no-article',
+        }),
+      };
     }
 
-    // Step 3 — extract the infobox block (saves LLM call if absent).
-    const infobox = extractInfobox(wikitext);
+    const infobox = extractInfobox(wikitextResult.wikitext);
     if (!infobox) {
-      return null;
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          matchedTitle: wikitextResult.title ?? pageTitle,
+          infobox: 'missing',
+          failureReason: 'no-infobox',
+        }),
+      };
     }
 
     await sleep(1000);
 
-    // Step 4 — convert infobox to PhoneSpec via LLM.
     const spec = await parseInfoboxWithLlm(infobox);
     if (!spec) {
       console.warn(`[wikipedia-catalog] LLM failed to produce a valid spec for "${pageTitle}"`);
-      return null;
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          matchedTitle: wikitextResult.title ?? pageTitle,
+          infobox: 'found',
+          failureReason: 'llm-empty',
+          llmAttempted: true,
+        }),
+      };
     }
 
-    return spec;
+    return {
+      spec,
+      diagnostics: diagnostics({
+        queriesTried: search.queriesTried,
+        matchedTitle: wikitextResult.title ?? pageTitle,
+        infobox: 'found',
+        specFieldCount: countSpecFields(spec),
+        llmAttempted: true,
+      }),
+    };
   } catch (err) {
     console.error(`[wikipedia-catalog] Failed to fetch specs for ${brand} ${model}:`, err);
-    return null;
+    return {
+      spec: null,
+      diagnostics: diagnostics({
+        queriesTried: buildSearchVariants(brand, model),
+        infobox: 'no-article',
+        failureReason: 'no-article',
+      }),
+    };
   }
 }
 
-/**
- * Ping the Wikipedia API to verify it is reachable.
- *
- * @returns `true` if the API responds with HTTP 200, `false` otherwise.
- */
 export async function checkWikipediaAvailability(): Promise<boolean> {
   try {
     const res = await wikiApiFetch({
@@ -220,4 +332,69 @@ export async function checkWikipediaAvailability(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function diagnostics(input: Partial<WikipediaDiagnostics>): WikipediaDiagnostics {
+  return {
+    queriesTried: input.queriesTried ?? [],
+    matchedTitle: input.matchedTitle ?? null,
+    infobox: input.infobox ?? 'no-article',
+    specFieldCount: input.specFieldCount ?? 0,
+    failureReason: input.failureReason,
+    llmAttempted: input.llmAttempted ?? false,
+  };
+}
+
+function stripBrandPrefix(model: string, brand: string): string {
+  const normalizedBrand = normalizeIdentityText(brand);
+  const normalizedModel = normalizeIdentityText(model);
+  if (!normalizedBrand || !normalizedModel.startsWith(`${normalizedBrand} `)) return model.trim();
+  return model.replace(new RegExp(`^${escapeRegExp(brand)}\\s+`, 'i'), '').trim();
+}
+
+function tokenizeTitle(value: string): string[] {
+  return normalizeIdentityText(value)
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function numericTokens(tokens: readonly string[]): string[] {
+  return tokens.filter((token) => /^\d+$/.test(token));
+}
+
+function hasConflictingGeneration(
+  modelNumericTokens: readonly string[],
+  titleNumericTokens: readonly string[],
+): boolean {
+  if (modelNumericTokens.length === 0 || titleNumericTokens.length === 0) return false;
+  return titleNumericTokens.some((token) => !modelNumericTokens.includes(token));
+}
+
+function isIgnoredSearchToken(token: string): boolean {
+  return ['phone', 'smartphone', 'mobile'].includes(token);
+}
+
+function stripParenthetical(value: string): string {
+  return value.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+}
+
+function dedupeNonEmpty(value: string, index: number, values: readonly string[]): boolean {
+  const normalized = normalizeIdentityText(value);
+  if (!normalized) return false;
+  return values.findIndex((item) => normalizeIdentityText(item) === normalized) === index;
+}
+
+function countSpecFields(spec: PhoneSpec): number {
+  return Object.values(spec).filter((value) => {
+    if (value == null) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return true;
+  }).length;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

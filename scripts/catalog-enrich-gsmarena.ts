@@ -28,6 +28,7 @@ import {
 import {
   fetchWikipediaSpecs,
   checkWikipediaAvailability,
+  type WikipediaDiagnostics,
 } from '../src/services/catalog/adapters/wikipedia';
 import {
   brandPriorityRank,
@@ -202,7 +203,7 @@ async function main() {
   let quarantined = 0;
   let needsEnrichment = 0;
   const skipped = skippedNonPhones.length;
-  const deferred = unreleasedCandidates.length;
+  let deferred = unreleasedCandidates.length;
   let llmCalls = 0;
   let wikiHits = 0;
   let gsmarenaHits = 0;
@@ -219,15 +220,16 @@ async function main() {
 
     let spec = null;
     let sourceKey = 'unknown';
+    let wikipediaDiagnostics: WikipediaDiagnostics | null = null;
 
     // -----------------------------------------------------------------------
     // Tier 1: Wikipedia API
     // -----------------------------------------------------------------------
     if (wikiAvailable) {
-      spec = await fetchWikipediaSpecs(brand, model);
-      if (spec) {
-        wikiHits++;
-        sourceKey = 'wikipedia_infobox';
+      const wikipediaResult = await fetchWikipediaSpecs(brand, model);
+      wikipediaDiagnostics = wikipediaResult.diagnostics;
+      spec = wikipediaResult.spec;
+      if (wikipediaDiagnostics.llmAttempted) {
         llmCalls++;
         if (run) {
           await db
@@ -235,6 +237,10 @@ async function main() {
             .set({ llmCallCount: llmCalls })
             .where(eq(catalogRuns.id, run.id));
         }
+      }
+      if (spec) {
+        wikiHits++;
+        sourceKey = 'wikipedia_infobox';
         console.log(`  -> Found on Wikipedia`);
       } else if (gsmarenaAvailable) {
         console.log(`  -> Not found on Wikipedia; trying GSMArena fallback...`);
@@ -260,17 +266,33 @@ async function main() {
         }
         console.log(`  -> Found on GSMArena`);
       } else {
-        console.log(`  -> Not found on either source - quarantining.`);
-        quarantined++;
-        await markNoSpecSourceFound(db, candidate.row);
+        const decision = noReleaseDate(candidate.row)
+          ? 'deferred(speculative_candidate)'
+          : 'quarantined(spec_source_not_found)';
+        logCandidateDiagnostics(candidate, wikipediaDiagnostics, [], decision);
+        if (noReleaseDate(candidate.row)) {
+          deferred++;
+          await markSpeculativeNoSpecSourceFound(db, candidate.row);
+        } else {
+          quarantined++;
+          await markNoSpecSourceFound(db, candidate.row);
+        }
         continue;
       }
     }
 
     if (!spec) {
-      console.log(`  -> Not found on available sources; quarantining.`);
-      quarantined++;
-      await markNoSpecSourceFound(db, candidate.row);
+      const decision = noReleaseDate(candidate.row)
+        ? 'deferred(speculative_candidate)'
+        : 'quarantined(spec_source_not_found)';
+      logCandidateDiagnostics(candidate, wikipediaDiagnostics, [], decision);
+      if (noReleaseDate(candidate.row)) {
+        deferred++;
+        await markSpeculativeNoSpecSourceFound(db, candidate.row);
+      } else {
+        quarantined++;
+        await markNoSpecSourceFound(db, candidate.row);
+      }
       continue;
     }
 
@@ -298,6 +320,13 @@ async function main() {
       claimsJson,
     });
     const coreIncomplete = isCoreIncompletePlan(plan.issues);
+    const missingCore = missingCoreFieldsFromIssues(plan.issues);
+    const decision = plan.ok
+      ? 'ready_to_promote'
+      : coreIncomplete
+        ? 'pending_review(core_spec_incomplete)'
+        : `quarantined(${plan.issues[0]?.code ?? 'validation_failed'})`;
+    logCandidateDiagnostics(candidate, wikipediaDiagnostics, missingCore, decision);
 
     await db
       .update(catalogCandidates)
@@ -448,6 +477,39 @@ function isCoreIncompletePlan(issues: readonly { severity: string; code: string 
   return blockers.length > 0 && blockers.every((issue) => issue.code === 'missing_spec_field');
 }
 
+function missingCoreFieldsFromIssues(
+  issues: readonly { code: string; fieldPath?: string }[],
+): string[] {
+  return [
+    ...new Set(
+      issues
+        .filter((issue) => issue.code === 'missing_spec_field')
+        .map((issue) => issue.fieldPath)
+        .filter((fieldPath): fieldPath is string => Boolean(fieldPath)),
+    ),
+  ];
+}
+
+function logCandidateDiagnostics(
+  candidate: ResolvedCatalogCandidate,
+  diagnostics: WikipediaDiagnostics | null,
+  missingCore: readonly string[],
+  decision: string,
+): void {
+  const query = diagnostics?.queriesTried.join('|') || 'none';
+  const article = diagnostics?.matchedTitle ?? 'none';
+  const infobox = diagnostics?.infobox ?? 'no-article';
+  const specFields = diagnostics?.specFieldCount ?? 0;
+  console.log(
+    `${LOG} [${candidate.brand} ${candidate.model}] query=${query} article=${article} ` +
+      `infobox=${infobox} specFields=${specFields} missingCore=[${missingCore.join(',')}] -> ${decision}`,
+  );
+}
+
+function noReleaseDate(candidate: CatalogCandidateRow): boolean {
+  return catalogReleaseTimestamp(candidateReleaseValue(candidate)) === 0;
+}
+
 function inferBrandFromTitle(value: string): string | null {
   const normalized = normalizeIdentityText(value);
   for (const [needle, brand] of TITLE_BRAND_HINTS) {
@@ -525,6 +587,23 @@ async function markNoSpecSourceFound(
       status: 'quarantined',
       issueCodes: ['spec_source_not_found'],
       retryAfter,
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidate.id));
+}
+
+async function markSpeculativeNoSpecSourceFound(
+  db: ReturnType<typeof getDb>,
+  candidate: CatalogCandidateRow,
+): Promise<void> {
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: 'pending_review',
+      status: 'failed_transient',
+      issueCodes: ['speculative_candidate', 'spec_source_not_found'],
+      retryAfter: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       lastDecisionAt: new Date(),
       updatedAt: new Date(),
     })

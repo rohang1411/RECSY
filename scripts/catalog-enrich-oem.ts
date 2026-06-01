@@ -10,7 +10,7 @@
  *   pnpm catalog:enrich-oem --url https://example.com/product/phone --dry-run
  *   pnpm catalog:enrich-oem --from-candidates --limit 25 --promote --update-existing
  */
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
 import {
   buildCanonicalKey,
@@ -47,6 +47,7 @@ interface CandidateSeed {
   readonly fallbackBrand?: string | null;
   readonly fallbackModel?: string | null;
   readonly derivedFromResolver?: boolean;
+  readonly hasUsableReleaseDate?: boolean;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -176,6 +177,15 @@ async function main(): Promise<void> {
         failedFetches += 1;
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[catalog:enrich-oem] skip fetch_failed ${seed.url}: ${message}`);
+        if (
+          seed.derivedFromResolver &&
+          seed.candidateId &&
+          !seed.hasUsableReleaseDate &&
+          !args.dryRun
+        ) {
+          skipped += 1;
+          await markSpeculativeOemMiss(db, seed.candidateId);
+        }
         continue;
       }
       fetched += 1;
@@ -341,6 +351,7 @@ async function readCandidateSeeds(
       sourceUrl: catalogCandidates.sourceUrl,
       raw: catalogCandidates.rawCandidateJson,
       normalized: catalogCandidates.normalizedIdentityJson,
+      retryAfter: catalogCandidates.retryAfter,
     })
     .from(catalogCandidates)
     .where(
@@ -352,6 +363,7 @@ async function readCandidateSeeds(
           'failed_transient',
         ]),
         isNotNull(catalogCandidates.rawCandidateJson),
+        or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
       ),
     )
     .orderBy(desc(catalogCandidates.updatedAt))
@@ -413,6 +425,7 @@ async function readCandidateSeeds(
         fallbackBrand: brand,
         fallbackModel: model,
         derivedFromResolver: urlCandidate.derivedFromResolver,
+        hasUsableReleaseDate: hasUsableCandidateReleaseDate(row.raw, row.normalized),
       });
       if (seeds.length >= limit) return seeds;
     }
@@ -459,6 +472,36 @@ function stagePlan(record: CatalogImportRecord) {
     claimsJson,
   });
   return { record, externalId, canonicalKey, stableKey, claimsJson, plan };
+}
+
+async function markSpeculativeOemMiss(
+  db: ReturnType<typeof getDb>,
+  candidateId: string,
+): Promise<void> {
+  await db
+    .update(catalogCandidates)
+    .set({
+      decision: 'pending_review',
+      status: 'failed_transient',
+      issueCodes: ['speculative_candidate', 'oem_url_not_found'],
+      retryAfter: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+      lastDecisionAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(catalogCandidates.id, candidateId));
+}
+
+function hasUsableCandidateReleaseDate(
+  raw: Record<string, unknown>,
+  normalized: Record<string, unknown>,
+): boolean {
+  return [
+    stringValue(normalized.launchDate),
+    stringValue(normalized.releaseDate),
+    stringValue(raw.launchDate),
+    stringValue(raw.releaseDate),
+    stringValue(raw.releasedAt),
+  ].some((value) => Boolean(value && Number.isFinite(Date.parse(value))));
 }
 
 function bestOfficialUrlFromCandidate(

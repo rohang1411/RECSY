@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   const [signals] = await db
     .select({
-      promotedLastWindow: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted' and ${catalogCandidates.updatedAt} >= ${since})::int`,
+      promotedLastWindow: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted' and ${catalogCandidates.updatedAt} >= ${since.toISOString()})::int`,
       readyToPromote: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'ready_to_promote')::int`,
       needsEnrichment: sql<number>`count(*) filter (where 'needs_enrichment' = any(${catalogCandidates.issueCodes}))::int`,
       lowCompletenessPromoted: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted' and 'low_completeness' = any(${catalogCandidates.issueCodes}))::int`,
@@ -187,6 +187,8 @@ function candidateBucketKey(status: string, decision: string | null): string {
 
 main().catch((err) => {
   console.error('[catalog:report] FAILED');
+  const cause = (err as { cause?: unknown }).cause;
   console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+  if (cause) console.error('cause:', cause instanceof Error ? cause.message : String(cause));
   process.exit(1);
 });
