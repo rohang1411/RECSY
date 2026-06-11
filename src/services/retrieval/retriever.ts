@@ -225,7 +225,11 @@ export class HybridRetriever {
 
     if (!cached) {
       cached = llm
-        .embed([query], embeddingModel)
+        .embed([query], embeddingModel, {
+          area: 'Retrieval',
+          feature: 'Query embedding',
+          source: 'HybridRetriever',
+        })
         .then(({ embeddings }) => {
           const vec = embeddings[0];
           if (!vec || vec.length === 0) {

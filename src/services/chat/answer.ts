@@ -130,6 +130,7 @@ async function chatAnswer(
     messages,
     temperature: 0.35,
     maxOutputTokens: 2048,
+    usageContext: { area: 'Phone Q&A', feature: 'Grounded answer', source: '/api/ask' },
     signal,
   });
   return { text: result.text, usage: result.usage, model: result.model };

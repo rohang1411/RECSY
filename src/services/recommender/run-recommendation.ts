@@ -172,7 +172,11 @@ export async function runRecommendationPipeline(input: {
   let queryEmbedding: readonly number[] | undefined;
   if (hasSpecEmb) {
     const qtext = buildRecommenderQueryText(requirements);
-    const emb = await input.llm.embed([qtext]);
+    const emb = await input.llm.embed([qtext], undefined, {
+      area: 'Recommendation',
+      feature: 'Semantic query embedding',
+      source: '/api/recommend',
+    });
     queryEmbedding = emb.embeddings[0];
   } else {
     input.log.info(

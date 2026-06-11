@@ -217,4 +217,68 @@ describe('Wikipedia catalog adapter', () => {
     });
     expect(structuredMock).not.toHaveBeenCalled();
   });
+
+  it('extracts core specs from Wikipedia template-heavy iPhone-style infoboxes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.searchParams.get('list') === 'search') {
+          return new Response(JSON.stringify({ query: { search: [{ title: 'IPhone 17 Pro' }] } }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        if (parsed.searchParams.get('action') === 'opensearch') {
+          return new Response(JSON.stringify(['q', [], [], []]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            parse: {
+              title: 'IPhone 17 Pro',
+              wikitext: {
+                '*': [
+                  '{{Infobox mobile phone',
+                  '| soc = [[Apple A19|Apple A19 Pro]]',
+                  '| memory = 12 GB [[LPDDR5X]]',
+                  '| storage = {{ubl|256 GB|512 GB|1 TB|2 TB (Pro Max only)}}[[NVMe]]',
+                  '| battery = {{ubl|Pro: 3988 mAh|Pro Max: 5088 mAh}}',
+                  '| display = {{ubl|Pro: {{convert|6.3|in|mm|0|abbr=on}} {{resx|2622|1206}}-pixel resolution|Pro Max: {{convert|6.9|in|mm|0|abbr=on}} {{resx|2868|1320}}-pixel resolution|ProMotion technology up to 120 Hz}}',
+                  '| os = Original: [[iOS 26]]',
+                  '| rear_camera = {{Ubl|Fusion Main: 48MP, {{f/}}1.78, 24mm (wide)|Fusion Ultrawide: 48MP, {{f/}}2.2}}',
+                  '| front_camera = {{Ubl|18MP Centre Stage camera}}',
+                  '| charging = Up to 50% charge in 20 minutes with 40 W adaptor',
+                  '| connectivity = [[Wi-Fi 7]], [[Bluetooth 6.0]], [[Near-field communication|NFC]], [[USB-C]]',
+                  '| water_resist = [[IP68]] dust/water resistant',
+                  '}}',
+                ].join('\n'),
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+
+    const result = await fetchWikipediaSpecs('Apple', 'iPhone 17 Pro Max');
+
+    expect(result.spec).toMatchObject({
+      chipset: 'Apple A19 Pro',
+      ram_gb: 12,
+      storage_options_gb: [256, 512, 1024, 2048],
+      battery_mah: 3988,
+      os: 'Original: iOS 26',
+      rear_cameras: [{ type: 'main', mp: 48 }],
+    });
+    expect(result.spec?.display).toMatchObject({
+      size_in: 6.3,
+      resolution: '2622x1206',
+      refresh_rate_hz: 120,
+    });
+    expect(result.diagnostics.extractionMethod).toBe('deterministic');
+    expect(structuredMock).not.toHaveBeenCalled();
+  });
 });

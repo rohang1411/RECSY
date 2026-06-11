@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ChunkWorkbench } from '@/app/internal/pipeline/_components/chunk-workbench';
 import { LifecycleExplorer } from '@/app/internal/pipeline/_components/lifecycle-explorer';
+import { LlmUsageMonitor } from '@/app/internal/pipeline/_components/llm-usage-monitor';
 import { WorkflowTables } from '@/app/internal/pipeline/_components/workflow-tables';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
@@ -21,6 +22,7 @@ import {
   scorecardRuns,
   sources,
 } from '@/services/db/schema';
+import { loadLlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
 
 export const dynamic = 'force-dynamic';
 
@@ -440,6 +442,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     sampleTurns,
     spec,
   } = await loadPipelineData(selectedSlug);
+  const llmUsage = await loadLlmUsageMonitorData();
 
   const db = getDb();
   const runIds = catalogRefreshRuns.map((r) => r.id);
@@ -692,6 +695,8 @@ export default async function PipelinePage({ searchParams }: PageProps) {
             evidenceReasons.length > 0 ? evidenceReasons : ['Evidence profile pending']
           }
         />
+
+        <LlmUsageMonitor data={llmUsage} />
 
         <section className="mt-12 grid gap-8 lg:grid-cols-12">
           <div className="border-outline-variant bg-background border lg:col-span-5">

@@ -534,6 +534,33 @@ export const llmCache = pgTable(
   (t) => [index('llm_cache_model_idx').on(t.model)],
 );
 
+export const llmUsageEvents = pgTable(
+  'llm_usage_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    operation: text('operation').notNull(),
+    usageArea: text('usage_area').notNull().default('uncategorized'),
+    usageFeature: text('usage_feature'),
+    source: text('source'),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    requestCount: integer('request_count').notNull().default(1),
+    cached: boolean('cached').notNull().default(false),
+    apiKeyIndex: integer('api_key_index'),
+    latencyMs: integer('latency_ms'),
+    errorCode: text('error_code'),
+    metadata: jsonb('metadata').notNull().$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('llm_usage_events_created_at_idx').on(t.createdAt),
+    index('llm_usage_events_area_idx').on(t.usageArea),
+    index('llm_usage_events_model_idx').on(t.model),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Ingestion telemetry.
 // ---------------------------------------------------------------------------

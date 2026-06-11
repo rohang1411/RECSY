@@ -103,6 +103,12 @@ export class DisambiguatorAgent {
         schemaDescription:
           'Selects the primary phone subject of a multi-phone source and lists secondaries.',
         temperature: 0,
+        usageContext: {
+          area: 'Ingestion',
+          feature: 'Source disambiguation',
+          source: 'DisambiguatorAgent',
+          metadata: { sourceType: input.sourceType, candidates: input.candidates.length },
+        },
       });
       const verdict = result.value;
 

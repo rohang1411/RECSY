@@ -223,6 +223,12 @@ const TABLE_GROUP_DEFINITIONS: readonly TableGroupDefinition[] = [
         readBy: 'LLM provider',
       },
       {
+        name: 'llm_usage_events',
+        purpose: 'Outbound Gemini call ledger with tokens, area, model, key index, and latency.',
+        writtenBy: 'Gemini provider',
+        readBy: 'Internal pipeline dashboard',
+      },
+      {
         name: 'rate_limits',
         purpose: 'Public API rate-limit buckets keyed by hashed request identity.',
         writtenBy: 'Rate-limit middleware',
@@ -423,6 +429,7 @@ async function getTableCounts(db: AppDb): Promise<ReadonlyMap<string, number>> {
     union all select 'recommendation_turns', count(*)::int from recommendation_turns
     union all select 'recommendation_feedback', count(*)::int from recommendation_feedback
     union all select 'llm_cache', count(*)::int from llm_cache
+    union all select 'llm_usage_events', count(*)::int from llm_usage_events
     union all select 'rate_limits', count(*)::int from rate_limits
   `)) as unknown as CountRow[];
 

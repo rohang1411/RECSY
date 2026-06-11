@@ -238,6 +238,11 @@ ${infoboxWikitext}`;
       messages: [{ role: 'user', content: prompt }],
       temperature: 0,
       maxOutputTokens: 6000,
+      usageContext: {
+        area: 'Catalog enrichment',
+        feature: 'Wikipedia spec extraction',
+        source: 'catalog.wikipedia',
+      },
     });
     return value;
   } catch (err) {
@@ -433,6 +438,8 @@ function cleanFieldValue(value: string | undefined): string | undefined {
     .replace(/<ref\b[^>]*>[\s\S]*?<\/ref>/gi, ' ')
     .replace(/<ref\b[^/]*\/>/gi, ' ')
     .replace(/\{\{(?:nowrap|ubl|flatlist|plainlist|unbulleted list|hlist)\|/gi, '')
+    .replace(/\{\{resx\|(\d{3,4})\|(\d{3,4})\}\}/gi, '$1x$2')
+    .replace(/\{\{nbsp\}\}/gi, ' ')
     .replace(/\{\{convert\|([^|{}]+)\|([^|{}]+)(?:\|[^{}]*)?\}\}/gi, '$1 $2')
     .replace(/\{\{cvt\|([^|{}]+)\|([^|{}]+)(?:\|[^{}]*)?\}\}/gi, '$1 $2')
     .replace(/\{\{[^{}]*\}\}/g, ' ')

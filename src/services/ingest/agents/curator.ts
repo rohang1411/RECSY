@@ -124,6 +124,12 @@ export class CuratorAgent {
         schemaDescription:
           'Gatekeeper verdict for ingesting a single external source about a specific phone.',
         temperature: 0,
+        usageContext: {
+          area: 'Ingestion',
+          feature: 'Source curator',
+          source: 'CuratorAgent',
+          metadata: { sourceType: input.sourceType },
+        },
       });
       verdict = result.value;
       usage = result.usage;
