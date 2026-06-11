@@ -34,12 +34,14 @@ import {
   GeminiRequestGovernor,
   isLikelyGeminiQuotaExhaustedError,
 } from './gemini-request-governor';
+import { recordLlmUsageEvent } from './usage';
 import type {
   ChatDelta,
   ChatInput,
   ChatResult,
   EmbedResult,
   LlmProvider,
+  LlmUsageContext,
   StructuredInput,
   StructuredResult,
 } from './types';
@@ -58,7 +60,10 @@ type GeminiExecuteResult<T> = {
   readonly value: T;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly keyIndex: number;
 };
+
+type GeminiOperationResult<T> = Omit<GeminiExecuteResult<T>, 'keyIndex'>;
 
 function briefStructuredFailure(err: unknown, max = 500): string {
   if (err instanceof ZodError) {
@@ -123,7 +128,7 @@ export class GeminiProvider implements LlmProvider {
   private async executeWithGeminiKeys<T>(params: {
     readonly model: string;
     readonly estimateInputTokens: number;
-    readonly op: (google: GoogleGenAI, keyIndex: number) => Promise<GeminiExecuteResult<T>>;
+    readonly op: (google: GoogleGenAI, keyIndex: number) => Promise<GeminiOperationResult<T>>;
   }): Promise<GeminiExecuteResult<T>> {
     if (this.clients.length === 0) {
       throw new LlmError('Gemini misconfigured: no API keys', { model: params.model });
@@ -153,7 +158,7 @@ export class GeminiProvider implements LlmProvider {
         if (this.governor) {
           await this.governor.recordMeasuredForKey(keyIndex, inputTokens);
         }
-        return { value, inputTokens, outputTokens };
+        return { value, inputTokens, outputTokens, keyIndex };
       } catch (err) {
         lastErr = err;
         if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
@@ -188,8 +193,9 @@ export class GeminiProvider implements LlmProvider {
   }
 
   async chat(input: ChatInput): Promise<ChatResult> {
+    const startedAt = performance.now();
     try {
-      const { value } = await this.executeWithGeminiKeys({
+      const { value, inputTokens, outputTokens, keyIndex } = await this.executeWithGeminiKeys({
         model: input.model,
         estimateInputTokens: estimateTokensFromMessages(input.messages),
         op: async (google) => {
@@ -215,6 +221,15 @@ export class GeminiProvider implements LlmProvider {
           };
         },
       });
+      await this.recordUsage({
+        model: input.model,
+        operation: 'chat',
+        usageContext: input.usageContext,
+        inputTokens,
+        outputTokens,
+        apiKeyIndex: keyIndex,
+        latencyMs: performance.now() - startedAt,
+      });
       return value;
     } catch (err) {
       throw new LlmError('Gemini chat failed', { model: input.model }, err);
@@ -222,6 +237,7 @@ export class GeminiProvider implements LlmProvider {
   }
 
   async *chatStream(input: ChatInput): AsyncIterable<ChatDelta> {
+    const startedAt = performance.now();
     const est = estimateTokensFromMessages(input.messages);
     const keyIndex = await this.resolveStreamKeyIndex(est);
     const google = this.clients[keyIndex]!;
@@ -245,16 +261,26 @@ export class GeminiProvider implements LlmProvider {
 
       const finalUsage = await stream.usage;
       const tokensIn = finalUsage.inputTokens ?? 0;
+      const tokensOut = finalUsage.outputTokens ?? 0;
       if (this.governor) {
         await this.governor.recordMeasuredForKey(keyIndex, tokensIn);
       }
       this.preferredKeyIndex = keyIndex;
+      await this.recordUsage({
+        model: input.model,
+        operation: 'stream',
+        usageContext: input.usageContext,
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
+        apiKeyIndex: keyIndex,
+        latencyMs: performance.now() - startedAt,
+      });
 
       yield {
         type: 'finish',
         usage: {
           tokensIn,
-          tokensOut: finalUsage.outputTokens ?? 0,
+          tokensOut,
         },
       };
     } catch (err) {
@@ -281,7 +307,8 @@ export class GeminiProvider implements LlmProvider {
       messages: readonly { role: 'system' | 'user' | 'assistant'; content: string }[],
     ): Promise<T> => {
       attempts += 1;
-      const { value, inputTokens, outputTokens } = await this.executeWithGeminiKeys({
+      const startedAt = performance.now();
+      const { value, inputTokens, outputTokens, keyIndex } = await this.executeWithGeminiKeys({
         model: input.model,
         estimateInputTokens: estimateTokensFromMessages(messages),
         op: async (google) => {
@@ -304,6 +331,20 @@ export class GeminiProvider implements LlmProvider {
       });
       tokensIn += inputTokens;
       tokensOut += outputTokens;
+      await this.recordUsage({
+        model: input.model,
+        operation: 'structured',
+        usageContext: {
+          area: input.usageContext?.area ?? 'Structured LLM',
+          feature: input.usageContext?.feature ?? input.schemaName,
+          source: input.usageContext?.source,
+          metadata: input.usageContext?.metadata,
+        },
+        inputTokens,
+        outputTokens,
+        apiKeyIndex: keyIndex,
+        latencyMs: performance.now() - startedAt,
+      });
       return value;
     };
 
@@ -361,14 +402,19 @@ export class GeminiProvider implements LlmProvider {
     }
   }
 
-  async embed(texts: readonly string[], model?: string): Promise<EmbedResult> {
+  async embed(
+    texts: readonly string[],
+    model?: string,
+    usageContext?: LlmUsageContext,
+  ): Promise<EmbedResult> {
     const embedModel = model ?? env.LLM_EMBEDDING_MODEL;
+    const startedAt = performance.now();
     const googleOptions: { outputDimensionality: number; taskType: string } = {
       outputDimensionality: EMBEDDING_DIMENSIONS,
       taskType: 'RETRIEVAL_DOCUMENT',
     };
     try {
-      const { value } = await this.executeWithGeminiKeys({
+      const { value, inputTokens, keyIndex } = await this.executeWithGeminiKeys({
         model: embedModel,
         estimateInputTokens: estimateTokensFromTexts(texts),
         op: async (google) => {
@@ -389,6 +435,15 @@ export class GeminiProvider implements LlmProvider {
           };
         },
       });
+      await this.recordUsage({
+        model: embedModel,
+        operation: 'embed',
+        usageContext,
+        inputTokens,
+        outputTokens: 0,
+        apiKeyIndex: keyIndex,
+        latencyMs: performance.now() - startedAt,
+      });
       return value;
     } catch (err) {
       const causeMsg =
@@ -399,6 +454,27 @@ export class GeminiProvider implements LlmProvider {
         err,
       );
     }
+  }
+
+  private recordUsage(input: {
+    readonly model: string;
+    readonly operation: 'chat' | 'stream' | 'structured' | 'embed';
+    readonly usageContext?: LlmUsageContext;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly apiKeyIndex: number;
+    readonly latencyMs: number;
+  }): Promise<void> {
+    return recordLlmUsageEvent({
+      provider: this.name,
+      model: input.model,
+      operation: input.operation,
+      usageContext: input.usageContext,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      apiKeyIndex: input.apiKeyIndex,
+      latencyMs: Math.round(input.latencyMs),
+    });
   }
 }
 

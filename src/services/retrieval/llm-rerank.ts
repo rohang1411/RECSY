@@ -72,6 +72,12 @@ export async function llmRerankChunkOrder<T extends RetrievedChunk>(
       schema,
       schemaName: 'ChunkRerankOrder',
       schemaDescription: `Exactly ${targetResults} distinct chunk UUIDs from the excerpt list, most relevant first.`,
+      usageContext: {
+        area: 'Retrieval',
+        feature: 'LLM rerank',
+        source: 'HybridRetriever',
+        metadata: { poolSize: cap, targetResults },
+      },
       messages: [
         {
           role: 'system',

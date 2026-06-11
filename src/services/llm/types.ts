@@ -23,7 +23,15 @@ export interface ChatInput {
   readonly maxOutputTokens?: number;
   /** Opaque ids used by the cache key; callers can omit. */
   readonly cacheKeyExtras?: Readonly<Record<string, string | number | boolean>>;
+  readonly usageContext?: LlmUsageContext;
   readonly signal?: AbortSignal;
+}
+
+export interface LlmUsageContext {
+  readonly area: string;
+  readonly feature?: string;
+  readonly source?: string;
+  readonly metadata?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 export interface ChatUsage {
@@ -80,5 +88,9 @@ export interface LlmProvider {
   /** Zod-validated structured output with automatic one-shot retry on schema failures. */
   structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>>;
   /** Batched text embedding. */
-  embed(texts: readonly string[], model?: string): Promise<EmbedResult>;
+  embed(
+    texts: readonly string[],
+    model?: string,
+    usageContext?: LlmUsageContext,
+  ): Promise<EmbedResult>;
 }

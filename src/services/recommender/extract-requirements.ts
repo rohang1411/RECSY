@@ -80,6 +80,11 @@ export async function extractUserRequirements(input: {
     schemaDescription: 'Merged phone shopper preferences for RECSY recommender Stage A.',
     temperature: 0.15,
     maxOutputTokens: 1024,
+    usageContext: {
+      area: 'Recommendation',
+      feature: 'Requirement extraction',
+      source: '/api/recommend',
+    },
   });
   return mergeUserRequirements({
     previous,

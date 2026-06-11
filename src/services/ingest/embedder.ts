@@ -65,7 +65,12 @@ export class ChunkEmbedder {
         limit(async () => {
           const result = await pRetry(
             async () => {
-              return this.llm.embed(batch, this.model);
+              return this.llm.embed(batch, this.model, {
+                area: 'Ingestion',
+                feature: 'Chunk embedding',
+                source: 'ChunkEmbedder',
+                metadata: { batchSize: batch.length },
+              });
             },
             {
               retries: this.retries,

@@ -85,6 +85,11 @@ ${JSON.stringify(specs, null, 2)}`;
       messages: [{ role: 'user', content: prompt }],
       temperature: 0,
       maxOutputTokens: 2000,
+      usageContext: {
+        area: 'Catalog enrichment',
+        feature: 'GSMArena spec extraction',
+        source: 'catalog.gsmarena',
+      },
     });
 
     return value;
