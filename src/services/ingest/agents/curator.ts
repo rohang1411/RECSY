@@ -85,9 +85,9 @@ export interface CuratorInput {
 }
 
 export interface CuratorDecisionOptions {
-  /** Lower bound on `relevance` required to keep. Default 0.5. */
+  /** Lower bound on `relevance` required to keep. Default 0.45. */
   readonly minRelevance?: number;
-  /** Lower bound on `quality` required to keep. Default 0.4. */
+  /** Lower bound on `quality` required to keep. Default 0.3. */
   readonly minQuality?: number;
 }
 
@@ -108,8 +108,8 @@ export class CuratorAgent {
   ) {}
 
   async decide(input: CuratorInput): Promise<CuratorDecision> {
-    const minRelevance = this.opts.minRelevance ?? 0.5;
-    const minQuality = this.opts.minQuality ?? 0.4;
+    const minRelevance = this.opts.minRelevance ?? 0.45;
+    const minQuality = this.opts.minQuality ?? 0.3;
 
     const messages = buildMessages(input);
     let verdict: CuratorVerdict;

@@ -127,6 +127,7 @@ export interface AdapterRunSummary {
   readonly fetched: number;
   readonly skippedUnusable: number;
   readonly skippedDuplicate: number;
+  readonly skippedRejected: number;
   readonly written: { sources: number; chunks: number };
   readonly errors: Array<{ url: string; error: string }>;
   readonly durationMs: number;

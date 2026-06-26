@@ -91,9 +91,7 @@ describe('buildPromotionPlan', () => {
             chipset: 'Example X1',
             ramGb: 8,
             storageOptionsGb: [128],
-            rearCameras: [{ type: 'main', mp: 48 }],
             batteryMah: 3561,
-            os: 'Android 16',
           },
         },
       },
@@ -107,5 +105,7 @@ describe('buildPromotionPlan', () => {
       charging: {},
       connectivity: {},
     });
+    expect(plan.spec?.rear_cameras).toBeUndefined();
+    expect(plan.spec?.os).toBeUndefined();
   });
 });

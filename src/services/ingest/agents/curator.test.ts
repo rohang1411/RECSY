@@ -69,6 +69,28 @@ describe('CuratorAgent.decide', () => {
     expect(decision.verdict.relevance).toBe(0.85);
   });
 
+  it('keeps modest but relevant sources at the relaxed default thresholds', async () => {
+    const agent = new CuratorAgent(
+      fakeLlm({
+        keep: true,
+        relevance: 0.46,
+        quality: 0.31,
+        aspectsCovered: ['value'],
+        sentimentSummary: 'mixed',
+        reason: 'Focused but brief review signal.',
+      }),
+    );
+
+    const decision = await agent.decide({
+      phone: { slug: 'google-pixel-9-pro-xl', brand: 'Google', model: 'Pixel 9 Pro XL' },
+      sourceType: 'article',
+      raw,
+      sampleChunks,
+    });
+
+    expect(decision.keep).toBe(true);
+  });
+
   it('rejects when `keep=false` with curator:<reason>', async () => {
     const agent = new CuratorAgent(
       fakeLlm({

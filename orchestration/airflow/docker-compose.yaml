@@ -1,0 +1,119 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+  env_file:
+    - path: .env
+      required: false
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/recsy/orchestration/airflow/dags
+    PYTHONPATH: /opt/recsy/orchestration/airflow/include
+    RECSY_PROJECT_ROOT: ${RECSY_PROJECT_ROOT:-/opt/recsy}
+    RECSY_EXECUTION_MODE: ${RECSY_EXECUTION_MODE:-local}
+    RECSY_REPO_OWNER: ${RECSY_REPO_OWNER:-rohang1411}
+    RECSY_REPO_NAME: ${RECSY_REPO_NAME:-RECSY}
+    RECSY_GITHUB_REF: ${RECSY_GITHUB_REF:-main}
+    GITHUB_ACTIONS_TOKEN: ${GITHUB_ACTIONS_TOKEN:-}
+  user: '${AIRFLOW_UID:-50000}:0'
+  volumes:
+    - ../..:/opt/recsy
+    - airflow_logs:/opt/airflow/logs
+    - recsy_node_modules:/opt/recsy/node_modules
+    - recsy_pnpm_store:/home/airflow/.local/share/pnpm/store
+  working_dir: /opt/recsy
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    # Use AWS's public mirror for Postgres because some networks repeatedly
+    # drop Docker Hub / CloudFront blob downloads with EOF during pulls.
+    image: public.ecr.aws/docker/library/postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'airflow']
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    volumes:
+      - airflow_postgres:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -euo pipefail
+        cd /opt/recsy
+        pnpm install --frozen-lockfile
+        airflow db migrate
+        airflow users create \
+          --username "$${AIRFLOW_WWW_USER_USERNAME:-airflow}" \
+          --password "$${AIRFLOW_WWW_USER_PASSWORD:-airflow}" \
+          --firstname RECSY \
+          --lastname Operator \
+          --role Admin \
+          --email recsy@example.local || true
+        airflow pools set recsy_gemini_pool 1 "RECSY Gemini/LLM-heavy tasks"
+        airflow pools set recsy_ingest_pool 4 "RECSY ingestion shard tasks"
+        airflow version
+    restart: 'no'
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - '8080:8080'
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    entrypoint: /bin/bash
+    command: -lc "airflow version && bash"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow_logs:
+  airflow_postgres:
+  recsy_node_modules:
+  recsy_pnpm_store:

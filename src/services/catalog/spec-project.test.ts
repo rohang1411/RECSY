@@ -54,22 +54,20 @@ describe('projectPhoneSpec', () => {
       chipset: 'Apple A18',
       ramGb: 8,
       storageOptionsGb: [128, 256],
-      rearCameras: [{ type: 'main' as const, mp: 48 }],
       batteryMah: 3561,
-      os: 'iOS 18',
     });
 
     expect(result.ok).toBe(true);
     expect(() => PhoneSpecSchema.parse(result.spec)).not.toThrow();
+    expect(result.spec?.rear_cameras).toBeUndefined();
+    expect(result.spec?.os).toBeUndefined();
     expect(
       specCompleteness({
         display: { size_in: 6.1, resolution: '1179x2556' },
         chipset: 'Apple A18',
         ramGb: 8,
         storageOptionsGb: [128, 256],
-        rearCameras: [{ type: 'main' as const, mp: 48 }],
         batteryMah: 3561,
-        os: 'iOS 18',
       }),
     ).toBeLessThan(1);
   });
@@ -80,9 +78,7 @@ describe('projectPhoneSpec', () => {
       chipset: 'Apple A18',
       ramGb: 8,
       storageOptionsGb: [128],
-      rearCameras: [{ type: 'main' as const, mp: 48 }],
       batteryMah: 3561,
-      os: 'iOS 18',
     });
     expect(missing).toEqual([]);
   });

@@ -56,6 +56,15 @@ Brand priority and latest-released ordering are enforced through `src/services/c
 
 **Ops / automation (2026-05-14â€”15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an allâ€“cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text â€” see [Â§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip â€” full detail in [Â§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [Â§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
+**Optional Airflow orchestration (2026-06-10).** Airflow is now available as an
+optional local/control-plane layer under `orchestration/airflow/`. It does
+**not** replace GitHub Actions as the production scheduler. DAGs are unscheduled
+by default and either run existing `pnpm` scripts locally or dispatch the
+existing GitHub workflow files through the GitHub REST API. See
+[ADR 0018](./adr/0018-optional-airflow-orchestration.md),
+[`orchestration/airflow/README.md`](../orchestration/airflow/README.md), and
+[`docs/ImplementationPlans/airflow-integration-feasibility-and-implementation-plan.md`](./ImplementationPlans/airflow-integration-feasibility-and-implementation-plan.md).
+
 ---
 
 ## Table of Contents
@@ -1209,6 +1218,26 @@ Beyond `ci.yml`, production-adjacent cron jobs include:
 - **`catalog-refresh.yml`** â€” Mondays **01:17 UTC** lightweight open-source discovery/OEM enrichment, plus first day of month **01:47 UTC** full refresh with MobileAPI when `MOBILEAPI_API_KEY` exists. Scheduled runs continue with open sources when the optional MobileAPI secret is absent; Wikipedia/GSMArena spec enrichment and spec embeddings run only when Gemini is configured and leave quota-exhausted rows pending for the next run.
 - **`creator-watch.yml`**, **`ingest.yml`** (manual), **`ingest-on-new-phone.yml`** â€” per ADR 0014 / operator docs.
 
+### Optional Airflow control plane
+
+`orchestration/airflow/` provides a local/demo Airflow stack with DAGs for:
+
+- `recsy_catalog_refresh`
+- `recsy_creator_watch`
+- `recsy_ingest_tiered`
+- `recsy_ingest_resume`
+- `recsy_ingest_phone`
+- `recsy_scorecard_auto`
+- `recsy_reports`
+- `recsy_production_bootstrap`
+
+The DAGs have `schedule=None` so they cannot silently duplicate the existing
+GitHub cron jobs. In `local` mode they execute the same package scripts the
+operator already uses. In `github_dispatch` mode they trigger the existing
+workflow files with `workflow_dispatch`. This keeps the free-tier GitHub runner
+model intact while giving demos and manual operations a visual orchestration
+surface. See [ADR 0018](./adr/0018-optional-airflow-orchestration.md).
+
 **DB migrations locally:** `pnpm db:migrate` / `db:generate` / `db:studio` load
 `DATABASE_URL` from `.env.local` via `node --env-file=.env.local` and a
 fallback reader in `drizzle.config.ts` (plain `drizzle-kit migrate` without env
@@ -1465,6 +1494,45 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-06-26 - Ingest resume and catalog observability hardening
+
+- **Root cause: resume jobs were failing without showing why no evidence was
+  written.** A run could discover article candidates and have the Curator reject
+  them all, but the per-phone summary only printed sources/chunks/errors. That
+  made `sources=0 chunks=0 errors=0` look like the pipeline did nothing, even
+  when rejection telemetry existed in `ingest_runs`.
+- **Fixes** -
+  - `AdapterRunSummary` and `ingest:auto` now surface `rejected` and `unusable`
+    counts beside sources/chunks/errors, so empty runs distinguish "no usable
+    source found", "curator rejected candidates", and real adapter errors.
+  - The Curator default gate is relaxed from relevance/quality `0.50/0.40` to
+    `0.45/0.30`, allowing focused but modest midrange-phone reviews to enter the
+    corpus while still rejecting off-topic or very thin sources.
+  - Scheduled `ingest-resume.yml` no longer passes `--fail-on-zero-success` or
+    `--fail-on-empty`; resume keeps phones due for retry and records telemetry
+    instead of failing a cron shard solely because external sources were empty.
+  - `/internal/pipeline` now shows promoted canonical phones separately from the
+    `catalog_candidates` queue (`pending`, `ready`, `blocked`), explaining why
+    the visible catalog can show 20 phones while discovery has staged more rows.
+- **Root cause: catalog promotion still waited for optional spec fields.**
+  `PhoneSpecSchema` requires display size/resolution, chipset, RAM, storage, a
+  battery capacity, and the charging object, but the catalog projection gate also
+  blocked candidates missing `os` and `rear_cameras`. MobileAPI/OEM rows often
+  have enough core specs for browse/recommendation but not camera/OS details, so
+  they remained pending/quarantined unnecessarily.
+- **Fixes** -
+  - `findMissingCoreFields` now matches the runtime schema's true minimum:
+    display size/resolution, chipset, RAM, storage, and battery capacity.
+    Missing `os` and `rear_cameras` lower completeness/confidence but no longer
+    block promotion.
+  - `catalog:promote --ready` now revalidates staged/quarantined candidates that
+    already contain structured `claims_json.promotion`, allowing older rows
+    blocked by the previous gate to move forward without waiting for another
+    external enrichment fetch.
+  - Dry-run verification against the configured DB showed 8 of the first 10
+    revalidated candidates would now promote; the remaining two still block on
+    true missing/implausible required fields.
 
 ### 2026-05-26 - Catalog candidate approval root-cause fix
 
@@ -2340,6 +2408,48 @@ dissenting_quotes)`.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and â€” where possible â€” how we've made it harder to recur.
+
+### Ops - ingest resume and catalog visibility (2026-06-26)
+
+#### HIGH
+
+- **Catalog candidates stayed pending/quarantined because optional fields were
+  treated as approval blockers.** The promotion gate required `os` and
+  `rear_cameras`, even though `PhoneSpecSchema` marks both optional and product
+  surfaces already render safe fallbacks.
+  - **Root cause 1 - catalog core fields diverged from runtime schema.**
+    `findMissingCoreFields` listed `os` and `rear_cameras`; MobileAPI/OEM rows
+    missing those fields were blocked even when they had enough structured data
+    for browse and recommendation.
+  - **Root cause 2 - old blocked rows were not revalidated by the promote
+    command.** `catalog:promote --ready` only selected `ready_to_promote` /
+    `validated`, so rows previously marked `discovered` or `quarantined` stayed
+    there after the gate was relaxed.
+  - **Fix.** The catalog core gate now matches the actual required runtime spec,
+    and `catalog:promote --ready` revalidates structured staged/quarantined
+    promotion claims. A local dry-run against the configured DB showed 8/10
+    sampled candidates would now promote.
+
+- **Ingest resume shards failed with zero successes while hiding the actual
+  empty-corpus reason.** The pasted June 25 resume log picked
+  `oneplus-nord-4`, found no GSMArena/YouTube/Reddit usable sources, discovered
+  two articles, then ended with `sources=0 chunks=0 errors=0` and exited 1.
+  - **Root cause 1 - rejected-source accounting was missing from summaries.**
+    Curator rejections were persisted as `ingest_runs.status='skipped'`, but
+    `AdapterRunSummary` did not count them. The CLI therefore collapsed
+    "candidate rejected" and "nothing happened" into the same output.
+  - **Root cause 2 - scheduled resume used smoke-test failure flags.**
+    `ingest-resume.yml` passed both `--fail-on-zero-success` and
+    `--fail-on-empty`, so a retry shard failed even when it behaved correctly by
+    leaving an empty phone due for another attempt.
+  - **Root cause 3 - the catalog dashboard only showed promoted phones.**
+    `/internal/pipeline` displayed active `phones` as "Catalog entries" without
+    the staged `catalog_candidates` queue, making the 20 seeded/promoted phones
+    look like the entire discovery universe.
+  - **Fix.** Ingest summaries now include rejected/unusable counts, the Curator
+    gate is slightly relaxed for modest but relevant sources, scheduled resume
+    no longer fails on empty retries, and `/internal/pipeline` exposes the
+    candidate queue beside promoted phones.
 
 ### Ops - automated catalog refresh (2026-05-26)
 
@@ -3240,8 +3350,8 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 
 | ADR                          | Decision to capture                                                                                                       |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `0018-llm-response-cache.md` | LLM cache persistence semantics, key derivation (model + prompt hash), invalidation policy, bypass for streaming paths    |
-| `0019-api-rate-limiting.md`  | API rate-limiting policy (separate from ingest polite-HTTP): sliding window, per-IP, per-route limits, 429 response shape |
+| `0019-llm-response-cache.md` | LLM cache persistence semantics, key derivation (model + prompt hash), invalidation policy, bypass for streaming paths    |
+| `0020-api-rate-limiting.md`  | API rate-limiting policy (separate from ingest polite-HTTP): sliding window, per-IP, per-route limits, 429 response shape |
 
 ### P3 â€” Product backlog
 
