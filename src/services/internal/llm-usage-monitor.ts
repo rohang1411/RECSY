@@ -204,7 +204,7 @@ async function optionalQuery<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-async function timedQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 1200): Promise<T> {
+async function timedQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 5000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

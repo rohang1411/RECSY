@@ -49,6 +49,7 @@ export type GeminiQuotaFetchResult =
       readonly fetchedAt: string;
       readonly resetAt: string;
       readonly projects: readonly GeminiQuotaProject[];
+      readonly message?: string;
       readonly rows: readonly GeminiQuotaRow[];
     }
   | {
@@ -99,16 +100,36 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
   try {
     const token = await getAccessToken();
     const startOfDay = startOfPacificDay(fetchedAt);
-    const rows = (
-      await Promise.all(
-        projects.map((project) => fetchProjectQuota(project, token, startOfDay, fetchedAt)),
-      )
-    ).flat();
+    const results = await Promise.all(
+      projects.map(async (project) => {
+        try {
+          return {
+            project,
+            rows: await fetchProjectQuota(project, token, startOfDay, fetchedAt),
+            error: null,
+          };
+        } catch (err) {
+          return {
+            project,
+            rows: [],
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }),
+    );
+    const rows = results.flatMap((result) => result.rows);
+    const errors = results
+      .filter((result) => result.error)
+      .map((result) => `${result.project.projectId}: ${briefQuotaError(result.error ?? '')}`);
+    if (rows.length === 0 && errors.length > 0) {
+      throw new Error(errors.join(' | '));
+    }
     return {
       status: 'ok',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
       projects,
+      message: errors.length > 0 ? `Partial quota fetch: ${errors.join(' | ')}` : undefined,
       rows,
     };
   } catch (err) {
@@ -121,6 +142,19 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
       rows: [],
     };
   }
+}
+
+function briefQuotaError(message: string): string {
+  if (
+    message.includes('Cloud Monitoring API has not been used') ||
+    message.includes('it is disabled')
+  ) {
+    return 'Cloud Monitoring API is disabled or not initialized.';
+  }
+  if (message.includes('Permission denied') || message.includes('"code": 403')) {
+    return 'Service account lacks Cloud Monitoring permission.';
+  }
+  return message.replace(/\s+/g, ' ').slice(0, 180);
 }
 
 async function fetchProjectQuota(

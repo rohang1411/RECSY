@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react';
 import { getSourceThumbnail } from '@/lib/source-thumbnail';
 import { cn } from '@/lib/utils';
 
+import { SectionHint } from './section-hint';
+
 type SourceType = 'youtube' | 'reddit' | 'article' | 'gsmarena';
 
 export type LifecycleSource = {
@@ -126,11 +128,54 @@ export function LifecycleExplorer({
 }: LifecycleExplorerProps) {
   const [activeStage, setActiveStage] = useState<StageId>('ingest');
   const [selectedAspectName, setSelectedAspectName] = useState<string | null>(null);
+  const [selectedFlowNode, setSelectedFlowNode] = useState('capture');
   const [llmOpen, setLlmOpen] = useState(true);
   const selectedAspect =
     aspects.find((aspect) => aspect.aspect === selectedAspectName) ?? aspects[0] ?? null;
   const latestRecommendedTurn = turns.find((turn) => turn.rank != null) ?? null;
   const retrievalQuery = latestRecommendedTurn?.userMessage ?? sampleQuery(selectedPhoneLabel);
+  const flowNodes = useMemo(
+    () => [
+      {
+        id: 'capture',
+        label: 'Capture',
+        value: sources.length.toLocaleString('en-US'),
+        caption: 'Active sources',
+        detail:
+          sources.length > 0
+            ? `Latest: ${sources[0]?.title ?? 'source recorded'}`
+            : 'No source rows are active for this phone yet.',
+      },
+      {
+        id: 'normalize',
+        label: 'Normalize',
+        value: sourceMixLabel || 'none',
+        caption: 'Source mix',
+        detail: 'Curator, alias matching, hash checks, and chunking prepare evidence for storage.',
+      },
+      {
+        id: 'embed',
+        label: 'Embed',
+        value: chunkCount.toLocaleString('en-US'),
+        caption: 'Chunks indexed',
+        detail:
+          aspects.length > 0
+            ? `${aspects.length} scorecard aspects have synthesized evidence.`
+            : 'Chunks are ready, but scorecard aspects have not been written yet.',
+      },
+      {
+        id: 'retrieve',
+        label: 'Retrieve',
+        value: latestRecommendedTurn?.rank ? `#${latestRecommendedTurn.rank}` : 'ready',
+        caption: latestRecommendedTurn ? 'Last rank' : 'Candidate state',
+        detail: latestRecommendedTurn
+          ? `Matched a recommendation turn in ${latestRecommendedTurn.latencyMs ?? 'n/a'} ms.`
+          : 'No matched recommendation turn yet; evidence is available for retrieval.',
+      },
+    ],
+    [aspects.length, chunkCount, latestRecommendedTurn, sourceMixLabel, sources],
+  );
+  const selectedFlow = flowNodes.find((node) => node.id === selectedFlowNode) ?? flowNodes[0];
 
   const stageDetail = useMemo(() => {
     if (activeStage === 'ingest') {
@@ -181,7 +226,10 @@ export function LifecycleExplorer({
   return (
     <section className="mt-12">
       <div className="accent-hairline border-outline-variant mb-4 border-b pb-3">
-        <p className="meta-label text-primary">Lifecycle schematic</p>
+        <SectionHint label="Lifecycle schematic">
+          Click a stage or flow node to inspect how evidence moves from capture into normalized
+          chunks, embeddings, and retrieval.
+        </SectionHint>
       </div>
 
       <div className="border-outline-variant bg-background relative grid gap-6 border p-6 md:grid-cols-3">
@@ -226,29 +274,63 @@ export function LifecycleExplorer({
             ))}
           </dl>
         </div>
-        <div className="pipeline-grid border-outline-variant relative min-h-40 overflow-hidden border p-4">
-          <div className="border-primary/35 absolute inset-x-8 top-1/2 border-t border-dashed" />
-          {['Capture', 'Normalize', 'Embed', 'Retrieve'].map((label, index) => (
-            <div
-              key={label}
-              className="absolute top-1/2 flex -translate-y-1/2 flex-col items-center gap-2"
-              style={{ left: `${8 + index * 29}%` }}
-            >
-              <span
-                className="status-dot text-accent"
-                data-state={index === 2 ? 'running' : 'queued'}
-              />
-              <span className="bg-background text-muted-foreground px-2 font-mono text-[10px] tracking-[0.14em] uppercase">
-                {label}
-              </span>
+        <div className="pipeline-grid border-outline-variant grid min-h-56 gap-4 overflow-hidden border p-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="relative grid grid-cols-4 items-center gap-2">
+            <div className="border-primary/30 absolute inset-x-8 top-[34px] border-t border-dashed" />
+            {flowNodes.map((node, index) => {
+              const selected = selectedFlow?.id === node.id;
+              return (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => setSelectedFlowNode(node.id)}
+                  onMouseEnter={() => setSelectedFlowNode(node.id)}
+                  aria-pressed={selected}
+                  className={cn(
+                    'group relative z-10 flex min-w-0 flex-col items-center gap-3 text-center focus-visible:outline-none',
+                    selected && 'text-accent',
+                  )}
+                >
+                  <span
+                    className="status-dot text-accent size-4"
+                    data-state={
+                      index <= STAGES.findIndex((stage) => stage.id === activeStage) + 1
+                        ? 'running'
+                        : 'queued'
+                    }
+                  />
+                  <span className="border-outline-variant bg-background group-hover:border-accent group-focus-visible:border-accent w-full border p-3 transition-colors">
+                    <span className="text-primary block font-mono text-[10px] tracking-[0.14em] uppercase">
+                      {node.label}
+                    </span>
+                    <span className="text-muted-foreground mt-2 block truncate text-xs">
+                      {node.caption}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-outline-variant bg-background/80 border p-4">
+            <p className="meta-label text-accent">{selectedFlow?.label}</p>
+            <p className="text-gradient-steel font-display mt-3 line-clamp-2 text-3xl font-bold uppercase">
+              {selectedFlow?.value}
+            </p>
+            <p className="text-muted-foreground mt-3 text-sm leading-6">{selectedFlow?.detail}</p>
+            <div className="border-outline-variant mt-4 border-t pt-3 font-mono text-[10px] tracking-[0.14em] uppercase">
+              <span className="text-primary">{activeStage}</span>
+              <span className="text-muted-foreground"> / live selected stage context</span>
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
       <div className="mt-12">
         <div className="accent-hairline border-outline-variant mb-4 flex flex-col gap-4 border-b pb-3 md:flex-row md:items-center md:justify-between">
-          <p className="meta-label text-primary">Device lifecycle explorer</p>
+          <SectionHint label="Device lifecycle explorer">
+            Shows the selected phone as a three-stage evidence path: discovery sources, LLM
+            synthesis, and retrieval/recommendation usage.
+          </SectionHint>
           <p className="meta-label text-accent">{selectedPhoneLabel}</p>
         </div>
 
@@ -333,63 +415,62 @@ export function LifecycleExplorer({
             <div className="border-outline-variant/60 relative border-r px-4">
               <p className="meta-label absolute top-0 left-4">Stage 2: Synthesis</p>
               <div className="grid min-h-[560px] content-center gap-5 pt-10">
-                <div className="relative mx-auto flex h-[340px] w-full max-w-md items-center justify-center overflow-hidden">
-                  <div className="border-primary/25 pointer-events-none absolute inset-8 border border-dashed" />
-                  <div className="llm-agent-ring border-accent/30 pointer-events-none absolute size-64 border" />
-                  {[0, 1, 2, 3].map((index) => (
-                    <span
-                      key={index}
-                      className="flow-dot bg-accent absolute top-1/2 block size-2"
-                      style={{ left: `${18 + index * 18}%` }}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setLlmOpen((current) => !current)}
-                    aria-expanded={llmOpen}
-                    className="pipeline-pulse border-primary bg-background hover:border-accent focus-visible:border-accent z-10 flex size-36 flex-col items-center justify-center border-2 text-center transition-colors focus-visible:outline-none"
-                  >
-                    <Cpu className="text-accent mb-2 size-5" aria-hidden />
-                    <p className="text-gradient-accent-edge font-display text-3xl font-bold uppercase">
-                      LLM
-                    </p>
-                    <p className="text-muted-foreground mt-2 font-mono text-[10px] tracking-[0.14em] uppercase">
-                      {aspects.length} aspects
-                    </p>
-                  </button>
-                  {aspects.slice(0, 7).map((aspect, index) => {
-                    const angle = (Math.PI * 2 * index) / Math.max(aspects.slice(0, 7).length, 1);
-                    const x = Math.cos(angle) * 42;
-                    const y = Math.sin(angle) * 35;
-                    const isSelected = selectedAspect?.aspect === aspect.aspect;
-                    return (
-                      <button
-                        key={aspect.aspect}
-                        type="button"
-                        onClick={() => {
-                          setSelectedAspectName(aspect.aspect);
-                          setLlmOpen(true);
-                        }}
-                        aria-pressed={isSelected}
-                        className={cn(
-                          'synthesis-bubble interactive-panel group/aspect absolute w-28 p-3 text-left',
-                          isSelected && 'border-accent bg-surface-container',
-                        )}
-                        style={{
-                          left: `calc(50% + ${x}% - 56px)`,
-                          top: `calc(50% + ${y}% - 42px)`,
-                        }}
-                      >
-                        <span className="meta-label text-accent">{aspect.aspect}</span>
-                        <span className="text-primary mt-1 block font-mono text-base">
-                          {formatScore(aspect.score)}/10
-                        </span>
-                        <span className="text-muted-foreground mt-1 block overflow-hidden font-mono text-[10px] whitespace-nowrap opacity-70 transition-opacity group-hover/aspect:opacity-100">
-                          confidence {aspect.confidence}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div className="mx-auto grid w-full max-w-md gap-4">
+                  <div className="pipeline-grid border-outline-variant relative flex min-h-48 items-center justify-center overflow-hidden border">
+                    <div className="border-primary/25 pointer-events-none absolute inset-6 border border-dashed" />
+                    <div className="llm-agent-ring border-accent/30 pointer-events-none absolute size-40 border" />
+                    {[0, 1, 2, 3].map((index) => (
+                      <span
+                        key={index}
+                        className="flow-dot bg-accent absolute top-1/2 block size-2"
+                        style={{ left: `${20 + index * 16}%` }}
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setLlmOpen((current) => !current)}
+                      aria-expanded={llmOpen}
+                      className="pipeline-pulse border-primary bg-background hover:border-accent focus-visible:border-accent z-10 flex size-36 flex-col items-center justify-center border-2 text-center transition-colors focus-visible:outline-none"
+                    >
+                      <Cpu className="text-accent mb-2 size-5" aria-hidden />
+                      <p className="text-gradient-accent-edge font-display text-3xl font-bold uppercase">
+                        LLM
+                      </p>
+                      <p className="text-muted-foreground mt-2 font-mono text-[10px] tracking-[0.14em] uppercase">
+                        {aspects.length} aspects
+                      </p>
+                    </button>
+                  </div>
+                  <div className="grid max-h-72 gap-3 overflow-y-auto pr-2 sm:grid-cols-2">
+                    {aspects.slice(0, 7).map((aspect, index) => {
+                      const isSelected = selectedAspect?.aspect === aspect.aspect;
+                      return (
+                        <button
+                          key={aspect.aspect}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAspectName(aspect.aspect);
+                            setLlmOpen(true);
+                          }}
+                          aria-pressed={isSelected}
+                          className={cn(
+                            'synthesis-bubble interactive-panel group/aspect min-h-24 p-3 text-left',
+                            isSelected && 'border-accent bg-surface-container',
+                          )}
+                        >
+                          <span className="meta-label text-accent">
+                            {index + 1}. {aspect.aspect}
+                          </span>
+                          <span className="text-primary mt-2 block font-mono text-base">
+                            {formatScore(aspect.score)}/10
+                          </span>
+                          <span className="text-muted-foreground mt-2 block font-mono text-[10px] opacity-70 transition-opacity group-hover/aspect:opacity-100">
+                            confidence {aspect.confidence}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="interactive-panel bg-background/90 min-h-44 p-5">

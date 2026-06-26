@@ -27,7 +27,7 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 function getClient(): ReturnType<typeof postgres> {
   if (_client === null) {
     _client = createPostgresClient(env.DATABASE_URL, {
-      max: env.NODE_ENV === 'production' ? 10 : 3,
+      max: env.NODE_ENV === 'production' ? 10 : 6,
       idle_timeout: 20,
       prepare: false, // required for Supabase's pgbouncer transaction mode
     });

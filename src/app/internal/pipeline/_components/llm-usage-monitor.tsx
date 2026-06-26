@@ -1,22 +1,32 @@
+'use client';
+
 import { Bot, DatabaseZap, Gauge, KeyRound, LineChart, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 
 import type { LlmUsageAreaRow, LlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
+
+import { SectionHint } from './section-hint';
 
 type Props = {
   readonly data: LlmUsageMonitorData;
 };
 
 export function LlmUsageMonitor({ data }: Props) {
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const dailyRows = data.googleQuota.rows.filter((row) => row.unit === 'day');
   const dailyLimit = sumVerified(dailyRows.map((row) => row.limit));
   const dailyUsed = sumVerified(dailyRows.map((row) => row.used));
   const dailyRemaining = sumVerified(dailyRows.map((row) => row.remaining));
+  const hasVerifiedDailyQuota = data.googleQuota.status === 'ok' && dailyRows.length > 0;
   const limitPercent =
     dailyLimit !== null && dailyUsed !== null && dailyLimit > 0
       ? Math.min(100, Math.round((dailyUsed / dailyLimit) * 100))
       : null;
   const topMax = Math.max(1, ...data.topAreas.map((row) => row.calls));
+  const visibleEvents = historyExpanded
+    ? data.recentEvents.slice(0, 10)
+    : data.recentEvents.slice(0, 3);
 
   return (
     <section className="border-outline-variant bg-background mt-12 overflow-hidden border">
@@ -29,7 +39,10 @@ export function LlmUsageMonitor({ data }: Props) {
                 <Bot className="size-5" aria-hidden />
               </span>
               <div>
-                <p className="meta-label text-primary">LLM usage monitor</p>
+                <SectionHint label="LLM usage monitor">
+                  Separates verified Google quota rows from RECSY&apos;s local call ledger, cache
+                  savings, and recent Gemini requests.
+                </SectionHint>
                 <h2 className="text-gradient-accent-edge font-display mt-2 text-4xl leading-none font-extrabold uppercase sm:text-6xl">
                   Gemini Quota Rail
                 </h2>
@@ -40,7 +53,11 @@ export function LlmUsageMonitor({ data }: Props) {
               <HeroMetric
                 label="Free left today"
                 value={formatMaybeNumber(dailyRemaining)}
-                detail="Verified by Google Monitoring"
+                detail={
+                  hasVerifiedDailyQuota
+                    ? 'Verified by Google Monitoring'
+                    : 'No daily quota row returned'
+                }
                 icon={<ShieldCheck className="size-4" aria-hidden />}
               />
               <HeroMetric
@@ -52,9 +69,13 @@ export function LlmUsageMonitor({ data }: Props) {
                 icon={<Gauge className="size-4" aria-hidden />}
               />
               <HeroMetric
-                label="Keys tracked"
+                label="Quota projects"
                 value={`${data.googleQuota.projects.length}/${data.configuredKeyCount}`}
-                detail="Project-backed API keys"
+                detail={
+                  data.googleQuota.projects.length === data.configuredKeyCount
+                    ? 'Mapped to configured keys'
+                    : 'Project ID/key count mismatch'
+                }
                 icon={<KeyRound className="size-4" aria-hidden />}
               />
             </div>
@@ -181,12 +202,29 @@ export function LlmUsageMonitor({ data }: Props) {
 
       <div className="border-outline-variant border-t p-5">
         <div className="mb-5 flex items-center justify-between gap-4">
-          <p className="meta-label text-primary">Recent LLM call history</p>
-          <DatabaseZap className="text-accent size-4" aria-hidden />
+          <div>
+            <p className="meta-label text-primary">Recent LLM call history</p>
+            <p className="text-muted-foreground mt-2 text-xs">
+              Showing {visibleEvents.length} of {data.recentEvents.length} recorded calls.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {data.recentEvents.length > 3 ? (
+              <button
+                type="button"
+                onClick={() => setHistoryExpanded((value) => !value)}
+                aria-expanded={historyExpanded}
+                className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-2 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors"
+              >
+                {historyExpanded ? 'Collapse' : 'Expand'}
+              </button>
+            ) : null}
+            <DatabaseZap className="text-accent size-4" aria-hidden />
+          </div>
         </div>
-        <div className="bg-outline-variant grid gap-px">
+        <div className="bg-outline-variant grid max-h-[520px] gap-px overflow-y-auto">
           {data.recentEvents.length > 0 ? (
-            data.recentEvents.map((event) => (
+            visibleEvents.map((event) => (
               <article
                 key={event.id}
                 className="bg-background grid gap-3 p-4 md:grid-cols-[1fr_auto_auto] md:items-center"
@@ -210,7 +248,7 @@ export function LlmUsageMonitor({ data }: Props) {
               </article>
             ))
           ) : (
-            <EmptyState text="Usage history will appear after the next outbound Gemini call." />
+            <EmptyState text="No local LLM usage events exist in this connected database yet. Historical Gemini calls made before usage logging, or from another environment, cannot be reconstructed from the API key alone." />
           )}
         </div>
       </div>
@@ -272,9 +310,21 @@ function EmptyState({ text }: { readonly text: string }) {
 
 function quotaStatusCopy(data: LlmUsageMonitorData): string {
   if (data.googleQuota.status === 'ok') {
+    if (data.googleQuota.rows.length === 0) {
+      return 'Project IDs are configured, but Google Monitoring returned no Gemini quota rows for the current window.';
+    }
+    if (data.googleQuota.message) {
+      return `${data.googleQuota.message} Rows shown below are verified Google Monitoring rows; missing projects need Monitoring API access fixed.`;
+    }
     return `Fetched directly from Google Cloud Monitoring at ${formatTime(data.googleQuota.fetchedAt)}. Values reflect Google's exported quota metrics, not RECSY estimates.`;
   }
   if (data.googleQuota.status === 'not_configured') return data.googleQuota.message;
+  if (data.googleQuota.message.includes('Cloud Monitoring API is disabled')) {
+    return 'Project IDs are configured, but Google Cloud Monitoring is disabled or not initialized for at least one project. Enable the Monitoring API and grant the service account Monitoring Viewer access.';
+  }
+  if (data.googleQuota.message.includes('Cloud Monitoring permission')) {
+    return 'Project IDs are configured, but the service account cannot read Cloud Monitoring quota metrics. Grant roles/monitoring.viewer on each quota project.';
+  }
   return `Google quota fetch failed: ${data.googleQuota.message}`;
 }
 
