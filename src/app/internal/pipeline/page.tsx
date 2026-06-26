@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ChunkWorkbench } from '@/app/internal/pipeline/_components/chunk-workbench';
 import { LifecycleExplorer } from '@/app/internal/pipeline/_components/lifecycle-explorer';
 import { LlmUsageMonitor } from '@/app/internal/pipeline/_components/llm-usage-monitor';
+import { SectionHint } from '@/app/internal/pipeline/_components/section-hint';
 import { WorkflowTables } from '@/app/internal/pipeline/_components/workflow-tables';
 import { PhoneImage } from '@/components/phone/PhoneImage';
 import { PhoneSpecSchema } from '@/features/phones/schema';
@@ -13,16 +14,13 @@ import {
   aspectDefinitions,
   aspects,
   catalogCandidates,
-  catalogRuns,
   chunks,
-  crawlQueue,
-  ingestRuns,
   phones,
   recommendationTurns,
-  scorecardRuns,
   sources,
 } from '@/services/db/schema';
 import { loadLlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
+import { loadPipelineRunMonitorData } from '@/services/internal/pipeline-run-monitor';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +61,19 @@ type ChunkRow = {
   chunkIndex: number;
   text: string;
   tokens: number;
+};
+
+type PhoneOptionRow = {
+  id: string;
+  slug: string;
+  brand: string;
+  model: string;
+  imageUrl: string | null;
+  lastScorecardAt: Date | null;
+};
+
+type SelectedPhoneRow = PhoneOptionRow & {
+  specJson: Record<string, unknown>;
 };
 
 const WORKFLOWS = [
@@ -133,16 +144,20 @@ function pickRankForPhone(picks: unknown, phoneId: string, slug: string) {
 
 async function optionalQuery<T>(promise: Promise<T>, fallback: T, timeoutMs = 1200) {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const guardedPromise = promise.catch((error) => {
+    console.error('optionalQuery error:', error);
+    return fallback;
+  });
 
   try {
     return await Promise.race([
-      promise,
+      guardedPromise,
       new Promise<T>((resolve) => {
         timer = setTimeout(() => resolve(fallback), timeoutMs);
       }),
     ]);
   } catch (error) {
-    console.error('optionalQuery error/timeout:', error);
+    console.error('optionalQuery unexpected failure:', error);
     return fallback;
   } finally {
     if (timer) clearTimeout(timer);
@@ -197,232 +212,169 @@ async function loadPipelineData(selectedSlug: string | null) {
         brand: phones.brand,
         model: phones.model,
         imageUrl: phones.imageUrl,
-        specJson: phones.specJson,
         lastScorecardAt: phones.lastScorecardAt,
       })
       .from(phones)
       .where(eq(phones.status, 'active'))
-      .orderBy(asc(phones.brand), asc(phones.model)),
+      .orderBy(asc(phones.brand), asc(phones.model))
+      .limit(80),
     [],
-    3500,
+    8000,
   );
 
-  const selectedPhone =
+  const selectedPhoneOption =
     phoneOptions.find((phone) => phone.slug === selectedSlug) ?? phoneOptions[0] ?? null;
+  const selectedPhoneRows = selectedPhoneOption
+    ? await optionalQuery(
+        db
+          .select({
+            id: phones.id,
+            slug: phones.slug,
+            brand: phones.brand,
+            model: phones.model,
+            imageUrl: phones.imageUrl,
+            specJson: phones.specJson,
+            lastScorecardAt: phones.lastScorecardAt,
+          })
+          .from(phones)
+          .where(eq(phones.id, selectedPhoneOption.id))
+          .limit(1),
+        [],
+        6000,
+      )
+    : [];
+  const selectedPhone =
+    (selectedPhoneRows[0] as SelectedPhoneRow | undefined) ??
+    (selectedPhoneOption
+      ? ({ ...selectedPhoneOption, specJson: {} } satisfies SelectedPhoneRow)
+      : null);
 
-  const [
-    deviceSources,
-    deviceChunks,
-    deviceAspects,
-    sampleTurns,
-    latestRuns,
-    scoreRuns,
-    resumeRows,
-    catalogRefreshRuns,
-    catalogCandidateSignals,
-  ] = await Promise.all([
-    selectedPhone
-      ? optionalQuery(
-          db
-            .select({
-              id: sources.id,
-              type: sources.type,
-              url: sources.url,
-              title: sources.title,
-              author: sources.author,
-              channel: sources.channel,
-              publishedAt: sources.publishedAt,
-              relevance: sources.relevance,
-              quality: sources.quality,
-              viewCount: sources.viewCount,
-            })
-            .from(sources)
-            .where(and(eq(sources.phoneId, selectedPhone.id), eq(sources.status, 'active')))
-            .orderBy(desc(sources.lastFetchedAt))
-            .limit(12),
-          [],
-        )
-      : [],
-    selectedPhone
-      ? optionalQuery(
-          db
-            .select({
-              id: chunks.id,
-              sourceId: chunks.sourceId,
-              chunkIndex: chunks.chunkIndex,
-              text: chunks.text,
-              tokens: chunks.tokens,
-            })
-            .from(chunks)
-            .where(eq(chunks.phoneId, selectedPhone.id))
-            .orderBy(asc(chunks.chunkIndex))
-            .limit(32),
-          [],
-        )
-      : [],
-    selectedPhone
-      ? optionalQuery(
-          db
-            .select({
-              aspect: aspectDefinitions.aspect,
-              score: aspects.score,
-              confidence: aspects.confidence,
-              summary: aspects.summary,
-              nSupporting: aspects.nSupporting,
-              nDissenting: aspects.nDissenting,
-            })
-            .from(aspects)
-            .innerJoin(aspectDefinitions, eq(aspects.aspectDefinitionId, aspectDefinitions.id))
-            .where(eq(aspects.phoneId, selectedPhone.id))
-            .limit(7),
-          [],
-        )
-      : [],
-    selectedPhone
-      ? optionalQuery(
-          db
-            .select({
-              userMessage: recommendationTurns.userMessage,
-              candidatePhoneIds: recommendationTurns.candidatePhoneIds,
-              picks: recommendationTurns.picks,
-              createdAt: recommendationTurns.createdAt,
-              latencyMs: recommendationTurns.latencyMs,
-            })
-            .from(recommendationTurns)
-            .where(
-              sql`${recommendationTurns.candidatePhoneIds} @> ARRAY[${selectedPhone.id}]::uuid[]`,
-            )
-            .orderBy(desc(recommendationTurns.createdAt))
-            .limit(3),
-          [],
-          2500,
-        )
-      : [],
-    optionalQuery(
-      db
-        .select({
-          id: ingestRuns.id,
-          adapter: ingestRuns.adapter,
-          status: ingestRuns.status,
-          chunksCreated: ingestRuns.chunksCreated,
-          tier: ingestRuns.tier,
-          stage: ingestRuns.stage,
-          errorCode: ingestRuns.errorCode,
-          sourceUrl: ingestRuns.sourceUrl,
-          startedAt: ingestRuns.startedAt,
-          finishedAt: ingestRuns.finishedAt,
-          error: ingestRuns.error,
-        })
-        .from(ingestRuns)
-        .orderBy(desc(ingestRuns.startedAt))
-        .limit(8),
-      [],
-      2500,
-    ),
-    optionalQuery(
-      db
-        .select({
-          id: scorecardRuns.id,
-          aspect: scorecardRuns.aspect,
-          status: scorecardRuns.status,
-          nSources: scorecardRuns.nSources,
-          durationMs: scorecardRuns.durationMs,
-          startedAt: scorecardRuns.startedAt,
-          finishedAt: scorecardRuns.finishedAt,
-          error: scorecardRuns.error,
-        })
-        .from(scorecardRuns)
-        .orderBy(desc(scorecardRuns.startedAt))
-        .limit(8),
-      [],
-      2500,
-    ),
-    optionalQuery(
-      db
-        .select({
-          id: crawlQueue.id,
-          adapter: crawlQueue.adapter,
-          status: crawlQueue.status,
-          tier: crawlQueue.tier,
-          attempts: crawlQueue.attempts,
-          scheduledFor: crawlQueue.scheduledFor,
-          lastError: crawlQueue.lastError,
-        })
-        .from(crawlQueue)
-        .orderBy(asc(crawlQueue.scheduledFor))
-        .limit(8),
-      [],
-      2500,
-    ),
-    optionalQuery(
-      db
-        .select({
-          id: catalogRuns.id,
-          status: catalogRuns.status,
-          stage: catalogRuns.stage,
-          kind: catalogRuns.kind,
-          error: catalogRuns.error,
-          startedAt: catalogRuns.startedAt,
-          finishedAt: catalogRuns.finishedAt,
-        })
-        .from(catalogRuns)
-        .orderBy(desc(catalogRuns.startedAt))
-        .limit(8),
-      [],
-      2500,
-    ),
-    optionalQuery(
-      db
-        .select({
-          total: sql<number>`count(*)::int`.mapWith(Number),
-          pending:
-            sql<number>`count(*) filter (where ${catalogCandidates.decision} = 'pending_review')::int`.mapWith(
-              Number,
-            ),
-          ready:
-            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'ready_to_promote')::int`.mapWith(
-              Number,
-            ),
-          promoted:
-            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted')::int`.mapWith(
-              Number,
-            ),
-          quarantined:
-            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'quarantined')::int`.mapWith(
-              Number,
-            ),
-        })
-        .from(catalogCandidates),
-      [{ total: 0, pending: 0, ready: 0, promoted: 0, quarantined: 0 }],
-      2500,
-    ),
-  ]);
+  const [deviceSources, deviceChunks, deviceAspects, sampleTurns, catalogCandidateSignals] =
+    await Promise.all([
+      selectedPhone
+        ? optionalQuery(
+            db
+              .select({
+                id: sources.id,
+                type: sources.type,
+                url: sources.url,
+                title: sources.title,
+                author: sources.author,
+                channel: sources.channel,
+                publishedAt: sources.publishedAt,
+                relevance: sources.relevance,
+                quality: sources.quality,
+                viewCount: sources.viewCount,
+              })
+              .from(sources)
+              .where(and(eq(sources.phoneId, selectedPhone.id), eq(sources.status, 'active')))
+              .orderBy(desc(sources.lastFetchedAt))
+              .limit(12),
+            [],
+          )
+        : [],
+      selectedPhone
+        ? optionalQuery(
+            db
+              .select({
+                id: chunks.id,
+                sourceId: chunks.sourceId,
+                chunkIndex: chunks.chunkIndex,
+                text: chunks.text,
+                tokens: chunks.tokens,
+              })
+              .from(chunks)
+              .where(eq(chunks.phoneId, selectedPhone.id))
+              .orderBy(asc(chunks.chunkIndex))
+              .limit(32),
+            [],
+          )
+        : [],
+      selectedPhone
+        ? optionalQuery(
+            db
+              .select({
+                aspect: aspectDefinitions.aspect,
+                score: aspects.score,
+                confidence: aspects.confidence,
+                summary: aspects.summary,
+                nSupporting: aspects.nSupporting,
+                nDissenting: aspects.nDissenting,
+              })
+              .from(aspects)
+              .innerJoin(aspectDefinitions, eq(aspects.aspectDefinitionId, aspectDefinitions.id))
+              .where(eq(aspects.phoneId, selectedPhone.id))
+              .limit(7),
+            [],
+          )
+        : [],
+      selectedPhone
+        ? optionalQuery(
+            db
+              .select({
+                userMessage: recommendationTurns.userMessage,
+                candidatePhoneIds: recommendationTurns.candidatePhoneIds,
+                picks: recommendationTurns.picks,
+                createdAt: recommendationTurns.createdAt,
+                latencyMs: recommendationTurns.latencyMs,
+              })
+              .from(recommendationTurns)
+              .where(
+                sql`${recommendationTurns.candidatePhoneIds} @> ARRAY[${selectedPhone.id}]::uuid[]`,
+              )
+              .orderBy(desc(recommendationTurns.createdAt))
+              .limit(3),
+            [],
+            2500,
+          )
+        : [],
+      optionalQuery(
+        db
+          .select({
+            total: sql<number>`count(*)::int`.mapWith(Number),
+            pending:
+              sql<number>`count(*) filter (where ${catalogCandidates.decision} = 'pending_review')::int`.mapWith(
+                Number,
+              ),
+            ready:
+              sql<number>`count(*) filter (where ${catalogCandidates.status} = 'ready_to_promote')::int`.mapWith(
+                Number,
+              ),
+            promoted:
+              sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted')::int`.mapWith(
+                Number,
+              ),
+            quarantined:
+              sql<number>`count(*) filter (where ${catalogCandidates.status} = 'quarantined')::int`.mapWith(
+                Number,
+              ),
+          })
+          .from(catalogCandidates),
+        [],
+        8000,
+      ),
+    ]);
 
   const chunksBySource = groupChunksBySource(deviceChunks as ChunkRow[]);
   const specParsed = selectedPhone ? PhoneSpecSchema.safeParse(selectedPhone.specJson) : null;
-  const runningCount = resumeRows.filter((row) => row.status === 'in_progress').length;
-  const catalogCandidateSignal = catalogCandidateSignals[0] ?? {
-    total: 0,
-    pending: 0,
-    ready: 0,
-    promoted: 0,
-    quarantined: 0,
-  };
+  const catalogCandidateSignal = catalogCandidateSignals[0] ?? null;
+  const activePhoneCount = phoneOptions.length;
 
   const metrics: Metric[] = [
     {
       label: 'Phones active',
-      value: phoneOptions.length.toLocaleString('en-US'),
-      detail: 'Promoted catalog entries',
+      value: activePhoneCount > 0 ? activePhoneCount.toLocaleString('en-US') : '--',
+      detail: activePhoneCount > 0 ? 'Promoted catalog entries' : 'DB query timed out locally',
       icon: '[]',
     },
     {
       label: 'Candidate queue',
-      value: catalogCandidateSignal.total.toLocaleString('en-US'),
-      detail:
-        `${catalogCandidateSignal.pending.toLocaleString('en-US')} pending, ` +
-        `${catalogCandidateSignal.ready.toLocaleString('en-US')} ready, ` +
-        `${catalogCandidateSignal.quarantined.toLocaleString('en-US')} blocked`,
+      value: catalogCandidateSignal ? catalogCandidateSignal.total.toLocaleString('en-US') : '--',
+      detail: catalogCandidateSignal
+        ? `${catalogCandidateSignal.pending.toLocaleString('en-US')} pending, ` +
+          `${catalogCandidateSignal.ready.toLocaleString('en-US')} ready, ` +
+          `${catalogCandidateSignal.quarantined.toLocaleString('en-US')} blocked`
+        : 'DB query timed out locally',
       icon: '{}',
     },
     {
@@ -433,24 +385,18 @@ async function loadPipelineData(selectedSlug: string | null) {
     },
     {
       label: 'Scorecards generated',
-      value: phoneOptions.filter((p) => p.lastScorecardAt !== null).length.toLocaleString('en-US'),
-      detail: `Out of ${phoneOptions.length.toLocaleString('en-US')} phones`,
+      value: activePhoneCount
+        ? phoneOptions.filter((p) => p.lastScorecardAt !== null).length.toLocaleString('en-US')
+        : '--',
+      detail: activePhoneCount
+        ? `Out of ${phoneOptions.length.toLocaleString('en-US')} phones`
+        : 'DB query timed out locally',
       icon: '##',
-    },
-    {
-      label: 'Queue',
-      value: resumeRows.length.toLocaleString('en-US'),
-      detail: `${runningCount.toLocaleString('en-US')} running`,
-      icon: '>',
     },
   ];
 
   return {
     metrics,
-    latestRuns,
-    scoreRuns,
-    resumeRows,
-    catalogRefreshRuns,
     phoneOptions,
     selectedPhone,
     deviceSources: deviceSources as SourceRow[],
@@ -459,7 +405,6 @@ async function loadPipelineData(selectedSlug: string | null) {
     deviceAspects,
     sampleTurns,
     spec: specParsed?.success ? specParsed.data : null,
-    runCandidateAggregates: [], // We'll fetch this below
   };
 }
 
@@ -471,10 +416,6 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     : (selectedSlugParam ?? null);
   const {
     metrics,
-    latestRuns,
-    scoreRuns,
-    resumeRows,
-    catalogRefreshRuns,
     phoneOptions,
     selectedPhone,
     deviceSources,
@@ -484,31 +425,10 @@ export default async function PipelinePage({ searchParams }: PageProps) {
     sampleTurns,
     spec,
   } = await loadPipelineData(selectedSlug);
-  const llmUsage = await loadLlmUsageMonitorData();
-
-  const db = getDb();
-  const runIds = catalogRefreshRuns.map((r) => r.id);
-  const runCandidateAggregates =
-    runIds.length > 0
-      ? await optionalQuery(
-          db
-            .select({
-              runId: catalogCandidates.lastRunId,
-              decision: catalogCandidates.decision,
-              status: catalogCandidates.status,
-              count: sql<number>`count(*)`.mapWith(Number),
-            })
-            .from(catalogCandidates)
-            .where(inArray(catalogCandidates.lastRunId, runIds))
-            .groupBy(
-              catalogCandidates.lastRunId,
-              catalogCandidates.decision,
-              catalogCandidates.status,
-            ),
-          [],
-          2500,
-        )
-      : [];
+  const [llmUsage, pipelineRuns] = await Promise.all([
+    loadLlmUsageMonitorData(),
+    loadPipelineRunMonitorData(),
+  ]);
 
   const sourceMix = deviceSources.reduce<Record<string, number>>((acc, source) => {
     acc[source.type] = (acc[source.type] ?? 0) + 1;
@@ -576,63 +496,6 @@ export default async function PipelinePage({ searchParams }: PageProps) {
   }));
   const serializedTurns = recommendedTurns;
 
-  const ingestionRows = latestRuns.map((run) => ({
-    id: run.id,
-    label: `${run.adapter}${run.stage ? ` / ${run.stage}` : ''}`,
-    status: run.status,
-    detail: run.error ?? run.errorCode ?? `${run.chunksCreated} chunks / ${run.tier ?? 'no tier'}`,
-    startedAt: formatDate(run.startedAt),
-    finishedAt: formatDate(run.finishedAt),
-  }));
-  const scorecardRows = scoreRuns.map((run) => ({
-    id: run.id,
-    label: run.aspect,
-    status: run.status,
-    detail: run.error ?? `${run.nSources ?? 0} sources / ${run.durationMs ?? 0} ms`,
-    startedAt: formatDate(run.startedAt),
-    finishedAt: formatDate(run.finishedAt),
-  }));
-  const resumeRunRows = resumeRows.map((row) => ({
-    id: row.id,
-    label: `${row.adapter} / ${row.tier}`,
-    status: row.status,
-    detail: row.lastError ?? `${row.attempts} attempts`,
-    startedAt: formatDate(row.scheduledFor),
-    finishedAt: null,
-  }));
-  const catalogRunRows = catalogRefreshRuns.map((run) => {
-    const aggregates = runCandidateAggregates.filter((a) => a.runId === run.id);
-    let added = 0;
-    let pending = 0;
-    let approved = 0;
-    let failed = 0;
-
-    for (const agg of aggregates) {
-      added += agg.count;
-      if (agg.decision === 'pending_review') {
-        pending += agg.count;
-      } else if (agg.status === 'promoted' || agg.decision === 'promote') {
-        approved += agg.count;
-      } else {
-        failed += agg.count;
-      }
-    }
-
-    let detailStr = run.error ?? (run.stage ? `Stage: ${run.stage}` : 'Completed');
-    if (added > 0) {
-      detailStr = `Added: ${added} (Pending: ${pending}, Approved: ${approved}, Failed/Other: ${failed})`;
-    }
-
-    return {
-      id: run.id,
-      label: `Catalog Refresh / ${run.kind}`,
-      status: run.status,
-      detail: detailStr,
-      startedAt: formatDate(run.startedAt),
-      finishedAt: formatDate(run.finishedAt),
-    };
-  });
-
   return (
     <div className="grid-bg bg-background flex">
       <aside className="border-outline-variant bg-background sticky top-0 hidden h-dvh w-64 shrink-0 border-r lg:flex lg:flex-col">
@@ -684,7 +547,7 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           </div>
         </header>
 
-        <section className="border-outline-variant bg-outline-variant mt-12 grid gap-px border md:grid-cols-4">
+        <section className="border-outline-variant bg-outline-variant mt-12 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
             <div key={metric.label} className="bg-background relative overflow-hidden p-6">
               <p className="meta-label">{metric.label}</p>
@@ -700,7 +563,10 @@ export default async function PipelinePage({ searchParams }: PageProps) {
         </section>
 
         <div className="accent-hairline border-outline-variant mt-12 flex flex-col gap-4 border-b pb-3 md:flex-row md:items-center md:justify-between">
-          <p className="meta-label text-primary">Device probe</p>
+          <SectionHint label="Device probe">
+            Selects the phone whose sources, chunks, scorecards, and recommendation history drive
+            the live lifecycle views below.
+          </SectionHint>
           <form action="/internal/pipeline" className="flex items-center gap-3">
             <label htmlFor="phone" className="meta-label">
               Phone
@@ -738,12 +604,13 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           }
         />
 
-        <LlmUsageMonitor data={llmUsage} />
-
         <section className="mt-12 grid gap-8 lg:grid-cols-12">
           <div className="border-outline-variant bg-background border lg:col-span-5">
             <div className="border-outline-variant border-b p-5">
-              <p className="meta-label text-primary">Corpus overview</p>
+              <SectionHint label="Corpus overview">
+                Summarizes the selected phone&apos;s stored evidence coverage, scorecard readiness,
+                source diversity, and retrieval state.
+              </SectionHint>
               {selectedPhone ? (
                 <h2 className="text-gradient-steel font-display mt-3 text-3xl font-bold uppercase">
                   {selectedPhone.brand} {selectedPhone.model}
@@ -810,11 +677,14 @@ export default async function PipelinePage({ searchParams }: PageProps) {
           />
         </section>
 
+        <LlmUsageMonitor data={llmUsage} />
+
         <WorkflowTables
-          ingestionRuns={ingestionRows}
-          scorecardRuns={scorecardRows}
-          resumeRows={resumeRunRows}
-          catalogRefreshRuns={catalogRunRows}
+          ingestionRuns={pipelineRuns.ingestionRuns}
+          scorecardRuns={pipelineRuns.scorecardRuns}
+          resumeRows={pipelineRuns.resumeRows}
+          catalogRefreshRuns={pipelineRuns.catalogRefreshRuns}
+          githubRuns={pipelineRuns.githubRuns}
           workflows={WORKFLOWS}
         />
       </main>

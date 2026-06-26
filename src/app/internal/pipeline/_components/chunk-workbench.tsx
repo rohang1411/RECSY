@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { SectionHint } from './section-hint';
+
 export type WorkbenchSource = {
   id: string;
   type: string;
@@ -50,7 +52,10 @@ export function ChunkWorkbench({ sources, chunks, aspectLabels }: ChunkWorkbench
   return (
     <section className="border-outline-variant bg-background border lg:col-span-7">
       <div className="border-outline-variant border-b p-5">
-        <p className="meta-label text-primary">Chunk workbench</p>
+        <SectionHint label="Chunk workbench">
+          Opens the actual retrievable chunks behind the selected phone so evidence quality can be
+          inspected without leaving the dashboard.
+        </SectionHint>
       </div>
       <div className="grid min-h-[520px] lg:grid-cols-[0.95fr_1.05fr]">
         <div className="border-outline-variant max-h-[620px] overflow-y-auto border-r">

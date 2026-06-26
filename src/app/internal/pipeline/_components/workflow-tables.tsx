@@ -1,15 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 
-type RunRow = {
-  id: string;
-  label: string;
-  status: string;
-  detail: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-};
+import type { PipelineRunRow } from '@/services/internal/pipeline-run-monitor';
+
+import { SectionHint } from './section-hint';
+
+type RunRow = PipelineRunRow;
 
 type WorkflowRow = {
   id: string;
@@ -24,6 +21,7 @@ type WorkflowTablesProps = {
   readonly scorecardRuns: readonly RunRow[];
   readonly resumeRows: readonly RunRow[];
   readonly catalogRefreshRuns: readonly RunRow[];
+  readonly githubRuns: readonly RunRow[];
   readonly workflows: readonly WorkflowRow[];
 };
 
@@ -48,6 +46,8 @@ function dotState(status: string) {
 }
 
 function DataTable({ rows }: { readonly rows: readonly RunRow[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(rows[0]?.id ?? null);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse text-left">
@@ -65,28 +65,56 @@ function DataTable({ rows }: { readonly rows: readonly RunRow[] }) {
         </thead>
         <tbody>
           {rows.length > 0 ? (
-            rows.map((row) => (
-              <tr key={row.id} className="border-outline-variant border-b last:border-b-0">
-                <td className="border-outline-variant text-primary border-r p-3 text-sm">
-                  {row.label}
-                </td>
-                <td className="border-outline-variant border-r p-3 text-sm">
-                  <span className={`inline-flex items-center gap-2 ${statusTone(row.status)}`}>
-                    <span className="status-dot size-3" data-state={dotState(row.status)} />
-                    <span className="text-primary">{row.status}</span>
-                  </span>
-                </td>
-                <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
-                  {row.detail}
-                </td>
-                <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
-                  {row.startedAt ?? 'not started'}
-                </td>
-                <td className="text-muted-foreground p-3 text-sm">
-                  {row.finishedAt ?? 'not finished'}
-                </td>
-              </tr>
-            ))
+            rows.map((row) => {
+              const expanded = expandedId === row.id;
+              return (
+                <Fragment key={row.id}>
+                  <tr className="border-outline-variant hover:bg-surface-container/60 border-b transition-colors">
+                    <td className="border-outline-variant border-r p-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedId((current) => (current === row.id ? null : row.id))
+                        }
+                        aria-expanded={expanded}
+                        className="text-primary hover:text-accent focus-visible:text-accent text-left transition-colors focus-visible:outline-none"
+                      >
+                        {row.label}
+                      </button>
+                    </td>
+                    <td className="border-outline-variant border-r p-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedId((current) => (current === row.id ? null : row.id))
+                        }
+                        aria-expanded={expanded}
+                        className={`inline-flex items-center gap-2 ${statusTone(row.status)}`}
+                      >
+                        <span className="status-dot size-3" data-state={dotState(row.status)} />
+                        <span className="text-primary">{row.status}</span>
+                      </button>
+                    </td>
+                    <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
+                      {row.detail}
+                    </td>
+                    <td className="border-outline-variant text-muted-foreground border-r p-3 text-sm">
+                      {row.startedAt ?? 'not started'}
+                    </td>
+                    <td className="text-muted-foreground p-3 text-sm">
+                      {row.finishedAt ?? 'not finished'}
+                    </td>
+                  </tr>
+                  {expanded ? (
+                    <tr key={`${row.id}-detail`} className="border-outline-variant border-b">
+                      <td colSpan={5} className="bg-background p-0">
+                        <RunDetails row={row} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })
           ) : (
             <tr>
               <td className="text-muted-foreground p-5 text-sm" colSpan={5}>
@@ -100,11 +128,99 @@ function DataTable({ rows }: { readonly rows: readonly RunRow[] }) {
   );
 }
 
+function RunDetails({ row }: { readonly row: RunRow }) {
+  return (
+    <div className="pipeline-grid bg-outline-variant grid gap-px p-px lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="bg-background p-5">
+        <p className="meta-label text-accent">Run facts</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {row.details.map((detail) => (
+            <div key={`${row.id}-${detail.label}`} className="border-outline-variant border p-3">
+              <p className="text-muted-foreground font-mono text-[10px] tracking-[0.14em] uppercase">
+                {detail.label}
+              </p>
+              <p className={`${detailTone(detail.tone)} mt-2 text-sm leading-5 break-words`}>
+                {detail.value}
+              </p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5">
+          <p className="meta-label text-accent">Diagnostics</p>
+          <div className="mt-3 grid max-h-44 gap-2 overflow-y-auto pr-2">
+            {row.diagnostics.length > 0 ? (
+              row.diagnostics.map((item) => (
+                <p
+                  key={item}
+                  className="border-outline-variant text-muted-foreground border p-3 text-sm leading-5"
+                >
+                  {item}
+                </p>
+              ))
+            ) : (
+              <p className="border-outline-variant text-muted-foreground border border-dashed p-3 text-sm">
+                No failure or skip diagnostics were recorded for this run.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="bg-background p-5">
+        <p className="meta-label text-accent">Phones / sources touched</p>
+        <div className="mt-4 grid max-h-80 gap-3 overflow-y-auto pr-2">
+          {row.related.length > 0 ? (
+            row.related.map((item) => (
+              <article key={`${item.title}-${item.detail}`} className="interactive-panel p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-primary text-sm leading-5">{item.title}</p>
+                    <p className="text-muted-foreground mt-1 font-mono text-[10px] tracking-[0.12em] uppercase">
+                      {item.meta ?? 'run artifact'}
+                    </p>
+                  </div>
+                  <span className={`font-mono text-[10px] uppercase ${statusTone(item.status)}`}>
+                    {item.status}
+                  </span>
+                </div>
+                <p className="text-muted-foreground mt-3 text-sm leading-5 break-words">
+                  {item.detail}
+                </p>
+                {item.href ? (
+                  <a
+                    href={item.href}
+                    target={item.href.startsWith('/') ? undefined : '_blank'}
+                    rel={item.href.startsWith('/') ? undefined : 'noopener noreferrer'}
+                    className="text-accent mt-3 inline-flex font-mono text-[10px] tracking-[0.14em] uppercase"
+                  >
+                    Open evidence
+                  </a>
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <p className="border-outline-variant text-muted-foreground border border-dashed p-5 text-sm">
+              This run did not record linked phones, sources, or candidates.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function detailTone(tone: RunRow['details'][number]['tone']) {
+  if (tone === 'good') return 'text-[#39ff88]';
+  if (tone === 'warn') return 'text-[#ffe45e]';
+  if (tone === 'bad') return 'text-[#ff3b30]';
+  return 'text-primary';
+}
+
 export function WorkflowTables({
   ingestionRuns,
   scorecardRuns,
   resumeRows,
   catalogRefreshRuns,
+  githubRuns,
   workflows,
 }: WorkflowTablesProps) {
   const sections = [
@@ -112,13 +228,17 @@ export function WorkflowTables({
     { id: 'scorecards', title: 'Scorecard generation', rows: scorecardRuns },
     { id: 'resume', title: 'Resume ingestion candidates', rows: resumeRows },
     { id: 'catalog', title: 'Catalog refresh runs', rows: catalogRefreshRuns },
+    { id: 'github', title: 'GitHub Actions history', rows: githubRuns },
   ] as const;
   const [openId, setOpenId] = useState<string | null>('ingestion');
 
   return (
     <section className="border-outline-variant bg-background mt-12 border">
       <div className="border-outline-variant border-b p-5">
-        <p className="meta-label text-primary">Pipeline runs</p>
+        <SectionHint label="Pipeline runs">
+          Expands recent automation runs into phone-level outcomes, source artifacts, counts,
+          failures, and catalog candidate reasons.
+        </SectionHint>
       </div>
       <div className="divide-outline-variant divide-y">
         {sections.map((section) => (
