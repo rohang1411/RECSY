@@ -8,8 +8,12 @@
  * Usage:
  *   pnpm catalog:promote --candidate <uuid> --dry-run
  *   pnpm catalog:promote --ready --limit 20
+ *
+ * `--ready` also revalidates staged/quarantined candidates that already carry
+ * structured `claims_json.promotion`. This lets gate relaxations move older
+ * rows forward without waiting for another external enrichment fetch.
  */
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { promoteCatalogCandidate } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
@@ -100,7 +104,30 @@ async function main(): Promise<void> {
         await db
           .select({ id: catalogCandidates.id })
           .from(catalogCandidates)
-          .where(inArray(catalogCandidates.status, ['ready_to_promote', 'validated']))
+          .where(
+            or(
+              inArray(catalogCandidates.status, ['ready_to_promote', 'validated']),
+              and(
+                inArray(catalogCandidates.status, [
+                  'discovered',
+                  'quarantined',
+                  'failed_transient',
+                ]),
+                sql`${catalogCandidates.claimsJson} ? 'promotion'`,
+              ),
+            ),
+          )
+          .orderBy(
+            sql`
+            case
+              when ${catalogCandidates.status} in ('ready_to_promote', 'validated') then 0
+              when ${catalogCandidates.status} = 'discovered' then 1
+              when ${catalogCandidates.status} = 'quarantined' then 2
+              else 3
+            end,
+            ${catalogCandidates.updatedAt} desc
+          `,
+          )
           .limit(args.limit)
       ).map((row) => row.id);
 
@@ -192,7 +219,7 @@ function printUsage(): void {
       '',
       'Options:',
       '  --candidate <uuid>   Promote one candidate',
-      '  --ready              Promote ready_to_promote candidates',
+      '  --ready              Promote ready/revalidatable structured candidates',
       '  --limit N            Max ready candidates to process (default: 20)',
       '  --dry-run            Validate and print actions without DB writes',
       '  --update-existing    Refresh matched phones instead of blocking',

@@ -2,6 +2,12 @@
 
 Date: 2026-06-09
 
+Implementation status: initial scaffold shipped 2026-06-10. The repo now
+contains `orchestration/airflow/` with Docker Compose, shared Airflow helpers,
+and DAGs for catalog refresh, creator watch, tiered ingestion, ingestion
+resume, one-phone ingestion, scorecard automation, reports, and manual
+bootstrap. GitHub Actions remains the production scheduler.
+
 ## Executive decision
 
 Airflow can be added to RECSY logically, but it should not replace GitHub

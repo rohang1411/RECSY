@@ -60,6 +60,27 @@ test-results/
 .cache/
 
 
+# --- Python / Airflow local runtime ------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+
+# Airflow creates a local home with DBs, logs, PID files, and generated config.
+orchestration/airflow/.airflow-home/
+orchestration/airflow/.venv/
+orchestration/airflow/airflow.db
+orchestration/airflow/airflow.cfg
+orchestration/airflow/standalone_admin_password.txt
+
+
 # --- Husky (generated shim) ---------------------------------------------------
 # The committed hook scripts live in `.husky/<name>`; the `_` folder is
 # auto-created by husky install and should never be checked in.

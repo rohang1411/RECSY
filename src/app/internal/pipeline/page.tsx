@@ -219,6 +219,7 @@ async function loadPipelineData(selectedSlug: string | null) {
     scoreRuns,
     resumeRows,
     catalogRefreshRuns,
+    catalogCandidateSignals,
   ] = await Promise.all([
     selectedPhone
       ? optionalQuery(
@@ -370,18 +371,59 @@ async function loadPipelineData(selectedSlug: string | null) {
       [],
       2500,
     ),
+    optionalQuery(
+      db
+        .select({
+          total: sql<number>`count(*)::int`.mapWith(Number),
+          pending:
+            sql<number>`count(*) filter (where ${catalogCandidates.decision} = 'pending_review')::int`.mapWith(
+              Number,
+            ),
+          ready:
+            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'ready_to_promote')::int`.mapWith(
+              Number,
+            ),
+          promoted:
+            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'promoted')::int`.mapWith(
+              Number,
+            ),
+          quarantined:
+            sql<number>`count(*) filter (where ${catalogCandidates.status} = 'quarantined')::int`.mapWith(
+              Number,
+            ),
+        })
+        .from(catalogCandidates),
+      [{ total: 0, pending: 0, ready: 0, promoted: 0, quarantined: 0 }],
+      2500,
+    ),
   ]);
 
   const chunksBySource = groupChunksBySource(deviceChunks as ChunkRow[]);
   const specParsed = selectedPhone ? PhoneSpecSchema.safeParse(selectedPhone.specJson) : null;
   const runningCount = resumeRows.filter((row) => row.status === 'in_progress').length;
+  const catalogCandidateSignal = catalogCandidateSignals[0] ?? {
+    total: 0,
+    pending: 0,
+    ready: 0,
+    promoted: 0,
+    quarantined: 0,
+  };
 
   const metrics: Metric[] = [
     {
       label: 'Phones active',
       value: phoneOptions.length.toLocaleString('en-US'),
-      detail: 'Catalog entries',
+      detail: 'Promoted catalog entries',
       icon: '[]',
+    },
+    {
+      label: 'Candidate queue',
+      value: catalogCandidateSignal.total.toLocaleString('en-US'),
+      detail:
+        `${catalogCandidateSignal.pending.toLocaleString('en-US')} pending, ` +
+        `${catalogCandidateSignal.ready.toLocaleString('en-US')} ready, ` +
+        `${catalogCandidateSignal.quarantined.toLocaleString('en-US')} blocked`,
+      icon: '{}',
     },
     {
       label: 'Device sources',

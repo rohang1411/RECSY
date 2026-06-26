@@ -45,8 +45,6 @@ export const CORE_SPEC_FIELDS = [
   'ram_gb',
   'storage_options_gb',
   'battery_mah',
-  'os',
-  'rear_cameras',
 ] as const;
 
 export const SPEC_COMPLETENESS_PROMOTE_OK = 1.0;
@@ -141,8 +139,6 @@ export function findMissingCoreFields(input: CatalogSpecProjectionInput): string
     missing.push('storage_options_gb');
   }
   if (input.batteryMah == null) missing.push('battery_mah');
-  if (!input.os) missing.push('os');
-  if (!input.rearCameras || input.rearCameras.length === 0) missing.push('rear_cameras');
   return missing;
 }
 

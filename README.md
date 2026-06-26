@@ -144,7 +144,7 @@ pnpm build        # production build check
 ├── e2e/                     # Playwright specs
 ├── test/                    # Vitest global setup
 ├── docs/                    # ADRs, operator guides, project context + guide
-│   ├── adr/                 # Architecture Decision Records (0001–0017)
+│   ├── adr/                 # Architecture Decision Records (0001–0018)
 │   ├── ImplementationPlans/ # Detailed implementation plans
 │   ├── Walkthroughs/        # Narrative walkthroughs for demos
 │   ├── retrieval/           # Hybrid retrieval operator guide
@@ -155,6 +155,7 @@ pnpm build        # production build check
 │   ├── compare/             # Compare behavior
 │   ├── eval/                # Evaluation tiers and commands
 │   └── deployment/          # Deployment runbook
+├── orchestration/airflow/   # Optional Airflow control-plane/demo DAGs
 ├── public/                  # Static assets (favicons, PWA icons)
 └── legacy/                  # Original 2020 Flutter app (reference only; not maintained)
 ```
@@ -169,8 +170,9 @@ Top-level config files stay at the repo root (`package.json`, `tsconfig.json`, `
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | [`docs/RECSY_V2_PROJECT_GUIDE.md`](docs/RECSY_V2_PROJECT_GUIDE.md)     | Explainer-first narrative — what RECSY is, how every subsystem fits together   |
 | [`docs/RECSY_V2_PROJECT_CONTEXT.md`](docs/RECSY_V2_PROJECT_CONTEXT.md) | Living implementation plan, backlog, change log, issues log, development rules |
-| [`docs/adr/`](docs/adr/)                                               | Architecture Decision Records (0001–0017)                                      |
+| [`docs/adr/`](docs/adr/)                                               | Architecture Decision Records (0001–0018)                                      |
 | [`docs/ImplementationPlans/`](docs/ImplementationPlans/)               | Detailed implementation plans                                                  |
+| [`orchestration/airflow/`](orchestration/airflow/)                     | Optional Airflow local/control-plane integration                               |
 | [`docs/ingest/README.md`](docs/ingest/README.md)                       | Ingestion operator guide                                                       |
 | [`docs/retrieval/README.md`](docs/retrieval/README.md)                 | Hybrid retrieval tuning + debugging                                            |
 | [`docs/recommender/README.md`](docs/recommender/README.md)             | Recommender pipeline + API contract                                            |
@@ -195,12 +197,13 @@ Top-level config files stay at the repo root (`package.json`, `tsconfig.json`, `
 | [0015](docs/adr/0015-automated-aspect-scorecard.md)                          | Automated aspect scorecard generation                 |
 | [0016](docs/adr/0016-internal-pipeline-observatory.md)                       | Internal Pipeline Observatory dashboard               |
 | [0017](docs/adr/0017-ingestion-resumability-and-intelligent-retry.md)        | Ingestion resumability + intelligent retry            |
+| [0018](docs/adr/0018-optional-airflow-orchestration.md)                      | Optional Airflow orchestration layer                  |
 
 ---
 
 ## Status
 
-All phases through Phase 7 (polish) are shipped. Current work: ingestion automation hardening, scorecard automation, and documentation parity. See [`docs/RECSY_V2_PROJECT_CONTEXT.md`](docs/RECSY_V2_PROJECT_CONTEXT.md) for the live backlog, change log, and issues log.
+All phases through Phase 7 (polish) are shipped. Current work: ingestion automation hardening, scorecard automation, optional Airflow orchestration, and documentation parity. See [`docs/RECSY_V2_PROJECT_CONTEXT.md`](docs/RECSY_V2_PROJECT_CONTEXT.md) for the live backlog, change log, and issues log.
 
 ---
 

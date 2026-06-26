@@ -399,7 +399,8 @@ async function main(): Promise<void> {
       );
       console.log(
         `  ${phone.slug} (${phone.tier})  sources=${summary.totals.sourcesWritten} ` +
-          `chunks=${summary.totals.chunksWritten} errors=${summary.totals.errors}`,
+          `chunks=${summary.totals.chunksWritten} rejected=${summary.totals.skippedRejected} ` +
+          `unusable=${summary.totals.skippedUnusable} errors=${summary.totals.errors}`,
       );
       const wroteContent = summary.totals.chunksWritten > 0 || summary.totals.sourcesWritten > 0;
       const hasQuotaFailures = summary.adapters.some((a) =>
@@ -446,7 +447,13 @@ async function main(): Promise<void> {
         } else {
           empty += 1;
           logger.warn(
-            { phone: phone.slug, tier: phone.tier, errors: summary.totals.errors },
+            {
+              phone: phone.slug,
+              tier: phone.tier,
+              rejected: summary.totals.skippedRejected,
+              unusable: summary.totals.skippedUnusable,
+              errors: summary.totals.errors,
+            },
             'ingest produced no sources or chunks; leaving phone due for retry (not rescheduling)',
           );
         }

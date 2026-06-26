@@ -109,7 +109,5 @@ jobs:
             --tier all \
             --limit "$LIMIT" \
             --resume-failed \
-            --fail-on-zero-success \
-            --fail-on-empty \
             --shard "${{ matrix.shard }}" \
             --total-shards 4

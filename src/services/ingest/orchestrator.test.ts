@@ -61,6 +61,7 @@ describe('IngestOrchestrator unavailable sources', () => {
       discovered: 1,
       fetched: 0,
       skippedUnusable: 1,
+      skippedRejected: 0,
       errors: [],
     });
     expect(summary.totals.skippedUnusable).toBe(1);
