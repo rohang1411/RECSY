@@ -50,6 +50,16 @@ export function isReleasedCatalogCandidate(
   );
 }
 
+export function isWeakCatalogReleaseDate(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /^(?:exp|expected|rumou?red|upcoming|anticipated|planned)\b/.test(normalized);
+}
+
 export function compareCatalogPriorityThenNewest(
   a: CatalogPriorityCandidate,
   b: CatalogPriorityCandidate,

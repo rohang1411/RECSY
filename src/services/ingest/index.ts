@@ -44,6 +44,14 @@ export { makePoliteHttp, type PoliteHttp } from './http';
 
 export { pickPhones, shardIndex, type PickedPhone } from './scheduler/pick-phones';
 export {
+  markCrawlQueueDone,
+  markCrawlQueueFailed,
+  markCrawlQueueStarted,
+  pickQueuedCrawlItems,
+  queuedItemsToCandidates,
+  type QueuedCrawlItem,
+} from './scheduler/crawl-queue';
+export {
   getFailedCandidatesForPhone,
   pickPhonesEmptyCorpus,
   pickResumePhones,
