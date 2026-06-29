@@ -31,6 +31,7 @@ export {
   isFutureCatalogDate,
   isLikelyCatalogPhoneTitle,
   isReleasedCatalogCandidate,
+  isWeakCatalogReleaseDate,
   startOfNextUtcDay,
 } from './candidate-policy';
 export type { CatalogPriorityCandidate } from './candidate-policy';

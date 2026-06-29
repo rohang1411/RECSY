@@ -21,6 +21,7 @@ import {
   hashJson,
   isLikelyCatalogPhoneTitle,
   isReleasedCatalogCandidate,
+  isWeakCatalogReleaseDate,
   normalizeIdentityText,
   promoteCatalogCandidate,
   resolveOemUrls,
@@ -501,7 +502,11 @@ function hasUsableCandidateReleaseDate(
     stringValue(raw.launchDate),
     stringValue(raw.releaseDate),
     stringValue(raw.releasedAt),
-  ].some((value) => Boolean(value && Number.isFinite(Date.parse(value))));
+    stringValue(raw.release_date),
+  ].some(
+    (value) =>
+      Boolean(value && Number.isFinite(Date.parse(value))) && !isWeakCatalogReleaseDate(value),
+  );
 }
 
 function bestOfficialUrlFromCandidate(

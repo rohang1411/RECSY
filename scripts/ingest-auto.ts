@@ -31,15 +31,21 @@ import {
   RedditAdapter,
   YouTubeChannelAdapter,
   getFailedCandidatesForPhone,
+  markCrawlQueueDone,
+  markCrawlQueueFailed,
+  markCrawlQueueStarted,
   makeDbAliasLoader,
   makeDbPhoneLookup,
   makePoliteHttp,
   markIngested,
   pickPhones,
+  pickQueuedCrawlItems,
   pickResumePhones,
+  queuedItemsToCandidates,
   type IngestTier,
   type CreatorChannel,
   type PickedPhone,
+  type QueuedCrawlItem,
   type SourceCandidate,
   type SourceType,
   type SubredditProfile,
@@ -218,6 +224,7 @@ async function main(): Promise<void> {
     { table: 'phone_aliases' },
     { table: 'creator_profiles' },
     { table: 'subreddit_profiles' },
+    { table: 'crawl_queue' },
     { table: 'source_phone_links' },
     {
       table: 'ingest_runs',
@@ -289,6 +296,13 @@ async function main(): Promise<void> {
 
   let picked: PickedPhone[];
   const resumeWindowMs = args.resumeWindowDays * 24 * 60 * 60 * 1000;
+  const queuedItems = await pickQueuedCrawlItems(db, {
+    tiers,
+    limit: args.limit,
+    shard: args.shard,
+    totalShards: args.totalShards,
+  });
+  const queuedByPhone = groupQueuedItemsByPhone(queuedItems);
 
   if (args.resumeFailed) {
     const resumePhones = await pickResumePhones(db, {
@@ -328,6 +342,24 @@ async function main(): Promise<void> {
     });
   }
 
+  if (queuedByPhone.size > 0) {
+    const queuedPhones = [...queuedByPhone.values()]
+      .map((items) => items[0]?.phone)
+      .filter((phone): phone is PickedPhone => Boolean(phone));
+    const queuedPhoneIds = new Set(queuedPhones.map((phone) => phone.id));
+    const merged = [...queuedPhones, ...picked.filter((phone) => !queuedPhoneIds.has(phone.id))];
+    for (const [phoneId, items] of queuedByPhone) {
+      if (!queuedPhoneIds.has(phoneId)) {
+        const phone = items[0]?.phone;
+        if (phone) merged.push(phone);
+      }
+    }
+    picked = merged.slice(0, args.limit);
+    console.log(
+      `[ingest:auto] found ${queuedItems.length} due crawl_queue candidates across ${queuedByPhone.size} phones`,
+    );
+  }
+
   if (picked.length === 0) {
     console.log('[ingest:auto] no phones due this run');
     process.exit(0);
@@ -344,7 +376,9 @@ async function main(): Promise<void> {
     try {
       let candidatesByType: Partial<Record<SourceType, SourceCandidate[]>> | undefined;
       let adapterTypes: SourceType[] | undefined;
-      const discoveryStrategy: string = args.resumeFailed ? 'resume' : 'tiered';
+      const queuedForPhone = queuedByPhone.get(phone.id) ?? [];
+      const discoveryStrategy: string =
+        queuedForPhone.length > 0 ? 'crawl_queue' : args.resumeFailed ? 'resume' : 'tiered';
 
       if (args.resumeFailed) {
         const failed = await getFailedCandidatesForPhone(db, phone.id, {
@@ -380,6 +414,30 @@ async function main(): Promise<void> {
         }
       }
 
+      if (queuedForPhone.length > 0) {
+        if (!args.dryRun) {
+          await markCrawlQueueStarted(
+            db,
+            queuedForPhone.map((item) => item.id),
+          );
+        }
+        candidatesByType = mergeCandidatesByType(
+          candidatesByType,
+          queuedItemsToCandidates(queuedForPhone),
+        );
+        adapterTypes = [
+          ...new Set([...(adapterTypes ?? []), ...queuedForPhone.map((item) => item.adapter)]),
+        ];
+        logger.info(
+          {
+            phone: phone.slug,
+            candidates: queuedForPhone.length,
+            adapters: adapterTypes,
+          },
+          'crawl_queue: injecting queued candidates',
+        );
+      }
+
       const summary = await orchestrator.ingestPhone(
         {
           id: phone.id,
@@ -397,6 +455,11 @@ async function main(): Promise<void> {
           discoveryStrategy,
         },
       );
+
+      if (!args.dryRun && queuedForPhone.length > 0) {
+        await reconcileCrawlQueueAfterRun(db, queuedForPhone, summary.adapters);
+      }
+
       console.log(
         `  ${phone.slug} (${phone.tier})  sources=${summary.totals.sourcesWritten} ` +
           `chunks=${summary.totals.chunksWritten} rejected=${summary.totals.skippedRejected} ` +
@@ -462,6 +525,14 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       failures += 1;
+      const queuedForPhone = queuedByPhone.get(phone.id) ?? [];
+      if (!args.dryRun && queuedForPhone.length > 0) {
+        await markCrawlQueueFailed(
+          db,
+          queuedForPhone,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       logger.error(
         { phone: phone.slug, err: err instanceof Error ? err.message : String(err) },
         'phone ingest failed',
@@ -481,6 +552,60 @@ async function main(): Promise<void> {
           ? true
           : false;
   process.exit(shouldFail ? 1 : 0);
+}
+
+function groupQueuedItemsByPhone(
+  items: readonly QueuedCrawlItem[],
+): Map<string, QueuedCrawlItem[]> {
+  const grouped = new Map<string, QueuedCrawlItem[]>();
+  for (const item of items) {
+    const current = grouped.get(item.phone.id) ?? [];
+    current.push(item);
+    grouped.set(item.phone.id, current);
+  }
+  return grouped;
+}
+
+function mergeCandidatesByType(
+  a: Partial<Record<SourceType, SourceCandidate[]>> | undefined,
+  b: Partial<Record<SourceType, SourceCandidate[]>>,
+): Partial<Record<SourceType, SourceCandidate[]>> {
+  const merged: Partial<Record<SourceType, SourceCandidate[]>> = { ...(a ?? {}) };
+  for (const [type, candidates] of Object.entries(b) as Array<[SourceType, SourceCandidate[]]>) {
+    merged[type] = [...(merged[type] ?? []), ...candidates];
+  }
+  return merged;
+}
+
+async function reconcileCrawlQueueAfterRun(
+  db: ReturnType<typeof getDb>,
+  items: readonly QueuedCrawlItem[],
+  adapters: Awaited<ReturnType<IngestOrchestrator['ingestPhone']>>['adapters'],
+): Promise<void> {
+  const failed: QueuedCrawlItem[] = [];
+  const done: string[] = [];
+
+  for (const item of items) {
+    const adapter = adapters.find((a) => a.type === item.adapter);
+    const error = adapter?.errors.find((e) => e.url === item.url);
+    if (error) failed.push(item);
+    else done.push(item.id);
+  }
+
+  await markCrawlQueueDone(db, done);
+  if (failed.length > 0) {
+    await markCrawlQueueFailed(
+      db,
+      failed,
+      failed
+        .map((item) => {
+          const adapter = adapters.find((a) => a.type === item.adapter);
+          const error = adapter?.errors.find((e) => e.url === item.url);
+          return `${item.url}: ${error?.error ?? 'unknown queue candidate failure'}`;
+        })
+        .join('\n'),
+    );
+  }
 }
 
 main().catch((err) => {

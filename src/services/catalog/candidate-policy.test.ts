@@ -6,6 +6,7 @@ import {
   isFutureCatalogDate,
   isLikelyCatalogPhoneTitle,
   isReleasedCatalogCandidate,
+  isWeakCatalogReleaseDate,
 } from './candidate-policy';
 
 describe('catalog candidate policy', () => {
@@ -43,5 +44,11 @@ describe('catalog candidate policy', () => {
     expect(catalogReleaseRetryAfter('2026-09-19', now).toISOString()).toBe(
       '2026-09-20T00:00:00.000Z',
     );
+  });
+
+  it('detects weak rumored release-date text', () => {
+    expect(isWeakCatalogReleaseDate('Exp. announcement 2026')).toBe(true);
+    expect(isWeakCatalogReleaseDate('Expected launch 2026')).toBe(true);
+    expect(isWeakCatalogReleaseDate('2026-01-01')).toBe(false);
   });
 });

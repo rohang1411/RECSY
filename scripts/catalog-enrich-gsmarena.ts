@@ -40,6 +40,7 @@ import {
   isFutureCatalogDate,
   isLikelyCatalogPhoneTitle,
   isMainstreamPriorityBrand,
+  isWeakCatalogReleaseDate,
   normalizeIdentityText,
   phoneSpecToCatalogProjectionInput,
   promoteCatalogCandidate,
@@ -429,7 +430,7 @@ function candidateReleaseValue(candidate: CatalogCandidateRow): string | undefin
 }
 
 function isUnreleasedCandidate(candidate: CatalogCandidateRow): boolean {
-  return isFutureCatalogDate(candidateReleaseValue(candidate));
+  return isFutureCatalogDate(candidateReleaseValue(candidate)) || hasWeakReleaseEvidence(candidate);
 }
 
 function candidateStatePriority(candidate: CatalogCandidateRow): number {
@@ -525,26 +526,7 @@ function noReleaseDate(candidate: CatalogCandidateRow): boolean {
 
 function shouldDeferNoSourceCandidate(candidate: ResolvedCatalogCandidate): boolean {
   if (noReleaseDate(candidate.row)) return true;
-  const raw = candidate.row.rawCandidateJson;
-  const normalized = candidate.row.normalizedIdentityJson;
-  const releaseEvidence = [
-    recordString(raw, 'release_date'),
-    recordString(raw, 'releaseDate'),
-    recordString(raw, 'releasedAt'),
-    recordString(raw, 'launchDate'),
-    recordString(normalized, 'releaseDate'),
-    recordString(normalized, 'launchDate'),
-  ].filter((value): value is string => Boolean(value));
-  const weakDate = releaseEvidence.some((value) => isWeakReleaseDate(value));
-  return weakDate && isMainstreamPriorityBrand(candidate.brand);
-}
-
-function isWeakReleaseDate(value: string): boolean {
-  const normalized = normalizeIdentityText(value);
-  return (
-    /^20\d{2}$/.test(normalized) ||
-    /^(?:expected|rumou?red|upcoming|anticipated|planned)\b/.test(normalized)
-  );
+  return hasWeakReleaseEvidence(candidate.row) && isMainstreamPriorityBrand(candidate.brand);
 }
 
 function inferBrandFromTitle(value: string): string | null {
@@ -582,17 +564,41 @@ async function markDeferredUnreleased(
   candidate: CatalogCandidateRow,
 ): Promise<void> {
   const releaseValue = candidateReleaseValue(candidate);
+  const weakRelease = hasWeakReleaseEvidence(candidate);
   await db
     .update(catalogCandidates)
     .set({
       decision: 'pending_review',
       status: 'failed_transient',
-      issueCodes: ['unreleased_candidate'],
-      retryAfter: catalogReleaseRetryAfter(releaseValue),
+      issueCodes: weakRelease
+        ? ['speculative_candidate', 'unreleased_candidate']
+        : ['unreleased_candidate'],
+      retryAfter: weakRelease
+        ? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+        : catalogReleaseRetryAfter(releaseValue),
       lastDecisionAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(catalogCandidates.id, candidate.id));
+}
+
+function releaseEvidence(candidate: CatalogCandidateRow): string[] {
+  const raw = candidate.rawCandidateJson;
+  const normalized = candidate.normalizedIdentityJson;
+  return [
+    recordString(raw, 'release_date'),
+    recordString(raw, 'releaseDate'),
+    recordString(raw, 'releasedAt'),
+    recordString(raw, 'launchDate'),
+    recordString(normalized, 'releaseDate'),
+    recordString(normalized, 'launchDate'),
+  ].filter((value): value is string => Boolean(value));
+}
+
+function hasWeakReleaseEvidence(candidate: CatalogCandidateRow): boolean {
+  return releaseEvidence(candidate).some(
+    (value) => isWeakCatalogReleaseDate(value) || /^20\d{2}$/.test(normalizeIdentityText(value)),
+  );
 }
 
 async function markLlmBudgetExhausted(

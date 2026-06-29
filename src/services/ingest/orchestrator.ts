@@ -232,13 +232,8 @@ export class IngestOrchestrator {
         const raw = await adapter.fetch(candidate);
         fetched += 1;
 
-        const rawChunks = adapter.chunk(raw);
-        if (rawChunks.length === 0) {
-          log.warn({ url: candidate.url }, 'adapter produced 0 chunks; skipping');
-          continue;
-        }
-
         if (options.dryRun) {
+          const rawChunks = adapter.chunk(raw);
           log.info(
             { url: candidate.url, chunks: rawChunks.length, bytes: raw.body.length },
             'dry-run: would have embedded + written',
@@ -348,7 +343,7 @@ export class IngestOrchestrator {
           }
         }
 
-        // Hash pre-check: skip curator + embed when content is unchanged.
+        // Hash pre-check: skip chunking, curator, and embed when content is unchanged.
         const existingSource = await this.opts.db
           .select({ id: sources.id, contentHash: sources.contentHash })
           .from(sources)
@@ -373,6 +368,12 @@ export class IngestOrchestrator {
             { url: candidate.url, skipped: result.skipped },
             'hash unchanged — skipped curator + embed',
           );
+          continue;
+        }
+
+        const rawChunks = adapter.chunk(raw);
+        if (rawChunks.length === 0) {
+          log.warn({ url: candidate.url }, 'adapter produced 0 chunks; skipping');
           continue;
         }
 
@@ -501,6 +502,16 @@ export class IngestOrchestrator {
         const message = errMsg(err);
         if (err instanceof NotFoundError) {
           skippedUnusable += 1;
+          await this.writer.recordRejectedRun({
+            adapterName: adapter.type,
+            phoneId: phone.id,
+            sourceUrl: candidate.url,
+            candidateTitle: candidate.title,
+            rejectedReason: `unusable:${message}`,
+            stage: 'fetch',
+            tier: options.tier ?? null,
+            discoveryStrategy: options.discoveryStrategy ?? null,
+          });
           log.info(
             { url: candidate.url, reason: message },
             'source skipped (not found / unusable)',
