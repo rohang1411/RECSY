@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { AliasRow } from '../agents/alias-match';
 import type { PoliteHttp } from '../http';
 import type { PhoneRef } from '../types';
-import { YouTubeChannelAdapter, parseYouTubeRss, type RssEntry } from './youtube-channel';
+import {
+  YouTubeChannelAdapter,
+  extractCandidatePhonesFromTitle,
+  parseYouTubeRss,
+  type RssEntry,
+} from './youtube-channel';
 import { YouTubeAdapter } from './youtube';
 
 const s25Ultra: PhoneRef = {
@@ -193,5 +198,60 @@ describe('YouTubeChannelAdapter.discover', () => {
     await adapter.discover(s25Ultra, { limit: 5 });
     await adapter.discover(s25Ultra, { limit: 5 });
     expect(calls).toBe(1);
+  });
+});
+
+describe('extractCandidatePhonesFromTitle', () => {
+  it('extracts Apple iPhone 18 Pro and Pro Max from review titles', () => {
+    const r1 = extractCandidatePhonesFromTitle(
+      'iPhone 18 Pro Review: All About that Chip',
+      '2026-09-12T10:00:00Z',
+    );
+    expect(r1).toEqual([{ brand: 'Apple', model: 'iPhone 18 Pro', year: 2026 }]);
+
+    const r2 = extractCandidatePhonesFromTitle(
+      'iPhone 18 Pro Max - 1 Week Later!',
+      '2026-09-15T12:00:00Z',
+    );
+    expect(r2).toEqual([{ brand: 'Apple', model: 'iPhone 18 Pro Max', year: 2026 }]);
+  });
+
+  it('extracts novel models like iPhone Duo', () => {
+    const r = extractCandidatePhonesFromTitle(
+      'iPhone Duo Impressions: What We Missed!',
+      '2026-09-10T10:00:00Z',
+    );
+    expect(r).toEqual([{ brand: 'Apple', model: 'iPhone Duo', year: 2026 }]);
+  });
+
+  it('extracts multiple devices when mentioned in comparison titles', () => {
+    const r = extractCandidatePhonesFromTitle(
+      'iPhone 18 Pro/Duo Impressions: Mogged',
+      '2026-09-11T10:00:00Z',
+    );
+    expect(r).toEqual([
+      { brand: 'Apple', model: 'iPhone 18 Pro', year: 2026 },
+      { brand: 'Apple', model: 'iPhone Duo', year: 2026 },
+    ]);
+  });
+
+  it('extracts modern flagships from Samsung and Google', () => {
+    const s = extractCandidatePhonesFromTitle(
+      'Galaxy S26 Ultra - Don’t Buy Yet!',
+      '2026-02-15T10:00:00Z',
+    );
+    expect(s).toEqual([{ brand: 'Samsung', model: 'Galaxy S26 Ultra', year: 2026 }]);
+
+    const g = extractCandidatePhonesFromTitle(
+      'Google Pixel 11 Pro Review: Poker Face',
+      '2026-08-15T10:00:00Z',
+    );
+    expect(g).toEqual([{ brand: 'Google', model: 'Pixel 11 Pro', year: 2026 }]);
+  });
+
+  it('returns empty array for non-phone videos', () => {
+    expect(extractCandidatePhonesFromTitle('My camera setup 2025')).toEqual([]);
+    expect(extractCandidatePhonesFromTitle('I Made a Bet with Tesla')).toEqual([]);
+    expect(extractCandidatePhonesFromTitle('The Wildest Camera Robot')).toEqual([]);
   });
 });

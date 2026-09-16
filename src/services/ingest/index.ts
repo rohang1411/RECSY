@@ -33,7 +33,12 @@ export { ArticleAdapter } from './adapters/article';
 export { RedditAdapter, type SubredditProfile } from './adapters/reddit';
 export { YouTubeAdapter } from './adapters/youtube';
 export { GsmArenaAdapter } from './adapters/gsmarena';
-export { YouTubeChannelAdapter, type CreatorChannel } from './adapters/youtube-channel';
+export {
+  YouTubeChannelAdapter,
+  extractCandidatePhonesFromTitle,
+  type CreatorChannel,
+  type ExtractedPhoneCandidate,
+} from './adapters/youtube-channel';
 
 export { CuratorAgent, type CuratorVerdict } from './agents/curator';
 export { DisambiguatorAgent, type DisambiguatorResult } from './agents/disambiguator';

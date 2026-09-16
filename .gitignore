@@ -203,3 +203,5 @@ legacy/**/Flutter/Flutter.podspec
 legacy/**/Flutter/Generated.xcconfig
 legacy/**/Flutter/flutter_export_environment.sh
 legacy/ios/Runner/GeneratedPluginRegistrant.*
+/.claude/
+/.rocketride/

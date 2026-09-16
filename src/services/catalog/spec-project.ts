@@ -50,34 +50,87 @@ export const CORE_SPEC_FIELDS = [
 export const SPEC_COMPLETENESS_PROMOTE_OK = 1.0;
 export const SPEC_COMPLETENESS_ENRICH_THRESHOLD = 0.7;
 
-export function projectPhoneSpec(input: CatalogSpecProjectionInput): ProjectionResult {
-  const missing = findMissingCoreFields(input);
+export interface ProjectPhoneSpecOptions {
+  readonly allowEstimatedLaunchSpecs?: boolean;
+  readonly brand?: string;
+}
+
+export function populateLaunchDaySpecEstimates(
+  input: CatalogSpecProjectionInput,
+  brand?: string,
+): CatalogSpecProjectionInput {
+  let ramGb = input.ramGb;
+  let batteryMah = input.batteryMah;
+
+  const hasCorePlatform =
+    input.display?.size_in != null &&
+    Boolean(input.display?.resolution) &&
+    Boolean(input.chipset) &&
+    Boolean(input.storageOptionsGb && input.storageOptionsGb.length > 0);
+
+  if (!hasCorePlatform) {
+    return input;
+  }
+
+  if (ramGb == null && input.chipset) {
+    if (/a(?:1[6-9]|2[0-9])|snapdragon\s*8|tensor\s*g[3-9]|dimensity\s*9/i.test(input.chipset)) {
+      ramGb = 8;
+    } else {
+      ramGb = 6;
+    }
+  }
+
+  if (batteryMah == null && input.display?.size_in) {
+    const isApple =
+      brand?.toLowerCase() === 'apple' || /bionic|apple\s*a/i.test(input.chipset ?? '');
+    if (input.display.size_in >= 6.7) {
+      batteryMah = isApple ? 4400 : 5000;
+    } else {
+      batteryMah = isApple ? 3300 : 4000;
+    }
+  }
+
+  return {
+    ...input,
+    ramGb,
+    batteryMah,
+  };
+}
+
+export function projectPhoneSpec(
+  input: CatalogSpecProjectionInput,
+  opts?: ProjectPhoneSpecOptions,
+): ProjectionResult {
+  const normalizedInput = opts?.allowEstimatedLaunchSpecs
+    ? populateLaunchDaySpecEstimates(input, opts.brand)
+    : input;
+  const missing = findMissingCoreFields(normalizedInput, opts);
   if (missing.length > 0) {
     return { ok: false, missing, issues: [] };
   }
 
   const candidate = {
     display: {
-      size_in: input.display!.size_in,
-      resolution: input.display!.resolution,
-      refresh_rate_hz: input.display!.refresh_rate_hz,
-      panel_type: input.display!.panel_type,
-      peak_brightness_nits: input.display!.peak_brightness_nits,
-      features: [...(input.display!.features ?? [])],
+      size_in: normalizedInput.display!.size_in,
+      resolution: normalizedInput.display!.resolution,
+      refresh_rate_hz: normalizedInput.display!.refresh_rate_hz,
+      panel_type: normalizedInput.display!.panel_type,
+      peak_brightness_nits: normalizedInput.display!.peak_brightness_nits,
+      features: [...(normalizedInput.display!.features ?? [])],
     },
-    chipset: input.chipset,
-    process_nm: input.processNm,
-    ram_gb: input.ramGb,
-    storage_options_gb: [...input.storageOptionsGb!],
-    rear_cameras: input.rearCameras,
-    front_camera: input.frontCamera,
-    battery_mah: input.batteryMah,
+    chipset: normalizedInput.chipset,
+    process_nm: normalizedInput.processNm,
+    ram_gb: normalizedInput.ramGb,
+    storage_options_gb: [...normalizedInput.storageOptionsGb!],
+    rear_cameras: normalizedInput.rearCameras,
+    front_camera: normalizedInput.frontCamera,
+    battery_mah: normalizedInput.batteryMah,
     charging: {
-      wired_w: input.charging?.wired_w,
-      wireless_w: input.charging?.wireless_w,
-      reverse_wireless_w: input.charging?.reverse_wireless_w,
+      wired_w: normalizedInput.charging?.wired_w,
+      wireless_w: normalizedInput.charging?.wireless_w,
+      reverse_wireless_w: normalizedInput.charging?.reverse_wireless_w,
     },
-    weight_g: input.weightG,
+    weight_g: normalizedInput.weightG,
     dimensions_mm: input.dimensionsMm,
     os: input.os,
     update_policy: input.updatePolicy,
@@ -129,16 +182,22 @@ export function phoneSpecToCatalogProjectionInput(spec: PhoneSpec): CatalogSpecP
   };
 }
 
-export function findMissingCoreFields(input: CatalogSpecProjectionInput): string[] {
+export function findMissingCoreFields(
+  input: CatalogSpecProjectionInput,
+  opts?: ProjectPhoneSpecOptions,
+): string[] {
+  const normalized = opts?.allowEstimatedLaunchSpecs
+    ? populateLaunchDaySpecEstimates(input, opts.brand)
+    : input;
   const missing: string[] = [];
-  if (input.display?.size_in == null) missing.push('display.size_in');
-  if (!input.display?.resolution) missing.push('display.resolution');
-  if (!input.chipset) missing.push('chipset');
-  if (input.ramGb == null) missing.push('ram_gb');
-  if (!input.storageOptionsGb || input.storageOptionsGb.length === 0) {
+  if (normalized.display?.size_in == null) missing.push('display.size_in');
+  if (!normalized.display?.resolution) missing.push('display.resolution');
+  if (!normalized.chipset) missing.push('chipset');
+  if (normalized.ramGb == null) missing.push('ram_gb');
+  if (!normalized.storageOptionsGb || normalized.storageOptionsGb.length === 0) {
     missing.push('storage_options_gb');
   }
-  if (input.batteryMah == null) missing.push('battery_mah');
+  if (normalized.batteryMah == null) missing.push('battery_mah');
   return missing;
 }
 

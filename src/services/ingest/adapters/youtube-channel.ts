@@ -172,6 +172,11 @@ export class YouTubeChannelAdapter implements SourceAdapter {
     this.feedCache.set(creator.channelId, entries);
     return entries;
   }
+
+  /** Returns the in-memory feed cache populated during discovery. */
+  getCachedFeeds(): ReadonlyMap<string, readonly RssEntry[]> {
+    return this.feedCache;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -235,4 +240,101 @@ function decodeXmlEntities(s: string): string {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+export interface ExtractedPhoneCandidate {
+  readonly brand: string;
+  readonly model: string;
+  readonly year: number;
+}
+
+const PHONE_EXTRACTION_PATTERNS: readonly {
+  readonly brand: string;
+  readonly regex: RegExp;
+  readonly formatModel: (match: RegExpMatchArray) => string;
+}[] = [
+  // iPhone 18 Pro Max, iPhone 18 Pro, iPhone 18 Plus, iPhone 18, iPhone 17e, etc.
+  {
+    brand: 'Apple',
+    regex: /\b(iPhone\s+(?:1[5-9]|[2-9][0-9])(?:\s+(?:Pro\s+Max|Pro|Plus|e|Mini|Air))?)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  // iPhone Duo, iPhone Fold (e.g. "iPhone Duo", "iPhone 18 Pro/Duo")
+  {
+    brand: 'Apple',
+    regex: /\b(?:iPhone\s+(?:Duo|Fold)|(?:\biPhone\b.*?[\s/&]+)(Duo|Fold))\b/i,
+    formatModel: (m) => {
+      const captured = (m[1] ?? m[0]!).trim();
+      return captured.toLowerCase().startsWith('iphone') ? captured : `iPhone ${captured}`;
+    },
+  },
+  // Samsung Galaxy S25 / S26 Ultra / Plus
+  {
+    brand: 'Samsung',
+    regex: /\b(Galaxy\s+S(?:2[4-9]|[3-9][0-9])(?:\s+(?:Ultra|Plus|\+))?)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  // Samsung Galaxy Z Fold / Flip 6, 7, 8
+  {
+    brand: 'Samsung',
+    regex: /\b(Galaxy\s+Z\s+(?:Fold|Flip)\s+[6-9])\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  // Google Pixel 10, 11, 11 Pro, 11 Pro Fold
+  {
+    brand: 'Google',
+    regex:
+      /\b(?:Google\s+)?(Pixel\s+(?:1[0-9]|[2-9][0-9])(?:\s+(?:Pro\s+Fold|Pro\s+XL|Pro|Fold|a))?)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  // Nothing Phone (3), Nothing Phone 3
+  {
+    brand: 'Nothing',
+    regex: /\b(Nothing\s+Phone\s+(?:\([0-9]+\)|[0-9]+))\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  {
+    brand: 'Nothing',
+    regex: /\b(CMF\s+Phone\s+[0-9]+)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  // OnePlus 13, OnePlus 14
+  {
+    brand: 'OnePlus',
+    regex: /\b(OnePlus\s+(?:1[3-9]|[2-9][0-9])(?:\s+(?:Pro|R|T))?)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+  {
+    brand: 'OnePlus',
+    regex: /\b(OnePlus\s+Open\s+[2-9]?)\b/i,
+    formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
+  },
+];
+
+export function extractCandidatePhonesFromTitle(
+  title: string,
+  publishedAt?: string,
+): ExtractedPhoneCandidate[] {
+  const year = publishedAt ? new Date(publishedAt).getFullYear() : new Date().getFullYear();
+  const validYear = Number.isFinite(year) && year >= 2024 ? year : new Date().getFullYear();
+  const out: ExtractedPhoneCandidate[] = [];
+  const seenModels = new Set<string>();
+
+  for (const pattern of PHONE_EXTRACTION_PATTERNS) {
+    const match = title.match(pattern.regex);
+    if (match) {
+      const model = pattern.formatModel(match);
+      const key = `${pattern.brand}:${model.toLowerCase()}`;
+      if (!seenModels.has(key)) {
+        seenModels.add(key);
+        out.push({
+          brand: pattern.brand,
+          model,
+          year: validYear,
+        });
+      }
+    }
+  }
+
+  return out;
 }

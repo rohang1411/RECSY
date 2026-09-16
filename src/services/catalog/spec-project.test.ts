@@ -96,4 +96,24 @@ describe('projectPhoneSpec', () => {
     expect(roundTrip.ok).toBe(true);
     expect(roundTrip.spec).toEqual(PhoneSpecSchema.parse(projected.spec));
   });
+
+  it('populates estimates for launch-day flagships missing unannounced battery/RAM', () => {
+    const launchSpec = {
+      display: { size_in: 6.9, resolution: '2868x1320' },
+      chipset: 'Apple A20 Pro',
+      storageOptionsGb: [256, 512, 1024],
+    };
+    // Without flag, reports missing
+    expect(findMissingCoreFields(launchSpec)).toContain('battery_mah');
+    expect(findMissingCoreFields(launchSpec)).toContain('ram_gb');
+
+    // With flag, validates successfully
+    const result = projectPhoneSpec(launchSpec, {
+      allowEstimatedLaunchSpecs: true,
+      brand: 'Apple',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.spec?.battery_mah).toBe(4400);
+    expect(result.spec?.ram_gb).toBe(8);
+  });
 });

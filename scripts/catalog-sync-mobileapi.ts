@@ -35,7 +35,7 @@ import { catalogCandidates, catalogRuns, catalogSourceProfiles } from '../src/se
 
 const MOBILEAPI_SOURCE_KEY = 'mobileapi';
 const MOBILEAPI_FREE_MONTHLY_REQUESTS = 50;
-const MOBILEAPI_FREE_MIN_GAP_MS = 12_500;
+const MOBILEAPI_FREE_MIN_GAP_MS = 13_000;
 
 interface CliArgs {
   readonly sinceYears: number;

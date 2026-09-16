@@ -74,7 +74,12 @@ export function compareCatalogPriorityThenNewest(
 }
 
 export function isLikelyCatalogPhoneTitle(title: string): boolean {
-  return !NON_PHONE_TITLE_RE.test(title) && !MULTI_PHONE_TITLE_RE.test(title);
+  const trimmed = title.trim();
+  return (
+    !RAW_QID_TITLE_RE.test(trimmed) &&
+    !NON_PHONE_TITLE_RE.test(trimmed) &&
+    !MULTI_PHONE_TITLE_RE.test(trimmed)
+  );
 }
 
 export function catalogReleaseRetryAfter(
@@ -95,6 +100,8 @@ export function startOfNextUtcDay(value: Date): Date {
 function catalogCandidateTitle(candidate: CatalogPriorityCandidate): string {
   return [candidate.brand, candidate.model, candidate.title].filter(Boolean).join(' ');
 }
+
+const RAW_QID_TITLE_RE = /^Q\d+$/i;
 
 const NON_PHONE_TITLE_RE =
   /\b(?:ipad|tablet|pad|etpad|acepad|iconia|watch|macbook|laptop|chromebook|earbuds|headphones|smart\s+tv)\b/i;
