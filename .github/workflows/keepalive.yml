@@ -1,0 +1,36 @@
+name: repository keepalive
+
+# Prevents GitHub Actions from automatically disabling scheduled crons
+# after 60 consecutive days of repository commit inactivity.
+on:
+  schedule:
+    # Runs every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    name: Keep scheduled workflows active
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update keepalive heartbeat
+        shell: bash
+        run: |
+          echo "Keeping repository active so scheduled workflows are not disabled after 60 days of inactivity."
+          mkdir -p .github
+          echo "heartbeat: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" > .github/KEEPALIVE.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/KEEPALIVE.txt
+          if git diff --staged --quiet; then
+            echo "Keepalive heartbeat unchanged."
+          else
+            git commit -m "chore(ops): keepalive scheduled workflows heartbeat [skip ci]"
+            git push || true
+          fi

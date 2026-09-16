@@ -71,9 +71,9 @@ export const CREATOR_SEEDS: readonly CreatorSeed[] = [
   },
 ];
 
-export async function seedCreatorProfiles(
-  db: PostgresJsDatabase<Record<string, never>>,
-): Promise<{ upserted: number; disabledStale: number }> {
+export async function seedCreatorProfiles<
+  TSchema extends Record<string, unknown> = Record<string, never>,
+>(db: PostgresJsDatabase<TSchema>): Promise<{ upserted: number; disabledStale: number }> {
   if (CREATOR_SEEDS.length === 0) return { upserted: 0, disabledStale: 0 };
   const rows = CREATOR_SEEDS.map((s) => ({
     platform: s.platform,

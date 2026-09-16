@@ -10,7 +10,7 @@
  *   pnpm catalog:backfill-identities
  *   pnpm catalog:backfill-identities --dry-run
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 
 import { buildCanonicalKey } from '../../src/services/catalog';
 import { getDb } from '../../src/services/db/client';
@@ -127,20 +127,44 @@ async function main(): Promise<void> {
       },
     ];
 
-    const result = await db
-      .insert(phoneIdentities)
-      .values(identityRows)
-      .onConflictDoUpdate({
-        target: [phoneIdentities.sourceKey, phoneIdentities.externalId],
-        set: {
-          phoneId: sql`excluded.phone_id`,
-          identityType: sql`excluded.identity_type`,
-          confidence: sql`excluded.confidence`,
-          lastSeenAt: sql`now()`,
-        },
-      })
-      .returning({ id: phoneIdentities.id });
-    identities += result.length;
+    for (const identity of identityRows) {
+      const existing = await db
+        .select({ id: phoneIdentities.id })
+        .from(phoneIdentities)
+        .where(
+          or(
+            and(
+              eq(phoneIdentities.identityType, identity.identityType),
+              eq(phoneIdentities.externalId, identity.externalId),
+            ),
+            and(
+              eq(phoneIdentities.sourceKey, identity.sourceKey),
+              eq(phoneIdentities.externalId, identity.externalId),
+            ),
+          ),
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(phoneIdentities)
+          .set({
+            phoneId: identity.phoneId,
+            sourceKey: identity.sourceKey,
+            confidence: identity.confidence,
+            lastSeenAt: sql`now()`,
+          })
+          .where(eq(phoneIdentities.id, existing[0]!.id));
+        identities += 1;
+      } else {
+        const result = await db
+          .insert(phoneIdentities)
+          .values(identity)
+          .onConflictDoNothing()
+          .returning({ id: phoneIdentities.id });
+        identities += result.length;
+      }
+    }
   }
 
   console.log(

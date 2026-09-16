@@ -20,8 +20,10 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
-import { crawlQueue, creatorProfiles, phones } from '../src/services/db/schema';
+import { crawlQueue, creatorProfiles, phones, catalogCandidates } from '../src/services/db/schema';
+import { buildCanonicalKey } from '../src/services/catalog';
 import {
+  extractCandidatePhonesFromTitle,
   makeDbAliasLoader,
   makePoliteHttp,
   YouTubeChannelAdapter,
@@ -156,6 +158,98 @@ async function main(): Promise<void> {
     }
   }
 
+  // Autonomous Discovery Scout:
+  // Inspect loaded feeds from trusted creators for uncataloged new flagship releases
+  // (e.g. MKBHD / Mrwhosetheboss reviewing iPhone 18 Pro, iPhone Duo, Pixel 11 Pro).
+  let stagedNewCandidates = 0;
+  try {
+    const existingPhones = await db
+      .select({ slug: phones.slug, canonicalKey: phones.canonicalKey })
+      .from(phones);
+    const existingSlugs = new Set(existingPhones.map((p) => p.slug));
+    const existingPhoneKeys = new Set(
+      existingPhones.map((p) => p.canonicalKey).filter((k): k is string => Boolean(k)),
+    );
+
+    const existingCandidates = await db
+      .select({
+        canonicalKey: catalogCandidates.canonicalKey,
+        stableKey: catalogCandidates.stableKey,
+      })
+      .from(catalogCandidates);
+    const candidateKeys = new Set(
+      existingCandidates.map((c) => c.canonicalKey).filter((k): k is string => Boolean(k)),
+    );
+    const stableKeys = new Set(existingCandidates.map((c) => c.stableKey));
+
+    const loadedFeeds = adapter.getCachedFeeds();
+    for (const creator of creators) {
+      const entries = loadedFeeds.get(creator.channelId) ?? [];
+      for (const entry of entries) {
+        const found = extractCandidatePhonesFromTitle(entry.title, entry.publishedAt);
+        for (const f of found) {
+          const canonicalKey = buildCanonicalKey({
+            brand: f.brand,
+            model: f.model,
+            launchDate: String(f.year),
+          });
+          const slug = `${f.brand.toLowerCase()}-${f.model.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+          if (existingSlugs.has(slug) || existingPhoneKeys.has(canonicalKey)) continue;
+          if (candidateKeys.has(canonicalKey)) continue;
+
+          const stableKey = `creator_watch:${canonicalKey}`;
+          if (stableKeys.has(stableKey)) continue;
+
+          if (args.dryRun) {
+            console.log(
+              `  [discovered-new-phone] ${f.brand} ${f.model} (${canonicalKey}) from ${creator.handle}: ${entry.title}`,
+            );
+            stagedNewCandidates += 1;
+            continue;
+          }
+
+          await db
+            .insert(catalogCandidates)
+            .values({
+              stableKey,
+              sourceKey: 'creator_watch',
+              sourceType: 'youtube',
+              externalId: entry.videoId,
+              sourceUrl: entry.url,
+              candidateTitle: `${f.brand} ${f.model}`,
+              canonicalKey,
+              decision: 'pending_review',
+              status: 'discovered',
+              confidence: '0.85',
+              claimsJson: {
+                brand: f.brand,
+                model: f.model,
+                title: entry.title,
+                videoUrl: entry.url,
+                creatorHandle: creator.handle,
+                publishedAt: entry.publishedAt,
+                discoveredAt: new Date().toISOString(),
+              },
+            })
+            .onConflictDoNothing();
+
+          candidateKeys.add(canonicalKey);
+          stableKeys.add(stableKey);
+          stagedNewCandidates += 1;
+          console.log(
+            `  [staged-new-candidate] ${f.brand} ${f.model} (${canonicalKey}) via ${creator.handle}`,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { err: summarizeErrorChainForLogs(err) },
+      'creator-watch: uncataloged phone scout failed',
+    );
+  }
+
   // Touch creator_profiles.last_polled_at so the UI/reports reflect freshness.
   if (!args.dryRun) {
     for (const c of creatorRows) {
@@ -167,7 +261,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[creator-watch] done phones=${phoneRows.length} candidates=${totalCandidates} enqueued=${totalEnqueued}${args.dryRun ? ' (dry-run)' : ''}`,
+    `[creator-watch] done phones=${phoneRows.length} candidates=${totalCandidates} enqueued=${totalEnqueued} stagedCandidates=${stagedNewCandidates}${args.dryRun ? ' (dry-run)' : ''}`,
   );
   process.exit(0);
 }

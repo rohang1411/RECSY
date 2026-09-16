@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { getDb, type AppDb } from '@/services/db/client';
 import {

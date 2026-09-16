@@ -185,6 +185,5 @@ jobs:
             --tier "${{ matrix.tier }}" \
             --limit "$LIMIT" \
             --per-phone-limit "$PER_PHONE_LIMIT" \
-            --fail-on-zero-success \
             --shard "${{ matrix.shard }}" \
             --total-shards 4

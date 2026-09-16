@@ -128,10 +128,6 @@ function sourceLabel(type: SourceType) {
   return 'Article';
 }
 
-function formatDate(value: Date | null | undefined) {
-  return value ? value.toLocaleString('en-US') : null;
-}
-
 function pickRankForPhone(picks: unknown, phoneId: string, slug: string) {
   if (!Array.isArray(picks)) return null;
   const index = picks.findIndex((pick) => {

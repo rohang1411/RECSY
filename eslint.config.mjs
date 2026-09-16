@@ -63,6 +63,9 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     'drizzle/migrations/**',
     'coverage/**',
+    'orchestration/**',
+    '**/.venv/**',
+    '.claude/**',
     // Pre-rewrite Flutter project — read-only, never linted.
     'legacy/**',
   ]),

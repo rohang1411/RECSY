@@ -113,19 +113,21 @@ export function buildRecentPhonesQuery(since: Date, limit: number, now: Date = n
   const untilExclusive = startOfNextUtcDay(now).toISOString().slice(0, 10);
   const boundedLimit = Math.max(1, Math.min(limit, 500));
   // Use a UNION of P571 (inception / hardware release date, preferred for
-  // devices) and P577 (publication date) so phones that only carry one of
-  // the two properties are still discovered.  A BIND + COALESCE ensures the
-  // rest of the query can treat ?releaseDate uniformly.
+  // devices), P577 (publication date), and P6949 (announcement date, vital for
+  // newly launched devices like Apple/Google keynotes before shipping) so phones
+  // carrying any of the three properties are discovered.
   return `
 SELECT ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
        (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
 WHERE {
-  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 }
+  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
   ?item wdt:P31 ?class.
   {
     ?item wdt:P571 ?releaseDate.
   } UNION {
     ?item wdt:P577 ?releaseDate.
+  } UNION {
+    ?item wdt:P6949 ?releaseDate.
   }
   FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
@@ -150,7 +152,7 @@ export function buildPhoneNameQuery(brand: string, model: string, limit: number)
 SELECT ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
        (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
 WHERE {
-  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 }
+  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
   ?item wdt:P31 ?class.
   ?item rdfs:label ?rawLabel.
   FILTER(LANG(?rawLabel) = "en")
@@ -159,7 +161,8 @@ WHERE {
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P571 ?inceptionDate. }
   OPTIONAL { ?item wdt:P577 ?publicationDate. }
-  BIND(COALESCE(?inceptionDate, ?publicationDate) AS ?releaseDate)
+  OPTIONAL { ?item wdt:P6949 ?announcementDate. }
+  BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate) AS ?releaseDate)
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }
   OPTIONAL { ?item wdt:P18 ?image. }
   OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en") }

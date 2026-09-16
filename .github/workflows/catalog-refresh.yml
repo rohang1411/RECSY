@@ -171,11 +171,11 @@ jobs:
               OEM_LIMIT="25"
               echo "[catalog-refresh] monthly full scheduled run"
             else
-              SOURCE="wikidata"
+              SOURCE="both"
               LIMIT="75"
-              MOBILEAPI_MAX_REQUESTS="0"
-              OEM_LIMIT="10"
-              echo "[catalog-refresh] weekly lightweight scheduled run"
+              MOBILEAPI_MAX_REQUESTS="5"
+              OEM_LIMIT="15"
+              echo "[catalog-refresh] weekly lightweight scheduled run with MobileAPI micro-budget (5 reqs max)"
             fi
           else
             SOURCE="${{ github.event.inputs.source || 'both' }}"
@@ -197,7 +197,7 @@ jobs:
             if [ "$MOBILEAPI_MAX_REQUESTS" = "0" ]; then
               echo "[catalog-refresh] MobileAPI skipped for this scheduled cadence."
             elif [ "${{ needs.secrets-gate.outputs.mobileapi }}" = "true" ]; then
-              ARGS="--since-years $SINCE_YEARS --limit $LIMIT --max-requests $MOBILEAPI_MAX_REQUESTS --min-request-gap-ms 12500"
+              ARGS="--since-years $SINCE_YEARS --limit $LIMIT --max-requests $MOBILEAPI_MAX_REQUESTS --min-request-gap-ms 13000"
               if [ "$PROMOTE" = "true" ]; then
                 ARGS="$ARGS --promote --update-existing"
               fi
