@@ -9,10 +9,12 @@
 import { eq, sql } from 'drizzle-orm';
 
 import {
+  downloadAndSavePhoneImage,
   extractOemProductPage,
   findWikidataPhonesByName,
   fetchOemPageHtml,
   needsPhoneMediaBackfill,
+  resolveStudioImageCandidate,
   selectPhoneMediaCandidate,
   sha256Hex,
   validateRemoteImageUrl,
@@ -164,6 +166,23 @@ async function main(): Promise<void> {
 
       if (!needsPhoneMediaBackfill(phone)) {
         skipped += 1;
+        continue;
+      }
+
+      // 1. First priority: clean studio product render (GSMArena / curated / brand crawl)
+      const studioCandidate = await resolveStudioImageCandidate(phone);
+      if (studioCandidate) {
+        if (!args.dryRun) {
+          const downloadRes = await downloadAndSavePhoneImage(phone, studioCandidate, { db });
+          console.log(
+            `[catalog:backfill-media] saved studio image ${phone.slug} -> ${downloadRes.localPublicUrl} (${downloadRes.bytes}b, source=${studioCandidate.sourceKey})`,
+          );
+        } else {
+          console.log(
+            `[catalog:backfill-media] studio candidate matched ${phone.slug} -> ${studioCandidate.imageUrl} (${studioCandidate.sourceKey})`,
+          );
+        }
+        updated += 1;
         continue;
       }
 

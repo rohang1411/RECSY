@@ -99,6 +99,11 @@ async function seedPhones(
     launchDate: new Date(seed.launchDate),
     msrpUsd: seed.msrpUsd,
     imageUrl: seed.imageUrl ?? null,
+    mediaStatus: (seed.imageUrl?.startsWith('/phones/')
+      ? 'local_ok'
+      : seed.imageUrl
+        ? 'remote_only'
+        : 'missing') as 'local_ok' | 'remote_only' | 'missing',
     status: seed.status,
     specJson: seed.specJson as unknown as Record<string, unknown>,
     regionAvailability: [...seed.regionAvailability],
@@ -117,6 +122,7 @@ async function seedPhones(
         launchDate: sql`excluded.launch_date`,
         msrpUsd: sql`excluded.msrp_usd`,
         imageUrl: sql`excluded.image_url`,
+        mediaStatus: sql`case when excluded.image_url like '/phones/%' then 'local_ok'::phone_media_status when excluded.image_url is not null then 'remote_only'::phone_media_status else phones.media_status end`,
         status: sql`excluded.status`,
         specJson: sql`excluded.spec_json`,
         regionAvailability: sql`excluded.region_availability`,

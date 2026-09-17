@@ -106,10 +106,10 @@ export default async function BrowsePage({ searchParams }: PageProps) {
                     src={p.imageUrl}
                     label={`${p.brand} ${p.model}`}
                     fill
-                    fit="cover"
-                    className="h-full w-full"
+                    fit="contain"
+                    className="h-full w-full p-4"
                   />
-                  <div className="from-background via-background/20 absolute inset-0 bg-gradient-to-t to-transparent" />
+                  <div className="from-background/90 via-background/10 pointer-events-none absolute inset-0 bg-gradient-to-t to-transparent" />
                   <p className="bg-background/80 text-primary absolute right-4 bottom-4 px-3 py-2 font-mono text-[11px]">
                     {price ?? 'Price not listed'}
                   </p>

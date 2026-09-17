@@ -35,6 +35,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   // ---------------------------------------------------------------------------
   {
     slug: 'apple-iphone-16-pro-max',
+    imageUrl: '/phones/apple-iphone-16-pro-max.jpg',
     brand: 'Apple',
     model: 'iPhone 16 Pro Max',
     tagline: 'The largest-screened iPhone 16, tuned for video and zoom.',
@@ -75,9 +76,9 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'apple-iphone-16-pro',
+    imageUrl: '/phones/apple-iphone-16-pro.jpg',
     brand: 'Apple',
     model: 'iPhone 16 Pro',
-    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/46/Camera_of_iPhone_16_Pro.jpg',
     tagline: 'Flagship iPhone performance in a one-hand-friendly size.',
     launchDate: '2024-09-20',
     msrpUsd: '999.00',
@@ -116,9 +117,9 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'samsung-galaxy-s25-ultra',
+    imageUrl: '/phones/samsung-galaxy-s25-ultra.jpg',
     brand: 'Samsung',
     model: 'Galaxy S25 Ultra',
-    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/b0/Samsung_Galaxy_S25_Ultra.jpg',
     tagline: 'Productivity-first Android flagship with S Pen.',
     launchDate: '2025-02-07',
     msrpUsd: '1299.00',
@@ -158,6 +159,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'samsung-galaxy-s25-plus',
+    imageUrl: '/phones/samsung-galaxy-s25-plus.jpg',
     brand: 'Samsung',
     model: 'Galaxy S25+',
     tagline: 'Flagship Samsung without the Ultra tax.',
@@ -198,10 +200,9 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'google-pixel-9-pro-xl',
+    imageUrl: '/phones/google-pixel-9-pro-xl.jpg',
     brand: 'Google',
     model: 'Pixel 9 Pro XL',
-    imageUrl:
-      'https://upload.wikimedia.org/wikipedia/commons/e/e5/Google_Pixel_9_Pro_XL_%28back%29.jpg',
     tagline: 'Google\u2019s largest Pro with AI-first software.',
     launchDate: '2024-08-22',
     msrpUsd: '1099.00',
@@ -241,6 +242,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'google-pixel-9-pro',
+    imageUrl: '/phones/google-pixel-9-pro.jpg',
     brand: 'Google',
     model: 'Pixel 9 Pro',
     tagline: 'The compact Pro Pixel, no XL compromises on cameras.',
@@ -281,9 +283,9 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'oneplus-13',
+    imageUrl: '/phones/oneplus-13.jpg',
     brand: 'OnePlus',
     model: '13',
-    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/13/OnePlus_13_volume_slider.jpg',
     tagline: 'Performance-first flagship with massive battery.',
     launchDate: '2025-01-07',
     msrpUsd: '899.00',
@@ -328,6 +330,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'xiaomi-14-ultra',
+    imageUrl: '/phones/xiaomi-14-ultra.jpg',
     brand: 'Xiaomi',
     model: '14 Ultra',
     tagline: 'Leica partnership, variable-aperture main camera.',
@@ -378,6 +381,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   // ---------------------------------------------------------------------------
   {
     slug: 'apple-iphone-16',
+    imageUrl: '/phones/apple-iphone-16.jpg',
     brand: 'Apple',
     model: 'iPhone 16',
     tagline: 'The iPhone for most people.',
@@ -417,6 +421,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'samsung-galaxy-s25',
+    imageUrl: '/phones/samsung-galaxy-s25.jpg',
     brand: 'Samsung',
     model: 'Galaxy S25',
     tagline: 'Compact Galaxy flagship with 7-year update promise.',
@@ -458,6 +463,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'google-pixel-9',
+    imageUrl: '/phones/google-pixel-9.jpg',
     brand: 'Google',
     model: 'Pixel 9',
     tagline: 'Clean Pixel AI experience without the Pro price.',
@@ -498,6 +504,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'nothing-phone-2a-plus',
+    imageUrl: '/phones/nothing-phone-2a-plus.jpg',
     brand: 'Nothing',
     model: 'Phone (2a) Plus',
     tagline: 'Design-first mid-flagship with Glyph interface.',
@@ -540,6 +547,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   // ---------------------------------------------------------------------------
   {
     slug: 'google-pixel-9a',
+    imageUrl: '/phones/google-pixel-9a.jpg',
     brand: 'Google',
     model: 'Pixel 9a',
     tagline: 'Pixel AI at half the flagship price.',
@@ -579,6 +587,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'samsung-galaxy-a55-5g',
+    imageUrl: '/phones/samsung-galaxy-a55-5g.jpg',
     brand: 'Samsung',
     model: 'Galaxy A55 5G',
     tagline: 'Mid-range with flagship-adjacent software support.',
@@ -619,6 +628,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'oneplus-nord-4',
+    imageUrl: '/phones/oneplus-nord-4.jpg',
     brand: 'OnePlus',
     model: 'Nord 4',
     tagline: 'Metal-body mid-ranger with flagship charging speed.',
@@ -659,6 +669,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'nothing-phone-3a-pro',
+    imageUrl: '/phones/nothing-phone-3a-pro.jpg',
     brand: 'Nothing',
     model: 'Phone (3a) Pro',
     tagline: 'Periscope zoom in a mid-range body.',
@@ -702,6 +713,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   // ---------------------------------------------------------------------------
   {
     slug: 'samsung-galaxy-a35-5g',
+    imageUrl: '/phones/samsung-galaxy-a35-5g.jpg',
     brand: 'Samsung',
     model: 'Galaxy A35 5G',
     tagline: 'Samsung software support at a budget price.',
@@ -742,6 +754,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'motorola-edge-50-fusion',
+    imageUrl: '/phones/motorola-edge-50-fusion.jpg',
     brand: 'Motorola',
     model: 'Edge 50 Fusion',
     tagline: 'Light, fast-charging budget with curved OLED.',
@@ -781,6 +794,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
   {
     slug: 'xiaomi-redmi-note-14-pro-plus',
+    imageUrl: '/phones/xiaomi-redmi-note-14-pro-plus.jpg',
     brand: 'Xiaomi',
     model: 'Redmi Note 14 Pro+',
     tagline: 'Spec-heavy budget pick with Leica-tuned cameras.',
@@ -830,6 +844,7 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   // ---------------------------------------------------------------------------
   {
     slug: 'samsung-galaxy-z-fold-6',
+    imageUrl: '/phones/samsung-galaxy-z-fold-6.jpg',
     brand: 'Samsung',
     model: 'Galaxy Z Fold6',
     tagline: 'Folding productivity with S Pen and refined hinge.',
