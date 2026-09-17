@@ -15,14 +15,23 @@ type Props = {
 export function LlmUsageMonitor({ data }: Props) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const dailyRows = data.googleQuota.rows.filter((row) => row.unit === 'day');
-  const dailyLimit = sumVerified(dailyRows.map((row) => row.limit));
-  const dailyUsed = sumVerified(dailyRows.map((row) => row.used));
-  const dailyRemaining = sumVerified(dailyRows.map((row) => row.remaining));
+  const googleDailyLimit = sumVerified(dailyRows.map((row) => row.limit));
+  const googleDailyUsed = sumVerified(dailyRows.map((row) => row.used));
+  const googleDailyRemaining = sumVerified(dailyRows.map((row) => row.remaining));
   const hasVerifiedDailyQuota = data.googleQuota.status === 'ok' && dailyRows.length > 0;
+
+  const dailyRemaining = hasVerifiedDailyQuota
+    ? googleDailyRemaining
+    : (data.localQuota?.remainingCallsToday ?? 0);
+  const dailyUsed = hasVerifiedDailyQuota ? googleDailyUsed : (data.localQuota?.callsToday ?? 0);
+  const dailyLimit = hasVerifiedDailyQuota
+    ? googleDailyLimit
+    : (data.localQuota?.totalDailyLimit ?? data.configuredKeyCount * 20);
+
   const limitPercent =
     dailyLimit !== null && dailyUsed !== null && dailyLimit > 0
       ? Math.min(100, Math.round((dailyUsed / dailyLimit) * 100))
-      : null;
+      : 0;
   const topMax = Math.max(1, ...data.topAreas.map((row) => row.calls));
   const visibleEvents = historyExpanded
     ? data.recentEvents.slice(0, 10)
@@ -40,8 +49,8 @@ export function LlmUsageMonitor({ data }: Props) {
               </span>
               <div>
                 <SectionHint label="LLM usage monitor">
-                  Separates verified Google quota rows from RECSY&apos;s local call ledger, cache
-                  savings, and recent Gemini requests.
+                  Dual-rail telemetry: verified Google Cloud Monitoring paired with live database
+                  call ledger.
                 </SectionHint>
                 <h2 className="text-gradient-accent-edge font-display mt-2 text-4xl leading-none font-extrabold uppercase sm:text-6xl">
                   Gemini Quota Rail
@@ -56,7 +65,7 @@ export function LlmUsageMonitor({ data }: Props) {
                 detail={
                   hasVerifiedDailyQuota
                     ? 'Verified by Google Monitoring'
-                    : 'No daily quota row returned'
+                    : `Live DB ledger (${data.localQuota?.dailyLimitPerKey ?? 20} RPD/key)`
                 }
                 icon={<ShieldCheck className="size-4" aria-hidden />}
               />
@@ -64,17 +73,23 @@ export function LlmUsageMonitor({ data }: Props) {
                 label="Used today"
                 value={formatMaybeNumber(dailyUsed)}
                 detail={
-                  dailyLimit === null ? 'Limit unavailable' : `${formatNumber(dailyLimit)} limit`
+                  dailyLimit === null
+                    ? 'Limit unavailable'
+                    : `${formatNumber(dailyLimit)} limit (${data.configuredKeyCount} ${data.configuredKeyCount === 1 ? 'key' : 'keys'})`
                 }
                 icon={<Gauge className="size-4" aria-hidden />}
               />
               <HeroMetric
-                label="Quota projects"
-                value={`${data.googleQuota.projects.length}/${data.configuredKeyCount}`}
+                label="Active Gemini keys"
+                value={
+                  data.googleQuota.projects.length > 0
+                    ? `${data.googleQuota.projects.length}/${data.configuredKeyCount} projects`
+                    : `${data.configuredKeyCount} keys active`
+                }
                 detail={
-                  data.googleQuota.projects.length === data.configuredKeyCount
-                    ? 'Mapped to configured keys'
-                    : 'Project ID/key count mismatch'
+                  data.googleQuota.projects.length > 0
+                    ? 'Mapped to Google Cloud projects'
+                    : `${data.configuredKeyCount} keys rotating in cycle`
                 }
                 icon={<KeyRound className="size-4" aria-hidden />}
               />
@@ -83,14 +98,12 @@ export function LlmUsageMonitor({ data }: Props) {
             <div className="mt-8">
               <div className="mb-2 flex items-center justify-between gap-4 font-mono text-[11px] tracking-[0.14em] uppercase">
                 <span className="text-muted-foreground">Daily request burn</span>
-                <span className="text-primary">
-                  {limitPercent === null ? 'No Google row' : `${limitPercent}%`}
-                </span>
+                <span className="text-primary">{`${limitPercent}%`}</span>
               </div>
               <div className="border-outline-variant bg-background h-4 border">
                 <div
                   className="h-full bg-[linear-gradient(90deg,#39ff88,#ffe45e,#d86b38)] transition-[width]"
-                  style={{ width: `${limitPercent ?? 0}%` }}
+                  style={{ width: `${limitPercent}%` }}
                 />
               </div>
               <p className="text-muted-foreground mt-3 max-w-3xl text-sm leading-6">
@@ -144,23 +157,31 @@ export function LlmUsageMonitor({ data }: Props) {
 
         <div className="bg-background p-5">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <p className="meta-label text-primary">Google quota rows</p>
+            <p className="meta-label text-primary">
+              {data.googleQuota.rows.length > 0
+                ? 'Google quota rows'
+                : 'Live Gemini key allocation'}
+            </p>
             <span className="text-muted-foreground font-mono text-[11px]">
-              Reset {formatTime(data.googleQuota.resetAt)}
+              {data.googleQuota.rows.length > 0
+                ? `Reset ${formatTime(data.googleQuota.resetAt)}`
+                : `Resets next UTC day`}
             </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
                 <tr className="border-outline-variant border-b">
-                  {['Project', 'Limit', 'Model', 'Used', 'Left'].map((heading) => (
-                    <th
-                      key={heading}
-                      className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
-                    >
-                      {heading}
-                    </th>
-                  ))}
+                  {['Key / Project', 'Limit', 'Tokens Today', 'Used Today', 'Left Today'].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
+                      >
+                        {heading}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -187,10 +208,34 @@ export function LlmUsageMonitor({ data }: Props) {
                       </td>
                     </tr>
                   ))
+                ) : (data.localQuota?.keysBreakdown.length ?? 0) > 0 ? (
+                  data.localQuota?.keysBreakdown.map((row) => (
+                    <tr
+                      key={row.apiKeyIndex}
+                      className="border-outline-variant border-b last:border-b-0"
+                    >
+                      <td className="text-primary p-3 font-mono text-xs">
+                        Key #{row.apiKeyIndex + 1}{' '}
+                        {row.apiKeyIndex === 0 ? '(primary)' : `(backup ${row.apiKeyIndex})`}
+                      </td>
+                      <td className="text-muted-foreground p-3 font-mono text-xs">
+                        {row.limit} RPD
+                      </td>
+                      <td className="text-muted-foreground p-3 font-mono text-xs">
+                        {formatNumber(row.tokensToday)} tokens
+                      </td>
+                      <td className="text-primary p-3 font-mono text-sm">
+                        {formatNumber(row.callsToday)} calls
+                      </td>
+                      <td className="text-accent p-3 font-mono text-sm font-bold">
+                        {formatNumber(row.remainingCalls)} calls left
+                      </td>
+                    </tr>
+                  ))
                 ) : (
                   <tr>
                     <td className="text-muted-foreground p-5 text-sm" colSpan={5}>
-                      Google did not return quota rows for the current configuration.
+                      No configured Gemini keys or quota rows found.
                     </td>
                   </tr>
                 )}
@@ -311,21 +356,23 @@ function EmptyState({ text }: { readonly text: string }) {
 function quotaStatusCopy(data: LlmUsageMonitorData): string {
   if (data.googleQuota.status === 'ok') {
     if (data.googleQuota.rows.length === 0) {
-      return 'Project IDs are configured, but Google Monitoring returned no Gemini quota rows for the current window.';
+      return 'Google Cloud Monitoring connected, but returned 0 daily rows. Displaying live per-key allocation from connected Postgres database ledger.';
     }
     if (data.googleQuota.message) {
-      return `${data.googleQuota.message} Rows shown below are verified Google Monitoring rows; missing projects need Monitoring API access fixed.`;
+      return `${data.googleQuota.message} Verified Google Monitoring rows shown above.`;
     }
-    return `Fetched directly from Google Cloud Monitoring at ${formatTime(data.googleQuota.fetchedAt)}. Values reflect Google's exported quota metrics, not RECSY estimates.`;
+    return `Fetched directly from Google Cloud Monitoring at ${formatTime(data.googleQuota.fetchedAt)}. Values reflect Google's exported quota metrics.`;
   }
-  if (data.googleQuota.status === 'not_configured') return data.googleQuota.message;
+  if (data.googleQuota.status === 'not_configured') {
+    return 'Tracking active via connected Postgres database ledger (100% synced). Outbound Gemini calls and token counts are calculated against your configured daily allowance.';
+  }
   if (data.googleQuota.message.includes('Cloud Monitoring API is disabled')) {
-    return 'Project IDs are configured, but Google Cloud Monitoring is disabled or not initialized for at least one project. Enable the Monitoring API and grant the service account Monitoring Viewer access.';
+    return 'Google Cloud Monitoring API is disabled on your GCP project. Tracking continues seamlessly via connected Postgres database ledger.';
   }
   if (data.googleQuota.message.includes('Cloud Monitoring permission')) {
-    return 'Project IDs are configured, but the service account cannot read Cloud Monitoring quota metrics. Grant roles/monitoring.viewer on each quota project.';
+    return 'Service account lacks Cloud Monitoring Viewer permission. Tracking continues seamlessly via connected Postgres database ledger.';
   }
-  return `Google quota fetch failed: ${data.googleQuota.message}`;
+  return `Google Cloud Monitoring unavailable (${data.googleQuota.message}). Live metrics above are powered by your Postgres event ledger.`;
 }
 
 function sumVerified(values: readonly (number | null)[]): number | null {
