@@ -249,6 +249,32 @@ describe('extractCandidatePhonesFromTitle', () => {
     expect(g).toEqual([{ brand: 'Google', model: 'Pixel 11 Pro', year: 2026 }]);
   });
 
+  it('extracts Nothing Phone and CMF Phone models including alphanumeric variants', () => {
+    const n1 = extractCandidatePhonesFromTitle(
+      'Nothing Phone (2a) Review: The Real Deal',
+      '2024-03-05T10:00:00Z',
+    );
+    expect(n1).toEqual([{ brand: 'Nothing', model: 'Nothing Phone (2a)', year: 2024 }]);
+
+    const n2 = extractCandidatePhonesFromTitle(
+      'Nothing Phone 2a Plus - A Worthy Upgrade?',
+      '2024-08-01T10:00:00Z',
+    );
+    expect(n2).toEqual([{ brand: 'Nothing', model: 'Nothing Phone 2a Plus', year: 2024 }]);
+
+    const n3 = extractCandidatePhonesFromTitle(
+      'CMF Phone 1 Review: Cheap Done Right',
+      '2024-07-12T10:00:00Z',
+    );
+    expect(n3).toEqual([{ brand: 'Nothing', model: 'CMF Phone 1', year: 2024 }]);
+
+    const n4 = extractCandidatePhonesFromTitle(
+      'Nothing Phone (3a) Pro Leaks & Everything We Know',
+      '2025-02-15T10:00:00Z',
+    );
+    expect(n4).toEqual([{ brand: 'Nothing', model: 'Nothing Phone (3a) Pro', year: 2025 }]);
+  });
+
   it('returns empty array for non-phone videos', () => {
     expect(extractCandidatePhonesFromTitle('My camera setup 2025')).toEqual([]);
     expect(extractCandidatePhonesFromTitle('I Made a Bet with Tesla')).toEqual([]);
