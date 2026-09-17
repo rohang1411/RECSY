@@ -122,7 +122,7 @@ async function seedPhones(
         launchDate: sql`excluded.launch_date`,
         msrpUsd: sql`excluded.msrp_usd`,
         imageUrl: sql`excluded.image_url`,
-        mediaStatus: sql`case when excluded.image_url like '/phones/%' then 'local_ok'::phone_media_status when excluded.image_url is not null then 'remote_only'::phone_media_status else phones.media_status end`,
+        mediaStatus: sql`case when phones.media_status = 'local_ok' and (excluded.image_url is null or excluded.image_url not like '/phones/%') then phones.media_status else excluded.media_status end`,
         status: sql`excluded.status`,
         specJson: sql`excluded.spec_json`,
         regionAvailability: sql`excluded.region_availability`,
