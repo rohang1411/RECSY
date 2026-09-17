@@ -27,6 +27,7 @@ export type PipelineRunRelatedItem = {
 
 export type PipelineRunRow = {
   readonly id: string;
+  readonly engine: 'catalog' | 'ingestion' | 'scorecard' | 'resume' | 'github';
   readonly label: string;
   readonly status: string;
   readonly detail: string;
@@ -35,6 +36,10 @@ export type PipelineRunRow = {
   readonly details: readonly PipelineRunDetail[];
   readonly related: readonly PipelineRunRelatedItem[];
   readonly diagnostics: readonly string[];
+  readonly outputSummary?: string | null;
+  readonly scriptError?: string | null;
+  readonly errorCode?: string | null;
+  readonly cliCommand?: string | null;
 };
 
 export type PipelineRunMonitorData = {
@@ -73,7 +78,17 @@ type CatalogIssueRow = {
   readonly sourceKey: string | null;
 };
 
+let cachedPipelineData: {
+  readonly data: PipelineRunMonitorData;
+  readonly expiresAtMs: number;
+} | null = null;
+
 export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorData> {
+  const now = Date.now();
+  if (cachedPipelineData && now < cachedPipelineData.expiresAtMs) {
+    return cachedPipelineData.data;
+  }
+
   const db = getDb();
 
   const [ingestionRuns, scoreRuns, resumeRows, catalogRunRows, githubRuns] = await Promise.all([
@@ -84,13 +99,16 @@ export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorDa
     loadGithubWorkflowRuns(),
   ]);
 
-  return {
+  const data: PipelineRunMonitorData = {
     ingestionRuns,
     scorecardRuns: scoreRuns,
     resumeRows,
     catalogRefreshRuns: catalogRunRows,
     githubRuns,
   };
+
+  cachedPipelineData = { data, expiresAtMs: now + 45_000 };
+  return data;
 }
 
 type GithubWorkflowRun = {
@@ -143,12 +161,22 @@ const GITHUB_API_HEADERS = {
   'X-GitHub-Api-Version': '2022-11-28',
 } as const;
 
+let cachedGithubRuns: {
+  readonly data: readonly PipelineRunRow[];
+  readonly expiresAtMs: number;
+} | null = null;
+
 async function loadGithubWorkflowRuns(): Promise<readonly PipelineRunRow[]> {
+  const now = Date.now();
+  if (cachedGithubRuns && now < cachedGithubRuns.expiresAtMs) {
+    return cachedGithubRuns.data;
+  }
+
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 3500);
     const response = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=20`,
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=15`,
       {
         headers: GITHUB_API_HEADERS,
         signal: controller.signal,
@@ -161,13 +189,23 @@ async function loadGithubWorkflowRuns(): Promise<readonly PipelineRunRow[]> {
     }
     const payload = (await response.json()) as GithubWorkflowRunsResponse;
     const runs = payload.workflow_runs ?? [];
-    const jobDetails = await Promise.all(runs.slice(0, 8).map((run) => loadGithubJobs(run)));
+
+    // Only fetch job details for runs that actually failed or had errors (where step diagnostics are needed)
+    const failedRuns = runs
+      .filter((run) => run.conclusion && run.conclusion !== 'success')
+      .slice(0, 4);
+    const jobDetails = await Promise.all(failedRuns.map((run) => loadGithubJobs(run)));
     const jobsByRun = new Map(jobDetails.map((item) => [item.runId, item.jobs]));
 
-    return runs.map((run) => githubRunToRow(run, jobsByRun.get(run.id) ?? []));
+    const result = runs.map((run) => githubRunToRow(run, jobsByRun.get(run.id) ?? []));
+    cachedGithubRuns = { data: result, expiresAtMs: now + 120_000 };
+    return result;
   } catch (error) {
-    console.error('GitHub workflow history fetch failed:', error);
-    return [];
+    console.warn(
+      'GitHub workflow history fetch failed or timed out:',
+      error instanceof Error ? error.message : String(error),
+    );
+    return cachedGithubRuns?.data ?? [];
   }
 }
 
@@ -202,6 +240,7 @@ function githubRunToRow(run: GithubWorkflowRun, jobs: readonly GithubJob[]): Pip
 
   return {
     id: `github-${run.id}`,
+    engine: 'github',
     label: `${run.name ?? workflowNameFromPath(run.path)} #${run.run_number}`,
     status,
     detail: run.display_title,
@@ -242,6 +281,14 @@ function githubRunToRow(run: GithubWorkflowRun, jobs: readonly GithubJob[]): Pip
         : failedJobs.length > 0
           ? failedJobs.map((job) => `${job.name}: ${job.conclusion}`)
           : [`GitHub Actions status: ${status}. Open the run for full logs.`],
+    outputSummary: `Workflow ${workflowNameFromPath(run.path)} run #${run.run_number} (${status}) with ${jobs.length} jobs. Commit ${run.head_sha.slice(0, 7)}.`,
+    scriptError:
+      failedSteps.length > 0
+        ? failedSteps.join('\n')
+        : failedJobs.length > 0
+          ? failedJobs.map((j) => `${j.name}: ${j.conclusion}`).join('\n')
+          : null,
+    cliCommand: `gh run view ${run.id} --web`,
   };
 }
 
@@ -286,6 +333,7 @@ async function loadRecentIngestionRuns(db: AppDb): Promise<readonly PipelineRunR
 
     return {
       id: row.id,
+      engine: 'ingestion',
       label: `${row.adapter}${row.stage ? ` / ${row.stage}` : ''}`,
       status: row.status,
       detail:
@@ -321,6 +369,10 @@ async function loadRecentIngestionRuns(db: AppDb): Promise<readonly PipelineRunR
           : [
               `Completed ${row.finishedAt ? 'with a finish timestamp' : 'without finish timestamp'}.`,
             ],
+      outputSummary: `${row.chunksCreated} chunks created for ${phoneLabel} from ${sourceHost(row.sourceUrl)} (stage: ${row.stage ?? 'completed'}, tier: ${row.tier ?? 'default'}, duration: ${formatDuration(row.durationMs)}).`,
+      scriptError: row.error ?? row.rejectedReason ?? null,
+      errorCode: row.errorCode,
+      cliCommand: row.phoneSlug ? `pnpm ingest --phone ${row.phoneSlug}` : 'pnpm ingest:auto',
     } satisfies PipelineRunRow;
   });
 }
@@ -356,6 +408,7 @@ async function loadRecentScorecardRuns(db: AppDb): Promise<readonly PipelineRunR
     const phoneLabel = phoneName(row.phoneBrand, row.phoneModel) ?? 'Unknown phone';
     return {
       id: row.id,
+      engine: 'scorecard',
       label: `${row.aspect} / ${phoneLabel}`,
       status: row.status,
       detail:
@@ -388,6 +441,11 @@ async function loadRecentScorecardRuns(db: AppDb): Promise<readonly PipelineRunR
           ]
         : [],
       diagnostics: [row.error, row.skipReason].filter(isPresent),
+      outputSummary: `Aspect ${row.aspect} scored ${row.score ? `${row.score}/10` : 'pending'} (confidence: ${row.confidence ?? 'unrated'}) from ${row.nSources ?? 0} evidence sources in ${formatDuration(row.durationMs)}.`,
+      scriptError: row.error ?? row.skipReason ?? null,
+      cliCommand: row.phoneSlug
+        ? `pnpm scorecard:run --phone ${row.phoneSlug} --aspect ${row.aspect}`
+        : 'pnpm scorecard:auto',
     } satisfies PipelineRunRow;
   });
 }
@@ -420,6 +478,7 @@ async function loadResumeQueueRows(db: AppDb): Promise<readonly PipelineRunRow[]
     const phoneLabel = phoneName(row.phoneBrand, row.phoneModel) ?? 'Unknown phone';
     return {
       id: row.id,
+      engine: 'resume',
       label: `${row.adapter} / ${phoneLabel}`,
       status: row.status,
       detail: row.lastError ?? `${row.attempts} attempts / ${row.tier} tier`,
@@ -449,6 +508,9 @@ async function loadResumeQueueRows(db: AppDb): Promise<readonly PipelineRunRow[]
       diagnostics: row.lastError
         ? [`Last queue error: ${row.lastError}`]
         : ['No queue error has been recorded for this candidate.'],
+      outputSummary: `Crawl candidate queued for ${phoneLabel} (${row.attempts} attempts recorded, scheduled ${formatDate(row.scheduledFor)}). Target: ${sourceHost(row.url)}.`,
+      scriptError: row.lastError,
+      cliCommand: 'pnpm ingest:resume',
     } satisfies PipelineRunRow;
   });
 }
@@ -551,6 +613,7 @@ async function loadCatalogRunRows(db: AppDb): Promise<readonly PipelineRunRow[]>
 
     return {
       id: run.id,
+      engine: 'catalog',
       label: `Catalog refresh / ${run.kind}`,
       status: run.status,
       detail,
@@ -598,6 +661,10 @@ async function loadCatalogRunRows(db: AppDb): Promise<readonly PipelineRunRow[]>
           .slice(0, 4)
           .map((issue) => `${issue.severity}: ${issue.code} - ${issue.message}`),
       ].filter(isPresent),
+      outputSummary: `${run.createdCount} created, ${run.updatedCount} updated, ${run.skippedCount} skipped, ${run.quarantinedCount} blocked across ${run.requestCount} requests and ${run.llmCallCount} LLM calls (${checkpointSummary}).`,
+      scriptError: run.error,
+      errorCode: run.errorCode,
+      cliCommand: 'pnpm catalog:auto --resume',
     } satisfies PipelineRunRow;
   });
 }
@@ -718,4 +785,21 @@ function jobTimeSummary(job: GithubJob): string {
 
 function isPresent<T>(value: T | null | undefined | false): value is T {
   return Boolean(value);
+}
+
+export async function loadAllUnifiedPipelineRuns(): Promise<readonly PipelineRunRow[]> {
+  const data = await loadPipelineRunMonitorData();
+  const allRuns: PipelineRunRow[] = [
+    ...data.catalogRefreshRuns,
+    ...data.ingestionRuns,
+    ...data.scorecardRuns,
+    ...data.githubRuns,
+    ...data.resumeRows,
+  ];
+
+  return allRuns.sort((a, b) => {
+    const timeA = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const timeB = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    return timeB - timeA;
+  });
 }

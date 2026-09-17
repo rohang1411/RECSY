@@ -173,6 +173,32 @@
   .pipeline-pulse {
     animation: pipeline-pulse 2.8s ease-in-out infinite;
   }
+
+  @keyframes scan-beam {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  @keyframes radar-sweep {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .scan-beam {
+    animation: scan-beam 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .radar-sweep {
+    animation: radar-sweep 3s linear infinite;
+  }
 }
 
 @layer components {
@@ -544,4 +570,10 @@
     animation: none !important;
     transform: none !important;
   }
+}
+
+/* In internal Command Center workspaces, hide the public consumer header and footer so internal nav is clean, dedicated, and never obscured or double-stacked */
+body:has([data-internal-dashboard='true']) > div > header,
+body:has([data-internal-dashboard='true']) > div > footer {
+  display: none !important;
 }

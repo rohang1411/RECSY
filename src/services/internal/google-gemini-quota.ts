@@ -62,6 +62,8 @@ export type GeminiQuotaFetchResult =
     };
 
 let tokenCache: { readonly token: string; readonly expiresAtMs: number } | null = null;
+let quotaCache: { readonly result: GeminiQuotaFetchResult; readonly expiresAtMs: number } | null =
+  null;
 
 export function getConfiguredGeminiQuotaProjects(): readonly GeminiQuotaProject[] {
   return (env.GOOGLE_CLOUD_QUOTA_PROJECT_IDS ?? '')
@@ -82,12 +84,17 @@ export function getConfiguredGeminiKeyCount(): number {
 }
 
 export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResult> {
+  const now = Date.now();
+  if (quotaCache && now < quotaCache.expiresAtMs) {
+    return quotaCache.result;
+  }
+
   const fetchedAt = new Date();
   const resetAt = nextPacificMidnight(fetchedAt);
   const projects = getConfiguredGeminiQuotaProjects();
 
   if (projects.length === 0) {
-    return {
+    const result: GeminiQuotaFetchResult = {
       status: 'not_configured',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
@@ -95,6 +102,8 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
       message: 'Set GOOGLE_CLOUD_QUOTA_PROJECT_IDS to fetch verified Gemini quota rows.',
       rows: [],
     };
+    quotaCache = { result, expiresAtMs: now + 300_000 };
+    return result;
   }
 
   try {
@@ -124,7 +133,7 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
     if (rows.length === 0 && errors.length > 0) {
       throw new Error(errors.join(' | '));
     }
-    return {
+    const result: GeminiQuotaFetchResult = {
       status: 'ok',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
@@ -132,8 +141,10 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
       message: errors.length > 0 ? `Partial quota fetch: ${errors.join(' | ')}` : undefined,
       rows,
     };
+    quotaCache = { result, expiresAtMs: now + 120_000 };
+    return result;
   } catch (err) {
-    return {
+    const result: GeminiQuotaFetchResult = {
       status: 'error',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
@@ -141,6 +152,9 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
       message: err instanceof Error ? err.message : String(err),
       rows: [],
     };
+    // Cache even error result for 90s so repeated navigations don't re-run failing GCP calls
+    quotaCache = { result, expiresAtMs: now + 90_000 };
+    return result;
   }
 }
 
@@ -181,12 +195,15 @@ async function fetchProjectQuota(
   ]);
 
   const usageByKey = new Map<string, number>();
+  const usageByMetric = new Map<string, number>();
   for (const series of usageSeries) {
     const labels = collectLabels(series);
     const metric = labels.quota_metric ?? '';
     if (!isGeminiQuotaMetric(metric)) continue;
+    const pointsSum = sumPoints(series.points);
     const key = rowKey(labels);
-    usageByKey.set(key, (usageByKey.get(key) ?? 0) + sumPoints(series.points));
+    usageByKey.set(key, (usageByKey.get(key) ?? 0) + pointsSum);
+    usageByMetric.set(metric, (usageByMetric.get(metric) ?? 0) + pointsSum);
   }
 
   return limitSeries
@@ -196,8 +213,11 @@ async function fetchProjectQuota(
       const limit = latestPointValue(
         limitSeries.find((series) => rowKey(collectLabels(series)) === rowKey(labels))?.points,
       );
-      const used = usageByKey.get(rowKey(labels)) ?? null;
-      const remaining = limit !== null && used !== null ? Math.max(0, limit - used) : null;
+      const exactKey = rowKey(labels);
+      const metricOnlyKey = labels.quota_metric ?? '';
+      const matchedUsed = usageByKey.get(exactKey) ?? usageByMetric.get(metricOnlyKey) ?? 0;
+      const used = limit !== null ? matchedUsed : null;
+      const remaining = limit !== null ? Math.max(0, limit - matchedUsed) : null;
       return {
         projectId: project.projectId,
         apiKeyIndex: project.apiKeyIndex,
@@ -240,7 +260,7 @@ async function fetchTimeSeries(
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(6_000),
+      signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -409,13 +429,13 @@ function classifyUnit(limitName: string, metric: string): GeminiQuotaRow['unit']
   return 'other';
 }
 
-function startOfPacificDay(date: Date): Date {
+export function startOfPacificDay(date: Date): Date {
   const parts = datePartsInPacific(date);
   const offset = offsetMinutes('America/Los_Angeles', date);
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0) - offset * 60_000);
 }
 
-function nextPacificMidnight(date: Date): Date {
+export function nextPacificMidnight(date: Date): Date {
   const start = startOfPacificDay(date);
   return new Date(start.getTime() + 24 * 60 * 60 * 1000);
 }
