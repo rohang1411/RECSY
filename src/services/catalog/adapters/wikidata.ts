@@ -120,16 +120,28 @@ export function buildRecentPhonesQuery(since: Date, limit: number, now: Date = n
 SELECT ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
        (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
 WHERE {
-  VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
-  ?item wdt:P31 ?class.
   {
-    ?item wdt:P571 ?releaseDate.
+    VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
+    ?item wdt:P31 ?class.
+    {
+      ?item wdt:P571 ?releaseDate.
+    } UNION {
+      ?item wdt:P577 ?releaseDate.
+    } UNION {
+      ?item wdt:P6949 ?releaseDate.
+    }
+    FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   } UNION {
-    ?item wdt:P577 ?releaseDate.
-  } UNION {
-    ?item wdt:P6949 ?releaseDate.
+    # Priority brand entities (e.g. Nothing Technology Ltd wd:Q110339215) that may lack explicit P571/P577 dates
+    VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
+    ?item wdt:P31 ?class.
+    ?item wdt:P176 ?manufacturer.
+    VALUES ?manufacturer { wd:Q110339215 }
+    OPTIONAL { ?item wdt:P571 ?inceptionDate. }
+    OPTIONAL { ?item wdt:P577 ?publicationDate. }
+    OPTIONAL { ?item wdt:P6949 ?announcementDate. }
+    BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate, NOW()) AS ?releaseDate)
   }
-  FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }
   OPTIONAL { ?item wdt:P18 ?image. }

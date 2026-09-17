@@ -287,15 +287,16 @@ const PHONE_EXTRACTION_PATTERNS: readonly {
       /\b(?:Google\s+)?(Pixel\s+(?:1[0-9]|[2-9][0-9])(?:\s+(?:Pro\s+Fold|Pro\s+XL|Pro|Fold|a))?)\b/i,
     formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
   },
-  // Nothing Phone (3), Nothing Phone 3
+  // Nothing Phone (2a), Nothing Phone 2a Plus, Nothing Phone (3), Nothing Phone 3a Pro
   {
     brand: 'Nothing',
-    regex: /\b(Nothing\s+Phone\s+(?:\([0-9]+\)|[0-9]+))\b/i,
+    regex:
+      /\b(Nothing\s+Phone\s+(?:\([0-9]+[a-z]?\)|[0-9]+[a-z]?)(?:\s+(?:Plus|Pro|Lite|Ultra))?)(?=\b|\s|$|[^\w])/i,
     formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
   },
   {
     brand: 'Nothing',
-    regex: /\b(CMF\s+Phone\s+[0-9]+)\b/i,
+    regex: /\b(CMF\s+Phone\s+[0-9]+(?:\s+(?:Pro|Plus))?)\b/i,
     formatModel: (m) => m[1]!.replace(/\s+/g, ' ').trim(),
   },
   // OnePlus 13, OnePlus 14

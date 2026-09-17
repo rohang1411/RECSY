@@ -91,10 +91,20 @@ interface ResolvedCatalogCandidate {
   readonly model: string;
 }
 
+function cleanCandidateModel(model: string, brand: string): string {
+  const regex = new RegExp(`^${brand}\\s+`, 'i');
+  return model.replace(regex, '').trim();
+}
+
 function resolveBrandModel(c: CatalogCandidateRow): ResolvedCatalogCandidate | null {
   const id = c.normalizedIdentityJson;
-  const brand = recordString(id, 'brand') ?? inferBrandFromTitle(c.candidateTitle);
-  const model = recordString(id, 'model') ?? c.candidateTitle;
+  const claims = c.claimsJson;
+  const brand =
+    recordString(id, 'brand') ??
+    recordString(claims, 'brand') ??
+    inferBrandFromTitle(c.candidateTitle);
+  const rawModel = recordString(id, 'model') ?? recordString(claims, 'model') ?? c.candidateTitle;
+  const model = brand ? cleanCandidateModel(rawModel, brand) : rawModel;
   if (!brand || !model) return null;
   return { row: c, brand, model };
 }
@@ -420,12 +430,16 @@ function candidateReleaseTime(candidate: CatalogCandidateRow): number {
 function candidateReleaseValue(candidate: CatalogCandidateRow): string | undefined {
   const normalized = candidate.normalizedIdentityJson;
   const raw = candidate.rawCandidateJson;
+  const claims = candidate.claimsJson;
   return (
     recordString(normalized, 'launchDate') ??
     recordString(normalized, 'releaseDate') ??
     recordString(raw, 'launchDate') ??
     recordString(raw, 'releaseDate') ??
-    recordString(raw, 'releasedAt')
+    recordString(raw, 'releasedAt') ??
+    recordString(raw, 'publishedAt') ??
+    recordString(claims, 'publishedAt') ??
+    recordString(claims, 'discoveredAt')
   );
 }
 
@@ -654,12 +668,16 @@ async function markSpeculativeNoSpecSourceFound(
 }
 
 const TITLE_BRAND_HINTS: readonly (readonly [string, string])[] = [
+  ['apple', 'Apple'],
   ['iphone', 'Apple'],
   ['samsung', 'Samsung'],
   ['galaxy', 'Samsung'],
+  ['google', 'Google'],
   ['google pixel', 'Google'],
   ['pixel', 'Google'],
+  ['nothing', 'Nothing'],
   ['nothing phone', 'Nothing'],
+  ['cmf', 'Nothing'],
   ['cmf phone', 'Nothing'],
   ['oneplus', 'OnePlus'],
   ['oppo', 'OPPO'],
@@ -672,6 +690,7 @@ const TITLE_BRAND_HINTS: readonly (readonly [string, string])[] = [
   ['motorola', 'Motorola'],
   ['moto', 'Motorola'],
   ['honor', 'Honor'],
+  ['sony', 'Sony'],
   ['sony xperia', 'Sony'],
   ['xperia', 'Sony'],
   ['huawei', 'Huawei'],

@@ -1495,6 +1495,18 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-09-17 — Catalog enrichment unblocking, Nothing phone discovery & pipeline hardening
+
+- **Reviewer Scout Candidate Enrichment**:
+  - Populated `normalizedIdentityJson` and `rawCandidateJson` in `scripts/creator-watch.ts` for staged reviewer candidates so downstream pipelines can identify brand and model cleanly.
+  - Expanded `TITLE_BRAND_HINTS` in `scripts/catalog-enrich-gsmarena.ts` to include `apple`, `google`, `nothing`, `samsung`, `sony`, and `cmf`, preventing null brand resolution from dropping candidates.
+  - Added brand prefix stripping (`cleanCandidateModel`) and multi-source candidate release date extraction in `catalog-enrich-gsmarena.ts` so candidates are queued in proper brand-priority order.
+  - Backfilled existing staged database candidate rows with valid normalized identity JSON.
+- **Nothing Phone & Priority Brand Discovery**:
+  - Enhanced Wikidata SPARQL query in `src/services/catalog/adapters/wikidata.ts` with a priority manufacturer UNION branch (`wd:Q110339215`) to capture phones lacking explicit release date properties.
+  - Updated YouTube channel reviewer scout regexes in `src/services/ingest/adapters/youtube-channel.ts` to support alphanumeric Nothing and CMF devices (`(2a)`, `2a Plus`, `(3a) Pro`, `CMF Phone 1`) without regex word-boundary breakage on closing parentheses.
+  - Added comprehensive test coverage in `src/services/ingest/adapters/youtube-channel.test.ts`.
+
 ### 2026-09-16 — Pipeline stabilization, autonomous flagship discovery & quota hardening
 
 - **Autonomous Flagship Discovery (iPhone 18 Pro/Pro Max support)**:
@@ -2423,6 +2435,37 @@ dissenting_quotes)`.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
+
+### Ops — Catalog Enrichment Disconnect & Priority Brand Discovery (2026-09-17)
+
+#### HIGH
+
+- **Candidates staged by reviewer scouts stuck in `pending_review` indefinitely due to incomplete identity schema and brand hint omission.**
+  10 candidate rows in `catalog_candidates` were held in `decision = 'pending_review'` (`status = 'discovered'`) and never processed or promoted by downstream catalog enrichment scripts (`scripts/catalog-enrich-gsmarena.ts` / `scripts/catalog-enrich-oem.ts`).
+  - **Root Cause 1 — Schema Omission in Creator Scout.** When `scripts/creator-watch.ts` staged uncataloged devices detected in reviewer video titles, it populated `claimsJson.staged_identity` but left `normalizedIdentityJson` empty (`{}`) and `rawCandidateJson` null.
+  - **Root Cause 2 — Fragile Brand Resolution in Enrichment.** In `scripts/catalog-enrich-gsmarena.ts`, `resolveBrandModel` relied on `candidate.normalizedIdentityJson.brand`. When empty, it fell back to regex searching candidate names against `TITLE_BRAND_HINTS`. However, `TITLE_BRAND_HINTS` contained niche aliases (`honor`, `oppo`, `realme`, `vivo`, `iqoo`, `xiaomi`, `redmi`, `poco`, `moto`, `motorola`, `infinix`, `tecno`, `itel`) but lacked entries for major market leaders: `apple`, `google`, `nothing`, `samsung`, `sony`, and `cmf`. Consequently, titles like `"Apple iPhone 18 Pro"` returned `null` for both brand and model, causing `catalog-enrich-gsmarena` to silently skip them from the enrichment batch.
+  - **Root Cause 3 — Uncleaned Model Prefixes.** `cleanCandidateModel` failed to strip the brand name when candidate titles began with the brand (e.g. producing model `"Apple iPhone 18 Pro"` instead of `"iPhone 18 Pro"`), causing downstream Wikipedia/GSMArena search queries to search for redundant double-brand queries (e.g. `"Apple Apple iPhone 18 Pro"`).
+  - **Root Cause 4 — Demoted Release Date Priority.** `candidateReleaseValue` did not inspect reviewer scout claims (`publishedAt` / `discoveredAt`), treating fresh reviewer candidates as lacking a release date and depressing their priority ranking.
+  - **Senior Staff Engineer & Architect Solution.**
+    1. Upgraded `scripts/creator-watch.ts` to always persist `normalizedIdentityJson: { brand, model, launchDate, aliases }` and `rawCandidateJson` upon candidate creation.
+    2. Hardened `resolveBrandModel` in `scripts/catalog-enrich-gsmarena.ts` to inspect `normalizedIdentityJson` first, fallback to `claimsJson.staged_identity`, and expanded `TITLE_BRAND_HINTS` to explicitly include all core brands (`apple`, `google`, `nothing`, `samsung`, `sony`, `cmf`).
+    3. Stripped leading brand names in `cleanCandidateModel` to generate clean model search strings.
+    4. Updated `candidateReleaseValue` to check reviewer scout discovery dates so newly announced flagships receive top queue priority.
+    5. Backfilled existing database records in Supabase so all 9 active creator-watch candidate rows have valid normalized identity and raw candidate JSON.
+  - **Hardening.** Dry-run with `pnpm catalog:enrich-gsmarena --limit 10 --max-llm-calls 0` verified that all staged candidates are recognized with clean brand/model strings and prioritized in exact brand order.
+
+- **Zero Nothing phones discovered in automated catalog pipeline despite priority brand ranking.**
+  Although Nothing is designated as Priority #3 in `brand-priority.ts` and the user explicitly configured automated discovery for Nothing devices, zero Nothing phone candidates appeared in `catalog_candidates`.
+  - **Root Cause 1 — Wikidata SPARQL Date Property Omission.** While the active `phones` table already contains 2 Nothing phones (`nothing-phone-2a-plus` and `nothing-phone-3a-pro`), the discovery pipeline produced no candidates. On Wikidata, older models (`Phone (1)`, `Phone (2)`) were filtered out by the 2-year cutoff. For recent models such as `Nothing Phone (2a)` (`Q125621098`) and `Nothing Phone (2a) Plus` (`Q131543308`), Wikidata editors classified them as smartphones (`P31 = wd:Q19723451`), but never populated release date properties (`wdt:P571`, `wdt:P577`, or `wdt:P6949`). Because `buildRecentPhonesQuery` required `FILTER(?releaseDate >= ...)`, WDQS omitted them from query results entirely.
+  - **Root Cause 2 — Alphanumeric Model Regex Limitation in Reviewer Scout.** In `src/services/ingest/adapters/youtube-channel.ts`, the phone extraction regex `/\b(Nothing\s+Phone\s+(?:\([0-9]+\)|[0-9]+))\b/i` only matched single digits `(1)`, `(2)`, failing to match alphanumeric models like `(2a)`, `2a Plus`, `(3a) Pro`, or `CMF Phone 1`. Additionally, regex word boundary `\b` fails immediately after a closing parenthesis `)` in JavaScript.
+  - **Root Cause 3 — MobileAPI Budget Inactivity.** Scheduled weekly runs configured `mobileapi_max_requests=0`, so MobileAPI had not queried recent devices since June 1, 2026.
+  - **Senior AI & Data Architect Solution.**
+    1. Upgraded `buildRecentPhonesQuery` in `src/services/catalog/adapters/wikidata.ts` with a dedicated UNION branch matching priority manufacturers (Nothing Technology Ltd `wd:Q110339215`) regardless of whether volunteer editors have filled in hardware release dates, coalescing missing dates to the current discovery window.
+    2. Re-engineered `PHONE_EXTRACTION_PATTERNS` in `src/services/ingest/adapters/youtube-channel.ts` with comprehensive alphanumeric and sub-tier variant matching:
+       `/\b(Nothing\s+Phone\s+(?:\([0-9]+[a-z]?\)|[0-9]+[a-z]?)(?:\s+(?:Plus|Pro|Lite|Ultra))?)(?=\b|\s|$|[^\w])/i`
+       `/\b(CMF\s+Phone\s+(?:\([0-9]+[a-z]?\)|[0-9]+[a-z]?)(?:\s+(?:Plus|Pro|Lite|Ultra))?)(?=\b|\s|$|[^\w])/i`
+    3. Added unit tests in `src/services/ingest/adapters/youtube-channel.test.ts` covering `Nothing Phone (2a)`, `Nothing Phone 2a Plus`, `CMF Phone 1`, and `Nothing Phone (3a) Pro`.
+  - **Hardening.** Live SPARQL query against WDQS confirms immediate discovery of `Nothing Phone 2a`, `Nothing Phone 2a Plus`, `Nothing Phone 3a`, `Nothing Phone 3`, and `Nothing Phone 3a Lite`. All 14 YouTube channel tests pass cleanly.
 
 ### Ops — Pipeline Root-Cause Resolution & Autonomous Catalog Stabilization (2026-09-16)
 
