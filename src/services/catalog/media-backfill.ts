@@ -89,9 +89,13 @@ export function mediaCandidateMatchReason(
 }
 
 export function isAllowedCatalogImageUrl(value: string): boolean {
+  if (value.startsWith('/phones/')) return true;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && !BLOCKED_IMAGE_HOST_RE.test(url.hostname);
+    const isSupportedProtocol =
+      url.protocol === 'https:' ||
+      (url.protocol === 'http:' && url.hostname.includes('wikimedia.org'));
+    return isSupportedProtocol && !BLOCKED_IMAGE_HOST_RE.test(url.hostname);
   } catch {
     return false;
   }

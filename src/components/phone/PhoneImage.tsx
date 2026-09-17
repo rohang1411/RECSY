@@ -45,7 +45,7 @@ export function PhoneImage({
           decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setFailedSrc(src)}
-          className={`image-reveal bg-surface-container h-full w-full ${
+          className={`image-reveal h-full w-full drop-shadow-md transition-transform duration-300 group-hover:scale-105 ${
             fit === 'cover' ? 'object-cover' : 'object-contain p-2'
           }`}
         />
@@ -56,10 +56,20 @@ export function PhoneImage({
     <div
       role="img"
       aria-label={label}
-      className={`border-outline-variant bg-surface-container text-muted-foreground font-display flex items-center justify-center border text-4xl font-extrabold ${className ?? ''}`}
+      className={`border-outline-variant bg-surface-container/60 text-muted-foreground font-display flex flex-col items-center justify-center gap-2 border ${className ?? ''}`}
       style={wrapperStyle}
     >
-      {initial}
+      <svg
+        className="text-muted-foreground/30 h-10 w-10"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={1.5}
+      >
+        <rect x="5" y="2" width="14" height="20" rx="3" ry="3" />
+        <line x1="12" y1="18" x2="12" y2="18.01" strokeWidth={2.5} strokeLinecap="round" />
+      </svg>
+      <span className="font-mono text-xs tracking-widest uppercase opacity-60">{initial}</span>
     </div>
   );
 }

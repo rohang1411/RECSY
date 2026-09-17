@@ -49,6 +49,7 @@
     "catalog:sync-mobileapi": "tsx --env-file=.env.local scripts/catalog-sync-mobileapi.ts",
     "catalog:prune": "tsx --env-file=.env.local scripts/catalog-prune.ts",
     "catalog:backfill-media": "tsx --env-file=.env.local scripts/catalog-backfill-media.ts",
+    "catalog:backfill-images": "tsx --env-file=.env.local scripts/catalog-backfill-gsmarena-images.ts",
     "catalog:auto": "tsx --env-file=.env.local scripts/catalog-auto.ts",
     "catalog:report": "tsx --env-file=.env.local scripts/catalog-report.ts",
     "prepare": "node scripts/prepare-husky.mjs"

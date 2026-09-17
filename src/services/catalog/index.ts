@@ -74,3 +74,12 @@ export {
   mediaCandidateMatchReason,
   validateRemoteImageUrl,
 } from './media-backfill';
+export {
+  KNOWN_STUDIO_IMAGES,
+  GSMARENA_BRAND_IDS,
+  generateCandidateGsmFilenames,
+  resolveStudioImageCandidate,
+  downloadAndSavePhoneImage,
+  type StudioImageCandidate,
+  type ResolveAndDownloadResult,
+} from './studio-media-resolver';

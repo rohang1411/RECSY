@@ -215,7 +215,7 @@ function mapBinding(binding: z.infer<typeof BindingSchema>): WikidataPhoneCandid
     model: title,
     releaseDate: binding.releaseDate?.value ?? null,
     officialUrl: binding.officialWebsite?.value ?? null,
-    imageUrl: binding.image?.value ?? null,
+    imageUrl: binding.image?.value ? binding.image.value.replace(/^http:\/\//i, 'https://') : null,
     aliases,
     raw: {
       qid,
