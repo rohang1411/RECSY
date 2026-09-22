@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Radio, RefreshCw, Server, ShieldAlert } from 'lucide-react';
+import { Database, Layers, Radio, RefreshCw, Server, ShieldAlert } from 'lucide-react';
 
 export default function DatabaseDashboardLoading() {
   return (
@@ -92,6 +92,24 @@ export default function DatabaseDashboardLoading() {
           </div>
         </div>
       </div>
+
+      {/* Perspective Switcher Skeleton */}
+      <section className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="border-outline-variant bg-surface-container/40 flex items-center gap-1.5 border p-1.5 backdrop-blur-md">
+          <div className="bg-primary/20 border-primary/40 text-primary flex items-center gap-2 border px-4 py-2 font-mono text-xs font-semibold tracking-[0.14em] uppercase">
+            <Database className="size-3.5" />
+            <span>Catalog Candidates & Promotion</span>
+          </div>
+          <div className="text-muted-foreground flex items-center gap-2 border border-transparent px-4 py-2 font-mono text-xs tracking-[0.14em] uppercase">
+            <Layers className="size-3.5" />
+            <span>Phone Ingestion & Corpus Health</span>
+          </div>
+        </div>
+        <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs">
+          <Radio className="size-3 animate-pulse text-[#39ff88]" />
+          <span>Synchronizing Data Fleet...</span>
+        </div>
+      </section>
 
       {/* 5 KPI Metric Skeletons */}
       <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-5">

@@ -9,6 +9,10 @@ import {
   type CommandCenterDatabaseSummary,
 } from '@/services/internal/database-dashboard';
 import { loadLlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
+import {
+  loadCommandCenterIngestionSummary,
+  type PhoneIngestionSummary,
+} from '@/services/internal/phone-ingestion-dashboard';
 import { loadAllUnifiedPipelineRuns } from '@/services/internal/pipeline-run-monitor';
 
 import type { LlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
@@ -32,6 +36,23 @@ const FALLBACK_DB_DATA: CommandCenterDatabaseSummary = {
     inPipelineCount: 0,
   },
   topBlockedReason: 'None',
+};
+
+const FALLBACK_INGESTION_SUMMARY: PhoneIngestionSummary = {
+  totalActivePhones: 0,
+  completedCount: 0,
+  pendingCount: 0,
+  queuedCount: 0,
+  quotaExhaustedCount: 0,
+  emptyCorpusCount: 0,
+  failedCount: 0,
+  scorecardMissingCount: 0,
+  overdueCount: 0,
+  neverScheduledCount: 0,
+  totalChunks: 0,
+  totalSources: 0,
+  avgChunksPerPhone: 0,
+  completionPercentage: 0,
 };
 
 const FALLBACK_LLM_USAGE: LlmUsageMonitorData = {
@@ -74,16 +95,22 @@ function statusTone(status: string) {
 }
 
 export default async function CommandCenterPage() {
-  const [dbDataResult, llmUsageResult, allRunsResult] = await Promise.allSettled([
-    loadCommandCenterDatabaseSummary(),
-    loadLlmUsageMonitorData(),
-    loadAllUnifiedPipelineRuns(),
-  ]);
+  const [dbDataResult, llmUsageResult, allRunsResult, ingestionSummaryResult] =
+    await Promise.allSettled([
+      loadCommandCenterDatabaseSummary(),
+      loadLlmUsageMonitorData(),
+      loadAllUnifiedPipelineRuns(),
+      loadCommandCenterIngestionSummary(),
+    ]);
 
   const dbData = dbDataResult.status === 'fulfilled' ? dbDataResult.value : FALLBACK_DB_DATA;
   const llmUsage =
     llmUsageResult.status === 'fulfilled' ? llmUsageResult.value : FALLBACK_LLM_USAGE;
   const allRuns = allRunsResult.status === 'fulfilled' ? allRunsResult.value : [];
+  const ingestionSummary =
+    ingestionSummaryResult.status === 'fulfilled'
+      ? ingestionSummaryResult.value
+      : FALLBACK_INGESTION_SUMMARY;
 
   const { summary, topBlockedReason } = dbData;
   const recentRuns = allRuns.slice(0, 6);
@@ -183,6 +210,77 @@ export default async function CommandCenterPage() {
         </div>
       </section>
 
+      {/* Ingestion Fleet Readiness Bar */}
+      <section className="border-outline-variant bg-surface-container/20 mt-10 border p-6 backdrop-blur-md">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="border border-[#39ff88]/40 bg-[#39ff88]/10 p-3 text-[#39ff88]">
+              <Layers className="size-6" aria-hidden />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold tracking-[0.14em] text-[#39ff88] uppercase">
+                  Phone Ingestion & Corpus Readiness
+                </span>
+                <span className="border border-[#39ff88]/30 bg-[#39ff88]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[#39ff88]">
+                  {ingestionSummary.completionPercentage}% Fleet Ready
+                </span>
+              </div>
+              <h2 className="font-display text-primary mt-1 text-2xl font-bold uppercase">
+                {ingestionSummary.completedCount} of {ingestionSummary.totalActivePhones} Phones
+                Ingested
+              </h2>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {ingestionSummary.pendingCount > 0
+                  ? `${ingestionSummary.pendingCount} active phones pending review evidence chunks or aspect scorecards.`
+                  : 'All active catalog phones have complete review corpus evidence and synthesized aspect scorecards.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-3 font-mono text-xs">
+              <div className="border-outline-variant bg-background border px-3 py-2">
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  Corpus Chunks
+                </span>
+                <span className="text-primary text-sm font-bold">
+                  {ingestionSummary.totalChunks.toLocaleString('en-US')}
+                </span>
+              </div>
+              <div className="border-outline-variant bg-background border px-3 py-2">
+                <span className="text-muted-foreground block text-[10px] uppercase">
+                  Pending Queue
+                </span>
+                <span
+                  className={`text-sm font-bold ${
+                    ingestionSummary.pendingCount > 0 ? 'text-[#ffe45e]' : 'text-[#39ff88]'
+                  }`}
+                >
+                  {ingestionSummary.pendingCount}
+                </span>
+              </div>
+            </div>
+
+            <Link
+              href="/internal/database?view=ingestion"
+              className="flex items-center gap-2 border border-[#39ff88]/50 bg-[#39ff88]/10 px-4 py-3 font-mono text-xs font-semibold tracking-[0.14em] text-[#39ff88] uppercase transition-colors hover:bg-[#39ff88]/20"
+            >
+              <span>Inspect Ingestion Diagnostics</span>
+              <ArrowRight className="size-4" aria-hidden />
+            </Link>
+          </div>
+        </div>
+
+        {/* Visual Progress Line */}
+        <div className="bg-surface-container mt-5 h-1.5 w-full overflow-hidden">
+          <div
+            className="h-full bg-[#39ff88] transition-all duration-500"
+            style={{ width: `${ingestionSummary.completionPercentage}%` }}
+          />
+        </div>
+      </section>
+
       {/* Workspace Hub Cards */}
       <div className="mt-12">
         <SectionHint label="Command Center Workspaces">
@@ -208,9 +306,10 @@ export default async function CommandCenterPage() {
                 Database Dashboard
               </h2>
               <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                Full database visibility of all phones: how many are promoted (
-                {summary.promotedCount}), blocked ({summary.blockedCount}), queued (
-                {summary.queuedCount}), or pending review ({summary.pendingCount}).
+                Dual-perspective database observatory: catalog candidate promotion (
+                {summary.promotedCount} promoted, {summary.blockedCount} blocked) and phone
+                ingestion readiness ({ingestionSummary.completedCount}/
+                {ingestionSummary.totalActivePhones} ingested).
               </p>
               {summary.blockedCount > 0 ? (
                 <div className="mt-4 border border-[#ff3b30]/30 bg-[#ff3b30]/5 p-2.5 text-xs">
@@ -221,7 +320,7 @@ export default async function CommandCenterPage() {
             </div>
 
             <div className="border-outline-variant text-accent group-hover:text-primary mt-6 flex items-center justify-between border-t pt-4 font-mono text-xs tracking-[0.14em] uppercase">
-              <span>Inspect Database & Reasons</span>
+              <span>Inspect Database & Ingestion</span>
               <ArrowRight
                 className="size-4 transition-transform group-hover:translate-x-1"
                 aria-hidden
