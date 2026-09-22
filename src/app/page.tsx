@@ -26,8 +26,8 @@ export default function HomePage() {
   return (
     <div className="grid-bg">
       <section className="px-grid-margin flex min-h-[calc(100dvh-4rem)] items-center py-8 sm:py-10 lg:py-12">
-        <div className="grid w-full gap-8 lg:grid-cols-12 lg:items-end">
-          <div className="lg:col-span-9">
+        <div className="grid w-full min-w-0 gap-8 lg:grid-cols-12 lg:items-end">
+          <div className="min-w-0 lg:col-span-9">
             <p className="meta-label border-primary mb-6 inline-flex border-l-2 pl-4">
               Conversational recommender
             </p>
@@ -35,10 +35,10 @@ export default function HomePage() {
               Ask what matters. We&apos;ll find the phone.
             </h1>
 
-            <div className="border-outline-variant bg-background mt-10 grid border lg:grid-cols-[1fr_auto]">
+            <div className="border-outline-variant bg-background mt-10 grid min-w-0 border lg:grid-cols-[1fr_auto]">
               <Link
                 href="/recommend"
-                className="group hover:bg-surface-container flex min-h-28 items-center gap-4 p-5 transition-colors duration-150"
+                className="group hover:bg-surface-container flex min-h-28 min-w-0 items-center gap-4 p-5 transition-colors duration-150"
               >
                 <Terminal className="text-primary size-5 shrink-0" aria-hidden />
                 <div className="min-w-0 flex-1">

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { REGIONS, type RegionConfig } from '@/lib/regions';
 import { Globe, X } from 'lucide-react';
 
@@ -8,9 +9,27 @@ interface RegionSelectorProps {
   readonly activeRegion: RegionConfig;
 }
 
+const emptySubscribe = () => () => {};
+
 export function RegionSelector({ activeRegion }: RegionSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
+  const mounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
 
   const handleSelect = async (countryCode: string) => {
     if (countryCode === activeRegion.countryCode) {
@@ -39,21 +58,8 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
     }
   };
 
-  return (
-    <div className="relative font-mono">
-      {/* Trigger Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="border-primary bg-background hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border-2 px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-all duration-150 focus-visible:outline-none"
-        aria-label={`Select region (current: ${activeRegion.label})`}
-      >
-        <span className="text-[14px]" role="img" aria-label={activeRegion.label}>
-          {activeRegion.flag}
-        </span>
-        <span>{activeRegion.countryCode}</span>
-        <Globe className="h-3 w-3 shrink-0" />
-      </button>
-
+  const drawerContent = (
+    <>
       {/* Backdrop */}
       {isOpen && (
         <div
@@ -64,8 +70,14 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
 
       {/* Slide-out Drawer */}
       <div
-        className={`bg-background border-primary cubic-bezier(0.16, 1, 0.3, 1) fixed top-0 right-0 bottom-0 z-50 w-full max-w-[380px] border-l-3 p-6 transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select Region"
+        aria-hidden={!isOpen}
+        className={`bg-background border-primary cubic-bezier(0.16, 1, 0.3, 1) fixed top-0 right-0 bottom-0 z-50 w-full max-w-[380px] border-l-3 p-6 transition-all duration-300 ${
+          isOpen
+            ? 'translate-x-0 opacity-100'
+            : 'pointer-events-none invisible translate-x-full opacity-0'
         } flex flex-col justify-between`}
       >
         <div>
@@ -158,6 +170,25 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
           </div>
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div className="relative font-mono">
+      {/* Trigger Button */}
+      <button
+        onClick={() => setIsOpen(true)}
+        className="border-primary bg-background hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border-2 px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-all duration-150 focus-visible:outline-none"
+        aria-label={`Select region (current: ${activeRegion.label})`}
+      >
+        <span className="text-[14px]" role="img" aria-label={activeRegion.label}>
+          {activeRegion.flag}
+        </span>
+        <span>{activeRegion.countryCode}</span>
+        <Globe className="h-3 w-3 shrink-0" />
+      </button>
+
+      {mounted && createPortal(drawerContent, document.body)}
     </div>
   );
 }

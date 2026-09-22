@@ -84,6 +84,7 @@
   html,
   body {
     @apply bg-background text-foreground;
+    overflow-x: clip;
     font-feature-settings:
       'rlig' 1,
       'calt' 1,
@@ -223,7 +224,7 @@
   }
 
   .display-heading {
-    @apply font-display text-primary text-5xl leading-[0.92] font-extrabold tracking-normal uppercase sm:text-7xl lg:text-[120px];
+    @apply font-display text-primary text-3xl leading-[0.92] font-extrabold tracking-normal break-words uppercase sm:text-6xl lg:text-[120px];
   }
 
   .text-gradient-steel {
