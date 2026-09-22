@@ -4,7 +4,8 @@ name: scorecard (auto)
 
 on:
   schedule:
-    - cron: '17 2 * * *'
+    # 04:17 UTC daily — staggered 2 hours after ingest-tiered (02:17 UTC) to prevent Gemini quota contention
+    - cron: '17 4 * * *'
   workflow_dispatch:
     inputs:
       limit:

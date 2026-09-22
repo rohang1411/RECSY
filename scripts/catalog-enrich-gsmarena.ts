@@ -222,6 +222,12 @@ async function main() {
   for (const candidate of pending) {
     const brand = candidate.brand;
     const model = candidate.model;
+    if (args.maxLlmCalls <= 0) {
+      console.log(
+        `  -> Max LLM calls is 0 (preview mode); skipping LLM extraction for [${brand} ${model}].`,
+      );
+      continue;
+    }
     if (llmCalls >= args.maxLlmCalls) {
       console.log(`  -> LLM budget exhausted; leaving remaining candidates pending.`);
       await markLlmBudgetExhausted(db, candidate.row);
@@ -619,13 +625,23 @@ async function markLlmBudgetExhausted(
   db: ReturnType<typeof getDb>,
   candidate: CatalogCandidateRow,
 ): Promise<void> {
+  const brand =
+    recordString(candidate.normalizedIdentityJson, 'brand') ??
+    recordString(candidate.claimsJson, 'brand') ??
+    '';
+  const isPriority = isMainstreamPriorityBrand(brand);
   await db
     .update(catalogCandidates)
     .set({
       decision: candidate.decision ?? 'pending_review',
-      status: candidate.status === 'promoted' ? 'promoted' : 'failed_transient',
+      status:
+        candidate.status === 'promoted'
+          ? 'promoted'
+          : isPriority
+            ? 'discovered'
+            : 'failed_transient',
       issueCodes: [...new Set([...candidate.issueCodes, 'llm_budget_exhausted'])],
-      retryAfter: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      retryAfter: isPriority ? null : new Date(Date.now() + 24 * 60 * 60 * 1000),
       lastDecisionAt: new Date(),
       updatedAt: new Date(),
     })

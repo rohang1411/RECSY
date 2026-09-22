@@ -225,6 +225,7 @@ Rules:
 - For storage_options_gb, parse all listed storage variants (e.g. "128 GB, 256 GB, 512 GB") into an array of numbers.
 - For ram_gb, use the highest listed RAM variant as a single integer.
 - For wired charging watts (wired_w), parse from "charging" or "fast charging" fields if wattage is stated.
+- Round all numeric dimensions, weights, and screen sizes to at most 2 decimal places (never output repeating decimals).
 
 Raw Wikipedia infobox wikitext:
 ${infoboxWikitext}`;
@@ -237,7 +238,7 @@ ${infoboxWikitext}`;
       schemaDescription: 'Phone specification data extracted from a Wikipedia infobox.',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0,
-      maxOutputTokens: 6000,
+      maxOutputTokens: 8192,
       usageContext: {
         area: 'Catalog enrichment',
         feature: 'Wikipedia spec extraction',
@@ -298,7 +299,10 @@ export async function fetchWikipediaSpecs(
     }
 
     const deterministicInput = parseInfoboxDeterministically(infobox);
-    const deterministicProjection = projectPhoneSpec(deterministicInput);
+    const deterministicProjection = projectPhoneSpec(deterministicInput, {
+      allowEstimatedLaunchSpecs: true,
+      brand,
+    });
     if (deterministicProjection.ok && deterministicProjection.spec) {
       return {
         spec: deterministicProjection.spec,

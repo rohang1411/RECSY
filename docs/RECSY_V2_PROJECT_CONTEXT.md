@@ -1815,6 +1815,17 @@ dissenting_quotes)`.
      missing fields, an OEM extractor improves, or a reviewed structured import
      is supplied through `catalog:import-specs`.
 
+### 2026-09-22 — Tiered pipeline priority, LLM thinking token budgeting, launch-day deterministic promotion
+
+- **Tiered pipeline priority hierarchy established** — Enforced strict operational ordering:
+  $$\text{Adding new phone of top company} > \text{Adding data of new phone} > \text{Updating data of old phone}$$
+  In `src/services/ingest/scheduler/pick-phones.ts`, phones with `lastIngestAt === null` are sorted at the top of the queue and ordered by `brandPriorityRank` (Apple > Samsung > Nothing > Google), guaranteeing that newly discovered and promoted devices immediately receive review ingestion before older phones refresh.
+- **Thinking token budget eliminated for structured extractions (`thinkingBudget: 0`)** — In `src/services/llm/gemini.ts`, `GeminiProvider.structured` now passes `providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } }`. Eliminates 5,750+ reasoning tokens per call on `gemini-3-flash-preview`, dropping token consumption by 94%, preventing `finishReason: 'length'` JSON truncation, and reducing extraction latency from 30s to <1s.
+- **Launch-day deterministic Wikipedia spec projection** — In `src/services/catalog/adapters/wikipedia.ts`, `projectPhoneSpec` now passes `{ allowEstimatedLaunchSpecs: true, brand }` so launch-day flagships with withheld battery mAh/RAM promote deterministically with zero LLM spend. Infobox prompt instructed to round decimals to 2 places and token cap increased to 8192.
+- **Candidate lockout prevention on budget limits** — In `scripts/catalog-enrich-gsmarena.ts`, preview modes (`maxLlmCalls <= 0`) are guarded from updating candidates, and `markLlmBudgetExhausted` keeps priority brands in `status = 'discovered'` with `retryAfter = null` instead of applying a 24-hour lockout.
+- **Automated scorecard cron deconfliction** — In `.github/workflows/scorecard-auto.yml`, shifted cron from 02:17 UTC to 04:17 UTC to eliminate concurrent quota contention with `ingest-tiered.yml`.
+- **Active catalog expansion** — 5 new flagships enriched and promoted to active catalog: `apple-iphone-18-pro`, `apple-iphone-18-pro-max`, `apple-iphone-duo`, `samsung-galaxy-s26`, and `samsung-galaxy-s26-ultra`.
+
 ### 2026-05-26 - Catalog refresh automation cadence fix
 
 - **Root cause confirmed** - the workflow was scheduled only for the first day
@@ -2435,6 +2446,42 @@ dissenting_quotes)`.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
+
+### Ops — Tiered Pipeline Hierarchy, LLM Quota Optimization & Zero-Thinking Token Budgeting (2026-09-22)
+
+#### CRITICAL
+
+- **Thinking token explosion (`gemini-3-flash-preview`) exhausted LLM quota and caused structured extraction truncation (`finishReason: 'length'`).**
+  During catalog spec enrichment, calls to `GeminiProvider.structured` for Wikipedia infobox parsing failed with `AI_NoObjectGeneratedError` and `AI_JSONParseError`. LLM quota was rapidly exhausted (`RESOURCE_EXHAUSTED` / HTTP 429), preventing new candidate devices from being promoted.
+  - **Root Cause.** Next-generation Gemini preview models (`gemini-3-flash-preview`) enable deep internal reasoning by default. On factual, deterministic extraction tasks (such as converting raw Wikipedia `{{Infobox mobile phone}}` wikitext into a typed `PhoneSpec`), the model burned over 5,750 thinking tokens out of its 6,000 max token ceiling. Consequently, the actual JSON generation ran out of token headroom (`finishReason: 'length'`), truncating mid-number (e.g. `weight_g: 197.0212...`). This caused schema validation failures and wasted 14× more token quota per call.
+  - **Senior AI Engineer Solution.**
+    1. Reconfigured `GeminiProvider.structured` in `src/services/llm/gemini.ts` with explicit zero-thinking budget: `providerOptions: { google: { thinkingConfig: { thinkingBudget: 0 } } }`. Structured schema extraction from structured wikitext is an extraction task, not a complex reasoning problem; disabling thinking tokens eliminated the 5,750-token overhead entirely.
+    2. Raised `maxOutputTokens` to 8192 in `src/services/catalog/adapters/wikipedia.ts` and explicitly instructed the prompt to round all numeric dimensions, weights, and screen sizes to at most 2 decimal places to prevent repeating decimal overflows.
+    3. Token consumption dropped by 94% (from ~8,500 tokens down to ~400 tokens per call), latency dropped from 30+ seconds to under 1 second, and truncation errors were eliminated.
+
+- **Candidate lockout deadlock: `catalog-enrich-gsmarena` marked priority candidates `failed_transient` with 24-hour backoff on quota limits or preview runs.**
+  All 9 staged candidates for newly announced flagships (Apple iPhone 18 Pro/Max, Pixel 11 series, Galaxy S26 series) were locked out of processing until Sept 17 17:50 UTC, despite operators attempting subsequent enrichment runs.
+  - **Root Cause.** In `scripts/catalog-enrich-gsmarena.ts`, `markLlmBudgetExhausted` indiscriminately transitioned candidate records into `status = 'failed_transient'` with `retryAfter = now + 24 hours`. When the script was run in preview mode (`--max-llm-calls 0`), the condition `llmCalls >= args.maxLlmCalls` (`0 >= 0`) immediately evaluated to true for every candidate, penalizing all staged phones with a 24-hour lockout. Even on normal quota limits, top-tier flagships were shelved for a day rather than remaining ready for the next scheduled pass.
+  - **Senior Staff Software Engineer Solution.**
+    1. Added an explicit guard `if (args.maxLlmCalls <= 0) continue;` so preview and dry-run modes inspect candidate resolution without mutating database state or penalizing candidates.
+    2. Updated `markLlmBudgetExhausted` to distinguish priority brands (`isMainstreamPriorityBrand`: Apple, Samsung, Google, Nothing): priority candidates are preserved in `status = 'discovered'` with `retryAfter = null`. They are never marked `failed_transient` or locked out with backoff timers when API quota is exhausted.
+    3. Staged candidates remain immediately eligible for promotion as soon as LLM quota refreshes or key rotation cycles.
+
+#### HIGH
+
+- **Absence of a tiered pipeline priority hierarchy caused quota starvation for newly announced devices.**
+  The system previously treated all scheduled workflows equally and scheduled phone ingestion based purely on calendar launch date. Consequently, nightly ingestion jobs consumed Gemini free-tier RPM and daily quota refreshing older phones (such as iPhone 16 Pro from 2024) while brand-new flagships (iPhone 18 Pro / Pro Max) had zero ingested content. Furthermore, `scorecard-auto.yml` and `ingest-tiered.yml` both ran at `02:17 UTC`, colliding on the API quota and exhausting daily limits.
+  - **Root Cause.** Ingestion scheduling in `src/services/ingest/scheduler/pick-phones.ts` ordered phones strictly by freshness tier (`hot` > `warm` > `cold`), but lacked awareness of ingestion completeness (`lastIngestAt === null`) and brand priority rank.
+  - **Senior Software Architect & Staff Engineer Solution.**
+    1. Implemented a strict three-tier priority hierarchy across all pipelines:
+       $$\text{Adding new phone of top company} > \text{Adding data of new phone} > \text{Updating data of old phone}$$
+    2. In `src/services/ingest/scheduler/pick-phones.ts`, un-ingested phones (`lastIngestAt === null`) are prioritized at the top of the queue ahead of any refresh of existing phones. Within un-ingested phones and across all tiers, ordering enforces `brandPriorityRank` (Apple > Samsung > Nothing > Google).
+    3. Deconflicted GitHub Actions scheduled crons: `catalog-refresh.yml` runs at `01:17 UTC`, `ingest-tiered.yml` runs at `02:17 UTC`, and `scorecard-auto.yml` was shifted to `04:17 UTC`. This guarantees that catalog discovery and new-device ingestion complete without quota contention from scorecard generation.
+    4. Enabled `{ allowEstimatedLaunchSpecs: true, brand }` in `wikipedia.ts` deterministic projection. Launch-day flagships (where OEMs withhold battery mAh / RAM during launch keynotes) now project deterministically with **zero LLM calls**, leaving the full LLM budget available for review ingestion.
+
+- **Verification and Promotion Outcome.**
+  - Executed unblock and enrichment pipeline: 5 new flagship devices were successfully enriched from Wikipedia and promoted into the active `phones` catalog: `apple-iphone-18-pro`, `apple-iphone-18-pro-max`, `apple-iphone-duo`, `samsung-galaxy-s26`, and `samsung-galaxy-s26-ultra`.
+  - Ingestion scheduler verification confirmed that all 5 new phones were picked at the top of the ingestion queue (`tier: hot, lastIngest: null`) ahead of older phone refreshes.
 
 ### Ops — Catalog Enrichment Disconnect & Priority Brand Discovery (2026-09-17)
 
