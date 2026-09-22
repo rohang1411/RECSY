@@ -18,6 +18,7 @@ import { phones } from '@/services/db/schema';
 
 import type { Db } from '../writer';
 import { classifyTier, type IngestTier } from './tiers';
+import { brandPriorityRank } from '@/services/catalog/brand-priority';
 
 export interface PickPhonesOptions {
   /** Which tiers to include. Default: all. */
@@ -82,8 +83,26 @@ export async function pickPhones(db: Db, opts: PickPhonesOptions = {}): Promise<
     }))
     .filter((r) => allowedTiers.has(r.tier))
     .filter((r) => shardIndex(r.id, totalShards) === shard)
-    // Prioritise hot, then warm, then cold within the due set.
-    .sort((a, b) => tierOrder(a.tier) - tierOrder(b.tier));
+    // Prioritise:
+    // 1. Never-ingested phones (lastIngestAt === null) first!
+    // 2. Freshness tier (hot -> warm -> cold)
+    // 3. Brand priority rank (Apple -> Samsung -> Nothing -> Google etc.)
+    // 4. Oldest lastIngestAt first
+    .sort((a, b) => {
+      const neverIngestedA = a.lastIngestAt === null ? 0 : 1;
+      const neverIngestedB = b.lastIngestAt === null ? 0 : 1;
+      if (neverIngestedA !== neverIngestedB) return neverIngestedA - neverIngestedB;
+
+      const tierDiff = tierOrder(a.tier) - tierOrder(b.tier);
+      if (tierDiff !== 0) return tierDiff;
+
+      const brandDiff = brandPriorityRank(a.brand) - brandPriorityRank(b.brand);
+      if (brandDiff !== 0) return brandDiff;
+
+      const timeA = a.lastIngestAt?.getTime() ?? 0;
+      const timeB = b.lastIngestAt?.getTime() ?? 0;
+      return timeA - timeB;
+    });
 
   return ranked.slice(0, limit).map((r) => ({
     id: r.id,

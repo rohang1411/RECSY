@@ -155,7 +155,7 @@ describe('Wikipedia catalog adapter', () => {
       llmAttempted: true,
     });
     expect(result.diagnostics.specFieldCount).toBeGreaterThan(0);
-    expect(structuredMock).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: 6000 }));
+    expect(structuredMock).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: 8192 }));
   });
 
   it('extracts core specs deterministically before using the LLM', async () => {

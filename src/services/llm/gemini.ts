@@ -321,6 +321,13 @@ export class GeminiProvider implements LlmProvider {
             temperature: input.temperature ?? 0,
             maxOutputTokens: input.maxOutputTokens,
             abortSignal: input.signal,
+            providerOptions: {
+              google: {
+                thinkingConfig: {
+                  thinkingBudget: 0,
+                },
+              },
+            },
           });
           return {
             value: result.object,
