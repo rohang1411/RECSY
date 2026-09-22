@@ -176,9 +176,23 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
     search: searchParam,
   };
 
+  const INGESTION_REASON_CODES = [
+    'in_crawl_queue',
+    'quota_exhausted',
+    'rate_limited',
+    'empty_corpus',
+    'scorecard_missing',
+    'spec_embedding_missing',
+    'ingest_run_failed',
+    'overdue_refresh',
+    'never_scheduled',
+  ];
+
+  const isIngestionReason = INGESTION_REASON_CODES.includes(reasonParam.toLowerCase());
+
   const ingestionFilterParams: IngestionFilterParams = {
     status: statusParam,
-    reason: reasonParam,
+    reason: isIngestionReason ? reasonParam : 'all',
     brand: brandParam,
     search: searchParam,
   };
@@ -725,7 +739,11 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               {/* Status Tabs */}
               <div className="flex flex-wrap gap-1 font-mono text-xs uppercase">
                 {[
-                  { id: 'all', label: 'All Phones', count: ingestionData.rows.length },
+                  {
+                    id: 'all',
+                    label: 'All Phones',
+                    count: ingestionData.summary.totalActivePhones,
+                  },
                   {
                     id: 'complete',
                     label: 'Complete',

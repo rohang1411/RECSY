@@ -371,7 +371,7 @@ export async function loadPhoneIngestionDashboardData(
       fetchRawPhoneStats(db),
       [] as readonly RawPhoneStatsRow[],
       'fetchRawPhoneStats',
-      5000,
+      8000,
     );
 
     const nowObj = new Date();
@@ -544,7 +544,7 @@ export async function loadPhoneIngestionDashboardData(
   }
 }
 
-function filterIngestionData(
+export function filterIngestionData(
   data: {
     readonly summary: PhoneIngestionSummary;
     readonly pendingReasons: readonly IngestionPendingReasonCount[];
@@ -555,13 +555,13 @@ function filterIngestionData(
 ): PhoneIngestionData {
   let filtered = [...data.rows];
 
-  if (filters.brand) {
-    const brandLower = filters.brand.toLowerCase();
+  if (filters.brand && filters.brand.toLowerCase() !== 'all') {
+    const brandLower = filters.brand.toLowerCase().trim();
     filtered = filtered.filter((r) => r.brand.toLowerCase() === brandLower);
   }
 
-  if (filters.status) {
-    const s = filters.status.toLowerCase();
+  if (filters.status && filters.status.toLowerCase() !== 'all') {
+    const s = filters.status.toLowerCase().trim();
     if (s === 'complete') {
       filtered = filtered.filter((r) => r.isComplete);
     } else if (s === 'pending') {
@@ -571,12 +571,12 @@ function filterIngestionData(
     }
   }
 
-  if (filters.reason) {
-    const rCode = filters.reason.toLowerCase();
+  if (filters.reason && filters.reason.toLowerCase() !== 'all') {
+    const rCode = filters.reason.toLowerCase().trim();
     filtered = filtered.filter((r) => r.pendingReason?.code.toLowerCase() === rCode);
   }
 
-  if (filters.search) {
+  if (filters.search && filters.search.trim().length > 0) {
     const query = filters.search.toLowerCase().trim();
     filtered = filtered.filter(
       (r) =>
@@ -650,11 +650,14 @@ async function fetchRawPhoneStats(db: AppDb): Promise<readonly RawPhoneStatsRow[
         WHERE phone_id = p.id 
         ORDER BY started_at DESC LIMIT 1
       ) r ON true
-      WHERE p.status IN ('active', 'upcoming')
+      WHERE p.status != 'discontinued' OR p.status IS NULL
       ORDER BY p.brand ASC, p.model ASC
     )
     SELECT * FROM phone_stats;
   `);
 
-  return result as unknown as RawPhoneStatsRow[];
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: RawPhoneStatsRow[] })?.rows ?? []);
+  return rows as unknown as RawPhoneStatsRow[];
 }

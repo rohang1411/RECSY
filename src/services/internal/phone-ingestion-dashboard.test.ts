@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyPhoneIngestion } from './phone-ingestion-dashboard';
+import { classifyPhoneIngestion, filterIngestionData } from './phone-ingestion-dashboard';
 
 describe('classifyPhoneIngestion', () => {
   const baseRaw = {
@@ -135,5 +135,121 @@ describe('classifyPhoneIngestion', () => {
     expect(result.isComplete).toBe(false);
     expect(result.statusCategory).toBe('never_scheduled');
     expect(result.pendingReason?.code).toBe('never_scheduled');
+  });
+});
+
+describe('filterIngestionData', () => {
+  const mockRows = [
+    {
+      id: 'phone-1',
+      slug: 'apple-iphone-16',
+      brand: 'Apple',
+      model: 'iPhone 16',
+      launchDate: '2024-09-20',
+      tier: 'hot' as const,
+      isComplete: true,
+      statusCategory: 'complete' as const,
+      pendingReason: null,
+      sourceCount: 3,
+      chunkCount: 25,
+      aspectCount: 7,
+      hasSpecEmbedding: true,
+      lastIngestAt: '2026-09-01T00:00:00Z',
+      nextIngestAt: '2026-10-01T00:00:00Z',
+      isOverdue: false,
+    },
+    {
+      id: 'phone-2',
+      slug: 'samsung-galaxy-s25',
+      brand: 'Samsung',
+      model: 'Galaxy S25',
+      launchDate: '2025-01-22',
+      tier: 'hot' as const,
+      isComplete: false,
+      statusCategory: 'queued' as const,
+      pendingReason: {
+        code: 'in_crawl_queue' as const,
+        label: 'Waiting in Crawl Queue',
+        description: 'Scheduled for crawl',
+      },
+      sourceCount: 0,
+      chunkCount: 0,
+      aspectCount: 0,
+      hasSpecEmbedding: true,
+      lastIngestAt: null,
+      nextIngestAt: null,
+      isOverdue: false,
+    },
+  ];
+
+  const mockData = {
+    summary: {
+      totalActivePhones: 2,
+      completedCount: 1,
+      pendingCount: 1,
+      queuedCount: 1,
+      quotaExhaustedCount: 0,
+      emptyCorpusCount: 0,
+      failedCount: 0,
+      scorecardMissingCount: 0,
+      overdueCount: 0,
+      neverScheduledCount: 0,
+      totalChunks: 25,
+      totalSources: 3,
+      avgChunksPerPhone: 12.5,
+      completionPercentage: 50,
+    },
+    pendingReasons: [
+      {
+        code: 'in_crawl_queue' as const,
+        label: 'Waiting in Crawl Queue',
+        count: 1,
+        severity: 'info' as const,
+      },
+    ],
+    rows: mockRows,
+    brands: ['Apple', 'Samsung'],
+  };
+
+  it('preserves all rows when status, reason, and brand are "all"', () => {
+    const filtered = filterIngestionData(mockData, {
+      status: 'all',
+      reason: 'all',
+      brand: 'all',
+      search: '',
+    });
+    expect(filtered.rows).toHaveLength(2);
+  });
+
+  it('filters by status=complete', () => {
+    const filtered = filterIngestionData(mockData, {
+      status: 'complete',
+    });
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0]?.slug).toBe('apple-iphone-16');
+  });
+
+  it('filters by brand=samsung', () => {
+    const filtered = filterIngestionData(mockData, {
+      brand: 'Samsung',
+    });
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0]?.slug).toBe('samsung-galaxy-s25');
+  });
+
+  it('filters by pending reason=in_crawl_queue', () => {
+    const filtered = filterIngestionData(mockData, {
+      reason: 'in_crawl_queue',
+    });
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0]?.slug).toBe('samsung-galaxy-s25');
+  });
+
+  it('filters by search keyword', () => {
+    const filtered = filterIngestionData(mockData, {
+      search: 'iphone',
+    });
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0]?.slug).toBe('apple-iphone-16');
   });
 });
