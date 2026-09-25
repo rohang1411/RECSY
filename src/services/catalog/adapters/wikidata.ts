@@ -132,15 +132,32 @@ WHERE {
     }
     FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   } UNION {
-    # Priority brand entities (e.g. Nothing Technology Ltd wd:Q110339215) that may lack explicit P571/P577 dates
+    # Priority brand entities (e.g. Samsung, Apple, Google, Nothing, OnePlus, Xiaomi, etc.) that may lack explicit P571/P577 dates
     VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
     ?item wdt:P31 ?class.
     ?item wdt:P176 ?manufacturer.
-    VALUES ?manufacturer { wd:Q110339215 }
+    VALUES ?manufacturer {
+      wd:Q20718           # Samsung Electronics
+      wd:Q312             # Apple Inc.
+      wd:Q95 wd:Q20800404 # Google / Google LLC
+      wd:Q110339215       # Nothing Technology Ltd
+      wd:Q15730372        # OnePlus
+      wd:Q899189          # Xiaomi
+      wd:Q122741 wd:Q7340 # Motorola Mobility / Motorola
+      wd:Q1855663         # vivo
+      wd:Q209280          # OPPO
+      wd:Q18511651        # Honor
+      wd:Q41187           # Sony Group
+    }
     OPTIONAL { ?item wdt:P571 ?inceptionDate. }
     OPTIONAL { ?item wdt:P577 ?publicationDate. }
     OPTIONAL { ?item wdt:P6949 ?announcementDate. }
-    BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate, NOW()) AS ?releaseDate)
+    BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate) AS ?explicitDate)
+    FILTER(
+      (?explicitDate >= "${date}"^^xsd:dateTime && ?explicitDate < "${untilExclusive}"^^xsd:dateTime) ||
+      (!BOUND(?explicitDate) && xsd:integer(STRAFTER(STR(?item), "http://www.wikidata.org/entity/Q")) >= 130000000)
+    )
+    BIND(COALESCE(?explicitDate, NOW()) AS ?releaseDate)
   }
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }

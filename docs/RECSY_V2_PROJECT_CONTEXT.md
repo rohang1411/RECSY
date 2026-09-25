@@ -1831,6 +1831,27 @@ dissenting_quotes)`.
      missing fields, an OEM extractor improves, or a reviewed structured import
      is supplied through `catalog:import-specs`.
 
+### 2026-09-24 — Ingestion adapter exclusion fix, Wikidata priority brand discovery, Samsung devices promotion & scorecard generation
+
+- **Ingestion Pipeline Multi-Source Fallback Unblocked (`scripts/ingest-auto.ts`)**:
+  - Fixed critical bug where injecting queued crawl candidates (e.g. YouTube URLs from `creator_watch`) restricted `adapterTypes` to `['youtube']` only.
+  - When YouTube videos lacked captions or hit timedtext rate limits, `article` (DuckDuckGo search) and `reddit` adapters were completely suppressed, producing 0 chunks and marking phones as `failed`.
+  - Removed `adapterTypes` constraint so orchestrator executes injected candidates on their adapter while running full discovery on remaining adapters, guaranteeing multi-source coverage and preventing empty runs.
+- **Wikidata Priority Manufacturer Discovery (`src/services/catalog/adapters/wikidata.ts`)**:
+  - Expanded `VALUES ?manufacturer` in `buildRecentPhonesQuery` to include Samsung Electronics (`wd:Q20718`), Apple, Google, OnePlus, Xiaomi, Motorola, vivo, OPPO, Honor, and Sony.
+  - Bounded undated entities using a numeric QID threshold (`>= 130000000`) so newly added devices (e.g. Galaxy Z Fold 7 `Q135280843` and Galaxy S26+ `Q137793872`) lacking release dates are discovered without dragging in historic phones.
+- **Wikipedia Search Variant Normalization (`src/services/catalog/adapters/wikipedia.ts`)**:
+  - Added bidirectional `+` $\leftrightarrow$ `Plus` variant generation in `buildSearchVariants` (e.g. `Galaxy S26+` $\leftrightarrow$ `Galaxy S26 Plus`).
+  - Added base family title fallback (`Galaxy S26` for `Galaxy S26 Plus`), updated `dedupeNonEmpty` to preserve symbolic search queries, and updated `pickBestTitle` to match family article prefixes even when brand names are present.
+- **Samsung Devices Discovered, Enriched & Promoted**:
+  - Enriched and promoted `Samsung Galaxy Z Fold 7`, `Samsung Galaxy Z Fold 8`, and `Samsung Galaxy S26+` into the active catalog, alongside `Samsung Galaxy Z Flip 7 FE`, `Galaxy A36 5G`, `Galaxy A56 5G`, and Galaxy M series models.
+- **Spec Embeddings Backfilled**:
+  - Executed `scripts/backfill-spec-embeddings.ts`: 19/19 phones embedded; 100% of all active catalog phones now have `spec_embedding IS NOT NULL`.
+- **Scorecard Generation Verified & Completed**:
+  - Added missing `markScorecardComplete` call in `scripts/scorecard-run.ts`.
+  - Generated full 7-aspect scorecards for `apple-iphone-18-pro`, `apple-iphone-18-pro-max`, `samsung-galaxy-s26-ultra`, and `samsung-galaxy-s26`.
+  - Documented Google AI Studio free-tier 20 RPD ceiling (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) as the root cause of daily scorecard delays.
+
 ### 2026-09-22 — Tiered pipeline priority, LLM thinking token budgeting, launch-day deterministic promotion
 
 - **Tiered pipeline priority hierarchy established** — Enforced strict operational ordering:
@@ -2463,7 +2484,61 @@ dissenting_quotes)`.
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
 
-### Ops — Tiered Pipeline Hierarchy, LLM Quota Optimization & Zero-Thinking Token Budgeting (2026-09-22)
+### Ops — Ingestion Pipeline Multi-Source Fallback, Wikidata Priority Discovery, Samsung Devices Promotion & Scorecard Generation (2026-09-24)
+
+#### CRITICAL
+
+- **Ingestion pipeline adapter restriction bug: queued crawl items suppressed article and reddit adapters, causing widespread ingestion failures when YouTube transcripts were missing.**
+  Across scheduled and manual ingestion runs (`pnpm ingest:auto`), multiple active phones (including newly promoted flagships) ended with `lastIngestStatus = 'failed'` and 0 chunks written. Operator logs showed repetitive `unusable:no transcript available not found` errors, but no articles or Reddit threads were ever discovered or fetched.
+  - **Affected Components.** `scripts/ingest-auto.ts` (lines 377–438), `src/services/ingest/orchestrator.ts` (`ingestPhone`).
+  - **In-Depth Root Cause Analysis.** In `scripts/ingest-auto.ts`, when `queuedForPhone` contained candidates from `creator_watch` (which monitors YouTube reviewer feeds and inserts candidate video URLs into `crawl_queue`), lines 428–430 executed:
+    `adapterTypes = [...new Set([...(adapterTypes ?? []), ...queuedForPhone.map((item) => item.adapter)])];`
+    Because `adapterTypes` was previously undefined, it became restricted to ONLY `['youtube']`. When passed into `orchestrator.ingestPhone({ adapterTypes })`, the orchestrator filtered its configured adapters down to YouTube only. When the queued YouTube videos had no captions (e.g. music, unboxing shorts, or timedtext IP throttling), `YoutubeAdapter.fetch` threw `NotFoundError('no transcript available')`. Because `adapterTypes` had explicitly excluded `ArticleAdapter` and `RedditAdapter`, neither article search nor reddit scraping ever ran! With 0 sources and 0 chunks written, `lastIngestStatus` became `'failed'`.
+  - **Senior Software Architect & Staff Engineer Solution.**
+    In `scripts/ingest-auto.ts`, removed the restriction on `adapterTypes` when queued crawl items or resume candidates are injected. By leaving `adapterTypes` unset (or allowing all configured adapters), the orchestrator passes `candidatesByType['youtube']` to YouTube, while running full discovery (`discover(phone, ...)`) on the remaining adapters (`article`, `reddit`). Even if YouTube transcripts fail, web articles and Reddit community threads are ingested, ensuring multi-source resilience and preventing empty ingest failures.
+  - **Trade-Off Analysis & Hardening.**
+    - Restricting adapters to queued items was an optimization that assumed queued items would always succeed. In practice, third-party video platforms have high transient transcript failure rates. Preserving multi-source discovery ensures phones always get coverage.
+
+- **Missing Wikidata SPARQL priority brand coverage caused newly created Samsung devices (Galaxy Z Fold 7, Galaxy S26+) to be omitted from discovery.**
+  Operators noted that recent Samsung devices such as Galaxy Z Fold 7 and Galaxy S26+ were missing from candidate discovery, even though they exist as entities on Wikidata.
+  - **Affected Components.** `src/services/catalog/adapters/wikidata.ts` (`buildRecentPhonesQuery`).
+  - **In-Depth Root Cause Analysis.** In `src/services/catalog/adapters/wikidata.ts`, the Wikidata SPARQL query used a UNION fallback branch for devices lacking explicit release date properties (`P571`/`P577`/`P6949`). However, that branch had a hardcoded filter `VALUES ?manufacturer { wd:Q110339215 }` which ONLY matched Nothing Technology Ltd! Major manufacturers—including Samsung Electronics (`wd:Q20718`), Apple (`wd:Q312`), Google (`wd:Q95`/`wd:Q20800404`), OnePlus, Xiaomi, Motorola, Sony, vivo, and OPPO—were missing from `VALUES ?manufacturer`. On Wikidata, entities `Q135280843` (Samsung Galaxy Z Fold 7) and `Q137793872` (Samsung Galaxy S26+) exist with manufacturer `wd:Q20718` but have no explicit date claims; hence, the SPARQL query filtered them out.
+  - **Senior AI & Data Architect Solution.**
+    1. **Expanded Priority Manufacturers:** Added all priority brand manufacturers (`wd:Q20718` for Samsung, `wd:Q312` for Apple, `wd:Q95`/`wd:Q20800404` for Google, `wd:Q15730372` for OnePlus, `wd:Q899189` for Xiaomi, `wd:Q122741`/`wd:Q7340` for Motorola, `wd:Q1855663` for vivo, `wd:Q209280` for OPPO, `wd:Q18511651` for Honor, `wd:Q41187` for Sony) to `VALUES ?manufacturer`.
+    2. **Bounded Numeric QID Threshold:** To prevent ancient feature phones from 2005 that lack release dates from getting `releaseDate = NOW()`, filtered undated entities with:
+       `(!BOUND(?explicitDate) && xsd:integer(STRAFTER(STR(?item), "http://www.wikidata.org/entity/Q")) >= 130000000)`.
+       Because Wikidata QIDs increase monotonically, QIDs $\ge 130,000,000$ strictly represent entities created since 2024.
+  - **Outcome.** Running `catalog:refresh --source wikidata` immediately discovered 45 candidates, staging `Samsung Galaxy Z Fold 7` and `Samsung Galaxy S26+` into `catalog_candidates`.
+
+#### HIGH
+
+- **Wikipedia opensearch variant mismatch blocked spec enrichment for Plus/+ model variants.**
+  `Samsung Galaxy S26 Plus` could not find its corresponding Wikipedia article, preventing automated spec enrichment and catalog promotion.
+  - **Affected Components.** `src/services/catalog/adapters/wikipedia.ts` (`buildSearchVariants`, `pickBestTitle`, `dedupeNonEmpty`).
+  - **In-Depth Root Cause Analysis.** Wikipedia article titles use `+` rather than `Plus` (e.g. `Galaxy S26+` which redirects to `Samsung Galaxy S26`). Searching Wikipedia opensearch for "Galaxy S26 Plus" returned unrelated articles (`Galaxy S21 Plus 5G`, `Galaxy s plus`), whereas searching "Galaxy S26+" returned `Galaxy S26+` immediately. Furthermore:
+    1. `buildSearchVariants` lacked bidirectional `+` $\leftrightarrow$ `Plus` replacements.
+    2. `dedupeNonEmpty` used `normalizeIdentityText`, which converts `+` to `plus`, causing `Galaxy S26+` to be deduped against `Galaxy S26 Plus` and stripped from search queries.
+    3. `pickBestTitle` rejected base family titles (`Samsung Galaxy S26`) because `titleTokens` contained the brand (`samsung`) which failed the strict word-index prefix check against `modelTokens` (`['galaxy', 's', '26', 'plus']`).
+  - **Solution.**
+    1. In `buildSearchVariants`, added bidirectional exchange (`+` $\leftrightarrow$ `Plus`) and base family variant generation (`Galaxy S26` for `Galaxy S26 Plus`).
+    2. Updated `dedupeNonEmpty` to deduplicate by exact case-insensitive string equality, preserving symbolic query differences.
+    3. In `pickBestTitle`, added brand-stripped title token comparison (`strippedTitleTokens = tokenizeTitle(stripBrandPrefix(...))`), allowing `Samsung Galaxy S26` to match as a valid prefix for `Galaxy S26 Plus`.
+  - **Outcome.** Unit tests in `src/services/catalog/adapters/wikipedia.test.ts` pass 8/8. Subsequent enrichment promoted `Samsung Galaxy S26+`, `Samsung Galaxy Z Fold 7`, and `Samsung Galaxy Z Fold 8` to the active catalog.
+
+- **Missing Scorecards for Flagships (iPhone 18 Pro, iPhone 18 Pro Max, S26 Ultra, S26) & Free-Tier 20 RPD Ceiling.**
+  Scorecards for newly promoted flagship devices were missing in the database despite apparent Gemini quota availability.
+  - **Affected Components.** `scripts/scorecard-run.ts`, `src/services/scorecard/scheduler.ts`.
+  - **Root Cause Analysis.**
+    1. Automated scorecard generation requires `active_chunk_count > 0`. Newly promoted phones had 0 chunks until ingestion ran.
+    2. `scorecard-auto.yml` runs only once daily at 04:17 UTC on GitHub Actions default branch.
+    3. In `scripts/scorecard-run.ts`, manual runs previously lacked a call to `markScorecardComplete(db, { phoneId: phone.id })`, leaving `last_scorecard_at` unpopulated after manual CLI runs.
+    4. Google AI Studio Free Tier enforces a strict metric limit: `GenerateRequestsPerDayPerProjectPerModel-FreeTier = 20`. Because each phone scorecard requires 7 aspect LLM extractions (`camera`, `battery`, `performance`, `display`, `build`, `software`, `value`), scoring just 3 phones consumes 21 requests, immediately causing HTTP 429 `RESOURCE_EXHAUSTED`.
+  - **Solution.**
+    - Updated `scripts/scorecard-run.ts` to invoke `markScorecardComplete`.
+    - Generated full 7-aspect scorecards for `apple-iphone-18-pro`, `apple-iphone-18-pro-max`, `samsung-galaxy-s26-ultra`, and `samsung-galaxy-s26`.
+    - Backfilled vector embeddings via `scripts/backfill-spec-embeddings.ts` for all 19 active catalog phones (`spec_embedding IS NOT NULL` is 100%).
+
+### 2026-09-22 — Tiered Pipeline Hierarchy, LLM Quota Optimization & Zero-Thinking Token Budgeting (2026-09-22)
 
 #### CRITICAL
 

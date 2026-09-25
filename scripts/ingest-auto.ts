@@ -401,9 +401,12 @@ async function main(): Promise<void> {
               raw: {},
             });
           }
-          adapterTypes = [...adaptersSeen];
+          // We do NOT restrict adapterTypes to only adaptersSeen.
+          // By allowing all adapters to run, adapters with injected failed candidates
+          // will retry them, while remaining adapters can discover new content so the phone
+          // is not starved of ingestion if a single source (e.g. YouTube transcript) is unavailable.
           logger.info(
-            { phone: phone.slug, candidates: failed.length, adapters: adapterTypes },
+            { phone: phone.slug, candidates: failed.length, adapters: [...adaptersSeen] },
             'resume: injecting known-failed candidates',
           );
         } else {
@@ -425,14 +428,15 @@ async function main(): Promise<void> {
           candidatesByType,
           queuedItemsToCandidates(queuedForPhone),
         );
-        adapterTypes = [
-          ...new Set([...(adapterTypes ?? []), ...queuedForPhone.map((item) => item.adapter)]),
-        ];
+        // Do NOT constrain adapterTypes to only queuedForPhone adapters.
+        // Leaving adapterTypes unset allows the orchestrator to execute the injected
+        // candidates on their adapter (e.g. YouTube) while running full discovery on
+        // the remaining adapters (article, reddit) for multi-source coverage.
         logger.info(
           {
             phone: phone.slug,
             candidates: queuedForPhone.length,
-            adapters: adapterTypes,
+            queuedAdapters: [...new Set(queuedForPhone.map((item) => item.adapter))],
           },
           'crawl_queue: injecting queued candidates',
         );

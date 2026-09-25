@@ -120,11 +120,33 @@ export function buildSearchVariants(brand: string, model: string): string[] {
   const modelStartsWithBrand = normalizeIdentityText(cleanModel).startsWith(
     `${normalizeIdentityText(cleanBrand)} `,
   );
-  return [
+  const rawVariants = [
     cleanModel,
     strippedModel,
     ...(modelStartsWithBrand ? [] : [`${cleanBrand} ${cleanModel}`.trim()]),
-  ].filter(dedupeNonEmpty);
+  ];
+
+  // Generate + <-> Plus variant exchanges
+  const plusVariants: string[] = [];
+  for (const v of rawVariants) {
+    if (/\bplus\b/i.test(v)) {
+      plusVariants.push(v.replace(/\s*\bplus\b/gi, '+'));
+    }
+    if (v.includes('+')) {
+      plusVariants.push(v.replace(/\s*\+\s*/g, ' Plus'));
+    }
+  }
+
+  // Also include base family variant (e.g. Galaxy S26 for Galaxy S26 Plus / S26+)
+  const baseVariants: string[] = [];
+  for (const v of [...rawVariants, ...plusVariants]) {
+    const stripped = v.replace(/\s*(?:\+|plus)\b/gi, '').trim();
+    if (stripped && stripped !== v) {
+      baseVariants.push(stripped);
+    }
+  }
+
+  return [...rawVariants, ...plusVariants, ...baseVariants].filter(dedupeNonEmpty);
 }
 
 export function pickBestTitle(
@@ -152,8 +174,15 @@ export function pickBestTitle(
 
     const sharedWordTokens = modelWordTokens.filter((token) => titleTokens.includes(token));
     const hasAllModelWords = modelWordTokens.every((token) => titleTokens.includes(token));
+
+    // Check prefix against both titleTokens and brand-stripped title tokens
+    const strippedTitleTokens = tokenizeTitle(stripBrandPrefix(stripParenthetical(title), brand));
     const isPrefix =
-      titleTokens.length > 0 && titleTokens.every((token, index) => token === modelTokens[index]);
+      (titleTokens.length > 0 &&
+        titleTokens.every((token, index) => token === modelTokens[index])) ||
+      (strippedTitleTokens.length > 0 &&
+        strippedTitleTokens.every((token, index) => token === modelTokens[index]));
+
     if (!hasAllModelWords && !isPrefix) continue;
 
     const score =
@@ -642,9 +671,9 @@ function stripParenthetical(value: string): string {
 }
 
 function dedupeNonEmpty(value: string, index: number, values: readonly string[]): boolean {
-  const normalized = normalizeIdentityText(value);
-  if (!normalized) return false;
-  return values.findIndex((item) => normalizeIdentityText(item) === normalized) === index;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return values.findIndex((item) => item.trim().toLowerCase() === trimmed.toLowerCase()) === index;
 }
 
 function countSpecFields(spec: PhoneSpec): number {

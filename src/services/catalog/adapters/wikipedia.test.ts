@@ -63,12 +63,24 @@ describe('Wikipedia catalog adapter', () => {
       'iPhone 17 Pro Max',
       'Apple iPhone 17 Pro Max',
     ]);
+    expect(buildSearchVariants('Samsung', 'Galaxy S26 Plus')).toEqual([
+      'Galaxy S26 Plus',
+      'Samsung Galaxy S26 Plus',
+      'Galaxy S26+',
+      'Samsung Galaxy S26+',
+      'Galaxy S26',
+      'Samsung Galaxy S26',
+    ]);
   });
 
-  it('rejects mismatched generation titles', () => {
+  it('rejects mismatched generation titles and matches family or Plus variants', () => {
     expect(pickBestTitle(['Apple iPhone 15 Pro Max'], 'Apple', 'iPhone 17 Pro Max')).toBeNull();
     expect(pickBestTitle(['IPhone 17 Pro'], 'Apple', 'iPhone 17 Pro Max')).toBe('IPhone 17 Pro');
     expect(pickBestTitle(['POWER2'], 'Honor', 'Honor Power2')).toBeNull();
+    expect(pickBestTitle(['Samsung Galaxy S26'], 'Samsung', 'Galaxy S26 Plus')).toBe(
+      'Samsung Galaxy S26',
+    );
+    expect(pickBestTitle(['Galaxy S26+'], 'Samsung', 'Galaxy S26 Plus')).toBe('Galaxy S26+');
   });
 
   it('prefers canonical full-text results over wrong opensearch matches', async () => {

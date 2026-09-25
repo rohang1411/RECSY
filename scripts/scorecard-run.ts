@@ -17,6 +17,7 @@ import { getLlm } from '@/services/llm';
 import { logger } from '@/services/logger';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { loadPhoneBySlug, runScorecardForPhone } from '@/services/scorecard/agent';
+import { markScorecardComplete } from '@/services/scorecard/scheduler';
 
 function parseArgs(argv: string[]): { mode: 'phone' | 'all'; slug?: string } {
   const phoneIdx = argv.indexOf('--phone');
@@ -60,6 +61,7 @@ async function main(): Promise<void> {
         `[scorecard:run] ${failed} aspect(s) failed, 0 updated for ${slug}. If you see 429/quota in logs, add GEMINI_API_KEY_2 / GEMINI_API_KEY_3 / GEMINI_API_KEY_4, set GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free, or raise limits / billing on Google AI Studio.`,
       );
     } else {
+      await markScorecardComplete(db, { phoneId: phone.id });
       const tail = failed > 0 ? ` (${failed} failed)` : '';
       console.log(`[scorecard:run] OK — ${updated} aspects for ${slug}${tail}`);
     }
@@ -87,6 +89,9 @@ async function main(): Promise<void> {
       llm,
       log,
     });
+    if (updated > 0) {
+      await markScorecardComplete(db, { phoneId: p.id });
+    }
     console.log(`[scorecard:run] ${p.slug}: ${updated} aspects`);
   }
 
