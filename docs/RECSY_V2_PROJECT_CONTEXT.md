@@ -1150,34 +1150,43 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 ## 17. Testing Strategy
 
-| Layer             | Tool                      | Scope                                             | CI?                |
-| ----------------- | ------------------------- | ------------------------------------------------- | ------------------ |
-| Unit              | Vitest + `jsdom`          | Pure functions, components without DB             | âœ“                |
-| Integration (DB)  | Vitest with live Supabase | Migrations, RLS, retrieval helpers                | âœ“ (env-gated)    |
-| E2E               | Playwright                | Phone SSR + mocked `/api/ask` NDJSON client path  | âœ“ CI (`e2e` job) |
-| Retrieval eval    | `pnpm eval:retrieval`     | Fixture JSON vs hybrid search (embed cost)        | Local / staging    |
-| LLM eval (Tier 3) | TBD script                | Live `runPhoneQna` citation overlap vs golden set | Manual / cron      |
+| Layer                     | Tool                                     | Scope                                                                                           | CI?                    |
+| ------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
+| Unit                      | Vitest + `jsdom`                         | Pure functions, algorithms, metric math (`dialog-state.test.ts`, `metrics.test.ts`)             | ✓                      |
+| Integration (DB)          | Vitest with live Supabase                | Migrations, RLS, retrieval helpers                                                              | ✓ (env-gated)          |
+| E2E                       | Playwright                               | Phone SSR + mocked `/api/ask` NDJSON client path                                                | ✓ CI (`e2e` job)       |
+| Multi-Turn CRS Benchmark  | `pnpm eval:benchmark --suite=multi-turn` | Dialog state tracking (JGA, CRR, 0-turn latency, refine F1, reset clean, token/cost accounting) | ✓ (0-cost stub / live) |
+| Offline Recommender Eval  | `pnpm eval:benchmark --suite=recsys`     | MAUT ranking (NDCG@3/5, MRR, CSR, ILD@3 diversity, Gini, coverage) against 50 golden personas   | Local / CI             |
+| Attributed Q&A (ALCE)     | `pnpm eval:benchmark --suite=rag`        | Citation Precision, Citation Recall, Phantom Citation Rate, numerical entailment                | Local / CI             |
+| Data-Plane Stress Testing | `pnpm eval:stress`                       | Multi-VU concurrency load (1–100 VUs), p50/p90/p95/p99 latency, pool saturation, event loop lag | Local / Staging        |
 
-### Evaluation layout
+### Scientific Evaluation & Benchmarks Hub (Command Center)
 
-- **ADR [0005](./adr/0005-e2e-and-evaluation.md)** â€” why CI mocks Gemini for
-  browser tests, why `eval:retrieval` is tier 2, and how LLM rerank fails open.
-- **`docs/eval/README.md`** â€” fixture schema, command matrix, Tier-3 notes.
+Implemented under `src/services/eval/` and the `/internal/eval` Command Center:
+
+- **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`scripts/eval-benchmark.ts --suite=multi-turn`):**
+  Evaluates 15 conversational trajectories spanning 52 turns across non-linear preference evolutions (budget tightening, anti-brand pivots, relative subset refinements, clean resets, and feature accumulation). Computes Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR / anti-decay), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting.
+- **Tier 2 — Offline Multi-Attribute Utility Theory (MAUT) Recommender Benchmark (`--suite=recsys`):**
+  Evaluates ranking accuracy (NDCG@3, NDCG@5, MRR), Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality.
+- **Tier 3 — Stanford ALCE Attributed Q&A (`--suite=rag`):**
+  Evaluates sentence-level attribution, citation precision/recall, phantom hallucination rate, and numeric fact entailment against retrieved context chunks.
+- **Tier 4 — L1 Data-Plane Concurrency Stress Profiler (`scripts/eval-load.ts`):**
+  Simulates 1–100 virtual users (VUs) executing concurrent queries; measures p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
+- **Web Command Center UI (`/internal/eval`):**
+  Interactive dashboard displaying real-time test progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffs, interactive turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export & rehydration.
+- **Persistence (`drizzle/migrations/0008_cute_komodo.sql`):**
+  All benchmark runs and granular test results are durably persisted to PostgreSQL `benchmark_runs` and `benchmark_results` tables.
 
 ### Conventions
 
 - Tests sit next to the unit under test: `foo.ts` + `foo.test.ts`.
-- **Scorecard** â€” pure helpers (`query-build`, `definitions`, `recency`,
+- **Scorecard** — pure helpers (`query-build`, `definitions`, `recency`,
   `extraction-schema`) are covered by Vitest; the full agent path needs DB +
   Gemini (manual / script).
-- **Recommender** â€” `match.ts`, `vector-utils`, `spec-embedding-text`, and
+- **Recommender** — `match.ts`, `vector-utils`, `spec-embedding-text`, and
   `extract-requirements` (mock `LlmProvider`) have unit tests; full `/api/recommend`
-  path still needs DB + live Gemini for an integration test (manual for now).
-- **`spec-embed:backfill`** â€” not in CI; run locally/staging when seeds or
-  `buildSpecDocumentForEmbedding` change.
-- Integration tests live under `tests/integration/` and are excluded from the
-  default `pnpm test` â€” run with `pnpm test:integration` (added when first
-  DB-touching test lands in Phase 3).
+  path is verified via the multi-turn CRS benchmark suite.
+- **Deterministic CI Mode** — `DeterministicLlmProvider` simulates structured preference extraction and state tracking with 0 Gemini tokens and $0.00 cost, preventing API quota exhaustion in automated test runs.
 - Coverage target: **80% on `src/services/`** (the plumbing that _must_
   not regress). Product code gets lighter coverage on the happy path.
 
@@ -1510,6 +1519,22 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-09-26 — Production Evaluation & Benchmarks Hub, Multi-Turn CRS Dialogue State Benchmark, ALCE Attribution & Concurrency Stress Testing
+
+- **Multi-Turn Conversational Recommender (CRS) Suite (`scripts/eval-benchmark.ts --suite=multi-turn`)**:
+  - Implemented dialogue state tracking evaluation covering 15 realistic conversational trajectories across 52 turns with non-linear preference updates (budget expansions/contractions, anti-brand pivots, relative subset refinements, clean resets, and feature accumulation).
+  - Evaluates Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR / anti-decay), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting.
+  - Enhanced brand negation heuristics in `src/services/recommender/requirements-merge.ts` to capture subtle negative sentiment (`hate`, `dislike`, `do not show`, `maybe`, `productivity`, `multitasking`).
+- **Tier 2 Offline MAUT Recommender & Tier 3 Stanford ALCE RAG Benchmarks**:
+  - Added offline MAUT ranking benchmark (`--suite=recsys`) measuring NDCG@3/5, MRR, Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 50 golden personas.
+  - Added Stanford ALCE attribution evaluation (`--suite=rag`) evaluating sentence-level citation precision, citation recall, phantom citation rate, and numeric fact entailment against retrieved context chunks.
+- **L1 Data-Plane Concurrency Stress Profiler (`scripts/eval-load.ts` / `pnpm eval:stress`)**:
+  - Simulates 1–100 concurrent virtual users (VUs) executing recommendation intake and search queries, measuring p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
+- **Web Command Center UI (`/internal/eval`)**:
+  - Interactive dashboard displaying real-time execution progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffing, turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export and rehydration.
+- **Database Schema Migration (`0008_cute_komodo.sql`)**:
+  - Added `benchmark_runs` and `benchmark_results` tables with `metrics_summary` JSONB and `trace_payload` JSONB columns to durably store benchmark telemetry in PostgreSQL.
 
 ### 2026-09-17 — Catalog enrichment unblocking, Nothing phone discovery & pipeline hardening
 

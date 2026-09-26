@@ -176,14 +176,17 @@ The safest mental model is:
 | `/settings`          | Client-side preference toggles (e.g. Enter-to-send)                    | `localStorage` via `useClientSetting`; [ADR 0013](adr/0013-recommender-summary-context-tie-honesty-settings.md)    |
 | `/api/health`        | Liveness/config probe                                                  | env validation only                                                                                                |
 | `/internal/pipeline` | Internal dashboard visualizing data lifecycle and pipeline metrics     | `INTERNAL_DASHBOARD_ENABLED` env, DB metrics, mock fixtures; [ADR 0016](adr/0016-internal-pipeline-observatory.md) |
+| `/internal/eval`     | Production Evaluation & Benchmarks Command Center                      | real-time test progress, primary KPI scorecards, bootstrap CIs, historical regression diffs, trace drawer          |
 
 ### API routes
 
-| Route                 | Purpose                                | Key behavior                                                                                                             |
-| --------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `POST /api/recommend` | Run the recommender pipeline           | creates/loads anonymous session, rate limits by IP hash, persists turn history                                           |
-| `POST /api/ask`       | Ask grounded questions about one phone | phone-scoped hybrid retrieval, citation-validated answer, NDJSON response (includes optional `retrievalTrace` on `done`) |
-| `GET /api/health`     | Health endpoint                        | does not touch DB or LLM                                                                                                 |
+| Route                             | Purpose                                                                | Key behavior                                                                                                             |
+| --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/recommend`             | Run the recommender pipeline                                           | creates/loads anonymous session, rate limits by IP hash, persists turn history                                           |
+| `POST /api/ask`                   | Ask grounded questions about one phone                                 | phone-scoped hybrid retrieval, citation-validated answer, NDJSON response (includes optional `retrievalTrace` on `done`) |
+| `GET /api/health`                 | Health endpoint                                                        | does not touch DB or LLM                                                                                                 |
+| `POST /api/internal/eval/run`     | Trigger benchmark execution (multi-turn CRS, offline RecSys, ALCE RAG) | executes benchmark suite, persists run summary & traces to Postgres (`benchmark_runs`/`benchmark_results`)               |
+| `GET /api/internal/eval/runs/:id` | Retrieve benchmark run details and granular results                    | returns run metadata, aggregate metrics summary, and per-test execution traces                                           |
 
 ### Main user journeys
 
@@ -201,6 +204,9 @@ The safest mental model is:
 
 4. System architecture presentation
    A reviewer or collaborator opens `/internal/pipeline`, views live DB metrics, inspects phone evidence, and uses the guided walkthrough to understand the retrieval and recommender pipelines.
+
+5. System evaluation and verification
+   An engineer or reviewer opens `/internal/eval` to inspect model accuracy, dialogue state tracking (JGA, CRR, 0-turn latency), ranking precision (NDCG@3), ALCE citation precision, and concurrency latency curves.
 
 ### Feature Inventory
 
@@ -220,6 +226,7 @@ The safest mental model is:
 | Retrieval eval in CI                        | optional   | gated on a real Gemini key                                                                                                                                                   |
 | Feedback loop training                      | scaffolded | table exists, UI is not wired                                                                                                                                                |
 | Internal Pipeline Observatory               | shipped    | gated by `INTERNAL_DASHBOARD_ENABLED`, features live DB metrics, mock replays, and a guided walkthrough                                                                      |
+| Evaluation & Benchmarks Hub                 | shipped    | interactive command center at `/internal/eval`, Multi-Turn CRS benchmark, offline MAUT recommender, ALCE RAG eval, and concurrency profiler                                  |
 
 ## 5. System Overview
 
@@ -1262,21 +1269,40 @@ These are lightweight and effectively no-op off Vercel.
 
 ### Local commands that matter most
 
-| Command                    | Purpose                                     |
-| -------------------------- | ------------------------------------------- |
-| `pnpm dev`                 | run the web app locally                     |
-| `pnpm typecheck`           | strict TypeScript verification              |
-| `pnpm lint`                | ESLint                                      |
-| `pnpm test`                | Vitest unit suite                           |
-| `pnpm build`               | production build check                      |
-| `pnpm db:setup`            | extensions, migrations, FTS, RLS, and seeds |
-| `pnpm db:smoke`            | DB sanity checks                            |
-| `pnpm ingest`              | run ingestion for one phone                 |
-| `pnpm retrieval:smoke`     | one live retrieval sanity check             |
-| `pnpm scorecard:run`       | generate scorecard rows                     |
-| `pnpm spec-embed:backfill` | populate `phones.spec_embedding`            |
-| `pnpm eval:retrieval`      | fixture-driven retrieval evaluation         |
-| `pnpm e2e`                 | Playwright browser tests                    |
+| Command                    | Purpose                                                 |
+| -------------------------- | ------------------------------------------------------- | ------ | ----- |
+| `pnpm dev`                 | run the web app locally                                 |
+| `pnpm typecheck`           | strict TypeScript verification                          |
+| `pnpm lint`                | ESLint                                                  |
+| `pnpm test`                | Vitest unit suite                                       |
+| `pnpm build`               | production build check                                  |
+| `pnpm db:setup`            | extensions, migrations, FTS, RLS, and seeds             |
+| `pnpm db:smoke`            | DB sanity checks                                        |
+| `pnpm ingest`              | run ingestion for one phone                             |
+| `pnpm retrieval:smoke`     | one live retrieval sanity check                         |
+| `pnpm scorecard:run`       | generate scorecard rows                                 |
+| `pnpm spec-embed:backfill` | populate `phones.spec_embedding`                        |
+| `pnpm eval:retrieval`      | fixture-driven retrieval evaluation                     |
+| `pnpm eval:benchmark`      | run scientific evaluation suites (`--suite=multi-turn   | recsys | rag`) |
+| `pnpm eval:stress`         | run L1 data-plane concurrency load profiler (1–100 VUs) |
+| `pnpm e2e`                 | Playwright browser tests                                |
+
+### Scientific Evaluation & Benchmarks Hub
+
+Located under `src/services/eval/` and the `/internal/eval` Command Center:
+
+- **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`pnpm eval:benchmark --suite=multi-turn`):**
+  Evaluates 15 conversational trajectories spanning 52 turns across non-linear preference evolutions (budget shifts, brand negations, subset refinements, resets, feature accumulation). Measures Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting. Deterministic simulation mode allows 0-cost CI runs.
+- **Tier 2 — Offline MAUT Recommender Benchmark (`pnpm eval:benchmark --suite=recsys`):**
+  Evaluates ranking quality (NDCG@3/5, MRR), Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 50 golden personas.
+- **Tier 3 — Stanford ALCE Attributed Q&A (`pnpm eval:benchmark --suite=rag`):**
+  Evaluates sentence-level citation precision, citation recall, phantom citation rate, and numeric fact entailment against retrieved context chunks.
+- **Tier 4 — L1 Data-Plane Concurrency Stress Profiler (`pnpm eval:stress`):**
+  Simulates 1–100 concurrent virtual users (VUs) executing recommendation intake and search queries, measuring p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
+- **Web Command Center UI (`/internal/eval`):**
+  Interactive dashboard displaying real-time execution progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffing, turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export and rehydration.
+- **Persistence (`benchmark_runs` and `benchmark_results`):**
+  All benchmark runs, aggregate KPI metrics summaries, and granular execution traces are durably persisted to PostgreSQL via migration `0008_cute_komodo.sql`.
 
 ### What `pnpm db:setup` actually does
 

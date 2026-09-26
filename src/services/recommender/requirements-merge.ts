@@ -81,7 +81,7 @@ const ASPECT_KEYWORDS: readonly {
   },
   {
     aspect: 'performance',
-    weight: 1,
+    weight: 1.2,
     useCase: 'performance',
     patterns: [
       /\bperformance\b/i,
@@ -91,6 +91,8 @@ const ASPECT_KEYWORDS: readonly {
       /\bspeed\b/i,
       /\bprocessor\b/i,
       /\bchip(?:set)?\b/i,
+      /\bmultitask(?:ing)?\b/i,
+      /\bproductivity\b/i,
     ],
   },
   {
@@ -262,15 +264,15 @@ function extractBrandPreference(message: string): MessageFacts['brandPreference'
     for (const alias of aliases) {
       const escaped = escapeRegExp(alias);
       const dislike = new RegExp(
-        `\\b(?:no|not|avoid|exclude|without|rule out|don't want|do not want)\\s+(?:an?\\s+)?${escaped}\\b|\\b${escaped}\\s+(?:is\\s+)?(?:a\\s+)?(?:dealbreaker|deal breaker)\\b`,
+        `\\b(?:no|not|avoid|exclude|without|rule out|don't want|do not want|hate|dislike|do not show|don't show|never)\\b[^.!?,\n]*?\\b${escaped}s?\\b|\\b${escaped}s?\\s+(?:is\\s+)?(?:a\\s+)?(?:dealbreaker|deal breaker|ruled out)\\b`,
         'i',
       );
       const like = new RegExp(
-        `\\b(?:prefer|like|want|love)\\s+(?:an?\\s+)?${escaped}\\b|\\b${escaped}\\s+only\\b`,
+        `\\b(?:prefer|like|want|love|interested in|maybe|looking at|thinking about)\\b[^.!?,\n]*?\\b${escaped}s?\\b|\\b${escaped}s?\\s+only\\b`,
         'i',
       );
       if (dislike.test(message)) disliked.push(brand);
-      if (like.test(message)) liked.push(brand);
+      if (like.test(message) && !dislike.test(message)) liked.push(brand);
     }
   }
 
@@ -291,7 +293,7 @@ function extractFormFactor(message: string): UserRequirements['form_factor'] | u
   return undefined;
 }
 
-function extractMessageFacts(message: string): MessageFacts {
+export function extractMessageFacts(message: string): MessageFacts {
   const reset = shouldResetRequirements(message);
   const budgetUsd = extractBudget(message);
   const platform = extractPlatform(message);
