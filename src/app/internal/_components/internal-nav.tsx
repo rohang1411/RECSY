@@ -12,6 +12,7 @@ import {
   Search,
   Scale,
   RefreshCw,
+  Gauge,
 } from 'lucide-react';
 
 const INTERNAL_LINKS = [
@@ -20,6 +21,12 @@ const INTERNAL_LINKS = [
     href: '/internal/command-center',
     icon: Activity,
     badge: 'Overview',
+  },
+  {
+    label: 'Evaluation & Benchmarks',
+    href: '/internal/eval',
+    icon: Gauge,
+    badge: 'Quality',
   },
   {
     label: 'Database Dashboard',

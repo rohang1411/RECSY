@@ -1,0 +1,463 @@
+{
+  "version": "1.0.0",
+  "description": "RECSY v2 Golden Multi-Turn Conversational Recommendation (CRS) Trajectory Benchmark",
+  "trajectories": [
+    {
+      "id": "crs-001",
+      "name": "The Downward Budget Tightener",
+      "category": "budget-mutation",
+      "description": "User starts with $900 budget, tightens it to $550 on turn 2, then adds wireless charging while preserving the $550 cap.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Looking for a high-end camera phone under $900 with great zoom and night photography.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 900,
+            "topAspect": "camera"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Actually my finances changed, I can only spend $550 max now. Still prioritize camera.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 550,
+            "topAspect": "camera"
+          },
+          "mustPreservePriorSlots": ["top_aspect"]
+        },
+        {
+          "turnIndex": 3,
+          "userMessage": "Make sure it supports fast charging and has great battery life too.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 550
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-002",
+      "name": "Anti-Brand Pivot & Zero Leakage",
+      "category": "brand-negation",
+      "description": "User searches for flagship, then explicitly excludes Apple and Samsung, testing immediate mutation latency and zero brand leakage.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "I want the best all-around flagship phone under $1100 with a vibrant display and premium build.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 1100
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "I hate both Apple and Samsung, do not show me any iPhones or Galaxy phones.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "dislikedBrands": ["Apple", "Samsung"]
+          },
+          "forbiddenBrands": ["Apple", "Samsung"]
+        },
+        {
+          "turnIndex": 3,
+          "userMessage": "I prefer Google Pixel or OnePlus if possible.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "likedBrands": ["Google", "OnePlus"],
+            "dislikedBrands": ["Apple", "Samsung"]
+          },
+          "forbiddenBrands": ["Apple", "Samsung"],
+          "mustPreservePriorSlots": ["disliked_brands"]
+        }
+      ]
+    },
+    {
+      "id": "crs-003",
+      "name": "Refinement vs Global Catalog Expansion",
+      "category": "scope-disambiguation",
+      "description": "Tests subset re-ranking over prior picks (refine=true) vs full-catalog expansion (refine=false).",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Give me the top phones with massive battery life and endurance under $700.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 700,
+            "topAspect": "battery"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Between these three picks, which one has the fastest charging speed?",
+          "expectedKind": "results",
+          "expectRefineIntent": true
+        },
+        {
+          "turnIndex": 3,
+          "userMessage": "Now search all phones in the store and show me compact ones under 6.3 inches.",
+          "expectedKind": "results",
+          "expectRefineIntent": false,
+          "expectedSlots": {
+            "formFactor": "compact"
+          }
+        }
+      ]
+    },
+    {
+      "id": "crs-004",
+      "name": "Clean Hard Reset & Ghost State Purge",
+      "category": "hard-reset",
+      "description": "User sets strict iOS constraints, then executes a hard reset and switches to Android, verifying complete erasure of prior slots.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "I only want an Apple iPhone with iOS under $1000 for Apple Watch compatibility.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 1000,
+            "mustHaves": ["iPhone"]
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Forget all that, start fresh. I want a cheap Android phone under $350 for my nephew with clean software.",
+          "expectedKind": "results",
+          "isReset": true,
+          "expectedSlots": {
+            "budgetMaxUsd": 350,
+            "mustHaves": ["Android"]
+          },
+          "forbiddenBrands": ["Apple"]
+        }
+      ]
+    },
+    {
+      "id": "crs-005",
+      "name": "Clarification to Recommendation Policy",
+      "category": "clarification-policy",
+      "description": "Tests that high-entropy underspecified queries trigger clarification, and answered clarification triggers immediate recommendation.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "I need to buy a new smartphone.",
+          "expectedKind": "clarify"
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "My budget is $600 and I play heavy games like Genshin Impact and need a high refresh rate display.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 600,
+            "topAspect": "performance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "crs-006",
+      "name": "Upward Budget Stretch",
+      "category": "budget-mutation",
+      "description": "User begins with tight budget, then stretches budget when seeking flagship cameras.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Budget phone under $300 for basic web browsing and social media.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 300
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Actually, I can stretch my budget up to $650 if it gives me a genuine flagship-grade camera system.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 650,
+            "topAspect": "camera"
+          }
+        }
+      ]
+    },
+    {
+      "id": "crs-007",
+      "name": "Form Factor Shift: Compact Search",
+      "category": "form-factor-mutation",
+      "description": "User finds phones too bulky, introduces compact screen constraint under 6.3 inches.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Recommend a high performance phone under $800.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 800,
+            "topAspect": "performance"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "These are too big and heavy. I need a compact phone with screen under 6.3 inches for one-handed use.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 800,
+            "formFactor": "compact"
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-008",
+      "name": "Form Factor Shift: Foldable Search",
+      "category": "form-factor-mutation",
+      "description": "User pivots to foldable devices, verifying foldable filter activation.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Looking for the ultimate multitasking and productivity device.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "topAspect": "performance"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Must be a foldable phone with flexible screen.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "formFactor": "foldable"
+          }
+        }
+      ]
+    },
+    {
+      "id": "crs-009",
+      "name": "Priority Inversion Trade-Off",
+      "category": "priority-inversion",
+      "description": "User completely shifts primary axis from camera to battery and performance.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Camera quality is my absolute number one priority under $700.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 700,
+            "topAspect": "camera"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Actually, change of mind: I don't take photos. Battery life and gaming performance are my main priorities now.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 700,
+            "topAspect": "performance"
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-010",
+      "name": "Dealbreaker Keyword Defense",
+      "category": "dealbreaker-defense",
+      "description": "User adds bloatware and slow charging as strict dealbreakers.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Looking for a clean daily driver under $500.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 500
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Dealbreakers: I absolutely refuse anything with bloatware or slow charging.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 500,
+            "dealBreakers": ["bloatware"]
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-011",
+      "name": "Platform Switch Mid-Session",
+      "category": "platform-switch",
+      "description": "User switches from Android to iPhone, verifying clean replacement of platform must-have.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Best Android phone under $800 with clean software.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 800,
+            "mustHaves": ["Android"]
+          },
+          "forbiddenBrands": ["Apple"]
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Actually, my family wants me on FaceTime. Show me an iPhone under $800 instead.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 800,
+            "mustHaves": ["iPhone"]
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-012",
+      "name": "Feature Accumulation",
+      "category": "feature-accumulation",
+      "description": "User steadily adds multiple hardware requirements across turns.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Phone under $600 with good battery life.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 600,
+            "topAspect": "battery"
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Also must have wireless charging.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 600,
+            "mustHaves": ["wireless charging"]
+          },
+          "mustPreservePriorSlots": ["budget"]
+        },
+        {
+          "turnIndex": 3,
+          "userMessage": "And it must have NFC for contactless Google Pay payments.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 600,
+            "mustHaves": ["wireless charging", "NFC"]
+          },
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-013",
+      "name": "Liked Brand Conflict Resolution",
+      "category": "conflict-resolution",
+      "description": "User changes preference on a specific brand from neutral/liked to disliked.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Looking for a phone under $750, maybe Samsung or Google.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "likedBrands": ["Samsung", "Google"]
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Actually I changed my mind about Samsung, exclude Samsung completely. Only show Google or OnePlus.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "dislikedBrands": ["Samsung"],
+            "likedBrands": ["Google"]
+          },
+          "forbiddenBrands": ["Samsung"],
+          "mustPreservePriorSlots": ["budget"]
+        }
+      ]
+    },
+    {
+      "id": "crs-014",
+      "name": "5-Turn Extended Long Session",
+      "category": "long-context-retention",
+      "description": "Long 5-turn session verifying anti-forgetting and context longevity across deep dialogue.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "Strict budget of $750 max.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750
+          }
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "I want the camera to be amazing for concert videos.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "topAspect": "camera"
+          },
+          "mustPreservePriorSlots": ["budget"]
+        },
+        {
+          "turnIndex": 3,
+          "userMessage": "Screen should be compact, no huge phablets.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "formFactor": "compact"
+          },
+          "mustPreservePriorSlots": ["budget"]
+        },
+        {
+          "turnIndex": 4,
+          "userMessage": "No Samsung phones please.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "dislikedBrands": ["Samsung"]
+          },
+          "forbiddenBrands": ["Samsung"],
+          "mustPreservePriorSlots": ["budget"]
+        },
+        {
+          "turnIndex": 5,
+          "userMessage": "Clean software with fast updates is also a big plus.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 750,
+            "dislikedBrands": ["Samsung"]
+          },
+          "forbiddenBrands": ["Samsung"],
+          "mustPreservePriorSlots": ["budget", "disliked_brands"]
+        }
+      ]
+    },
+    {
+      "id": "crs-015",
+      "name": "Zero-Match Negotiation & Recovery",
+      "category": "boundary-recovery",
+      "description": "User sets near-impossible constraints, system handles gracefully, user relaxes budget, recommendations recover.",
+      "turns": [
+        {
+          "turnIndex": 1,
+          "userMessage": "I want a titanium flagship with 10x optical zoom for under $200.",
+          "expectedKind": "results"
+        },
+        {
+          "turnIndex": 2,
+          "userMessage": "Okay, that's impossible. Let's be realistic: $900 budget, top telephoto zoom camera.",
+          "expectedKind": "results",
+          "expectedSlots": {
+            "budgetMaxUsd": 900,
+            "topAspect": "camera"
+          }
+        }
+      ]
+    }
+  ]
+}
