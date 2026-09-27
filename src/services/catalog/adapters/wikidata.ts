@@ -155,7 +155,7 @@ WHERE {
     BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate) AS ?explicitDate)
     FILTER(
       (?explicitDate >= "${date}"^^xsd:dateTime && ?explicitDate < "${untilExclusive}"^^xsd:dateTime) ||
-      (!BOUND(?explicitDate) && xsd:integer(STRAFTER(STR(?item), "http://www.wikidata.org/entity/Q")) >= 130000000)
+      (!BOUND(?explicitDate) && xsd:integer(STRAFTER(STR(?item), "http://www.wikidata.org/entity/Q")) >= 130000000 && (?class = wd:Q22645 || ?class = wd:Q19723451))
     )
     BIND(COALESCE(?explicitDate, NOW()) AS ?releaseDate)
   }

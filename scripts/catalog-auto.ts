@@ -97,6 +97,18 @@ function main(): void {
       optional: true,
     },
     {
+      label: 'Download local studio images',
+      script: 'scripts/catalog-backfill-gsmarena-images.ts',
+      args: ['--limit', '50'],
+      optional: true,
+    },
+    {
+      label: 'Backfill missing spec embeddings',
+      script: 'scripts/backfill-spec-embeddings.ts',
+      args: [],
+      optional: true,
+    },
+    {
       label: 'Backfill missing phone media',
       script: 'scripts/catalog-backfill-media.ts',
       args: ['--limit', '50', '--min-request-gap-ms', '1250'],

@@ -226,6 +226,7 @@ jobs:
           fi
 
           if [ "$MEDIA_BACKFILL" = "true" ]; then
+            pnpm exec tsx scripts/catalog-backfill-gsmarena-images.ts --limit 50
             pnpm exec tsx scripts/catalog-backfill-media.ts --limit "$MEDIA_LIMIT" --min-request-gap-ms 1250
           fi
 
