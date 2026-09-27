@@ -26,12 +26,12 @@ on:
       since_years:
         description: 'Lookback window in years'
         required: false
-        default: '2'
+        default: '4'
         type: string
       limit:
         description: 'Max candidates/devices per source'
         required: false
-        default: '150'
+        default: '300'
         type: string
       mobileapi_max_requests:
         description: 'MobileAPI request cap for this run'
@@ -158,7 +158,7 @@ jobs:
           SCHEDULE="${{ github.event.schedule }}"
 
           if [ "$EVENT_NAME" = "schedule" ]; then
-            SINCE_YEARS="2"
+            SINCE_YEARS="4"
             PROMOTE="true"
             OEM_ENRICH="true"
             MEDIA_BACKFILL="true"
@@ -166,21 +166,21 @@ jobs:
 
             if [ "$SCHEDULE" = "47 1 1 * *" ]; then
               SOURCE="both"
-              LIMIT="150"
+              LIMIT="300"
               MOBILEAPI_MAX_REQUESTS="50"
               OEM_LIMIT="25"
               echo "[catalog-refresh] monthly full scheduled run"
             else
               SOURCE="both"
-              LIMIT="75"
+              LIMIT="200"
               MOBILEAPI_MAX_REQUESTS="5"
               OEM_LIMIT="15"
               echo "[catalog-refresh] weekly lightweight scheduled run with MobileAPI micro-budget (5 reqs max)"
             fi
           else
             SOURCE="${{ github.event.inputs.source || 'both' }}"
-            SINCE_YEARS="${{ github.event.inputs.since_years || '2' }}"
-            LIMIT="${{ github.event.inputs.limit || '150' }}"
+            SINCE_YEARS="${{ github.event.inputs.since_years || '4' }}"
+            LIMIT="${{ github.event.inputs.limit || '300' }}"
             MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
             OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
             OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
@@ -188,6 +188,9 @@ jobs:
             MEDIA_BACKFILL="${{ github.event.inputs.media_backfill || 'true' }}"
             MEDIA_LIMIT="${{ github.event.inputs.media_limit || '50' }}"
           fi
+
+          echo "[catalog-refresh] syncing canonical mainstream flagships..."
+          pnpm exec tsx scripts/catalog-sync-flagships.ts
 
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "wikidata" ]; then
             pnpm exec tsx scripts/catalog-refresh.ts --source wikidata --since-years "$SINCE_YEARS" --limit "$LIMIT"

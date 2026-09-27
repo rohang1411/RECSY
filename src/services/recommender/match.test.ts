@@ -47,6 +47,7 @@ function entry(
     spec: null,
     specEmbedding: null,
     aspectScores: scores,
+    launchDate: null,
     ...overrides,
   };
 }
@@ -261,5 +262,52 @@ describe('match helpers', () => {
     expect(
       passesHardFilters(unavailable, emptyReq, { relaxBudgetMax: false, ignoreFoldable: false }),
     ).toBe(false);
+  });
+
+  it('passesHardFilters enforces 3.5 year maximum age cutoff', () => {
+    const refDate = new Date('2026-09-27T00:00:00Z');
+    // 4 years old -> rejected
+    const oldPhone = entry({ slug: 'old', launchDate: new Date('2022-09-01T00:00:00Z') });
+    // 3 years old -> allowed (< 3.5 years)
+    const threeYearOld = entry({ slug: 'three-yr', launchDate: new Date('2023-10-01T00:00:00Z') });
+    // 1 year old -> allowed
+    const recentPhone = entry({ slug: 'recent', launchDate: new Date('2025-09-01T00:00:00Z') });
+    // Undated -> allowed
+    const undatedPhone = entry({ slug: 'undated', launchDate: null });
+
+    const emptyReq = req({});
+    const opts = { relaxBudgetMax: false, ignoreFoldable: false, now: refDate };
+
+    expect(passesHardFilters(oldPhone, emptyReq, opts)).toBe(false);
+    expect(passesHardFilters(threeYearOld, emptyReq, opts)).toBe(true);
+    expect(passesHardFilters(recentPhone, emptyReq, opts)).toBe(true);
+    expect(passesHardFilters(undatedPhone, emptyReq, opts)).toBe(true);
+
+    // Can be bypassed if ignoreMaxAge is set
+    expect(passesHardFilters(oldPhone, emptyReq, { ...opts, ignoreMaxAge: true })).toBe(true);
+  });
+
+  it('rankCandidates boosts phones <= 2 years old over older phones with identical specs', () => {
+    const refDate = new Date('2026-09-27T00:00:00Z');
+    // Released 6 months ago (< 2 years)
+    const freshPhone = entry({
+      slug: 'fresh',
+      brand: 'BrandA',
+      launchDate: new Date('2026-03-01T00:00:00Z'),
+    });
+    // Released 3 years ago (> 2 years, < 3.5 years)
+    const olderPhone = entry({
+      slug: 'older',
+      brand: 'BrandB',
+      launchDate: new Date('2023-09-01T00:00:00Z'),
+    });
+
+    const result = rankCandidates([olderPhone, freshPhone], req({}), equalWeights, {
+      now: refDate,
+    });
+    expect(result.picks.length).toBe(2);
+    expect(result.picks[0]?.slug).toBe('fresh');
+    expect(result.picks[1]?.slug).toBe('older');
+    expect(result.picks[0]?.score).toBeGreaterThan(result.picks[1]?.score ?? 0);
   });
 });
