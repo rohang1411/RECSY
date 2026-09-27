@@ -72,7 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="flex-1">{children}</main>
             <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
               <div className="px-grid-margin mx-auto max-w-7xl">
-                Built with receipts. © {new Date().getFullYear()} RECSY
+                © {new Date().getFullYear()} RECSY
               </div>
             </footer>
           </div>

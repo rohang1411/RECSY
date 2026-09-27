@@ -305,14 +305,15 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                 : topAspectsList[0]
                   ? ` on ${topAspectsList[0]}`
                   : '';
-            const reason = rawScorecardMissing
-              ? 'because no reviewer scorecard has been ingested yet, so every aspect falls back to neutral 5.0'
-              : 'because the weighted aspect scores are effectively identical for your priorities';
+            const topNames = pickList
+              .slice(0, 2)
+              .map((p) => `${p.brand} ${p.model}`)
+              .join(' and ');
             setLines((prev) => [
               ...prev,
               {
                 role: 'assistant',
-                text: `These picks are effectively tied${priorityHint}: ${reason}. Add a sharper constraint to break the tie.`,
+                text: `It's a tie between ${topNames}${priorityHint}. Their performance across what you said matters is effectively identical, so both are presented side-by-side as top picks!`,
               },
             ]);
           } else if (rawScorecardMissing && pickList.length > 0) {
@@ -480,8 +481,12 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
               ) : null}
               {displayScoresTied && displayPicks && displayPicks.length > 1 ? (
                 <p>
-                  Notice: the top {displayPicks.length} picks are within rounding error for your
-                  priorities.
+                  Notice: There is a tie between the top devices (
+                  {displayPicks
+                    .slice(0, 2)
+                    .map((p) => p.model)
+                    .join(' & ')}
+                  ). Both match your criteria equally well and are shown side-by-side.
                 </p>
               ) : null}
             </div>

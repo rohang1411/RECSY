@@ -4,14 +4,17 @@
  * - `brands` — comma-separated brand names (must match `phones.brand` exactly).
  * - `min` / `max` — USD MSRP bounds (`phones.msrp_usd`); null MSRP rows excluded when either bound is set.
  * - `foldable` — `1` = foldable only, `0` = non-foldable, omitted = any.
+ * - `sort` — `latest` (default) | `price-asc` | `price-desc` | `name-asc` | `name-desc`.
  */
 export type BrowseFoldableFilter = 'any' | 'yes' | 'no';
+export type BrowseSortOption = 'latest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc';
 
 export interface BrowseFilterState {
   readonly brands: readonly string[];
   readonly minPriceUsd: number | null;
   readonly maxPriceUsd: number | null;
   readonly foldable: BrowseFoldableFilter;
+  readonly sort: BrowseSortOption;
 }
 
 const DEFAULT_STATE: BrowseFilterState = {
@@ -19,6 +22,7 @@ const DEFAULT_STATE: BrowseFilterState = {
   minPriceUsd: null,
   maxPriceUsd: null,
   foldable: 'any',
+  sort: 'latest',
 };
 
 function parseIntOrNull(s: string | undefined): number | null {
@@ -51,6 +55,14 @@ function parseBrands(sp: SearchParamsInput): string[] {
   return [];
 }
 
+const VALID_SORTS = new Set<BrowseSortOption>([
+  'latest',
+  'price-asc',
+  'price-desc',
+  'name-asc',
+  'name-desc',
+]);
+
 /** Parse `nextUrl.searchParams` or a plain `URLSearchParams` (tests). */
 export function parseBrowseSearchParams(sp: SearchParamsInput): BrowseFilterState {
   const brands = parseBrands(sp);
@@ -68,7 +80,10 @@ export function parseBrowseSearchParams(sp: SearchParamsInput): BrowseFilterStat
   if (f === '1' || f === 'true') foldable = 'yes';
   else if (f === '0' || f === 'false') foldable = 'no';
 
-  return { brands, minPriceUsd: minP, maxPriceUsd: maxP, foldable };
+  const rawSort = sp.get('sort')?.trim() as BrowseSortOption;
+  const sort: BrowseSortOption = VALID_SORTS.has(rawSort) ? rawSort : 'latest';
+
+  return { brands, minPriceUsd: minP, maxPriceUsd: maxP, foldable, sort };
 }
 
 export function browseFiltersToQueryString(state: BrowseFilterState): string {
@@ -84,6 +99,7 @@ export function browseFiltersToQueryString(state: BrowseFilterState): string {
   }
   if (state.foldable === 'yes') p.set('foldable', '1');
   if (state.foldable === 'no') p.set('foldable', '0');
+  if (state.sort && state.sort !== 'latest') p.set('sort', state.sort);
   return p.toString();
 }
 
@@ -92,6 +108,7 @@ export function isDefaultBrowseState(state: BrowseFilterState): boolean {
     state.brands.length === 0 &&
     state.minPriceUsd === DEFAULT_STATE.minPriceUsd &&
     state.maxPriceUsd === DEFAULT_STATE.maxPriceUsd &&
-    state.foldable === DEFAULT_STATE.foldable
+    state.foldable === DEFAULT_STATE.foldable &&
+    state.sort === DEFAULT_STATE.sort
   );
 }

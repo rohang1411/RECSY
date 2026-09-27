@@ -170,6 +170,13 @@ export function passesHardFilters(
     if (entry.localPrice != null) {
       const price = Number.parseFloat(entry.localPrice);
       if (!Number.isNaN(price) && price > max) return false;
+    } else if (entry.msrpUsd != null) {
+      // Fallback check against USD price if local price missing
+      const price = Number.parseFloat(entry.msrpUsd);
+      if (!Number.isNaN(price) && price > max) return false;
+    } else {
+      // Cannot verify budget without pricing
+      return false;
     }
   } else {
     const budget = requirements.budget_usd;
@@ -180,6 +187,9 @@ export function passesHardFilters(
       if (entry.msrpUsd != null) {
         const price = Number.parseFloat(entry.msrpUsd);
         if (!Number.isNaN(price) && price > max) return false;
+      } else {
+        // Cannot verify budget without pricing
+        return false;
       }
     }
   }

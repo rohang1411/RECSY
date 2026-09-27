@@ -43,6 +43,7 @@ describe('browseFiltersToQueryString', () => {
       minPriceUsd: 400,
       maxPriceUsd: 900,
       foldable: 'no' as const,
+      sort: 'latest' as const,
     };
     const q = browseFiltersToQueryString(s);
     const back = parseBrowseSearchParams(new URLSearchParams(q));
