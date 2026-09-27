@@ -1252,3 +1252,65 @@ export const exchangeRates = pgTable(
 
 // `boolean` is now referenced by `domain_profiles.robots_respected`.
 // No placeholder needed anymore.
+
+// ---------------------------------------------------------------------------
+// System Evaluation & Benchmarking Telemetry
+// ---------------------------------------------------------------------------
+
+export const benchmarkRuns = pgTable(
+  'benchmark_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    suiteName: text('suite_name').notNull(),
+    tier: text('tier').notNull().default('L1_DATA_PLANE'),
+    triggerSource: text('trigger_source').notNull().default('manual'),
+    commitHash: text('commit_hash'),
+    status: text('status').notNull().default('running'),
+    totalTests: integer('total_tests').notNull().default(0),
+    passedTests: integer('passed_tests').notNull().default(0),
+    failedTests: integer('failed_tests').notNull().default(0),
+    durationMs: integer('duration_ms').notNull().default(0),
+    concurrencyVus: integer('concurrency_vus').notNull().default(1),
+    metricsSummary: jsonb('metrics_summary'),
+    config: jsonb('config'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('benchmark_runs_created_at_idx').on(t.createdAt),
+    index('benchmark_runs_tier_idx').on(t.tier),
+  ],
+);
+
+export const benchmarkResults = pgTable(
+  'benchmark_results',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => benchmarkRuns.id, { onDelete: 'cascade' }),
+    testCaseId: text('test_case_id').notNull(),
+    category: text('category').notNull(),
+    inputQuery: text('input_query').notNull(),
+    status: text('status').notNull(),
+    latencyMs: integer('latency_ms').notNull(),
+    scores: jsonb('scores'),
+    tracePayload: jsonb('trace_payload'),
+    errorDetails: text('error_details'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('benchmark_results_run_id_idx').on(t.runId),
+    index('benchmark_results_status_idx').on(t.status),
+  ],
+);
+
+export const benchmarkRunsRelations = relations(benchmarkRuns, ({ many }) => ({
+  results: many(benchmarkResults),
+}));
+
+export const benchmarkResultsRelations = relations(benchmarkResults, ({ one }) => ({
+  run: one(benchmarkRuns, {
+    fields: [benchmarkResults.runId],
+    references: [benchmarkRuns.id],
+  }),
+}));

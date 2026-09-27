@@ -30,6 +30,8 @@
     "retrieval:smoke": "tsx --env-file=.env.local scripts/retrieval-smoke.ts",
     "ci:retrieval-fixture": "tsx scripts/seed-retrieval-eval-fixture.ts",
     "eval:retrieval": "tsx --env-file=.env.local scripts/eval-retrieval.ts",
+    "eval:benchmark": "tsx --env-file=.env.local scripts/eval-benchmark.ts",
+    "eval:load": "tsx --env-file=.env.local scripts/eval-load.ts",
     "scorecard:run": "tsx --env-file=.env.local scripts/scorecard-run.ts",
     "scorecard:auto": "tsx --env-file=.env.local scripts/scorecard-auto.ts",
     "spec-embed:backfill": "tsx --env-file=.env.local scripts/backfill-spec-embeddings.ts",
