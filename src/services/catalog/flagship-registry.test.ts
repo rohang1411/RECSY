@@ -4,12 +4,20 @@ import { PhoneSpecSchema } from '@/features/phones/schema';
 
 describe('flagship registry', () => {
   it('contains expected mainstream flagships from 2023-2026', () => {
-    expect(CANONICAL_FLAGSHIPS.length).toBeGreaterThanOrEqual(15);
+    expect(CANONICAL_FLAGSHIPS.length).toBeGreaterThanOrEqual(23);
     const slugs = CANONICAL_FLAGSHIPS.map((f) => f.slug);
     expect(slugs).toContain('google-pixel-8');
     expect(slugs).toContain('google-pixel-8-pro');
     expect(slugs).toContain('google-pixel-8a');
     expect(slugs).toContain('google-pixel-9-pro-fold');
+    expect(slugs).toContain('google-pixel-10');
+    expect(slugs).toContain('google-pixel-10-pro');
+    expect(slugs).toContain('google-pixel-10-pro-xl');
+    expect(slugs).toContain('google-pixel-10-pro-fold');
+    expect(slugs).toContain('google-pixel-11');
+    expect(slugs).toContain('google-pixel-11-pro');
+    expect(slugs).toContain('google-pixel-11-pro-xl');
+    expect(slugs).toContain('google-pixel-11-pro-fold');
     expect(slugs).toContain('samsung-galaxy-s24');
     expect(slugs).toContain('samsung-galaxy-s24-ultra');
     expect(slugs).toContain('apple-iphone-15');

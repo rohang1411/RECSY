@@ -61,11 +61,23 @@ export const SCORE_TIE_EPSILON = 0.05;
 /** Aspect score used when a phone has no scored entry for an aspect. */
 const NEUTRAL_ASPECT_SCORE = 5;
 
+/**
+ * Recommendation recency policy:
+ * - Phones older than 3.5 years (1278 days) MUST NEVER be recommended.
+ * - Phones released in the last 2 years (730 days) receive priority weighting.
+ */
+export const MAX_RECOMMEND_PHONE_AGE_DAYS = 3.5 * 365.25; // ~1278 days (~3.5 years)
+export const PREFERRED_RECOMMEND_PHONE_AGE_DAYS = 2.0 * 365.25; // ~730 days (2 years)
+
 export interface FilterPassOptions {
   readonly relaxBudgetMax: boolean;
   readonly ignoreFoldable: boolean;
   /** When set, overrides `requirements.budget_usd.max` for this pass (e.g. after relax). */
   readonly budgetMaxOverride?: number;
+  /** Reference date for computing age (defaults to current date). */
+  readonly now?: Date;
+  /** When true, skips the 3.5 year maximum age filter. */
+  readonly ignoreMaxAge?: boolean;
 }
 
 export function buildSearchHaystack(entry: PhoneCatalogEntry): string {
@@ -136,6 +148,17 @@ export function passesHardFilters(
 
   const platform = detectPlatformPreferenceFromRequirements(requirements);
   if (platform && !matchesPlatformPreference(entry, platform)) return false;
+
+  // Maximum Age Filter: phones older than 3.5 years (1278 days) MUST NOT be recommended.
+  // They remain in the database for browse, compare, and historical views, but are excluded
+  // from recommendations because buyers should not be recommended 3+ year old hardware.
+  if (!opts.ignoreMaxAge && entry.launchDate) {
+    const now = opts.now ?? new Date();
+    const ageDays = (now.getTime() - entry.launchDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays > MAX_RECOMMEND_PHONE_AGE_DAYS) {
+      return false;
+    }
+  }
 
   const spec = entry.spec;
   const ff = requirements.form_factor;
@@ -376,6 +399,7 @@ interface ScoringContext {
   readonly requirements: UserRequirements;
   readonly weights: ReadonlyMap<AspectName, number>;
   readonly queryEmbedding: readonly number[] | undefined;
+  readonly now?: Date;
   readonly summary: SummaryContext;
 }
 
@@ -392,6 +416,22 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
     if (t && haystack.includes(t)) {
       score += RECOMMEND_LIKED_BRAND_BONUS;
       break;
+    }
+  }
+
+  // Recency prioritization: phones released within the last 2 years receive priority,
+  // while older phones (between 2 and 3.5 years) receive a progressive age penalty
+  // so contemporary releases from the past 2 years are strongly favored.
+  if (entry.launchDate) {
+    const now = ctx.now ?? new Date();
+    const ageDays = (now.getTime() - entry.launchDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays <= PREFERRED_RECOMMEND_PHONE_AGE_DAYS) {
+      score += 0.35 * Math.max(0, 1 - ageDays / PREFERRED_RECOMMEND_PHONE_AGE_DAYS);
+    } else if (ageDays > PREFERRED_RECOMMEND_PHONE_AGE_DAYS) {
+      const excessDays = ageDays - PREFERRED_RECOMMEND_PHONE_AGE_DAYS;
+      const penaltyRange = MAX_RECOMMEND_PHONE_AGE_DAYS - PREFERRED_RECOMMEND_PHONE_AGE_DAYS;
+      const penalty = Math.min(0.5, (excessDays / penaltyRange) * 0.5);
+      score -= penalty;
     }
   }
 
@@ -416,8 +456,9 @@ function collectScored(
   opts: FilterPassOptions,
 ): ScoredCandidate[] {
   const out: ScoredCandidate[] = [];
+  const filterOpts = opts.now ? opts : { ...opts, now: ctx.now };
   for (const entry of catalog) {
-    if (!passesHardFilters(entry, ctx.requirements, opts)) continue;
+    if (!passesHardFilters(entry, ctx.requirements, filterOpts)) continue;
     const haystack = buildSearchHaystack(entry);
     if (dealBreakerHit(haystack, ctx.requirements.deal_breakers)) continue;
     out.push(scoreEntry(entry, ctx));
@@ -448,10 +489,15 @@ export function rankCandidates(
   catalog: readonly PhoneCatalogEntry[],
   requirements: UserRequirements,
   defaultWeights: ReadonlyMap<AspectName, number>,
-  options?: { readonly queryEmbedding?: readonly number[]; readonly refined?: boolean },
+  options?: {
+    readonly queryEmbedding?: readonly number[];
+    readonly refined?: boolean;
+    readonly now?: Date;
+  },
 ): RankResult {
   const queryEmbedding = options?.queryEmbedding;
   const refined = options?.refined === true;
+  const now = options?.now;
   const weights = resolveAspectWeights(requirements, defaultWeights);
   const relaxed: string[] = [];
 
@@ -461,6 +507,7 @@ export function rankCandidates(
     requirements,
     weights,
     queryEmbedding,
+    now,
     summary: {
       weights,
       refined,
