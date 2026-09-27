@@ -14,11 +14,24 @@ const emptySubscribe = () => () => {};
 export function RegionSelector({ activeRegion }: RegionSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
+  const [liveInrRate, setLiveInrRate] = useState<number>(83.5);
   const mounted = useSyncExternalStore(
     emptySubscribe,
     () => true,
     () => false,
   );
+
+  useEffect(() => {
+    // Fetch cached daily exchange rate
+    fetch('/api/exchange-rate')
+      .then((res) => res.json())
+      .then((data: { rate?: number }) => {
+        if (typeof data.rate === 'number' && data.rate > 0) {
+          setLiveInrRate(data.rate);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -118,8 +131,8 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl" role="img" aria-label={reg.label}>
-                        {reg.flag}
+                      <span className="text-primary font-mono text-sm font-bold">
+                        {reg.countryCode} ({reg.symbol})
                       </span>
                       <span className="text-xs font-black tracking-wider uppercase">
                         {reg.label}
@@ -142,13 +155,15 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
                     <div className="flex justify-between">
                       <span>Catalog Source:</span>
                       <span className="text-foreground font-bold">
-                        {reg.countryCode === 'US' ? 'Official OEM / US' : 'India Local (Estimates)'}
+                        {reg.countryCode === 'US'
+                          ? 'Official OEM / US'
+                          : 'India Local (Live Estimates)'}
                       </span>
                     </div>
                     {reg.countryCode === 'IN' && (
                       <div className="border-outline-variant text-accent mt-1 flex justify-between border-t border-dashed pt-1 text-[9px] font-bold">
                         <span>Rate:</span>
-                        <span>1 USD = ₹83.50 INR</span>
+                        <span>1 USD = ₹{liveInrRate.toFixed(2)} INR</span>
                       </div>
                     )}
                   </div>
@@ -161,7 +176,7 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
         {/* Drawer Footer */}
         <div className="border-outline-variant mt-6 border-t pt-4">
           <div className="text-muted-foreground text-center text-[9px]">
-            RECSY V2 • Dynamic Regional Routing
+            RECSY • Dynamic Regional Routing
             {isChanging && (
               <div className="text-primary mt-2 animate-pulse font-black tracking-widest uppercase">
                 Applying region configuration...
@@ -181,11 +196,10 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
         className="border-primary bg-background hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border-2 px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-all duration-150 focus-visible:outline-none"
         aria-label={`Select region (current: ${activeRegion.label})`}
       >
-        <span className="text-[14px]" role="img" aria-label={activeRegion.label}>
-          {activeRegion.flag}
+        <span>
+          {activeRegion.countryCode} ({activeRegion.symbol})
         </span>
-        <span>{activeRegion.countryCode}</span>
-        <Globe className="h-3 w-3 shrink-0" />
+        <Globe className="h-3.5 w-3.5 shrink-0" />
       </button>
 
       {mounted && createPortal(drawerContent, document.body)}

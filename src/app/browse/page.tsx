@@ -1,8 +1,8 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
-import { parseBrowseSearchParams } from '@/features/browse/search-params';
+import { parseBrowseSearchParams, type BrowseSortOption } from '@/features/browse/search-params';
 import { browseWhereFromState } from '@/features/browse/query';
 import { getActiveRegion } from '@/lib/get-active-region';
 import { formatLocalPrice } from '@/lib/format-currency';
@@ -13,6 +13,34 @@ import { BrowseFiltersForm } from './browse-filters-form';
 import { appSearchParamsToURLSearchParams } from './search-params-helpers';
 
 export const dynamic = 'force-dynamic';
+
+function getBrowseOrderBy(sort: BrowseSortOption) {
+  switch (sort) {
+    case 'price-asc':
+      return [
+        asc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '999999')::numeric`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+    case 'price-desc':
+      return [
+        desc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '0')::numeric`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+    case 'name-desc':
+      return [desc(phones.brand), desc(phones.model)];
+    case 'name-asc':
+      return [asc(phones.brand), asc(phones.model)];
+    case 'latest':
+    default:
+      return [
+        desc(sql`coalesce(${phones.releasedAt}, ${phones.launchDate}, ${phones.createdAt})`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+  }
+}
 
 interface PageProps {
   readonly searchParams: Promise<Readonly<Record<string, string | string[] | undefined>>>;
@@ -36,6 +64,8 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         tagline: phones.tagline,
         msrpUsd: phones.msrpUsd,
         imageUrl: phones.imageUrl,
+        launchDate: phones.launchDate,
+        releasedAt: phones.releasedAt,
         localPrice: phoneRegionalDetails.price,
         localCurrency: phoneRegionalDetails.currency,
         isEstimated: phoneRegionalDetails.isEstimated,
@@ -50,7 +80,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         ),
       )
       .where(where)
-      .orderBy(asc(phones.brand), asc(phones.model)),
+      .orderBy(...getBrowseOrderBy(filter.sort)),
     db
       .select({ brand: phones.brand })
       .from(phones)
@@ -95,6 +125,14 @@ export default async function BrowsePage({ searchParams }: PageProps) {
             isEstimated: p.isEstimated ?? false,
           });
 
+          const releaseDate = p.releasedAt ?? p.launchDate;
+          const releaseLabel = releaseDate
+            ? new Date(releaseDate).toLocaleDateString('en-US', {
+                month: 'short',
+                year: 'numeric',
+              })
+            : null;
+
           return (
             <li key={p.slug}>
               <Link
@@ -117,6 +155,11 @@ export default async function BrowsePage({ searchParams }: PageProps) {
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-4">
                     <p className="meta-label">Phone {String(index + 1).padStart(2, '0')}</p>
+                    {releaseLabel ? (
+                      <span className="border-outline-variant bg-surface-container text-muted-foreground border px-2 py-0.5 font-mono text-[10px] tracking-wider uppercase">
+                        {releaseLabel}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-muted-foreground mt-5 font-mono text-xs tracking-[0.16em] uppercase">
                     {p.brand}

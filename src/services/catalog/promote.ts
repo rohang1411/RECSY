@@ -442,13 +442,10 @@ function phoneInsertValues(plan: PromotionPlan) {
 
 function phoneUpdateValues(plan: PromotionPlan) {
   const values = phoneInsertValues(plan);
-  return {
+  const result: Record<string, unknown> = {
     brand: values.brand,
     model: values.model,
     tagline: values.tagline,
-    launchDate: values.launchDate,
-    msrpUsd: values.msrpUsd,
-    imageUrl: values.imageUrl,
     status: values.status,
     specJson: values.specJson,
     // Clear embedding so backfill-spec-embeddings re-generates it after the spec update.
@@ -458,15 +455,23 @@ function phoneUpdateValues(plan: PromotionPlan) {
     // ingest schedule set by the tiered ingest scheduler — that would
     // immediately re-ingest every updated phone and burn daily quota.
     canonicalKey: values.canonicalKey,
-    officialUrl: values.officialUrl,
-    announcedAt: values.announcedAt,
-    releasedAt: values.releasedAt,
     catalogLastSeenAt: values.catalogLastSeenAt,
     lastCatalogRefreshAt: values.lastCatalogRefreshAt,
     metadataConfidence: values.metadataConfidence,
     specCompleteness: values.specCompleteness,
     mediaStatus: values.mediaStatus,
   };
+
+  // Only update fields if the candidate provided non-null values.
+  // Never overwrite existing valid data with null.
+  if (values.launchDate != null) result.launchDate = values.launchDate;
+  if (values.releasedAt != null) result.releasedAt = values.releasedAt;
+  if (values.announcedAt != null) result.announcedAt = values.announcedAt;
+  if (values.imageUrl != null) result.imageUrl = values.imageUrl;
+  if (values.officialUrl != null) result.officialUrl = values.officialUrl;
+  if (values.msrpUsd != null) result.msrpUsd = values.msrpUsd;
+
+  return result;
 }
 
 async function insertIdentities(

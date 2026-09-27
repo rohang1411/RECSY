@@ -99,7 +99,7 @@ export function BrowseFiltersForm({
               />
             </div>
           </div>
-          <div className="bg-background p-5 lg:col-span-2">
+          <div className="bg-background p-5">
             <label htmlFor="b-fold" className="meta-label text-primary">
               Form factor
             </label>
@@ -112,6 +112,23 @@ export function BrowseFiltersForm({
               <option value="">Any</option>
               <option value="1">Foldable only</option>
               <option value="0">Non-foldable only</option>
+            </select>
+          </div>
+          <div className="bg-background p-5">
+            <label htmlFor="b-sort" className="meta-label text-primary">
+              Sort by
+            </label>
+            <select
+              id="b-sort"
+              name="sort"
+              defaultValue={current.sort}
+              className="border-outline bg-background text-primary focus-visible:border-primary mt-3 w-full border px-3 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
+            >
+              <option value="latest">Recently Launched</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="name-asc">Name: A to Z</option>
+              <option value="name-desc">Name: Z to A</option>
             </select>
           </div>
         </div>
