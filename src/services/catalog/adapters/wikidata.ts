@@ -132,7 +132,7 @@ WHERE {
     }
     FILTER(?releaseDate >= "${date}"^^xsd:dateTime && ?releaseDate < "${untilExclusive}"^^xsd:dateTime)
   } UNION {
-    # Priority brand entities (e.g. Samsung, Apple, Google, Nothing, OnePlus, Xiaomi, etc.) that may lack explicit P571/P577 dates
+    # Priority brand entities (Samsung, Apple, Google, OnePlus, Nothing, Xiaomi, Motorola, etc.)
     VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
     ?item wdt:P31 ?class.
     ?item wdt:P176 ?manufacturer.
@@ -140,6 +140,8 @@ WHERE {
       wd:Q20718           # Samsung Electronics
       wd:Q312             # Apple Inc.
       wd:Q95 wd:Q20800404 # Google / Google LLC
+      wd:Q463094          # Foxconn / Hon Hai (assembler for Google/Apple)
+      wd:Q1121085         # Compal (assembler for Google/others)
       wd:Q110339215       # Nothing Technology Ltd
       wd:Q15730372        # OnePlus
       wd:Q899189          # Xiaomi
@@ -157,16 +159,16 @@ WHERE {
       (?explicitDate >= "${date}"^^xsd:dateTime && ?explicitDate < "${untilExclusive}"^^xsd:dateTime) ||
       (!BOUND(?explicitDate) && xsd:integer(STRAFTER(STR(?item), "http://www.wikidata.org/entity/Q")) >= 130000000 && (?class = wd:Q22645 || ?class = wd:Q19723451))
     )
-    BIND(COALESCE(?explicitDate, NOW()) AS ?releaseDate)
+    BIND(COALESCE(?explicitDate, ?announcementDate) AS ?releaseDate)
   }
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }
   OPTIONAL { ?item wdt:P18 ?image. }
-  OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en") }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en" || LANG(?alias) = "mul") }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,en-US,en-GB". }
 }
 GROUP BY ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
-ORDER BY DESC(?releaseDate)
+ORDER BY DESC(BOUND(?releaseDate)) DESC(?releaseDate)
 LIMIT ${boundedLimit}
 `.trim();
 }
@@ -184,7 +186,7 @@ WHERE {
   VALUES ?class { wd:Q17517 wd:Q22645 wd:Q19723444 wd:Q19723451 }
   ?item wdt:P31 ?class.
   ?item rdfs:label ?rawLabel.
-  FILTER(LANG(?rawLabel) = "en")
+  FILTER(LANG(?rawLabel) = "en" || LANG(?rawLabel) = "mul")
   BIND(LCASE(STR(?rawLabel)) AS ?labelLower)
   FILTER(${needles.map((needle) => `CONTAINS(?labelLower, ${needle})`).join(' || ')})
   OPTIONAL { ?item wdt:P176 ?manufacturer. }
@@ -194,8 +196,8 @@ WHERE {
   BIND(COALESCE(?inceptionDate, ?publicationDate, ?announcementDate) AS ?releaseDate)
   OPTIONAL { ?item wdt:P856 ?officialWebsite. }
   OPTIONAL { ?item wdt:P18 ?image. }
-  OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en") }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  OPTIONAL { ?item skos:altLabel ?alias FILTER(LANG(?alias) = "en" || LANG(?alias) = "mul") }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,en-US,en-GB". }
 }
 GROUP BY ?item ?itemLabel ?manufacturerLabel ?releaseDate ?officialWebsite ?image
 ORDER BY DESC(?releaseDate)
@@ -337,11 +339,14 @@ function sameNormalizedBrand(a: string, b: string): boolean {
 
 const CONTRACT_MANUFACTURERS = new Set([
   'foxconn',
+  'foxconn china',
   'hon hai precision industry',
   'hon hai precision industry co ltd',
   'pegatron',
   'wistron',
   'compal electronics',
+  'q463094',
+  'q1121085',
 ]);
 
 const COMMON_MANUFACTURER_BRANDS = new Map<string, string>([

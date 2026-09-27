@@ -56,6 +56,8 @@ export const KNOWN_STUDIO_IMAGES: Record<string, string> = {
   'samsung-galaxy-s25-ultra': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-ultra-sm-s938.jpg`,
   'samsung-galaxy-s25-plus': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-plus-sm-s936.jpg`,
   'samsung-galaxy-s25': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-sm-s931.jpg`,
+  'samsung-galaxy-s24-plus':
+    'https://upload.wikimedia.org/wikipedia/commons/c/cb/Samsung_Galaxy_S24%2B.jpg',
   'samsung-galaxy-z-fold-6': `${GSM_BIGPIC_BASE}/samsung-galaxy-z-fold6.jpg`,
   'samsung-galaxy-a55-5g': `${GSM_BIGPIC_BASE}/samsung-galaxy-a55.jpg`,
   'samsung-galaxy-a35-5g': `${GSM_BIGPIC_BASE}/samsung-galaxy-a35.jpg`,

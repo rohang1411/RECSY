@@ -83,3 +83,8 @@ export {
   type StudioImageCandidate,
   type ResolveAndDownloadResult,
 } from './studio-media-resolver';
+export {
+  CANONICAL_FLAGSHIPS,
+  syncMissingFlagships,
+  type CanonicalFlagshipEntry,
+} from './flagship-registry';
