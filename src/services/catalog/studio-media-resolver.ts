@@ -20,6 +20,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { getDb } from '../db/client';
 import { phones, phoneMediaAssets } from '../db/schema';
+import { findWikidataPhonesByName } from './adapters/wikidata';
 import { normalizeIdentityText } from './identity';
 
 export interface StudioImageCandidate {
@@ -246,6 +247,26 @@ export async function resolveStudioImageCandidate(phone: {
       sourceKey: 'gsmarena_studio_crawled',
       notes: 'Discovered via brand page crawler',
     };
+  }
+
+  // 3b. Query Wikidata / Wikimedia Commons for official device imagery
+  try {
+    const wikidataResults = await findWikidataPhonesByName({
+      brand: phone.brand,
+      model: phone.model,
+      limit: 3,
+    });
+    for (const res of wikidataResults) {
+      if (res.imageUrl && (await testRemoteImage(res.imageUrl))) {
+        return {
+          imageUrl: res.imageUrl,
+          sourceKey: 'wikidata_commons_media',
+          notes: `Discovered via Wikidata entity ${res.externalId}`,
+        };
+      }
+    }
+  } catch {
+    // Non-blocking fallback
   }
 
   // 4. If an existing image URL is present and valid, use it

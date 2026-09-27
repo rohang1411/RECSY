@@ -112,3 +112,9 @@ jobs:
           pnpm exec tsx scripts/ingest.ts \
             --phone "${{ github.event.inputs.phone }}" \
             --limit "${{ github.event.inputs.limit }}"
+
+      - name: Generate aspect scorecards for new phone
+        shell: bash
+        run: |
+          pnpm exec tsx scripts/scorecard-run.ts \
+            --phone "${{ github.event.inputs.phone }}" || true

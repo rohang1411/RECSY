@@ -2470,6 +2470,25 @@ dissenting_quotes)`.
 - New package scripts: `db:setup`, `db:reset`, `db:smoke`.
 - All Phase 0 quality gates remain green.
 
+### 2026-09-26 — Flagship Scorecard Prioritization, Candidate Cleanup & Missing Images Pipeline
+
+- **Intelligent Scorecard Prioritization & Frequency**:
+  - Rewrote candidate selection ordering in `src/services/scorecard/scheduler.ts` (`pickScorecardPhones`) to prioritize unscored phones (`current_aspect_count < 7`), mainstream priority brands (Apple, Samsung, Google, OnePlus, Nothing, Xiaomi, Motorola), newest release dates, and phones that have never been scored (`last_scorecard_at IS NULL`).
+  - Increased `.github/workflows/scorecard-auto.yml` cron frequency from once daily to every 6 hours (`17 4,10,16,22 * * *`). Fingerprint caching guarantees 0 LLM calls when chunks are unchanged.
+  - Added immediate scorecard generation to `.github/workflows/ingest-on-new-phone.yml` following initial ingestion.
+  - Computed full 7-aspect scorecards for `samsung-galaxy-s26-plus`, `samsung-galaxy-z-fold-7`, `samsung-galaxy-z-fold-8`, and `apple-iphone-16-plus`.
+- **Database Catalog Candidate & Device Cleanup**:
+  - Created and executed `scripts/cleanup-corrupt-candidates.ts` (wired into `pnpm catalog:cleanup`), purging 77 non-mainstream candidates (e.g. 8849, AGM, Doogee, Blackview, BLU, Acer) and carrier model number codes (`Samsung Corby II`, `A100`, `SGH-*`, `SCH-*`, `GT-*`, `W25`, `W26`, `Genoa`).
+  - Purged obsolete legacy phone `samsung-galaxy-s5-neo` (2015 device) from the `phones` catalog table.
+  - Hardened `src/services/catalog/candidate-policy.ts` with `LEGACY_MODEL_OR_FEATURE_PHONE_RE` and `isMainstreamCatalogCandidate` to reject carrier codes and require mainstream priority brands.
+  - Restricted undated Wikidata entities in `src/services/catalog/adapters/wikidata.ts` to explicit smartphone classes (`wd:Q22645`, `wd:Q19723451`).
+  - Enforced `isMainstreamPriorityBrand` filtering in `scripts/catalog-sync-mobileapi.ts`.
+- **Studio Images Pipeline & 100% Backfill**:
+  - Enhanced `src/services/catalog/studio-media-resolver.ts` with automated Wikidata / Wikimedia Commons fallback resolution.
+  - Integrated `catalog-backfill-gsmarena-images.ts` into `.github/workflows/catalog-refresh.yml` and `scripts/catalog-auto.ts`.
+  - Added dedicated scheduled workflow `.github/workflows/catalog-images.yml` running daily at 06:17 UTC.
+  - Downloaded clean local studio renders for all 21 missing devices, achieving 100% (41/41) image coverage across active catalog devices.
+
 ### 2026-04-21 â€” Repository re-rooted
 
 - Moved Phase 0 scaffold from `recsy-v2/` subdirectory to the repo root.
@@ -2508,6 +2527,55 @@ dissenting_quotes)`.
 >
 > **Each entry must answer:** what broke, where, why (root cause), how we
 > fixed it, and — where possible — how we've made it harder to recur.
+
+### Ops — Flagship Scorecard Prioritization, Database Candidate Cleanup & Missing Images Pipeline (2026-09-26)
+
+#### CRITICAL
+
+- **Scorecard generation starvation: newly ingested flagships (Galaxy S26+, Z Fold 7/8, iPhone 16 Plus) lacked scorecards due to unranked candidate selection and 24-hour cron interval.**
+  Operators observed that multiple high-priority flagship phones with rich active chunk corpora remained in an un-scored state (`last_scorecard_at IS NULL`, `current_aspect_count = 0`), preventing them from appearing in recommendations.
+  - **Affected Components.** `src/services/scorecard/scheduler.ts` (`pickScorecardPhones`), `.github/workflows/scorecard-auto.yml`, `.github/workflows/ingest-on-new-phone.yml`.
+  - **In-Depth Root Cause Analysis.**
+    1. In `src/services/scorecard/scheduler.ts`, `pickScorecardPhones` ordered candidates only by `(current_aspect_count < 7) DESC`, `last_scorecard_at ASC`, `next_scorecard_at ASC`. Because all newly added phones had `current_aspect_count = 0` and `NULL` timestamps, the database ordered them arbitrarily (insertion/PK order). When Gemini's 20 RPD daily quota was consumed by 2 phones, the remaining priority phones waited 24 hours without scorecards.
+    2. The automated workflow `.github/workflows/scorecard-auto.yml` ran only once per day (`17 4 * * *`). Even though chunk fingerprint caching avoids LLM calls when chunks are unchanged, the low schedule frequency meant newly ingested flagships could not be scored for up to 24 hours.
+    3. `ingest-on-new-phone.yml` bootstrapped ingestion for new phones but omitted a scorecard generation step.
+  - **Senior Software Architect & Staff Engineer Solution.**
+    1. Rewrote the `ORDER BY` clause in `pickScorecardPhones` to enforce strict multi-tier prioritization:
+       - Incomplete / unscored phones first: `(coalesce(cs.current_aspect_count, 0) < 7) DESC`.
+       - Never-scored over previously scored: `(p.last_scorecard_at IS NULL) DESC`.
+       - Mainstream flagship brand ranking: Apple (1), Samsung (2), Google (3), OnePlus (4), Nothing (5), Xiaomi (6), Motorola (7), etc.
+       - Recency weighting: `coalesce(p.released_at, p.launch_date, '1970-01-01') DESC`.
+       - Active chunk volume: `coalesce(ac.active_chunk_count, 0) DESC`.
+    2. Increased `.github/workflows/scorecard-auto.yml` frequency to every 6 hours (`17 4,10,16,22 * * *`).
+    3. Added immediate scorecard generation to `.github/workflows/ingest-on-new-phone.yml`.
+    4. Computed and upserted complete 7-aspect scorecards for `samsung-galaxy-s26-plus`, `samsung-galaxy-z-fold-7`, `samsung-galaxy-z-fold-8`, and `apple-iphone-16-plus`.
+
+#### HIGH
+
+- **Database candidate pollution by archaic carrier model numbers and non-mainstream brands.**
+  Internal pipeline monitoring displayed numerous non-phone/non-mainstream entries (e.g. `Samsung Corby II`, `A100`, `SGH-X608`, `SCH-N191`, `GT-S3500i`, `W25`, `W26`, `8849 Tank`, `AGM`, `Doogee`, `Blackview`, `Acer`) that cluttered candidate queues and polluted catalog tables.
+  - **Affected Components.** `src/services/catalog/candidate-policy.ts`, `src/services/catalog/adapters/wikidata.ts`, `scripts/catalog-sync-mobileapi.ts`, `scripts/cleanup-corrupt-candidates.ts`.
+  - **In-Depth Root Cause Analysis.**
+    1. In `wikidata.ts`, the undated entity SPARQL fallback matched `wd:Q17517` (generic mobile phone) and `wd:Q19723444` (mobile phone model). When archivists created Wikidata entries for 2000s feature phones with QIDs $\ge 130,000,000$ lacking explicit release dates, `COALESCE(?explicitDate, NOW())` assigned them today's date, causing them to be treated as modern releases.
+    2. In `scripts/catalog-sync-mobileapi.ts`, `selectablePlans` allowed any record where `plan.ok` was true, regardless of whether the brand was mainstream.
+    3. `isLikelyCatalogPhoneTitle` lacked patterns to catch carrier model numbers (`SGH-*`, `SCH-*`, `GT-*`, `SM-*`) and legacy feature phone series (`Corby`, `Genoa`).
+  - **Senior Software Architect & Staff Engineer Solution.**
+    1. Built and executed `scripts/cleanup-corrupt-candidates.ts` (mapped to `pnpm catalog:cleanup`), permanently deleting 77 corrupt candidates and purging the obsolete 2015 phone `samsung-galaxy-s5-neo` from `phones`.
+    2. Added `LEGACY_MODEL_OR_FEATURE_PHONE_RE` to `candidate-policy.ts` to reject carrier codes and archaic models.
+    3. Restricted undated Wikidata entities strictly to smartphone classes (`wd:Q22645`, `wd:Q19723451`).
+    4. Enforced `isMainstreamPriorityBrand` filtering in `catalog-sync-mobileapi.ts` and `discoverRecentWikidataPhones`.
+
+- **Missing local studio images on newly promoted devices and missing pipeline automation.**
+  21 newly promoted phones in the catalog had `image_url = null` and `media_status != 'local_ok'`. Furthermore, the studio image backfill script was not included in automated refresh workflows.
+  - **Affected Components.** `src/services/catalog/studio-media-resolver.ts`, `scripts/catalog-auto.ts`, `.github/workflows/catalog-refresh.yml`, `.github/workflows/catalog-images.yml`.
+  - **In-Depth Root Cause Analysis.**
+    1. `resolveStudioImageCandidate` checked curated mappings, GSMArena pattern generation, and GSMArena brand page crawlers, but did not query Wikidata/Wikimedia Commons when GSMArena lacked an image. As a result, devices like `Samsung Galaxy A56 5G` and `Samsung Galaxy M35 5G` failed image resolution.
+    2. `catalog-backfill-gsmarena-images.ts` was not wired into `scripts/catalog-auto.ts` or `.github/workflows/catalog-refresh.yml`.
+  - **Senior Software Architect & Staff Engineer Solution.**
+    1. Added automated Wikidata / Wikimedia Commons fallback to `resolveStudioImageCandidate`, achieving 100% resolution (21/21) across all missing phones.
+    2. Wired `catalog-backfill-gsmarena-images.ts` into `scripts/catalog-auto.ts` and `.github/workflows/catalog-refresh.yml`.
+    3. Created dedicated daily workflow `.github/workflows/catalog-images.yml`.
+    4. Downloaded local studio renders for all 21 phones, achieving 100% image coverage (41/41 phones with `imageUrl` in `/phones/` and `mediaStatus = 'local_ok'`).
 
 ### Ops — Ingestion Pipeline Multi-Source Fallback, Wikidata Priority Discovery, Samsung Devices Promotion & Scorecard Generation (2026-09-24)
 

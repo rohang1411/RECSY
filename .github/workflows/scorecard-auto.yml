@@ -4,8 +4,10 @@ name: scorecard (auto)
 
 on:
   schedule:
-    # 04:17 UTC daily — staggered 2 hours after ingest-tiered (02:17 UTC) to prevent Gemini quota contention
-    - cron: '17 4 * * *'
+    # Runs every 6 hours (04:17, 10:17, 16:17, 22:17 UTC). When all chunks are unchanged,
+    # chunk fingerprint checking skips phones instantly with 0 LLM calls.
+    # When high-priority phones are pending scorecards, they are picked up promptly.
+    - cron: '17 4,10,16,22 * * *'
   workflow_dispatch:
     inputs:
       limit:
