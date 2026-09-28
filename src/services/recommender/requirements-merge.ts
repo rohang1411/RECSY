@@ -32,10 +32,38 @@ const RESET_PATTERNS: readonly RegExp[] = [
   /\bstart (?:over|fresh|again)\b/i,
   /\bforget (?:that|those|these|everything|my previous|the previous)\b/i,
   /\bnew (?:search|query|recommendation|recommendations)\b/i,
+  /\b(?:reset|clear)\s+(?:preferences|filters|recommendations|chat|conversation)?\b/i,
 ];
 
+const STANDALONE_OPENERS: readonly RegExp[] = [
+  /\b(?:suggest|recommend|find|give me|show me)\s+(?:me\s+)?(?:a|an|some|the best)\s+(?:new\s+)?(?:android|iphone|ios\s+)?phone/i,
+  /\blooking for\s+(?:a|an)\s+(?:new\s+)?(?:android|iphone|ios\s+)?phone/i,
+  /\bi want\s+(?:a|an)\s+(?:new\s+)?(?:android|iphone|ios\s+)?phone/i,
+  /\bi need\s+(?:a|an)\s+(?:new\s+)?(?:android|iphone|ios\s+)?phone/i,
+  /\bwhat\s+(?:is|are|'s)\s+(?:the\s+)?best\s+(?:android|iphone|ios\s+)?phone/i,
+  /^\s*(?:a\s+)?phone\s+(?:under|below|around|\$|with|for)\b/i,
+];
+
+const FOLLOW_UP_CONNECTIVES: readonly RegExp[] = [
+  /\b(?:what about|how about|instead|actually|wait|also|too|as well)\b/i,
+  /\b(?:between (?:them|those|these)|out of (?:them|those|these)|of (?:them|those|these))\b/i,
+  /\b(?:neither|none of|either of|both of)\b/i,
+];
+
+export function isFreshIntakeQuery(message: string): boolean {
+  if (RESET_PATTERNS.some((pattern) => pattern.test(message))) return true;
+
+  const hasOpener = STANDALONE_OPENERS.some((p) => p.test(message));
+  if (!hasOpener) return false;
+
+  const hasFollowUp = FOLLOW_UP_CONNECTIVES.some((p) => p.test(message));
+  if (hasFollowUp) return false;
+
+  return true;
+}
+
 const PLATFORM_ANY_RE =
-  /\b(?:no preference|any|either|both|don't care|do not care)\b.{0,40}\b(?:android|iphone|ios)\b|\b(?:android|iphone|ios)\b.{0,40}\b(?:either|both|no preference|don't care|do not care)\b/i;
+  /\b(?:no preference|any|either|both|don't care|do not care)\b.{0,40}\b(?:android|iphone|ios)\b|\b(?:android|iphone|ios)\b.{0,40}\b(?:either|both|no preference|don't care|do not care)\b|\b(?:all phones|any phone|any platform|any os|either os|either platform|both android and (?:iphone|ios)|all brands)\b/i;
 const ANDROID_RE = /\bandroid\b/i;
 const IOS_RE = /\b(?:iphone|ios)\b/i;
 const NOT_ANDROID_RE =
@@ -191,7 +219,7 @@ function extractBudget(message: string): UserRequirements['budget_usd'] | null {
 }
 
 function shouldResetRequirements(message: string): boolean {
-  return RESET_PATTERNS.some((pattern) => pattern.test(message));
+  return isFreshIntakeQuery(message);
 }
 
 function extractPlatform(message: string): PlatformFact | null {
@@ -381,7 +409,7 @@ function hasActionableFacts(requirements: UserRequirements): boolean {
 }
 
 export function shouldResetRequirementState(message: string): boolean {
-  return shouldResetRequirements(message);
+  return isFreshIntakeQuery(message);
 }
 
 export function mergeUserRequirements(input: {
@@ -389,8 +417,9 @@ export function mergeUserRequirements(input: {
   readonly extracted: UserRequirements;
   readonly userMessage: string;
 }): UserRequirements {
+  const isReset = shouldResetRequirementState(input.userMessage);
   const facts = extractMessageFacts(input.userMessage);
-  const previous = facts.reset ? null : input.previous;
+  const previous = isReset || facts.reset ? null : input.previous;
 
   const extractedPlatform = detectPlatformPreferenceFromRequirements(input.extracted);
   const previousPlatform = previous ? detectPlatformPreferenceFromRequirements(previous) : null;

@@ -2,7 +2,7 @@
 
 ## Build-ready implementation and art-direction specification
 
-Version: 1.0 · Prepared: 27 September 2026
+Version: 1.1 · Prepared: 27 September 2026 · Handoff hardening: 28 September 2026
 
 Status: planning deliverable; implementation is not performed or approved by this document alone.
 
@@ -94,6 +94,8 @@ All paths in this table are relative to the RECSY application root, not the port
 These are snapshot observations, not immutable product promises. Export resolved values into the fixture manifest and display those values dynamically.
 
 - Recommendation top picks: 3; brand cap: 2; initial budget relaxation factor: 1.2; liked-brand additive bonus: 0.35; maximum spec-semantic bump: 0.45.
+- Handoff recheck, 28 September: the brand cap is a first-pass preference, not an inviolable result constraint. `pickDiverseTop` makes a second pass over unselected candidates to fill remaining slots. Show that refill explicitly when it occurs; do not promise at most two phones of one brand under all conditions.
+- The rechecked `scoreEntry` also applies launch-age bonuses/penalties. Capture `now` in the scenario manifest, export the resolved age constants and include age adjustment in every score receipt where applicable. Never let a browser's current date silently change a recorded ranking. Null launch date means the source skips this adjustment, not that the device is newly released.
 - `weightedAspectScore` uses resolved normalized aspect weights and a neutral missing-aspect value. `scoreEntry` multiplies the weighted score by `(0.72 + 0.28 * mustHaveRatio)` before bonuses. Do not substitute an invented formula.
 - Current ranker has successive fallback paths: strict filtering, budget widening when applicable, foldable preference relaxation when applicable, then active candidates still respecting deal breakers. Clearly mark returned picks from relaxed paths. They must not appear to satisfy the original request unconditionally.
 - Local-currency pricing logic in the dirty `match.ts` must be reviewed and tested before choosing demo constraints. Missing price is not free and should never be invented. A specific observed concern: when local price is absent, the current local-budget branch compares `msrpUsd` numerically against the local maximum without an exchange conversion in that branch. Do not showcase that as currency-correct behaviour. Use a source-consistent single-currency main scenario, record the concern, and require a separately authorized application correction before demonstrating that mixed-currency path as correct.
@@ -865,6 +867,8 @@ Do not replace unchecked items with a blanket “done.” Report achieved gates,
 
 This plan specifies implementation and acceptance; it does not assert that assets have been generated, source parity tests have been executed, live data has been exported, hardware performance has been measured, or the final design has been accepted.
 
+Revision 1.1 selectively rechecked ranking, aspect names, source-coverage implementation and the scorecard schedule on 28 September 2026. This is not a fresh audit of every source file in section 1. The earlier dirty-checkout observation is historical; regenerate the complete source manifest at execution time. Appendices D–H below tighten the build instructions without authorizing production changes.
+
 ## Appendix A. Concrete shot implementation example
 
 Implement this recommendation local-tour shot sheet first. The times are an authored initial cut; adjust reading holds after comprehension review. The narrative does not require fake elapsed backend times. Use the selected scenario's real count, names and receipts in all captions.
@@ -944,3 +948,203 @@ This is a review of the specification by one planning agent through different le
 The plan covers scope, source truth, design tokens, art review, entity schemas, fixtures, asset creation, each scene, runtime architecture, camera/input, tours, accessibility, performance, failure/security, implementation order, tests, risks, integration boundaries and requirement traceability. It deliberately leaves three items for execution-time evidence rather than guessing: final asset rights/availability, visual acceptance of actual renders, and measured performance on named devices.
 
 The implementing agent must add an execution journal containing milestone, changed files, commands run, screenshot/trace paths, passed tests, failed tests, user decisions and next action. Each milestone closes with a concrete artifact, not a progress percentage. If a source change invalidates a fixture, reopen the affected technical gate and list the affected scenes before proceeding.
+
+## Appendix D. Concrete production recipes and asset acceptance
+
+### D.1 Asset selection decision tree
+
+For each object, answer in this order: what entity does it represent; what operation changes it; what needs to be recognisable at the final camera distance; what must remain selectable? If no factual or explanatory role exists, omit the object. Decorative complexity is not a substitute for identity.
+
+1. **Phones:** use three authored hero variants and a shared candidate family. Choose clearly different width/thickness ratios, camera layouts and finishes when supported by the depicted model; otherwise use visibly fictional devices with a persistent representation disclosure. Do not use eight recolours of one anonymous slab as final art.
+2. **Documents:** generate the surface from permitted fixture text and metadata. The mesh supplies curvature, thickness and light; HTML supplies readable text. The source title, publisher/type and selected passage must agree across both.
+3. **Chunks:** derive each shape's source-line anchors from the same measured text layout used to texture its source. Preserve sentence IDs. Do not split a document into equal rectangles unrelated to its actual chunk boundaries.
+4. **Stored records:** use shallow record spines, not cabinets. The selected spine opens a readable schema-backed record; aggregate records are instanced, with labelled counts that distinguish displayed subset from total.
+5. **Score contributions:** use a shared unit extrusion with width proportional to the actual contribution. Zero is zero width with an accessible textual value; missing is a separate state, not zero.
+6. **Search results:** each mesh is an actual passage reference. A shared chunk in two lists has two temporary view instances referring to one entity ID, then one merged view. View identity and domain identity are separate concepts.
+
+### D.2 Reproducible modelling and export workflow
+
+Create `assets-source/procedural/phone-specs.json` even when Blender is used. Record dimensions, corner radius, bevel radius, camera positions/radii, buttons, material palette, anchors and representation status. A seed alone is not sufficient to describe geometry. Never randomly regenerate these dimensions at runtime.
+
+For the first model, build front, rear and side silhouettes before materials. Review them at the actual phone screen size, not only a close-up. Add edge bevels that catch a broad studio highlight; keep the screen slightly inset and distinguish the lens rim from lens glass. Avoid pure black materials that erase form against charcoal. Review a grayscale render before adding colour.
+
+Blender path: model in consistent units; apply transforms; use simple modifiers that export predictably; inspect normal continuity; export selected asset only; preserve semantic empties/anchors; validate the exported file in the web renderer. Store the editable `.blend`, export settings and generation script. Do not ship unused cameras, lights, duplicate hidden bodies or high-resolution source textures.
+
+Procedural path: generate a rounded outline, extrude a bevelled body, add low-segment lens/rim geometry, and merge immutable parts by material. Preserve separate anchors independent of merged meshes. Cache geometries by spec/LOD, share material instances, and use instanced meshes for background candidates where appropriate. Picking maps `instanceId` to a stable domain ID. Test bounds after merging; use a simple hidden picking proxy rather than lens-level raycasts.
+
+Compression is conditional: compare raw transfer plus parse time against compressed transfer plus decoder download/decode on the low-tier target. Keep the faster total path, recording measurements. The plan does not require compression merely to add a tool to the stack.
+
+### D.3 Studio look development
+
+Use the same light rig for art boards and the running exhibit. A large soft key from upper-left establishes bevels; a weak fill preserves dark surfaces; a restrained rear highlight separates silhouettes. Environment reflection should suggest a studio softbox, not a room full of unrelated objects. Keep exposure and tone mapping fixed across chapters unless an explicitly reviewed transition requires a change.
+
+Render four test materials together: charcoal phone body, screen, camera glass and ivory paper. Reject clipped white paper, invisible dark edges, noisy specular glitter, fake chrome and unreadable reflections. Prefer a cheap opaque approximation for tiny camera lenses over expensive transmission. Default shadows are baked/analytic contact cues; detailed moving shadows need a measured benefit.
+
+Generate loading posters from the accepted actual scene, not a concept painting the runtime cannot match. Generate desktop and mobile crops separately. Supply alt text explaining the semantic state. Posters must not contain stale counts or incompatible example phones.
+
+### D.4 Objective and judgement-based asset gates
+
+Automated gates: no non-finite vertices/transforms; finite nonzero bounds; expected anchors present; asset hash and rights entry present; budgets measured; all LOD anchors aligned; missing asset fallback exercised. Reused/shared resources have one owner and are not disposed by individual phone instances.
+
+Visual gates: recognisable phone silhouette at candidate size; visible thickness on a three-quarter turn; smooth bevel highlight; intentional rear-camera design; paper that looks like a source rather than another control panel; no intersections during all sampled shots; strong selected-object hierarchy in grayscale. These require reviewing images, not just checking counts.
+
+If a model fails these gates, repair that model before producing more scenes. If a budget must be exceeded, record the specific benefit, new measured cost and quality-tier fallback; do not silently relax all limits.
+
+## Appendix E. Local-tour storyboards and explanatory contracts
+
+Timings below are initial authored cuts. Generate final shot durations from the content; pause for readable receipts. Every named step has a caption, visible action, inspectable input/output and an equivalent transcript entry. The detailed local tours supplement the shorter global story.
+
+### E.1 Catalog — 48-second baseline
+
+| Interval | Visible action                                                                | Required explanation and inspection                                      |
+| -------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 0–7s     | One source claim approaches a labelled candidate phone                        | Name the discovery input; explain that discovery is not admission        |
+| 7–17s    | Verified model/brand/variant/spec claims settle at distinct anchors           | Field, value, origin and timestamp; unavailable fields stay absent       |
+| 17–26s   | Actual validation results highlight the corresponding fields                  | Plain-language rule and pass/hold reason, not an unexplained green light |
+| 26–36s   | Two identity references align to one canonical record only when trace permits | Duplicate versus distinct variant; retained alias/provenance             |
+| 36–44s   | Accepted record joins the catalog; held example stays outside                 | Promotion outcome and what consumers may now read                        |
+| 44–48s   | Camera settles on accepted/held comparison                                    | Select any field or replay this component                                |
+
+Do not visually assemble batteries or processors into a phone: RECSY creates a data catalog, not hardware. The internal experience is an expansion of identity and field provenance around the same phone.
+
+### E.2 Evidence — 80-second baseline
+
+| Interval | Visible action                                                          | Required explanation and inspection                                         |
+| -------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 0–9s     | Due-work marker selects a phone from a tier                             | Configured job trigger versus that phone's due date and actual replay event |
+| 9–19s    | Named article/transcript/community material enters the work area        | Source type, retrieval method and available publication/capture dates       |
+| 19–30s   | Featured accepted passage stays; rejected content separates with reason | Phone disambiguation and curation output; no invented model thinking        |
+| 30–47s   | Sentence groups lift from the folio into actual chunk shells            | Soft token target, overlap sentence IDs and actual token counts             |
+| 47–58s   | Selected chunk gains a labelled embedding representation                | Numeric representation for search; storage still retains readable text      |
+| 58–70s   | Staged records commit together into the archive layer                   | Source/chunk IDs, association and old/new batch distinction                 |
+| 70–80s   | One stored chunk is selected and its lineage remains lit                | What is stored and what can subsequently be retrieved                       |
+
+Separate unchanged and rollback replays replace the relevant shots, not the entire scene with a generic error modal. Never show the new batch becoming queryable before its commit event.
+
+### E.3 Archive — 42-second baseline
+
+Phone identity (0–8s) → linked source (8–17s) → selected chunk and its metadata/vector field (17–27s) → assessment reference (27–34s) → citation lineage (34–42s). Use a shallow depth peel of related record layers. Nonselected relationships remain quiet; do not draw an unreadable all-to-all network. The visitor can reverse the lineage by selecting the citation.
+
+The technical drawer names real table/field mappings from the snapshot, including association semantics. A vector index and a text index are ways to search records, not two copies of the whole database. A stored assessment is derived knowledge and remains linked to supporting evidence.
+
+### E.4 Aspect assessments — 62-second baseline
+
+| Interval | Visible action                                                 | Required explanation and inspection                                                 |
+| -------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0–8s     | The seven aspect labels frame the same phone                   | Camera, battery, performance, display, build, software, value                       |
+| 8–23s    | Camera opens; actual supporting and dissenting passages unfold | Read at least one passage on each side where available; absence is explicit         |
+| 23–36s   | Structured assessment appears between evidence groups          | Selected criteria, summary, score and evidence IDs; synthesis is not rating average |
+| 36–46s   | Identifier checks bind cited evidence to stored chunks         | Validation behaviour from scorecard code; not a claim of semantic truth             |
+| 46–55s   | Confidence changes according to captured recency logic         | Score and confidence remain distinct; explain what changed and why                  |
+| 55–62s   | Saved assessment joins phone record; all aspects selectable    | Inspect another aspect or thin-evidence example                                     |
+
+Per-aspect inspector uses the actual versioned definition/extraction schema. Never invent seven identical sub-parameter formulas. Where the model supplies a score rather than a deterministic calculation, show its structured output and evidence, not fabricated internal reasoning or a fake arithmetic derivation. Criteria lacking source-backed values say “not available in this example.”
+
+### E.5 Recommendation — amendments to Appendix A
+
+The score shot must expose every active term in the captured implementation: weighted aspect sum, applicable must-have multiplier, semantic bump, liked-brand bonus and launch-age adjustment. Inactive terms may be collapsed but say zero/not applied; they must not silently disappear from a receipt that claims to explain the total. Capture evaluation date for age calculations.
+
+Brand diversity has two visible passes when necessary: prefer no more than the configured per-brand count, then refill unfilled positions from remaining candidates as the source does. Returning three is not unconditional. Add a tie scenario and a missing-scorecard scenario so visually precise bars are not mistaken for measured certainty.
+
+Animate a slider change as: immediate thumb/value feedback → compute newest input revision → show pending interpretation if necessary → stable-ID movement to new slots → settle updated receipts. Stale computations must not animate after a newer revision. Preserve selected phone even if rejected, with its new reason visible.
+
+### E.6 Retrieval and answer — 92-second baseline
+
+| Interval | Visible action                                               | Required explanation and inspection                                           |
+| -------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| 0–8s     | Phone scope and question are fixed in view                   | This example searches evidence associated with this phone                     |
+| 8–23s    | Two labelled result fans advance actual excerpts             | Meaning similarity versus lexical match; raw scores are different scales      |
+| 23–40s   | A shared chunk reference aligns and becomes one fused record | Show one-based ranks and each reciprocal contribution before the sum          |
+| 40–55s   | MMR picks one passage, then compares a redundant alternative | Relevant versus repetitive; show actual iteration receipt and selected winner |
+| 55–66s   | Coverage step exposes source counts and any change           | Actual algorithm outcome; soft floor may remain unmet                         |
+| 66–77s   | Selected passages form the context beside an answer          | Context includes exact IDs/excerpts; unselected material is not cited as used |
+| 77–87s   | Citation identifiers bind answer markers back to sources     | ID validity is checked; factual correctness is not thereby proved             |
+| 87–92s   | Stable answer/evidence composition                           | Inspect citations, view full lists or run fallback example                    |
+
+A readable calculation card accompanies the 3D merge; the animation alone cannot explain reciprocal rank arithmetic. Do not describe the entire pipeline as a geometric nearest-neighbour cloud. If actual recorded embeddings are unavailable, label authored rank lists and similarities illustrative and do not pretend user text triggers a real search.
+
+Coverage must replay executable behaviour, not just comments. The currently inspected module uses a calculated ceiling for its default per-source cap, and its deferred candidates are those actually collected by its loop. Do not manufacture an ideal source swap from rows the function never examined. Record unexpected output as a source limitation; backend corrections require separate scope.
+
+## Appendix F. Transition, camera and runtime implementation details
+
+### F.1 Explicit transition state machine
+
+Use `stable → preparing → entering/exiting → settling → stable`, with failure returning to the last stable scene. Only one transition generation is current. Every async asset result carries that generation; stale results may populate a safe shared cache but cannot mount a scene or change the camera. Store the prior scene/camera/selection before preparing. Loading does not advance tour time.
+
+During preparing, retain the current scene and its readable labels. At travel start, remove unrelated exterior labels and hit proxies. At incoming-label activation, exterior labels must already be absent. On successful settlement dispose/release the outgoing scene's owned resources. On cancellation keep a coherent sampled pose; never partially commit two navigation stacks.
+
+Semantic entry targets a registered component, not every decorative phone mesh. Maintain `entityId → componentId → entryAnchor` explicitly. Clicking an ordinary candidate selects it; entering recommendation internals is a different intent. Help text and keyboard actions must reflect this distinction.
+
+### F.2 Framing and pointer preservation
+
+Fit the relevant bounds, not all hidden/rejected/offscreen objects. Compute horizontal FOV from vertical FOV and usable aspect ratio; choose the larger distance required to contain width or height plus depth/margins. Account for the inspector's offset safe rectangle using camera view offset or target translation, then verify all projected critical bounds lie inside it. Do not merely reduce canvas height while leaving the camera centred under the inspector.
+
+Cursor dolly: intersect the pointer ray with the chosen focus plane, apply candidate distance, intersect again with that same plane, and translate camera plus focus by the difference between old and new intersection points. Test both the target pose and damped intermediate poses; damping must not undo pointer anchoring. If the ray is near parallel, use a bounded last valid anchor or selected focus and avoid enormous translations.
+
+Pinch: save two-pointer centroid and separation; update dolly by the separation ratio and pan by centroid displacement. Pointer cancellation resets gesture baselines. Switching from two fingers to one must establish a new baseline to avoid jumps. Drag detection uses accumulated travel, not only final displacement.
+
+### F.3 One camera owner and one replay clock
+
+Priority order: explicit accessibility/reduced-motion framing → current transition → engaged user intent → active tour shot → permitted idle motion. Do not run these writers independently. User takeover pauses the tour and cancels idle motion before applying movement. Pause freezes presentation tracks as well as business events. Resume reframes from the actual current pose, then continues the saved shot; no snap back to an invisible stored camera.
+
+Use arc-length sampling for cruise paths if a curved path otherwise changes speed noticeably. Interpolate rotations with quaternions and keep roll zero. Shallow travel arcs finish before reading holds. There is no continuous orbit during a selected passage, paused state, open inspector or reduced-motion setting.
+
+For replay performance, apply newly crossed events incrementally during normal forward playback; rebuild from checkpoints for seeking, reverse jumps and changed scenario revisions. Keep the full pure reconstruction as a test oracle. Do not reduce the entire event history, rerank the corpus or allocate all view models every render frame.
+
+### F.4 Label layout contract
+
+Project anchors only for visible registered entities; hide behind-camera results before layout. Candidate positions: preferred offset, above, below, then fixed selected inspector fallback. Sort selected/active labels first; reserve header/dock/inspector rectangles and accepted label rectangles. Use consistent stable tie ordering to avoid jitter. Optional coarse depth/raycast occlusion runs at a bounded frequency, not one full-scene raycast per label per frame.
+
+If the visible subset is too dense, regroup the scene or reduce foreground count while preserving an accessible full list. Never silently lose rejected phones or sources. Labels can be DOM buttons with the same selection action as their mesh; captions and numeric calculations stay screen-aligned.
+
+## Appendix G. Data completeness and build tickets
+
+### G.1 Required record fields beyond the base schema
+
+| Record            | Required explanatory fields                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog candidate | Discovery source; identity claims; validation outcomes; promotion/hold outcome; field provenance                                      |
+| Ingestion attempt | Phone/source; schedule trigger versus start; curation result; content identity; status; failure/retry category; old/new batch IDs     |
+| Chunk             | Source/phone IDs; exact excerpt; sentence IDs; token count and tokenizer identity; overlap IDs; source anchor; embedding status       |
+| Aspect assessment | Aspect/version; evidence IDs; support/dissent; structured model output; score; raw/adjusted confidence; fallback state                |
+| Filter receipt    | Predicate ID; actual input; requested condition; pass/fail; relaxation pass; human-readable reason                                    |
+| Score receipt     | Resolved weights; per-aspect values/contributions; missing-value treatment; multiplier; each adjustment; final total; evaluation date |
+| Search result     | Chunk/source ID; search method; raw score; rank; excerpt; matching text where justified                                               |
+| Fusion receipt    | Membership in each list; one-based ranks; constant; contributions; total; stable tie order                                            |
+| MMR iteration     | Selected IDs before step; each candidate's relevance/similarity/penalty/value; winner; tie rule                                       |
+| Coverage receipt  | Input IDs; available sources; resolved cap/floor; selected/deferred IDs; actual replacements; relaxed flag                            |
+| Answer/citation   | Answer text; exact context IDs; cited IDs; membership result; retry number; final state; truth class                                  |
+
+Validation rejects dangling IDs, invalid numeric values, impossible event order, chunk visibility before commit and a citation referring to an absent context item. It also verifies counts and text against receipts, not only JSON shape. Fixture manifest must distinguish authored model outputs from outputs actually captured from a model run.
+
+### G.2 Small implementation tickets with stop conditions
+
+| Ticket | Concrete output                                                 | Stop/rework if                                                      |
+| ------ | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| T01    | Source/rights manifests and preserved-work inventory            | Source provenance or permitted scope is ambiguous                   |
+| T02    | Hero phone/folio plus desktop/mobile art boards                 | Forms still resemble anonymous slabs or text rectangles             |
+| T03    | Runtime schemas and one complete event scenario                 | UI requires facts absent from the schema                            |
+| T04    | Pure ranking/retrieval adapters and parity tests                | Any selected receipt disagrees with source output                   |
+| T05    | Single-clock recommendation shot playback                       | Seeking produces different state or labels than continuous playback |
+| T06    | Camera/input/semantic-entry system                              | Camera has multiple writers, wrong cursor zoom or early exit        |
+| T07    | Full recommendation slice including mobile/empty/relaxed states | Rejected objects disappear or score explanation is incomplete       |
+| T08    | Catalog and evidence scenes with actual lineage                 | Animation implies data creation unsupported by events               |
+| T09    | Archive and seven aspect internals                              | Any aspect is a renamed duplicate without its own data              |
+| T10    | Retrieval, coverage and citation scenes                         | RRF/MMR are labels rather than visible operations on excerpts       |
+| T11    | Global/local tours, transcript and reduced motion               | User must manually advance an automatic tour                        |
+| T12    | Loading/failure/lifecycle/quality tiers                         | Resource growth, frozen controls or blank failure scene             |
+| T13    | Built-preview tests, art/comprehension reviews and export       | Any release gate is unverified or claimed without evidence          |
+
+The milestone ordering in section 13 remains controlling; tickets may split a milestone but cannot bypass its review. Existing prototype tests and screenshots are useful evidence only for the version and behaviour they actually cover.
+
+## Appendix H. Review rubric and final execution safeguards
+
+Score each dimension 0–3: absent, partial, meets the concrete contract, or demonstrably exceeds it without harming another dimension. Review visual composition, model craft, semantic accuracy, causal motion, navigation, novice comprehension, mobile readability, accessibility, runtime stability and performance. This scorecard helps find weak dimensions; an average cannot compensate for a failed factual, navigation or accessibility requirement.
+
+For the designer/artist pass, inspect paused stills at each shot boundary and videos at normal speed: is the subject obvious, do forms feel intentional, is there empty breathing space, does every movement communicate a change? For the engineer pass, seek every boundary, interrupt loading, resize while moving and repeat entry/exit. For the novice pass, ask the visitor to explain the system using what they saw before offering prompts or corrective explanations. Record misunderstandings and change the scene, not only its tooltip.
+
+Performance evidence records browser/device, display refresh rate, viewport/DPR, quality tier, fixture, warm/cold state and trace duration. Separate loading cost from sustained playback. Report p95/p99 and dropped/long frames rather than an ornamental FPS badge. Test a demanding transition and the densest readable scene; a still overview is not sufficient. Desktop emulation is not real mobile GPU evidence.
+
+Keep a requirement ledger with `requirement → source/design contract → code → scenario → test/screenshot → status`. Status values: not started, implemented-unverified, verified, needs human review, blocked. No empty file, placeholder scene, theoretical budget or passing build can be labelled a finished immersive experience.
+
+At handoff, provide the current ledger, unresolved issues, exact preview command, reproducible build, asset sources/rights, deterministic fixtures, recordings and a checksum-verified archive of the ignored sandbox. Report production isolation separately from visual acceptance. This document defines a comprehensive execution contract; it cannot guarantee artistic quality or universal frame rate before the resulting work is reviewed and measured.
