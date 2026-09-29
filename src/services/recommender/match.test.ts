@@ -229,10 +229,10 @@ describe('match helpers', () => {
       summary: '',
     };
     const ranked: ScoredCandidate[] = [
-      { ...base, slug: 'a', brand: 'A', score: 10 },
-      { ...base, slug: 'b', brand: 'A', score: 9 },
-      { ...base, slug: 'c', brand: 'A', score: 8 },
-      { ...base, slug: 'd', brand: 'B', score: 7 },
+      { ...base, slug: 'a', brand: 'A', model: 'Alpha', score: 10 },
+      { ...base, slug: 'b', brand: 'A', model: 'Beta', score: 9 },
+      { ...base, slug: 'c', brand: 'A', model: 'Gamma', score: 8 },
+      { ...base, slug: 'd', brand: 'B', model: 'Delta', score: 7 },
     ];
     const picked = pickDiverseTop(ranked, 3, 2);
     expect(picked.map((p) => p.slug)).toEqual(['a', 'b', 'd']);
@@ -309,5 +309,84 @@ describe('match helpers', () => {
     expect(result.picks[0]?.slug).toBe('fresh');
     expect(result.picks[1]?.slug).toBe('older');
     expect(result.picks[0]?.score).toBeGreaterThan(result.picks[1]?.score ?? 0);
+  });
+
+  it('pickDiverseTop prevents recommending older generation of the same phone lineage', () => {
+    const s26Ultra: ScoredCandidate = {
+      phoneId: '1',
+      slug: 'samsung-galaxy-s26-ultra',
+      brand: 'Samsung',
+      model: 'Galaxy S26 Ultra',
+      tagline: null,
+      msrpUsd: '1299.00',
+      imageUrl: null,
+      score: 9.3,
+      summary: 'Top Samsung',
+    };
+    const s25Ultra: ScoredCandidate = {
+      phoneId: '2',
+      slug: 'samsung-galaxy-s25-ultra',
+      brand: 'Samsung',
+      model: 'Galaxy S25 Ultra',
+      tagline: null,
+      msrpUsd: '1299.00',
+      imageUrl: null,
+      score: 9.25,
+      summary: 'Older Samsung',
+    };
+    const iphone18ProMax: ScoredCandidate = {
+      phoneId: '3',
+      slug: 'apple-iphone-18-pro-max',
+      brand: 'Apple',
+      model: 'iPhone 18 Pro Max',
+      tagline: null,
+      msrpUsd: '1199.00',
+      imageUrl: null,
+      score: 9.4,
+      summary: 'Top Apple',
+    };
+    const pixel10Pro: ScoredCandidate = {
+      phoneId: '4',
+      slug: 'google-pixel-10-pro',
+      brand: 'Google',
+      model: 'Pixel 10 Pro',
+      tagline: null,
+      msrpUsd: '999.00',
+      imageUrl: null,
+      score: 9.1,
+      summary: 'Top Google',
+    };
+
+    const picks = pickDiverseTop([iphone18ProMax, s26Ultra, s25Ultra, pixel10Pro], 3, 2);
+    expect(picks.map((p) => p.model)).toEqual([
+      'iPhone 18 Pro Max',
+      'Galaxy S26 Ultra',
+      'Pixel 10 Pro',
+    ]);
+    expect(picks.some((p) => p.model === 'Galaxy S25 Ultra')).toBe(false);
+  });
+
+  it('resolveAspectWeights zeroes default value weight on flagship budgets when unrequested', () => {
+    const defaultWeights = new Map<AspectName, number>([
+      ['camera', 0.18],
+      ['battery', 0.16],
+      ['performance', 0.16],
+      ['display', 0.14],
+      ['value', 0.14],
+      ['software', 0.12],
+      ['build', 0.1],
+    ]);
+
+    const flagshipReq = req({
+      budget_usd: { max: 1300 },
+      priorities: [
+        { aspect: 'camera', weight: 0.6 },
+        { aspect: 'battery', weight: 0.4 },
+      ],
+    });
+
+    const weights = resolveAspectWeights(flagshipReq, defaultWeights);
+    expect(weights.get('value')).toBe(0);
+    expect(weights.get('camera') ?? 0).toBeGreaterThan(0.3);
   });
 });

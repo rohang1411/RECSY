@@ -505,27 +505,60 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
           ) : null}
 
           {displayPicks && displayPicks.length > 0 ? (
-            <div className="bg-outline-variant grid gap-px lg:grid-cols-12" aria-busy={busy}>
-              {topPick ? (
-                <RecommendationCard
-                  pick={topPick}
-                  index={0}
-                  featured
-                  className="lg:col-span-8"
-                  activeRegion={activeRegion}
-                />
-              ) : null}
-              <div className="bg-outline-variant grid gap-px lg:col-span-4">
-                {runnerUps.map((pick, index) => (
+            displayScoresTied && displayPicks.length >= 2 ? (
+              <div className="space-y-px" aria-busy={busy}>
+                <div className="bg-outline-variant grid gap-px md:grid-cols-2">
                   <RecommendationCard
-                    key={pick.phoneId}
-                    pick={pick}
-                    index={index + 1}
+                    pick={displayPicks[0]!}
+                    index={0}
+                    featured
+                    className="col-span-1"
                     activeRegion={activeRegion}
                   />
-                ))}
+                  <RecommendationCard
+                    pick={displayPicks[1]!}
+                    index={1}
+                    featured
+                    className="col-span-1"
+                    activeRegion={activeRegion}
+                  />
+                </div>
+                {displayPicks.length > 2 ? (
+                  <div className="bg-outline-variant grid gap-px md:grid-cols-2 lg:grid-cols-3">
+                    {displayPicks.slice(2).map((pick, index) => (
+                      <RecommendationCard
+                        key={pick.phoneId}
+                        pick={pick}
+                        index={index + 2}
+                        activeRegion={activeRegion}
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            </div>
+            ) : (
+              <div className="bg-outline-variant grid gap-px lg:grid-cols-12" aria-busy={busy}>
+                {topPick ? (
+                  <RecommendationCard
+                    pick={topPick}
+                    index={0}
+                    featured
+                    className="lg:col-span-8"
+                    activeRegion={activeRegion}
+                  />
+                ) : null}
+                <div className="bg-outline-variant grid gap-px lg:col-span-4">
+                  {runnerUps.map((pick, index) => (
+                    <RecommendationCard
+                      key={pick.phoneId}
+                      pick={pick}
+                      index={index + 1}
+                      activeRegion={activeRegion}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
           ) : (
             <div className="interactive-panel bg-background p-10">
               <p className="heading-scanline text-gradient-steel font-display text-4xl font-extrabold tracking-normal uppercase">

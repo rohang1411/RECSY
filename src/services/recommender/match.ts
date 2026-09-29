@@ -56,7 +56,7 @@ export interface ScoredCandidate {
  * only fires on genuine ties (e.g. every pick defaults to 5.0 because no
  * scorecards are ingested).
  */
-export const SCORE_TIE_EPSILON = 0.05;
+export const SCORE_TIE_EPSILON = 0.02;
 
 /** Aspect score used when a phone has no scored entry for an aspect. */
 const NEUTRAL_ASPECT_SCORE = 5;
@@ -237,10 +237,24 @@ export function resolveAspectWeights(
   requirements: UserRequirements,
   defaultWeights: ReadonlyMap<AspectName, number>,
 ): Map<AspectName, number> {
+  const maxBudget = requirements.budget_usd?.max ?? requirements.budget_local?.max ?? 0;
+  const isFlagshipBudget = maxBudget >= 800;
+  const userRequestedValue =
+    requirements.priorities.some((p) => p.aspect === 'value') ||
+    requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
+
   const raw = new Map<AspectName, number>();
   for (const name of ASPECT_NAMES) {
     const p = requirements.priorities.find((x) => x.aspect === name);
-    raw.set(name, p?.weight ?? defaultWeights.get(name) ?? 1 / ASPECT_NAMES.length);
+    let defaultWeight = defaultWeights.get(name) ?? 1 / ASPECT_NAMES.length;
+
+    // In flagship budgets (>= $800), default unstated value weight to 0
+    // so budget phones with inflated "value" scores don't outscore true flagships
+    if (name === 'value' && isFlagshipBudget && !userRequestedValue && p == null) {
+      defaultWeight = 0;
+    }
+
+    raw.set(name, p?.weight ?? defaultWeight);
   }
   const sum = [...raw.values()].reduce((a, b) => a + b, 0);
   if (sum <= 1e-9) {
@@ -366,30 +380,114 @@ export function specSemanticBonus(
   return t * RECOMMEND_SPEC_SIMANTIC_BUMP;
 }
 
+/**
+ * Normalizes phone model lineage to prevent redundant generation duplicates
+ * (e.g. recommending both Galaxy S26 Ultra and Galaxy S25 Ultra in the same top picks).
+ */
+export function getPhoneLineage(brand: string, model: string): string {
+  const b = brand.toLowerCase().trim();
+  let m = model.toLowerCase().trim();
+
+  // Normalize plus / pro / max / ultra / fe / fold / flip
+  m = m.replace(/\+/g, ' plus ');
+
+  // Brand-specific standardizations
+  if (b === 'samsung') {
+    // e.g. "Galaxy S26 Ultra" -> "galaxy s ultra", "Galaxy S25+" -> "galaxy s plus", "Galaxy S25" -> "galaxy s base"
+    m = m.replace(/\bgalaxy\s+s\d{1,2}\s*(ultra|plus|\+)?\b/i, (_, suffix) => {
+      return `galaxy s ${suffix ? suffix.trim() : 'base'}`;
+    });
+    // e.g. "Galaxy Z Fold 7" -> "galaxy z fold"
+    m = m.replace(/\bgalaxy\s+z\s+fold\s*\d{0,2}\b/i, 'galaxy z fold');
+    m = m.replace(/\bgalaxy\s+z\s+flip\s*\d{0,2}\b/i, 'galaxy z flip');
+    // e.g. "Galaxy A56" -> "galaxy a5x"
+    m = m.replace(/\bgalaxy\s+a(\d)\d\b/i, 'galaxy a$1x');
+  } else if (b === 'apple') {
+    // e.g. "iPhone 18 Pro Max" -> "iphone pro max", "iPhone 18 Pro" -> "iphone pro", "iPhone 18" -> "iphone base"
+    m = m.replace(/\biphone\s*\d{1,2}\s*(pro\s*max|pro|plus|air|mini)?\b/i, (_, suffix) => {
+      return `iphone ${suffix ? suffix.trim() : 'base'}`;
+    });
+    m = m.replace(/\biphone\s*se\b.*/i, 'iphone se');
+  } else if (b === 'google') {
+    // e.g. "Pixel 10 Pro XL" -> "pixel pro xl", "Pixel 9a" -> "pixel a", "Pixel 10" -> "pixel base"
+    m = m.replace(/\bpixel\s*\d{1,2}\s*(pro\s*xl|pro\s*fold|pro|fold|a)?\b/i, (_, suffix) => {
+      return `pixel ${suffix ? suffix.trim() : 'base'}`;
+    });
+  } else if (b === 'oneplus') {
+    // e.g. "OnePlus 13" -> "oneplus flagship", "OnePlus 13R" -> "oneplus r", "OnePlus Open 2" -> "oneplus open"
+    m = m.replace(/\b(?:oneplus\s*)?\d{1,2}(r|t)?\b/i, (_, suffix) => {
+      return suffix ? `oneplus ${suffix.toLowerCase()}` : 'oneplus flagship';
+    });
+    m = m.replace(/\b(?:oneplus\s*)?open\s*\d{0,2}\b/i, 'oneplus open');
+    m = m.replace(/\b(?:oneplus\s*)?nord\s*\w*\b/i, 'oneplus nord');
+  } else if (b === 'xiaomi') {
+    // e.g. "Xiaomi 15 Ultra" -> "xiaomi ultra", "Xiaomi 15 Pro" -> "xiaomi pro", "Xiaomi 15" -> "xiaomi base"
+    m = m.replace(/\b(?:xiaomi\s*)?\d{1,2}\s*(ultra|pro|lite)?\b/i, (_, suffix) => {
+      return `xiaomi ${suffix ? suffix.trim() : 'base'}`;
+    });
+  } else {
+    // Generic fallback: strip generational digits
+    m = m.replace(/\b\d{1,2}\b/g, '');
+  }
+
+  m = m.replace(/\s+/g, ' ').trim();
+  return `${b}:${m}`;
+}
+
 export function pickDiverseTop(
   ranked: readonly ScoredCandidate[],
   limit: number,
   maxPerBrand: number,
+  maxPerLineage: number = 1,
 ): ScoredCandidate[] {
   const out: ScoredCandidate[] = [];
   const brandCounts = new Map<string, number>();
+  const lineageCounts = new Map<string, number>();
   const picked = new Set<string>();
 
+  // Pass 1: enforce both maxPerBrand and maxPerLineage (at most 1 device per phone lineage)
   for (const c of ranked) {
-    const key = c.brand.toLowerCase();
-    const n = brandCounts.get(key) ?? 0;
-    if (n >= maxPerBrand) continue;
-    brandCounts.set(key, n + 1);
+    const brandKey = c.brand.toLowerCase();
+    const lineageKey = getPhoneLineage(c.brand, c.model);
+    const bCount = brandCounts.get(brandKey) ?? 0;
+    const lCount = lineageCounts.get(lineageKey) ?? 0;
+
+    if (bCount >= maxPerBrand || lCount >= maxPerLineage) continue;
+
+    brandCounts.set(brandKey, bCount + 1);
+    lineageCounts.set(lineageKey, lCount + 1);
     out.push(c);
     picked.add(c.slug);
     if (out.length >= limit) return out;
   }
 
-  for (const c of ranked) {
-    if (picked.has(c.slug)) continue;
-    out.push(c);
-    picked.add(c.slug);
-    if (out.length >= limit) break;
+  // Pass 2: if limit not reached, allow different lineages of same brand up to maxPerBrand
+  if (out.length < limit) {
+    for (const c of ranked) {
+      if (picked.has(c.slug)) continue;
+      const brandKey = c.brand.toLowerCase();
+      const lineageKey = getPhoneLineage(c.brand, c.model);
+      const bCount = brandCounts.get(brandKey) ?? 0;
+      const lCount = lineageCounts.get(lineageKey) ?? 0;
+
+      if (lCount >= maxPerLineage) continue;
+
+      brandCounts.set(brandKey, bCount + 1);
+      lineageCounts.set(lineageKey, lCount + 1);
+      out.push(c);
+      picked.add(c.slug);
+      if (out.length >= limit) return out;
+    }
+  }
+
+  // Pass 3: absolute fallback if catalog is too small to fulfill limit
+  if (out.length < limit) {
+    for (const c of ranked) {
+      if (picked.has(c.slug)) continue;
+      out.push(c);
+      picked.add(c.slug);
+      if (out.length >= limit) break;
+    }
   }
 
   return out;
@@ -432,6 +530,24 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
       const penaltyRange = MAX_RECOMMEND_PHONE_AGE_DAYS - PREFERRED_RECOMMEND_PHONE_AGE_DAYS;
       const penalty = Math.min(0.5, (excessDays / penaltyRange) * 0.5);
       score -= penalty;
+    }
+  }
+
+  // Budget segment alignment: when shopping for flagship devices (budget >= $800)
+  // and the user did not ask for a budget/value phone, apply an alignment adjustment
+  // for phones priced under 50% of the flagship budget ceiling so that mid-range/budget
+  // phones don't crowd out flagship devices.
+  const maxBudget = ctx.requirements.budget_usd?.max ?? ctx.requirements.budget_local?.max ?? 0;
+  const userRequestedValue =
+    ctx.requirements.priorities.some((p) => p.aspect === 'value') ||
+    ctx.requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
+
+  if (maxBudget >= 800 && !userRequestedValue) {
+    const price = Number.parseFloat(entry.msrpUsd ?? '0');
+    const threshold = 0.5 * maxBudget;
+    if (price > 0 && price < threshold) {
+      const discountRatio = 1 - price / threshold;
+      score -= 0.35 * discountRatio;
     }
   }
 

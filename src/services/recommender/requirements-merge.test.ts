@@ -90,4 +90,27 @@ describe('mergeUserRequirements', () => {
     expect(merged.priorities[0]?.aspect).toBe('battery');
     expect(merged.must_haves).not.toContain('Android');
   });
+
+  it('treats standalone intake openers as a fresh query without inheriting prior platform constraints', () => {
+    const previous = req({
+      budget_usd: { max: 1200 },
+      priorities: [{ aspect: 'performance', weight: 1 }],
+      must_haves: ['Android'],
+      use_cases: ['gaming'],
+    });
+
+    const userMessage =
+      'Suggest me a phone under $1300 that has great camera and great battery life.';
+    expect(shouldResetRequirementState(userMessage)).toBe(true);
+
+    const merged = mergeUserRequirements({
+      previous,
+      extracted: req(),
+      userMessage,
+    });
+
+    expect(merged.budget_usd?.max).toBe(1300);
+    expect(merged.must_haves).not.toContain('Android');
+    expect(detectPlatformPreferenceFromRequirements(merged)).toBeNull();
+  });
 });
