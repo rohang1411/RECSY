@@ -41,16 +41,29 @@ export async function insertRecommendationSession(
   db: AppDb,
   input: {
     sessionCookie: string;
+    clientId?: string;
     ipHash: string | null;
     userAgent: string | null;
+    title?: string;
   },
 ): Promise<RecommendationSessionRow> {
+  let clientId = input.clientId;
+  if (!clientId) {
+    const { getOrCreateClient } = await import('./session-manager');
+    const { client } = await getOrCreateClient(db, {
+      clientToken: input.sessionCookie,
+      ipHash: input.ipHash,
+      userAgent: input.userAgent,
+    });
+    clientId = client.id;
+  }
+
   const [row] = await db
     .insert(recommendationSessions)
     .values({
+      clientId,
       sessionCookie: input.sessionCookie,
-      ipHash: input.ipHash ?? undefined,
-      userAgent: input.userAgent ?? undefined,
+      title: input.title ?? 'New Recommendation',
     })
     .returning();
   if (!row) throw new Error('Failed to insert recommendation session');
@@ -66,7 +79,28 @@ export async function findSessionByCookie(
     .from(recommendationSessions)
     .where(eq(recommendationSessions.sessionCookie, sessionCookie))
     .limit(1);
-  return row ?? null;
+  if (row) return row;
+
+  const { recommendationClients } = await import('@/services/db/schema');
+  const [client] = await db
+    .select()
+    .from(recommendationClients)
+    .where(eq(recommendationClients.clientToken, sessionCookie))
+    .limit(1);
+  if (!client) return null;
+
+  const [session] = await db
+    .select()
+    .from(recommendationSessions)
+    .where(
+      and(
+        eq(recommendationSessions.clientId, client.id),
+        eq(recommendationSessions.status, 'active'),
+      ),
+    )
+    .orderBy(desc(recommendationSessions.updatedAt))
+    .limit(1);
+  return session ?? null;
 }
 
 // ---------------------------------------------------------------------------

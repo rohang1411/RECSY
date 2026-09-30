@@ -1,29 +1,27 @@
 /**
- * POST /api/recommend — conversational recommender pipeline.
+ * POST /api/recommend — conversational recommender pipeline with isolated multi-session support.
  *
- * Accepts `{ message, sessionId? }`. Creates or loads an anonymous
- * recommendation session, rate-limits by IP hash, then runs the full
- * recommender pipeline: preference extraction → hard/soft filtering →
- * aspect-weighted ranking → pick diversification. Returns structured
- * `{ type: 'picks' | 'clarify' | 'error', picks?, question? }`.
+ * Accepts `{ message, sessionId? }`. Resolves client identity from `recsy_client_id` cookie,
+ * loads or creates the specified session thread, verifies client ownership, and executes
+ * the full recommender pipeline: preference extraction → hard/soft filtering →
+ * aspect-weighted ranking → pick diversification.
  *
- * Session cookie (`recsy_rec_session`) ties multi-turn conversations to
- * prior picks without requiring authentication. Sessions are anonymous;
- * no PII is stored.
- *
- * Used by: `src/app/recommend/RecommendClient.tsx`.
+ * Runs automated semantic titling on turn 0 to produce clean human-readable conversation titles.
  */
 import { randomBytes } from 'node:crypto';
-
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { ZodError, z } from 'zod';
 
-import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
+import {
+  CLIENT_ID_COOKIE,
+  MAX_RECOMMENDER_MESSAGE_BYTES,
+  RECOMMEND_SESSION_COOKIE,
+} from '@/lib/constants';
 import { env } from '@/env';
 import { isAppError, toAppError } from '@/lib/errors';
-import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
+import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getDb } from '@/services/db/client';
 import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
@@ -31,11 +29,14 @@ import { requestLogger } from '@/services/logger';
 import { consumeRecommendRateLimit } from '@/services/rate-limit';
 import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { runRecommendationPipeline } from '@/services/recommender/run-recommendation';
+import { nextTurnIndex } from '@/services/recommender/session';
 import {
-  findSessionByCookie,
-  insertRecommendationSession,
-  nextTurnIndex,
-} from '@/services/recommender/session';
+  createSession,
+  getOrCreateClient,
+  getSessionWithTurns,
+  updateSession,
+} from '@/services/recommender/session-manager';
+import { generateSessionTitle } from '@/services/recommender/titling';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,20 +50,15 @@ const bodySchema = z.object({
       (m) => new TextEncoder().encode(m).length <= MAX_RECOMMENDER_MESSAGE_BYTES,
       'message too long',
     ),
+  sessionId: z.string().uuid().optional(),
 });
 
-function sessionCookieOptions(): {
-  readonly httpOnly: boolean;
-  readonly sameSite: 'lax';
-  readonly path: string;
-  readonly maxAge: number;
-  readonly secure: boolean;
-} {
+function clientCookieOptions() {
   return {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'lax' as const,
     path: '/',
-    maxAge: 60 * 60 * 24 * 14,
+    maxAge: 60 * 60 * 24 * 365,
     secure: env.NODE_ENV === 'production',
   };
 }
@@ -79,22 +75,35 @@ export async function POST(request: NextRequest): Promise<Response> {
     const body = bodySchema.parse(json);
 
     const db = getDb();
-    const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
-    let sessionToken = cookieVal;
-    let session = sessionToken ? await findSessionByCookie(db, sessionToken) : null;
-    let setSessionCookie = false;
+    const cookieVal =
+      request.cookies.get(CLIENT_ID_COOKIE)?.value ||
+      request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ||
+      null;
 
-    if (!session) {
-      sessionToken = randomBytes(24).toString('base64url');
-      session = await insertRecommendationSession(db, {
-        sessionCookie: sessionToken,
-        ipHash: hashSessionIp(ip),
-        userAgent: request.headers.get('user-agent'),
-      });
-      setSessionCookie = true;
-    }
+    const { client, isNew } = await getOrCreateClient(db, {
+      clientToken: cookieVal,
+      ipHash: hashSessionIp(ip),
+      userAgent: request.headers.get('user-agent'),
+    });
 
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
+
+    let session: { id: string; title: string; clientId: string };
+    if (body.sessionId) {
+      const existing = await getSessionWithTurns(db, body.sessionId, client.id);
+      if (!existing) {
+        return NextResponse.json(
+          { code: 'SESSION_NOT_FOUND', message: 'Session not found or access denied' },
+          { status: 404, headers: { 'X-Trace-Id': traceId } },
+        );
+      }
+      session = existing.session;
+    } else {
+      session = await createSession(db, client.id, {
+        regionCode,
+        title: 'New Recommendation',
+      });
+    }
 
     const t0 = performance.now();
     const result = await runRecommendationPipeline({
@@ -132,9 +141,29 @@ export async function POST(request: NextRequest): Promise<Response> {
       });
     }
 
+    let activeTitle = session.title;
+    if (turnIndex === 0 && (session.title === 'New Recommendation' || !session.title)) {
+      try {
+        const generatedTitle = await generateSessionTitle({
+          requirements: result.requirements,
+          userMessage: body.message,
+          llm: getLlm(),
+        });
+        if (generatedTitle && generatedTitle !== session.title) {
+          await updateSession(db, session.id, client.id, { title: generatedTitle });
+          activeTitle = generatedTitle;
+        }
+      } catch {
+        // Semantic titling failure must never fail recommendation response
+      }
+    }
+
     const res = NextResponse.json(
       {
         kind: result.kind,
+        sessionId: session.id,
+        sessionTitle: activeTitle,
+        turnIndex,
         clarifyingQuestion: result.kind === 'clarify' ? result.clarifyingQuestion : undefined,
         picks: result.kind === 'results' ? result.picks : undefined,
         relaxed: result.kind === 'results' ? result.relaxed : undefined,
@@ -146,8 +175,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       { status: 200, headers: { 'X-Trace-Id': traceId } },
     );
 
-    if (setSessionCookie && sessionToken) {
-      res.cookies.set(RECOMMEND_SESSION_COOKIE, sessionToken, sessionCookieOptions());
+    if (isNew) {
+      res.cookies.set(CLIENT_ID_COOKIE, client.clientToken, clientCookieOptions());
+      res.cookies.set(RECOMMEND_SESSION_COOKIE, client.clientToken, clientCookieOptions());
     }
 
     return res;

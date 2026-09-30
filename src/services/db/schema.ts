@@ -56,7 +56,12 @@ export const recommendationIntentEnum = pgEnum('recommendation_intent', [
   'clarify',
 ]);
 
-export const sessionStatusEnum = pgEnum('session_status', ['active', 'closed']);
+export const sessionStatusEnum = pgEnum('session_status', [
+  'active',
+  'closed',
+  'archived',
+  'deleted',
+]);
 
 export const feedbackEventEnum = pgEnum('feedback_event', [
   'click',
@@ -436,19 +441,57 @@ export const scorecardRuns = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Recommender sessions, turns, feedback.
+// Recommender clients, sessions, turns, feedback, shares.
 // ---------------------------------------------------------------------------
 
-export const recommendationSessions = pgTable('recommendation_sessions', {
+/**
+ * Anonymous or authenticated client device record.
+ * Tied to the persistent client cookie `recsy_client_id`.
+ */
+export const recommendationClients = pgTable('recommendation_clients', {
   id: uuid('id').primaryKey().defaultRandom(),
-  sessionCookie: text('session_cookie').notNull().unique(),
-  userAgent: text('user_agent'),
-  /** sha256 of the client IP — we never store raw IPs. */
+  clientToken: text('client_token').notNull().unique(),
   ipHash: text('ip_hash'),
-  status: sessionStatusEnum('status').notNull().default('active'),
+  userAgent: text('user_agent'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Individual recommendation conversation thread.
+ * A client owns multiple isolated recommendation sessions.
+ */
+export const recommendationSessions = pgTable(
+  'recommendation_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => recommendationClients.id, { onDelete: 'cascade' }),
+    title: text('title').notNull().default('New Recommendation'),
+    primaryIntent: text('primary_intent'),
+    isPinned: boolean('is_pinned').notNull().default(false),
+    status: sessionStatusEnum('status').notNull().default('active'),
+    metadata: jsonb('metadata')
+      .$type<{
+        regionCode?: string;
+        currency?: string;
+        topAspects?: string[];
+        lastTurnIndex?: number;
+      }>()
+      .default({}),
+    sessionCookie: text('session_cookie'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_recommendation_sessions_client_status_updated').on(
+      t.clientId,
+      t.status,
+      t.updatedAt,
+    ),
+  ],
+);
 
 export const recommendationTurns = pgTable(
   'recommendation_turns',
@@ -470,8 +513,26 @@ export const recommendationTurns = pgTable(
     latencyMs: integer('latency_ms'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique('recommendation_turns_session_turn_uniq').on(t.sessionId, t.turnIndex)],
+  (t) => [
+    unique('recommendation_turns_session_turn_uniq').on(t.sessionId, t.turnIndex),
+    index('idx_recommendation_turns_session_idx').on(t.sessionId, t.turnIndex),
+  ],
 );
+
+/**
+ * Read-only shareable recommendation snapshots.
+ */
+export const recommendationShares = pgTable('recommendation_shares', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id')
+    .notNull()
+    .references(() => recommendationSessions.id, { onDelete: 'cascade' }),
+  shareToken: text('share_token').notNull().unique(),
+  frozenState: jsonb('frozen_state').notNull(),
+  viewsCount: integer('views_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+});
 
 export const recommendationFeedback = pgTable(
   'recommendation_feedback',
@@ -1190,9 +1251,21 @@ export const catalogQualityIssuesRelations = relations(catalogQualityIssues, ({ 
   phone: one(phones, { fields: [catalogQualityIssues.phoneId], references: [phones.id] }),
 }));
 
-export const recommendationSessionsRelations = relations(recommendationSessions, ({ many }) => ({
-  turns: many(recommendationTurns),
+export const recommendationClientsRelations = relations(recommendationClients, ({ many }) => ({
+  sessions: many(recommendationSessions),
 }));
+
+export const recommendationSessionsRelations = relations(
+  recommendationSessions,
+  ({ one, many }) => ({
+    client: one(recommendationClients, {
+      fields: [recommendationSessions.clientId],
+      references: [recommendationClients.id],
+    }),
+    turns: many(recommendationTurns),
+    shares: many(recommendationShares),
+  }),
+);
 
 export const recommendationTurnsRelations = relations(recommendationTurns, ({ one, many }) => ({
   session: one(recommendationSessions, {
@@ -1200,6 +1273,13 @@ export const recommendationTurnsRelations = relations(recommendationTurns, ({ on
     references: [recommendationSessions.id],
   }),
   feedback: many(recommendationFeedback),
+}));
+
+export const recommendationSharesRelations = relations(recommendationShares, ({ one }) => ({
+  session: one(recommendationSessions, {
+    fields: [recommendationShares.sessionId],
+    references: [recommendationSessions.id],
+  }),
 }));
 
 // ---------------------------------------------------------------------------

@@ -30,8 +30,11 @@ export const RECOMMEND_RATE_LIMIT_WINDOW_MS = 60_000;
 /** Max `/api/recommend` requests per window per hashed client IP. */
 export const RECOMMEND_RATE_LIMIT_MAX = 24;
 
-/** HttpOnly cookie storing `recommendation_sessions.session_cookie`. */
+/** HttpOnly cookie storing `recommendation_sessions.session_cookie` (legacy). */
 export const RECOMMEND_SESSION_COOKIE = 'recsy_rec_session';
+
+/** HttpOnly cookie identifying the client device (`recommendation_clients.client_token`). */
+export const CLIENT_ID_COOKIE = 'recsy_client_id';
 
 /** Minimum number of distinct sources that must appear in the final citation set. */
 export const MIN_DISTINCT_SOURCES_IN_CONTEXT = 3;
