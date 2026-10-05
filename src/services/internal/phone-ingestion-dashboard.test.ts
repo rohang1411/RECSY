@@ -11,7 +11,7 @@ describe('classifyPhoneIngestion', () => {
     status: 'active',
     launch_date: '2024-09-20',
     last_ingest_at: '2026-09-01T12:00:00Z',
-    next_ingest_at: '2026-10-01T12:00:00Z',
+    next_ingest_at: '2099-10-01T12:00:00Z',
     last_ingest_status: 'success',
     has_spec_embedding: true,
     source_count: 5,

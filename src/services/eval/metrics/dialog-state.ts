@@ -47,7 +47,13 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     // Budget check
     if (es.budgetMaxUsd !== undefined) {
       slotChecksTotal++;
-      if (req.budget_usd?.max === es.budgetMaxUsd) {
+      if (es.budgetMaxUsd === null) {
+        if (req.budget_usd?.max == null) {
+          slotChecksPassed++;
+        } else {
+          violations.push(`JGA Budget mismatch: expected no budget, got $${req.budget_usd?.max}`);
+        }
+      } else if (req.budget_usd?.max === es.budgetMaxUsd) {
         slotChecksPassed++;
       } else {
         violations.push(
@@ -61,7 +67,10 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
       slotChecksTotal++;
       const currentDisliked = (req.brand_preference?.disliked ?? []).map((b) => b.toLowerCase());
       const allFound = es.dislikedBrands.every((b) => currentDisliked.includes(b.toLowerCase()));
-      if (allFound) {
+      const noExtras = currentDisliked.every((b) =>
+        es.dislikedBrands!.some((ed) => ed.toLowerCase() === b),
+      );
+      if (allFound && noExtras) {
         slotChecksPassed++;
       } else {
         violations.push(
@@ -75,7 +84,10 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
       slotChecksTotal++;
       const currentLiked = (req.brand_preference?.liked ?? []).map((b) => b.toLowerCase());
       const allFound = es.likedBrands.every((b) => currentLiked.includes(b.toLowerCase()));
-      if (allFound) {
+      const noExtras = currentLiked.every((b) =>
+        es.likedBrands!.some((el) => el.toLowerCase() === b),
+      );
+      if (allFound && noExtras) {
         slotChecksPassed++;
       } else {
         violations.push(
@@ -137,7 +149,11 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     }
   }
 
-  const jgaScore = slotChecksTotal > 0 ? slotChecksPassed / slotChecksTotal : 1.0;
+  // Exact-Match JGA: strictly 1.0 iff ALL slot checks pass, else 0.0.
+  // Slot Accuracy: partial credit across individual slots.
+  const exactJga = slotChecksTotal > 0 ? (slotChecksPassed === slotChecksTotal ? 1.0 : 0.0) : 1.0;
+  const slotAccuracy = slotChecksTotal > 0 ? slotChecksPassed / slotChecksTotal : 1.0;
+  const jgaScore = exactJga;
 
   // 3. Hard constraints on returned picks
   let hardConstraintSatisfied = true;
@@ -189,10 +205,13 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
   }
 
   // 5. Constraint Retention Rate (Anti-Forgetting)
+  const isRetentionTurn = Boolean(
+    turn.mustPreservePriorSlots && turn.mustPreservePriorSlots.length > 0,
+  );
   let retentionChecksTotal = 0;
   let retentionChecksPassed = 0;
 
-  if (turn.mustPreservePriorSlots && turn.mustPreservePriorSlots.length > 0) {
+  if (isRetentionTurn && turn.mustPreservePriorSlots) {
     for (const slot of turn.mustPreservePriorSlots) {
       retentionChecksTotal++;
       if (slot === 'budget') {
@@ -250,6 +269,50 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
 
   const retentionScore =
     retentionChecksTotal > 0 ? retentionChecksPassed / retentionChecksTotal : 1.0;
+
+  // 5b. Reset Purge Cleanliness
+  let resetCleanliness: number | undefined;
+  if (turn.isReset) {
+    let purgeLeaks = 0;
+    const lastRequirements = priorTurnResults[priorTurnResults.length - 1]?.activeRequirements;
+    if (lastRequirements) {
+      if (
+        lastRequirements.budget_usd?.max != null &&
+        (turn.expectedSlots?.budgetMaxUsd === undefined ||
+          turn.expectedSlots?.budgetMaxUsd === null)
+      ) {
+        if (req.budget_usd?.max != null) {
+          purgeLeaks++;
+          violations.push(
+            `Reset Purge Leak: prior budget $${lastRequirements.budget_usd.max} persisted across reset`,
+          );
+        }
+      }
+      if (
+        (lastRequirements.brand_preference?.disliked?.length ?? 0) > 0 &&
+        (!turn.expectedSlots?.dislikedBrands || turn.expectedSlots.dislikedBrands.length === 0)
+      ) {
+        if ((req.brand_preference?.disliked?.length ?? 0) > 0) {
+          purgeLeaks++;
+          violations.push(
+            `Reset Purge Leak: prior disliked brands [${lastRequirements.brand_preference?.disliked?.join(', ')}] persisted across reset`,
+          );
+        }
+      }
+      if (
+        (lastRequirements.must_haves?.length ?? 0) > 0 &&
+        (!turn.expectedSlots?.mustHaves || turn.expectedSlots.mustHaves.length === 0)
+      ) {
+        if ((req.must_haves?.length ?? 0) > 0) {
+          purgeLeaks++;
+          violations.push(
+            `Reset Purge Leak: prior must-haves [${lastRequirements.must_haves?.join(', ')}] persisted across reset`,
+          );
+        }
+      }
+    }
+    resetCleanliness = purgeLeaks === 0 ? 1.0 : 0.0;
+  }
 
   // 6. Refine Intent Accuracy
   let refineIntentMatched = true;
@@ -310,11 +373,16 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     kindMatched,
     latencyMs,
     jgaScore,
+    slotAccuracy,
+    isRetentionTurn,
+    retentionChecksTotal,
+    retentionChecksPassed,
     constraintViolations: violations,
     hardConstraintSatisfied,
     mutationResponsiveness,
     retentionScore,
     refineIntentMatched,
+    resetCleanliness,
     picks: picks.map((p) => ({
       phoneId: p.phoneId,
       slug: p.slug,

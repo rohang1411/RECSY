@@ -15,6 +15,20 @@ export function evaluatePickConstraints(
   const req = fixture.requirements;
   const maxBudget = req.budget_usd?.max;
 
+  // Zero recommendations returned is a failure on answerable recommendation requests
+  if (picks.length === 0) {
+    violations.push(
+      '[Empty Recommendation Failure] No phones were returned for persona requirements',
+    );
+    return {
+      budgetSatisfied: false,
+      dealbreakerAvoided: false,
+      platformSatisfied: false,
+      allSatisfied: false,
+      violations,
+    };
+  }
+
   let budgetOk = true;
   let dealbreakerOk = true;
   let platformOk = true;
@@ -23,8 +37,13 @@ export function evaluatePickConstraints(
     const price = pick.msrpUsd ? Number.parseFloat(pick.msrpUsd) : null;
 
     // 1. Budget gate
-    if (maxBudget != null && price != null) {
-      if (price > maxBudget) {
+    if (maxBudget != null) {
+      if (price == null) {
+        budgetOk = false;
+        violations.push(
+          `[Budget Verification Failure] ${pick.brand} ${pick.model} has unknown price; cannot guarantee budget <= $${maxBudget}`,
+        );
+      } else if (price > maxBudget) {
         budgetOk = false;
         violations.push(
           `[Budget Violation] ${pick.brand} ${pick.model} ($${price}) exceeds max budget of $${maxBudget}`,

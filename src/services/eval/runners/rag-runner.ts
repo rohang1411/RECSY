@@ -13,6 +13,7 @@ import type { LlmProvider } from '@/services/llm/types';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { runPhoneQna } from '@/services/chat/answer';
 import { evaluateAlceAttribution } from '../metrics/alce';
+import { evaluateFullySupportedAnswer } from '../metrics/supported-answers';
 import { computeStatisticalSummary } from '../metrics/statistics';
 import type {
   AttributedQaFixture,
@@ -36,13 +37,18 @@ export interface RagRunnerOutput {
 export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<RagRunnerOutput> {
   const { db, llm, fixtures, onProgress } = options;
   const startTime = performance.now();
-  const retriever = createHybridRetriever();
+  const retriever = createHybridRetriever({ llm });
 
   const results: BenchmarkResultItem[] = [];
   const citePrecScores: number[] = [];
   const citeRecScores: number[] = [];
+  const fsarScores: number[] = [];
+  const claimSupportPrecScores: number[] = [];
+  const factualRecallScores: number[] = [];
   let totalPhantomCitations = 0;
   let totalAllCitations = 0;
+  let totalTokensIn = 0;
+  let totalTokensOut = 0;
 
   let step = 0;
   const total = fixtures.length;
@@ -69,7 +75,7 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
         inputQuery: fixture.query,
         status: 'warn',
         latencyMs: 0,
-        scores: { citePrec: 0, citeRec: 0, phantomRate: 0 },
+        scores: { citePrec: 0, citeRec: 0, phantomRate: 0, fsar: 0 },
         errorDetails: `Phone with slug "${fixture.phoneSlug}" not found in database`,
         createdAt: new Date(),
       });
@@ -77,24 +83,7 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
     }
 
     try {
-      // Execute hybrid retrieval scoped to phone
-      const retrievalResult = await retriever.search({
-        phoneId: phone.id,
-        query: fixture.query,
-        options: {
-          kPerRetriever: 20,
-          targetResults: 8,
-          minDistinctSources: 1,
-        },
-      });
-
-      // Build chunk map for citation verification
-      const chunkMap = new Map<string, string>();
-      for (const c of retrievalResult.chunks) {
-        chunkMap.set(c.chunkId, c.text);
-      }
-
-      // Generate answer via phone Q&A pipeline
+      // Generate answer via phone Q&A pipeline (which executes retrieval internally)
       const qnaResult = await runPhoneQna({
         phoneId: phone.id,
         query: fixture.query,
@@ -106,17 +95,44 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
 
       const latencyMs = Math.round(performance.now() - t0);
 
-      // Evaluate fine-grained citation attribution
+      if (qnaResult.usage) {
+        totalTokensIn += qnaResult.usage.tokensIn;
+        totalTokensOut += qnaResult.usage.tokensOut;
+      }
+
+      // Build chunk map directly from the actual chunks used during generation
+      const chunkMap = new Map<string, string>();
+      for (const c of qnaResult.retrieval.chunks) {
+        chunkMap.set(c.chunkId, c.text);
+      }
+
+      // Evaluate ALCE attribution
       const alceResult = evaluateAlceAttribution(qnaResult.text, chunkMap);
+
+      // Evaluate Fully Supported Answer Rate (FSAR)
+      const supportedResult = evaluateFullySupportedAnswer({
+        query: fixture.query,
+        answerText: qnaResult.text,
+        retrievedChunks: chunkMap,
+        referenceFacts: fixture.referenceFacts,
+        numericalEntities: fixture.numericalEntities,
+      });
 
       citePrecScores.push(alceResult.citePrec);
       citeRecScores.push(alceResult.citeRec);
+      fsarScores.push(supportedResult.isFullySupported ? 1.0 : 0.0);
+      claimSupportPrecScores.push(supportedResult.claimSupportPrecision);
+      factualRecallScores.push(supportedResult.factualRecall);
+
       totalPhantomCitations += alceResult.phantomRate * alceResult.totalCitations;
       totalAllCitations += alceResult.totalCitations;
 
       const minExpectedPrec = fixture.minExpectedCitePrec ?? 0.85;
-      const isPass = alceResult.citePrec >= minExpectedPrec && alceResult.phantomRate === 0;
-      const isWarn = alceResult.citePrec >= minExpectedPrec - 0.15;
+      const isPass =
+        alceResult.citePrec >= minExpectedPrec &&
+        alceResult.phantomRate === 0 &&
+        supportedResult.isFullySupported;
+      const isWarn = alceResult.citePrec >= minExpectedPrec - 0.15 && alceResult.phantomRate === 0;
 
       results.push({
         id: fixture.id,
@@ -130,11 +146,14 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
           citePrec: alceResult.citePrec,
           citeRec: alceResult.citeRec,
           phantomRate: alceResult.phantomRate,
-          retrievedChunksCount: retrievalResult.chunks.length,
+          fsar: supportedResult.isFullySupported ? 1 : 0,
+          claimSupportPrecision: supportedResult.claimSupportPrecision,
+          factualRecall: supportedResult.factualRecall,
+          retrievedChunksCount: qnaResult.retrieval.chunks.length,
           totalCitations: alceResult.totalCitations,
         },
         tracePayload: {
-          retrievedChunks: retrievalResult.chunks.map((c) => ({
+          retrievedChunks: qnaResult.retrieval.chunks.map((c) => ({
             chunkId: c.chunkId,
             score: c.score,
             sourceTitle: c.source.title,
@@ -142,9 +161,8 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
           })),
           generatedText: qnaResult.text,
           citations: alceResult.sentenceAttributions.flatMap((s) => s.citations),
-          missingNumericalEntities: alceResult.sentenceAttributions.flatMap(
-            (s) => s.missingEntities,
-          ),
+          violations: supportedResult.violations,
+          missingNumericalEntities: supportedResult.missingEntities,
         },
         createdAt: new Date(),
       });
@@ -158,7 +176,7 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
         inputQuery: fixture.query,
         status: 'fail',
         latencyMs: Math.round(performance.now() - t0),
-        scores: { citePrec: 0, citeRec: 0, phantomRate: 0 },
+        scores: { citePrec: 0, citeRec: 0, phantomRate: 0, fsar: 0 },
         errorDetails: errorMsg,
         createdAt: new Date(),
       });
@@ -169,6 +187,10 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
 
   const citePrecSummary = computeStatisticalSummary(citePrecScores);
   const citeRecSummary = computeStatisticalSummary(citeRecScores);
+  const fsarSummary = computeStatisticalSummary(fsarScores);
+  const claimSupportSummary = computeStatisticalSummary(claimSupportPrecScores);
+  const factualRecallSummary = computeStatisticalSummary(factualRecallScores);
+
   const aggregatePhantomRate =
     totalAllCitations > 0
       ? Math.round((totalPhantomCitations / totalAllCitations) * 1000) / 1000
@@ -177,14 +199,27 @@ export async function runRagAlceBenchmark(options: RagRunnerOptions): Promise<Ra
   const passedTests = results.filter((r) => r.status === 'pass').length;
   const failedTests = results.filter((r) => r.status === 'fail').length;
 
+  const estimatedCostUsd =
+    Math.round(((totalTokensIn * 0.1) / 1_000_000 + (totalTokensOut * 0.4) / 1_000_000) * 10000) /
+    10000;
+
   return {
     summary: {
       citePrec: citePrecSummary,
       citeRec: citeRecSummary,
+      fullySupportedAnswerRate: fsarSummary,
+      claimSupportPrecision: claimSupportSummary,
+      factualCitationRecall: factualRecallSummary,
       phantomRate: aggregatePhantomRate,
       totalTests: results.length,
       passedTests,
       failedTests,
+      tokenUsage: {
+        tokensIn: totalTokensIn,
+        tokensOut: totalTokensOut,
+        totalTokens: totalTokensIn + totalTokensOut,
+        estimatedCostUsd,
+      },
     },
     results,
     totalDurationMs,

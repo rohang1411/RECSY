@@ -13,7 +13,7 @@
  */
 import type { AlceAttributionResult, SentenceAttribution } from '../types';
 
-const CITATION_REGEX = /\[c:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi;
+const CITATION_REGEX = /\[c:([0-9a-fA-F-]{36}|[a-zA-Z0-9_-]+)\]/gi;
 
 // Regular expressions to extract quantitative factual claims
 const NUMERICAL_ENTITY_REGEX =
@@ -45,20 +45,52 @@ export function splitIntoSentences(text: string): string[] {
 }
 
 export function extractNumericalEntities(text: string): string[] {
+  // Strip citation tags before checking for numbers to avoid treating UUIDs as factual specs
+  const stripped = text.replace(CITATION_REGEX, '');
   const matches: string[] = [];
   const regex = new RegExp(NUMERICAL_ENTITY_REGEX.source, 'gi');
   let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
+  while ((m = regex.exec(stripped)) !== null) {
     matches.push(m[0].trim().toLowerCase());
   }
   return matches;
 }
 
+const COMMON_STOPWORDS = new Set([
+  'this',
+  'that',
+  'these',
+  'those',
+  'with',
+  'from',
+  'have',
+  'has',
+  'had',
+  'phone',
+  'device',
+  'screen',
+  'model',
+  'about',
+  'there',
+  'their',
+  'which',
+  'would',
+  'could',
+  'should',
+  'after',
+  'before',
+  'under',
+  'above',
+  'while',
+  'where',
+]);
+
 export function verifyNumericalEntailment(
   sentence: string,
   chunkTexts: readonly string[],
 ): { passed: boolean; missingEntities: string[] } {
-  const entities = extractNumericalEntities(sentence);
+  const cleanSentence = sentence.replace(CITATION_REGEX, '');
+  const entities = extractNumericalEntities(cleanSentence);
   if (entities.length === 0) {
     return { passed: true, missingEntities: [] };
   }
@@ -69,7 +101,12 @@ export function verifyNumericalEntailment(
   for (const ent of entities) {
     // Normalise unit abbreviations (e.g. 5000mah -> 5000, $799 -> 799)
     const rawNumber = ent.replace(/[^0-9.]/g, '');
-    if (rawNumber && !combinedChunks.includes(rawNumber)) {
+    if (!rawNumber) continue;
+
+    // Use boundary matching so that '99' does not match inside '999' or '199'
+    const escaped = rawNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const boundaryRegex = new RegExp(`(?:^|[^0-9.])${escaped}(?:[^0-9.]|$)`, 'i');
+    if (!boundaryRegex.test(combinedChunks)) {
       missing.push(ent);
     }
   }
@@ -80,6 +117,32 @@ export function verifyNumericalEntailment(
   };
 }
 
+export function chunkSupportsSentence(sentence: string, chunkText: string): boolean {
+  const cleanSentence = sentence.replace(CITATION_REGEX, '');
+
+  // 1. Numerical claims must be entailed by this chunk
+  const numCheck = verifyNumericalEntailment(cleanSentence, [chunkText]);
+  if (!numCheck.passed) return false;
+
+  // 2. Meaningful content words must overlap
+  const sentenceWords = cleanSentence
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !COMMON_STOPWORDS.has(w));
+
+  if (sentenceWords.length === 0) return true;
+
+  const chunkHaystack = chunkText.toLowerCase();
+  let matchCount = 0;
+  for (const word of sentenceWords) {
+    if (chunkHaystack.includes(word)) matchCount++;
+  }
+
+  const overlapRatio = matchCount / sentenceWords.length;
+  return overlapRatio >= 0.35;
+}
+
 export function evaluateAlceAttribution(
   answerText: string,
   retrievedChunks: ReadonlyMap<string, string>,
@@ -88,7 +151,7 @@ export function evaluateAlceAttribution(
   const sentenceAttributions: SentenceAttribution[] = [];
 
   let totalCitations = 0;
-  let validCitations = 0;
+  let supportedCitations = 0;
   let phantomCitations = 0;
   let citedSentences = 0;
   let fullySupportedSentences = 0;
@@ -109,35 +172,24 @@ export function evaluateAlceAttribution(
       for (const cid of citations) {
         const chunkText = retrievedChunks.get(cid);
         if (chunkText) {
-          validCitations++;
           hasValidRefs = true;
           associatedChunks.push(chunkText);
+          if (chunkSupportsSentence(sentence, chunkText)) {
+            supportedCitations++;
+          }
         } else {
           phantomCitations++;
         }
       }
 
       if (associatedChunks.length > 0) {
-        // Run Tier-1 numerical NLI check
         const numCheck = verifyNumericalEntailment(sentence, associatedChunks);
         numericalPassed = numCheck.passed;
         missingEntities = numCheck.missingEntities;
 
-        // Substring / token density check
-        const sentenceWords = sentence
-          .toLowerCase()
-          .replace(/[^\w\s]/g, '')
-          .split(/\s+/)
-          .filter((w) => w.length > 3);
-
-        const chunkHaystack = associatedChunks.join(' ').toLowerCase();
-        let matchCount = 0;
-        for (const word of sentenceWords) {
-          if (chunkHaystack.includes(word)) matchCount++;
-        }
-
-        const overlapRatio = sentenceWords.length > 0 ? matchCount / sentenceWords.length : 1.0;
-        allChunksEntailed = numericalPassed && overlapRatio >= 0.4;
+        // A sentence is considered entailed if at least one cited chunk directly supports it
+        allChunksEntailed =
+          numericalPassed && associatedChunks.some((c) => chunkSupportsSentence(sentence, c));
       }
     }
 
@@ -155,11 +207,11 @@ export function evaluateAlceAttribution(
     });
   }
 
-  // Citation Precision: Proportion of citations that reference valid, entailing chunks
-  const citePrec = totalCitations > 0 ? validCitations / totalCitations : 1.0;
+  // Citation Precision: Proportion of citations that actually entail the attached sentence
+  const citePrec = totalCitations > 0 ? supportedCitations / totalCitations : 0.0;
 
-  // Citation Recall: Proportion of sentences that are cited and entailed
-  const citeRec = sentences.length > 0 ? fullySupportedSentences / sentences.length : 1.0;
+  // Citation Recall: Proportion of sentences that are cited and fully entailed
+  const citeRec = sentences.length > 0 ? fullySupportedSentences / sentences.length : 0.0;
 
   // Phantom Citation Rate: Proportion of citations pointing to nonexistent chunks
   const phantomRate = totalCitations > 0 ? phantomCitations / totalCitations : 0.0;

@@ -1292,12 +1292,14 @@ These are lightweight and effectively no-op off Vercel.
 Located under `src/services/eval/` and the `/internal/eval` Command Center:
 
 - **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`pnpm eval:benchmark --suite=multi-turn`):**
-  Evaluates 15 conversational trajectories spanning 52 turns across non-linear preference evolutions (budget shifts, brand negations, subset refinements, resets, feature accumulation). Measures Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting. Deterministic simulation mode allows 0-cost CI runs.
+  Evaluates 15 conversational trajectories spanning 37 dialog turns across non-linear preference evolutions (budget shifts, brand negations, subset refinements, hard resets, platform constraints). Measures strict Binary Joint Goal Accuracy (JGA), continuous Slot Accuracy, Constraint Retention Rate (CRR over active prior turns only), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1 (confusion-matrix harmonic mean), Reset Purge Cleanliness (erasure of residual state), Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and actual measured/simulated token accounting.
 - **Tier 2 — Offline MAUT Recommender Benchmark (`pnpm eval:benchmark --suite=recsys`):**
-  Evaluates ranking quality (NDCG@3/5, MRR), Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 50 golden personas.
-- **Tier 3 — Stanford ALCE Attributed Q&A (`pnpm eval:benchmark --suite=rag`):**
-  Evaluates sentence-level citation precision, citation recall, phantom citation rate, and numeric fact entailment against retrieved context chunks.
-- **Tier 4 — L1 Data-Plane Concurrency Stress Profiler (`pnpm eval:stress`):**
+  Evaluates ranking quality (NDCG@3/5, MRR), Constraint Satisfaction Rate (CSR, gating empty picks and unpriced phones), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 30 golden personas.
+- **Tier 3 — Grounded Q&A & Stanford ALCE Attributed Q&A (`pnpm eval:benchmark --suite=rag`):**
+  Evaluates the headline resume metric **Fully Supported Answer Rate (FSAR)** on 20 held-out answerable product queries, alongside **Appropriate Abstention Rate (AAR)** on 10 held-out insufficient-evidence queries, fine-grained Sentence-Level Citation Precision (`citePrec`), Citation Recall (`citeRec`), phantom citation detection, and boundary-aware numeric entailment evaluated directly against the exact evidence retrieved during generation (`qnaResult.retrieval.chunks`).
+- **Tier 4 — Retrieval Component Ablation Study (`pnpm eval:benchmark --suite=ablation`):**
+  Executes empirical head-to-head comparisons of Dense Vector Search (pgvector HNSW), Full-Text Search (tsvector/trigram), and RECSY Hybrid RRF+MMR against reference facts with Wilcoxon Signed-Rank tests for statistical significance ($p < 0.05$).
+- **Tier 5 — L1 Data-Plane Concurrency Stress Profiler (`pnpm eval:stress`):**
   Simulates 1–100 concurrent virtual users (VUs) executing recommendation intake and search queries, measuring p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
 - **Web Command Center UI (`/internal/eval`):**
   Interactive dashboard displaying real-time execution progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffing, turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export and rehydration.

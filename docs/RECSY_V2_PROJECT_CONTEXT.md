@@ -1148,34 +1148,75 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 ---
 
-## 17. Testing Strategy
+## 17. Testing & Evaluation Strategy
 
-| Layer                     | Tool                                     | Scope                                                                                           | CI?                    |
-| ------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
-| Unit                      | Vitest + `jsdom`                         | Pure functions, algorithms, metric math (`dialog-state.test.ts`, `metrics.test.ts`)             | ✓                      |
-| Integration (DB)          | Vitest with live Supabase                | Migrations, RLS, retrieval helpers                                                              | ✓ (env-gated)          |
-| E2E                       | Playwright                               | Phone SSR + mocked `/api/ask` NDJSON client path                                                | ✓ CI (`e2e` job)       |
-| Multi-Turn CRS Benchmark  | `pnpm eval:benchmark --suite=multi-turn` | Dialog state tracking (JGA, CRR, 0-turn latency, refine F1, reset clean, token/cost accounting) | ✓ (0-cost stub / live) |
-| Offline Recommender Eval  | `pnpm eval:benchmark --suite=recsys`     | MAUT ranking (NDCG@3/5, MRR, CSR, ILD@3 diversity, Gini, coverage) against 50 golden personas   | Local / CI             |
-| Attributed Q&A (ALCE)     | `pnpm eval:benchmark --suite=rag`        | Citation Precision, Citation Recall, Phantom Citation Rate, numerical entailment                | Local / CI             |
-| Data-Plane Stress Testing | `pnpm eval:stress`                       | Multi-VU concurrency load (1–100 VUs), p50/p90/p95/p99 latency, pool saturation, event loop lag | Local / Staging        |
+| Layer                     | Tool                                     | Scope                                                                                                | CI?                    |
+| ------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------- |
+| Unit                      | Vitest + `jsdom`                         | Pure functions, algorithms, metric math (`dialog-state.test.ts`, `metrics.test.ts`)                  | ✓                      |
+| Integration (DB)          | Vitest with live Supabase                | Migrations, RLS, retrieval helpers                                                                   | ✓ (env-gated)          |
+| E2E                       | Playwright                               | Phone SSR + mocked `/api/ask` NDJSON client path                                                     | ✓ CI (`e2e` job)       |
+| Multi-Turn CRS Benchmark  | `pnpm eval:benchmark --suite=multi-turn` | Dialog state tracking (Binary JGA, Slot Accuracy, CRR, Refine F1, Reset Purge, measured token usage) | ✓ (0-cost stub / live) |
+| Offline Recommender Eval  | `pnpm eval:benchmark --suite=recsys`     | MAUT ranking (NDCG@3/5, MRR, CSR, ILD@3 diversity, Gini, coverage) against 30 golden personas        | Local / CI             |
+| Attributed Q&A (ALCE)     | `pnpm eval:benchmark --suite=rag`        | Fully Supported Answer Rate (FSAR), Citation Precision/Recall, AAR abstention, numerical entailment  | Local / CI             |
+| Retrieval Ablation Study  | `pnpm eval:benchmark --suite=ablation`   | Dense pgvector HNSW vs FTS (tsvector/trigram) vs Hybrid RRF+MMR with Wilcoxon Signed-Rank tests      | Local / CI             |
+| Data-Plane Stress Testing | `pnpm eval:stress`                       | Multi-VU concurrency load (1–100 VUs), p50/p90/p95/p99 latency, pool saturation, event loop lag      | Local / Staging        |
 
 ### Scientific Evaluation & Benchmarks Hub (Command Center)
 
 Implemented under `src/services/eval/` and the `/internal/eval` Command Center:
 
-- **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`scripts/eval-benchmark.ts --suite=multi-turn`):**
-  Evaluates 15 conversational trajectories spanning 52 turns across non-linear preference evolutions (budget tightening, anti-brand pivots, relative subset refinements, clean resets, and feature accumulation). Computes Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR / anti-decay), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting.
-- **Tier 2 — Offline Multi-Attribute Utility Theory (MAUT) Recommender Benchmark (`--suite=recsys`):**
-  Evaluates ranking accuracy (NDCG@3, NDCG@5, MRR), Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality.
-- **Tier 3 — Stanford ALCE Attributed Q&A (`--suite=rag`):**
-  Evaluates sentence-level attribution, citation precision/recall, phantom hallucination rate, and numeric fact entailment against retrieved context chunks.
-- **Tier 4 — L1 Data-Plane Concurrency Stress Profiler (`scripts/eval-load.ts`):**
-  Simulates 1–100 virtual users (VUs) executing concurrent queries; measures p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
-- **Web Command Center UI (`/internal/eval`):**
-  Interactive dashboard displaying real-time test progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffs, interactive turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export & rehydration.
-- **Persistence (`drizzle/migrations/0008_cute_komodo.sql`):**
-  All benchmark runs and granular test results are durably persisted to PostgreSQL `benchmark_runs` and `benchmark_results` tables.
+#### 1. Dataset Foundations & Fixture Composition (Verified Frozen Snapshot)
+
+- **Multi-Turn Conversational Trajectories:** **15 trajectories / 37 dialog turns** (`fixtures/eval/multi-turn-trajectories.json`), covering non-linear preference evolutions: budget tightening, anti-brand pivots, relative subset refinements, clean hard resets, and platform lock-in constraints.
+- **Golden Recommender Personas:** **30 diverse shopper personas** (`fixtures/eval/golden-benchmark-dataset.json`), representing real-world shopping archetypes across student budgets, creator flagships, compact ergonomics, gaming performance, and elder-friendly devices.
+- **Attributed Q&A Benchmark Scenarios:** **20 held-out answerable product queries** (`fixtures/eval/golden-benchmark-dataset.json`) covering specs, battery endurance, camera zoom, displays, and thermal throttling, plus **10 held-out insufficient-evidence queries** (`fixtures/eval/qa-unanswerable-dataset.json`) covering unreleased hardware and out-of-corpus specs.
+
+#### 2. Multi-Turn Conversational Recommender (CRS) & Dialog State Tracking (DST)
+
+- **Joint Goal Accuracy (JGA):** Evaluated strictly as an **all-or-nothing binary metric** per turn ($1.0$ if and only if all expected slots match the extracted requirements and no contradictory/unwanted state exists; $0.0$ otherwise). Partial credit is tracked separately as continuous **Slot Accuracy** ($\frac{\text{matching slots}}{\text{total slots}}$).
+- **Constraint Retention Rate (CRR / Anti-Decay):** Measures preservation of non-conflicting prior constraints across extended conversational turns. Evaluated **strictly over turns with active prior constraints** (`isRetentionTurn: true`). Turns without prior constraints (such as Turn 1 or fresh search turns) are excluded from the retention denominator, preventing artificial score inflation.
+- **Hard Reset Purge Cleanliness:** On hard reset turns (`isReset: true`, e.g. "start over from scratch"), explicitly verifies that all prior constraints (budgets, disliked brands, must-haves) are completely purged from active state. Residual leaks are penalized with `resetCleanliness = 0.0`.
+- **Refine Intent F1:** Computes the true **harmonic mean of Precision and Recall** ($2 \cdot \frac{P \cdot R}{P + R}$) over subset refinement decisions (re-ranking prior candidates vs full-catalog search), derived from the full confusion matrix ($TP, FP, FN, TN$), rather than simple accuracy.
+- **Constraint Mutation Latency (CML):** Verifies immediate 0-turn compliance when users change boundaries (e.g. tightening max budget or excluding a disliked brand).
+- **Turn NDCG@3:** Computes dynamic Multi-Attribute Utility Theory (MAUT) utility ranking at each recommendation turn against the catalog.
+
+#### 3. Grounded Q&A Evaluation: Fully Supported Answer Rate (FSAR) & ALCE
+
+- **Headline Resume Metric — Fully Supported Answer Rate (FSAR):**
+  $$\text{FSAR} = \frac{\text{Held-out answerable questions receiving a complete answer with EVERY material factual claim supported by citations}}{\text{Total held-out answerable test questions}}$$
+  Count refusals, incomplete answers, unsupported claims, timeouts, and errors as failures on this answerable set. Merely having citation tags is insufficient: each cited claim must be factually supported by the retrieved chunk.
+- **Appropriate Abstention Rate (AAR):**
+  $$\text{AAR} = \frac{\text{Insufficient-evidence questions correctly abstained without hallucination}}{\text{Total insufficient-evidence questions}}$$
+  Tested separately on 10 held-out unanswerable questions to measure resistance to hallucinations without artificially inflating answerable headline rates.
+- **Fine-Grained Citation Attribution (ALCE):**
+  - **Sentence-Level Citation Precision (`citePrec`):** Proportion of inline citations that factually entail the associated statement. Evaluated against the **exact retrieved evidence used during generation** (`qnaResult.retrieval.chunks`), eliminating redundant secondary retrieval passes. Answers with zero citations receive $citePrec = 0.0$.
+  - **Sentence-Level Citation Recall (`citeRec`):** Proportion of sentences that are cited and fully entailed.
+  - **Boundary-Aware Numerical Entailment:** Regular expressions strictly match quantitative boundaries (`(?:^|[^0-9.])${number}(?:[^0-9.]|$)`), ensuring that `$99` cannot falsely pass against `$999`.
+  - **Zero-Tolerance Phantom Citation Rate:** Proportion of citations referencing invalid or hallucinated chunk IDs.
+
+#### 4. Empirical Retrieval Component Ablation Study
+
+- Compares three distinct retrieval pipelines on identical questions using real database executions:
+  1. **Dense Vector Search Only:** Cosine similarity via `pgvector` HNSW index on 768-dimensional text embeddings.
+  2. **Full-Text Search (FTS) Only:** PostgreSQL `tsvector` + trigram fuzzy matching (`pg_trgm`).
+  3. **RECSY Production Hybrid:** Reciprocal Rank Fusion (RRF, $k=60$) fusing Vector + FTS, followed by Maximal Marginal Relevance (MMR) diversification and source-coverage clamping.
+- Evaluates NDCG@3 against reference facts and computes non-parametric **Wilcoxon Signed-Rank tests** to establish statistical significance ($p < 0.05$).
+
+#### 5. Constraint Satisfaction Policy Gates (CSR)
+
+- Non-negotiable user boundaries (budgets, dealbreakers, mandatory operating system) are strictly validated on returned candidate picks.
+- **Empty Output Gating:** Returning zero recommendations for an answerable query is recorded as an explicit `[Empty Recommendation Failure]` ($CSR = 0$).
+- **MSRP Verification:** Candidates with missing MSRPs trigger `[Budget Verification Failure]` when a max budget constraint is active, ensuring unverified prices never bypass user financial limits.
+
+#### 6. Dual-Track Execution & Token Accounting
+
+- **Live Model Track:** Ingests live LLM providers (e.g. Gemini 2.0 Flash) and records exact measured token consumption (`usage.tokensIn` and `usage.tokensOut`) directly from provider API responses.
+- **Deterministic Offline Stub Track:** Uses `DeterministicLlmProvider` for deterministic CI regression testing and counterexample verification with zero API cost and zero network dependencies, clearly labeled as `isMeasured: false` in test results.
+
+#### 7. Web Command Center UI (`/internal/eval`) & Persistence
+
+- Interactive dashboard displaying real-time test progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffs, interactive turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export & rehydration.
+- Durably persisted to PostgreSQL `benchmark_runs` and `benchmark_results` tables (`drizzle/migrations/0008_cute_komodo.sql`).
 
 ### Conventions
 
@@ -1186,7 +1227,6 @@ Implemented under `src/services/eval/` and the `/internal/eval` Command Center:
 - **Recommender** — `match.ts`, `vector-utils`, `spec-embedding-text`, and
   `extract-requirements` (mock `LlmProvider`) have unit tests; full `/api/recommend`
   path is verified via the multi-turn CRS benchmark suite.
-- **Deterministic CI Mode** — `DeterministicLlmProvider` simulates structured preference extraction and state tracking with 0 Gemini tokens and $0.00 cost, preventing API quota exhaustion in automated test runs.
 - Coverage target: **80% on `src/services/`** (the plumbing that _must_
   not regress). Product code gets lighter coverage on the happy path.
 

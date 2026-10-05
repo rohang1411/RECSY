@@ -229,8 +229,9 @@ describe('Multi-Turn Dialog State Tracking (DST) Engine', () => {
       latencyMs: 120,
     });
 
-    // 1 of 2 slots passed -> 0.5 JGA
-    expect(evalResult.jgaScore).toBe(0.5);
+    // 1 of 2 slots passed -> strict JGA = 0.0, slotAccuracy = 0.5
+    expect(evalResult.jgaScore).toBe(0.0);
+    expect(evalResult.slotAccuracy).toBe(0.5);
     expect(
       evalResult.constraintViolations.some((v) => v.includes('Disliked brands mismatch')),
     ).toBe(true);
@@ -425,5 +426,146 @@ describe('Multi-Turn Dialog State Tracking (DST) Engine', () => {
     expect(
       evalResultInvalid.constraintViolations.some((v) => v.includes('Refine scope violation')),
     ).toBe(true);
+  });
+
+  it('[Counterexample 4] strictly enforces binary JGA = 0.0 when 1 of 2 slots match, while reporting slotAccuracy = 0.5', () => {
+    // Expected: budget $600 AND disliked Samsung
+    const turn: TrajectoryTurn = {
+      turnIndex: 1,
+      userMessage: 'Looking for a phone under $600 and I dislike Samsung',
+      expectedSlots: {
+        budgetMaxUsd: 600,
+        dislikedBrands: ['Samsung'],
+      },
+    };
+
+    // Actual: budget matched ($600), but disliked brands is empty
+    const partialMatchResult = createMockPipelineResult({
+      requirements: createMockReq({
+        budget_usd: { max: 600 },
+        brand_preference: { liked: [], disliked: [] },
+      }),
+    });
+
+    const evaluated = evaluateTurnDialogState({
+      turn,
+      result: partialMatchResult,
+      priorTurnResults: [],
+      catalog: MOCK_CATALOG,
+      latencyMs: 120,
+    });
+
+    // Exact-Match JGA must be 0.0 (all-or-nothing research standard)
+    expect(evaluated.jgaScore).toBe(0.0);
+    // Continuous Slot Accuracy provides the partial credit (1 of 2 = 0.5)
+    expect(evaluated.slotAccuracy).toBe(0.5);
+    expect(
+      evaluated.constraintViolations.some((v) => v.includes('JGA Disliked brands mismatch')),
+    ).toBe(true);
+  });
+
+  it('verifies Hard Reset Purge Cleanliness and flags residual state leaks', () => {
+    // Prior turn established budget $500 and disliked Apple
+    const priorTurn: TurnEvaluationResult = {
+      turnIndex: 1,
+      userMessage: 'Under $500 no Apple',
+      kind: 'results',
+      kindMatched: true,
+      latencyMs: 90,
+      jgaScore: 1.0,
+      slotAccuracy: 1.0,
+      isRetentionTurn: false,
+      constraintViolations: [],
+      hardConstraintSatisfied: true,
+      mutationResponsiveness: true,
+      retentionScore: 1.0,
+      refineIntentMatched: true,
+      picks: [],
+      activeRequirements: createMockReq({
+        budget_usd: { max: 500 },
+        brand_preference: { liked: [], disliked: ['Apple'] },
+      }),
+    };
+
+    // Turn 2 is a hard reset: "Start over from scratch, show me gaming phones"
+    const resetTurn: TrajectoryTurn = {
+      turnIndex: 2,
+      userMessage: 'Start over from scratch, show me gaming phones',
+      isReset: true,
+    };
+
+    // Leaky pipeline result: retained the $500 budget from turn 1
+    const leakyResult = createMockPipelineResult({
+      requirements: createMockReq({
+        budget_usd: { max: 500 }, // Leak!
+        priorities: [{ aspect: 'performance', weight: 1.0 }],
+      }),
+    });
+
+    const leakyEval = evaluateTurnDialogState({
+      turn: resetTurn,
+      result: leakyResult,
+      priorTurnResults: [priorTurn],
+      catalog: MOCK_CATALOG,
+      latencyMs: 100,
+    });
+
+    expect(leakyEval.resetCleanliness).toBe(0.0);
+    expect(
+      leakyEval.constraintViolations.some((v) => v.includes('Reset Purge Leak: prior budget')),
+    ).toBe(true);
+
+    // Clean pipeline result: completely erased prior budget and disliked brands
+    const cleanResult = createMockPipelineResult({
+      requirements: createMockReq({
+        priorities: [{ aspect: 'performance', weight: 1.0 }],
+      }),
+    });
+
+    const cleanEval = evaluateTurnDialogState({
+      turn: resetTurn,
+      result: cleanResult,
+      priorTurnResults: [priorTurn],
+      catalog: MOCK_CATALOG,
+      latencyMs: 100,
+    });
+
+    expect(cleanEval.resetCleanliness).toBe(1.0);
+  });
+
+  it('marks isRetentionTurn = true only when prior slots must be preserved', () => {
+    // Turn 1 does not test retention
+    const turn1: TrajectoryTurn = {
+      turnIndex: 1,
+      userMessage: 'Phones under $500',
+    };
+    const eval1 = evaluateTurnDialogState({
+      turn: turn1,
+      result: createMockPipelineResult({
+        requirements: createMockReq({ budget_usd: { max: 500 } }),
+      }),
+      priorTurnResults: [],
+      catalog: MOCK_CATALOG,
+      latencyMs: 50,
+    });
+    expect(eval1.isRetentionTurn).toBe(false);
+
+    // Turn 2 tests retention of budget
+    const turn2: TrajectoryTurn = {
+      turnIndex: 2,
+      userMessage: 'Also make sure it has good battery',
+      mustPreservePriorSlots: ['budget'],
+    };
+    const eval2 = evaluateTurnDialogState({
+      turn: turn2,
+      result: createMockPipelineResult({
+        requirements: createMockReq({ budget_usd: { max: 500 } }),
+      }),
+      priorTurnResults: [eval1],
+      catalog: MOCK_CATALOG,
+      latencyMs: 50,
+    });
+    expect(eval2.isRetentionTurn).toBe(true);
+    expect(eval2.retentionScore).toBe(1.0);
   });
 });

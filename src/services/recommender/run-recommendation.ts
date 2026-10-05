@@ -52,6 +52,7 @@ export type RecommendPipelineResult =
       readonly kind: 'clarify';
       readonly requirements: UserRequirements;
       readonly clarifyingQuestion: string;
+      readonly usage?: { readonly tokensIn: number; readonly tokensOut: number };
     }
   | {
       readonly kind: 'results';
@@ -66,6 +67,7 @@ export type RecommendPipelineResult =
       readonly scorecardMissing: boolean;
       /** Top 1–2 aspect names driving the ranking, highest weight first. */
       readonly topAspects: readonly string[];
+      readonly usage?: { readonly tokensIn: number; readonly tokensOut: number };
     };
 
 function buildDefaultAspectWeights(

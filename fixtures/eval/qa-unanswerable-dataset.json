@@ -1,0 +1,76 @@
+{
+  "version": "2.0",
+  "description": "RECSY Held-Out Insufficient Evidence & Abstention Dataset for testing Appropriate Abstention Rate (AAR)",
+  "unanswerableQueries": [
+    {
+      "id": "unans-001",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "unsupported-spec",
+      "query": "What is the exact PCB motherboard layer count and trace copper thickness on the iPhone 16 Pro?",
+      "expectedAbstentionReason": "Corpus does not contain engineering teardown trace thickness"
+    },
+    {
+      "id": "unans-002",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "unsupported-durability",
+      "query": "Can the S24 Ultra survive scuba diving at 40 meters underwater for 2 hours?",
+      "expectedAbstentionReason": "Exceeds IP68 rating; corpus states max 1.5m for 30 mins, cannot scuba dive"
+    },
+    {
+      "id": "unans-003",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "unannounced-future",
+      "query": "What features will be added in Android 18 on the Pixel 9 Pro XL in 2027?",
+      "expectedAbstentionReason": "Future software release features not yet announced"
+    },
+    {
+      "id": "unans-004",
+      "phoneSlug": "oneplus-12",
+      "category": "third-party-accessory",
+      "query": "Which exact third-party magnetic wallet accessory model adheres best to the OnePlus 12 case?",
+      "expectedAbstentionReason": "Corpus reviews phone hardware, not third-party proprietary magnetic wallets"
+    },
+    {
+      "id": "unans-005",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "unsupported-hardware",
+      "query": "Does the Nothing Phone 2a have satellite SOS calling and emergency beacon hardware?",
+      "expectedAbstentionReason": "Device lacks satellite hardware; reviews confirm no satellite connectivity"
+    },
+    {
+      "id": "unans-006",
+      "phoneSlug": "apple-iphone-16-pro-max",
+      "category": "secret-manufacturing",
+      "query": "What is the confidential internal factory code name and assembly line yield rate for the iPhone 16 Pro Max?",
+      "expectedAbstentionReason": "Confidential supply chain yield data not in consumer reviews"
+    },
+    {
+      "id": "unans-007",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "unreleased-mod",
+      "query": "How do I solder an external HDMI port directly onto the Z Fold 6 motherboard?",
+      "expectedAbstentionReason": "Hardware modification instructions not supported or present in review corpus"
+    },
+    {
+      "id": "unans-008",
+      "phoneSlug": "google-pixel-8a",
+      "category": "hallucination-trap",
+      "query": "How does the Pixel 8a built-in laser projector perform in bright daylight?",
+      "expectedAbstentionReason": "Phone does not have a laser projector"
+    },
+    {
+      "id": "unans-009",
+      "phoneSlug": "oneplus-open",
+      "category": "unsupported-environment",
+      "query": "Can the OnePlus Open operate normally inside an active industrial blast furnace at 500 degrees Celsius?",
+      "expectedAbstentionReason": "Extreme temperature operation not possible, corpus confirms standard operating range"
+    },
+    {
+      "id": "unans-010",
+      "phoneSlug": "cmf-phone-1",
+      "category": "hallucination-trap",
+      "query": "Does the CMF Phone 1 support wireless Qi2 charging and MagSafe accessories out of the box?",
+      "expectedAbstentionReason": "CMF Phone 1 does not support wireless charging"
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import {
   extractInlineCitations,
   verifyNumericalEntailment,
 } from './metrics/alce';
+import { evaluateFullySupportedAnswer, evaluateAbstention } from './metrics/supported-answers';
 import {
   computeBootstrapConfidenceInterval,
   computeStatisticalSummary,
@@ -219,5 +220,152 @@ describe('Constraint Satisfaction Policy Gates', () => {
     expect(result.platformSatisfied).toBe(false); // Not Apple/iOS
     expect(result.dealbreakerAvoided).toBe(false); // Contains "curved screen"
     expect(result.violations.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('[Counterexample 5] rejects empty recommendations as constraint failure', () => {
+    const result = evaluatePickConstraints([], dummyFixture);
+    expect(result.allSatisfied).toBe(false);
+    expect(result.budgetSatisfied).toBe(false);
+    expect(result.dealbreakerAvoided).toBe(false);
+    expect(result.platformSatisfied).toBe(false);
+    expect(result.violations).toContainEqual(
+      expect.stringContaining('[Empty Recommendation Failure]'),
+    );
+  });
+
+  it('rejects unpriced phones when a strict maximum budget is active', () => {
+    const picks = [
+      {
+        phoneId: 'p2',
+        slug: 'unpriced-phone',
+        brand: 'Apple',
+        model: 'iPhone Special',
+        score: 9.0,
+        summary: 'Special edition',
+        msrpUsd: null,
+        localPrice: null,
+        localCurrency: null,
+        imageUrl: null,
+      },
+    ];
+    const result = evaluatePickConstraints(picks, dummyFixture);
+    expect(result.budgetSatisfied).toBe(false);
+    expect(result.allSatisfied).toBe(false);
+    expect(result.violations).toContainEqual(
+      expect.stringContaining('[Budget Verification Failure]'),
+    );
+  });
+});
+
+describe('ChatGPT Counterexamples & Rigorous Evaluation Audits', () => {
+  it('[Counterexample 1] fails citation precision when claim is unrelated to valid chunk ID', () => {
+    const cid = 'chunk-valid-1';
+    const chunkMap = new Map<string, string>();
+    chunkMap.set(cid, 'The phone features a 6.7-inch OLED display with 120Hz refresh rate.');
+
+    // Claim is completely unrelated to screen specs (claims water resistance)
+    const text = `The phone has 50m water resistance and titanium frame [c:${cid}].`;
+    const result = evaluateAlceAttribution(text, chunkMap);
+
+    // Previously this gave citePrec = 1.0 merely because cid existed in chunkMap.
+    // Now chunkSupportsSentence checks content overlap, so precision is 0.0.
+    expect(result.citePrec).toBe(0.0);
+    expect(result.sentenceAttributions[0]!.isEntailed).toBe(false);
+  });
+
+  it('[Counterexample 2] returns citePrec = 0.0 when answer provides zero citations', () => {
+    const chunkMap = new Map<string, string>();
+    chunkMap.set('c1', 'The phone has a 5000 mAh battery.');
+
+    const text = 'The phone has exceptional battery life and fast charging.';
+    const result = evaluateAlceAttribution(text, chunkMap);
+
+    // Previously an uncited answer gave citePrec = 1.0 (vacuous truth).
+    // Now uncited answers correctly receive 0.0.
+    expect(result.citePrec).toBe(0.0);
+    expect(result.totalCitations).toBe(0);
+  });
+
+  it('[Counterexample 3] fails numerical entailment for $99 against evidence $999', () => {
+    const sentence = 'The phone starts at $99 in the United States.';
+    const evidence = ['The flagship device retails at $999 for the 256GB model.'];
+
+    // Previously substring matching allowed '99' to pass inside '999'.
+    // Now boundary-aware matching catches the factual discrepancy.
+    const check = verifyNumericalEntailment(sentence, evidence);
+    expect(check.passed).toBe(false);
+    expect(check.missingEntities).toContain('$99');
+  });
+});
+
+describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)', () => {
+  it('passes FSAR for complete, factually entailed, and cited answers', () => {
+    const cid = 'chunk-100';
+    const chunkMap = new Map<string, string>();
+    chunkMap.set(
+      cid,
+      'The OnePlus 12 features a 5400 mAh battery with 100W SuperVOOC wired fast charging.',
+    );
+
+    const answer =
+      'The OnePlus 12 has a large 5400 mAh battery with 100W wired fast charging [c:' + cid + '].';
+    const result = evaluateFullySupportedAnswer({
+      query: 'What is the battery and charging speed of the OnePlus 12?',
+      answerText: answer,
+      retrievedChunks: chunkMap,
+      referenceFacts: ['5400 mAh battery', '100W fast charging'],
+      numericalEntities: ['5400', '100w'],
+    });
+
+    expect(result.isFullySupported).toBe(true);
+    expect(result.isUsefulAndComplete).toBe(true);
+    expect(result.claimSupportPrecision).toBe(1.0);
+    expect(result.factualRecall).toBe(1.0);
+  });
+
+  it('fails FSAR when material factual claims lack inline citations', () => {
+    const cid = 'chunk-100';
+    const chunkMap = new Map<string, string>();
+    chunkMap.set(cid, 'The OnePlus 12 features a 5400 mAh battery.');
+
+    const answer =
+      'The OnePlus 12 features a 5400 mAh battery [c:' +
+      cid +
+      ']. It also charges at 100W in just 26 minutes.';
+    const result = evaluateFullySupportedAnswer({
+      query: 'What is the battery and charging speed of the OnePlus 12?',
+      answerText: answer,
+      retrievedChunks: chunkMap,
+      referenceFacts: ['5400 mAh battery', '100W fast charging'],
+      numericalEntities: ['5400', '100w'],
+    });
+
+    expect(result.isFullySupported).toBe(false);
+    expect(result.unsupportedClaims.length).toBeGreaterThan(0);
+  });
+
+  it('evaluates Appropriate Abstention Rate (AAR) on unanswerable queries', () => {
+    const chunkMap = new Map<string, string>();
+    chunkMap.set('c1', 'The phone is IP68 water resistant up to 1.5 meters for 30 minutes.');
+
+    // Model correctly abstains when asked about 50m scuba diving
+    const abstainedAnswer =
+      'I do not have enough information to confirm scuba diving at 40 meters. The reviews only note IP68 certification up to 1.5 meters.';
+    const passResult = evaluateAbstention({
+      query: 'Can it survive scuba diving at 40 meters?',
+      answerText: abstainedAnswer,
+      retrievedChunks: chunkMap,
+    });
+    expect(passResult.abstainedAppropriately).toBe(true);
+
+    // Model hallucinating false facts fails abstention
+    const hallucinatedAnswer =
+      'Yes, the phone handles deep scuba diving down to 40 meters without issues.';
+    const failResult = evaluateAbstention({
+      query: 'Can it survive scuba diving at 40 meters?',
+      answerText: hallucinatedAnswer,
+      retrievedChunks: chunkMap,
+    });
+    expect(failResult.abstainedAppropriately).toBe(false);
   });
 });

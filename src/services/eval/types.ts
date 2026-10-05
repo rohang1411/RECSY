@@ -187,11 +187,16 @@ export interface TurnEvaluationResult {
   readonly kindMatched: boolean;
   readonly latencyMs: number;
   readonly jgaScore: number;
+  readonly slotAccuracy?: number;
+  readonly isRetentionTurn?: boolean;
+  readonly retentionChecksTotal?: number;
+  readonly retentionChecksPassed?: number;
   readonly constraintViolations: readonly string[];
   readonly hardConstraintSatisfied: boolean;
   readonly mutationResponsiveness: boolean;
   readonly retentionScore: number;
   readonly refineIntentMatched: boolean;
+  readonly resetCleanliness?: number;
   readonly picks: readonly {
     readonly phoneId: string;
     readonly slug: string;
@@ -211,14 +216,17 @@ export interface TrajectoryEvaluationResult {
   readonly status: TestCaseStatus;
   readonly turnResults: readonly TurnEvaluationResult[];
   readonly overallJga: number;
-  readonly overallRetentionRate: number;
+  readonly overallSlotAccuracy?: number;
+  readonly overallRetentionRate: number | null;
   readonly overallMutationLatency: number;
   readonly refineIntentAccuracy: number;
+  readonly refineIntentF1: number;
   readonly resetCleanliness: number;
   readonly tokenUsage: {
     readonly tokensIn: number;
     readonly tokensOut: number;
     readonly estimatedCostUsd: number;
+    readonly isMeasured?: boolean;
   };
   readonly durationMs: number;
 }
@@ -245,6 +253,7 @@ export interface BenchmarkRunMetricsSummary {
   readonly failedTests?: number;
   // Multi-Turn Conversational Recommender (CRS) Metrics
   readonly jointGoalAccuracy?: StatisticalSummary;
+  readonly slotAccuracy?: StatisticalSummary;
   readonly constraintRetentionRate?: StatisticalSummary;
   readonly mutationResponsiveness?: number;
   readonly refineIntentF1?: number;
@@ -257,6 +266,11 @@ export interface BenchmarkRunMetricsSummary {
     readonly totalTokens: number;
     readonly estimatedCostUsd: number;
   };
+  // Q&A Grounded Answerability Metrics (ALCE + Supported Answer Rate)
+  readonly fullySupportedAnswerRate?: StatisticalSummary;
+  readonly appropriateAbstentionRate?: number;
+  readonly claimSupportPrecision?: StatisticalSummary;
+  readonly factualCitationRecall?: StatisticalSummary;
 }
 
 export interface BenchmarkResultItem {
