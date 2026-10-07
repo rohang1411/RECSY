@@ -1,13 +1,7 @@
 /**
- * Multi-Turn Dialog State Tracking (DST) & Conversational Recommender (CRS) Engine.
- *
- * Implements research-grade evaluation of multi-turn conversational recommendation trajectories:
- *   1. Joint Goal Accuracy (JGA) — slot-value tracking fidelity across turns
- *   2. Constraint Retention Rate (CRR) — anti-forgetting across long context
- *   3. Constraint Mutation Latency (CML) — immediate responsiveness to user updates
- *   4. Refine vs Expand Scope Accuracy — subset vs full catalog fidelity
- *   5. Reset Purge Cleanliness — complete erasure of residual state on hard resets
- *   6. Turn NDCG@3 — dynamic utility ranking at each dialog turn
+ * Annotated-slot dialogue regression checks. Missing annotations are not
+ * evaluated, and turn NDCG uses self-derived MAUT grades rather than an
+ * independent relevance judgment.
  */
 import { ASPECT_NAMES } from '@/lib/constants';
 import type { PhoneCatalogEntry } from '@/services/recommender/catalog';
@@ -63,7 +57,7 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     }
 
     // Disliked brands check
-    if (es.dislikedBrands && es.dislikedBrands.length > 0) {
+    if (es.dislikedBrands !== undefined) {
       slotChecksTotal++;
       const currentDisliked = (req.brand_preference?.disliked ?? []).map((b) => b.toLowerCase());
       const allFound = es.dislikedBrands.every((b) => currentDisliked.includes(b.toLowerCase()));
@@ -80,7 +74,7 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     }
 
     // Liked brands check
-    if (es.likedBrands && es.likedBrands.length > 0) {
+    if (es.likedBrands !== undefined) {
       slotChecksTotal++;
       const currentLiked = (req.brand_preference?.liked ?? []).map((b) => b.toLowerCase());
       const allFound = es.likedBrands.every((b) => currentLiked.includes(b.toLowerCase()));
@@ -97,19 +91,32 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     }
 
     // Must-haves check
-    if (es.mustHaves && es.mustHaves.length > 0) {
+    if (es.mustHaves !== undefined) {
       slotChecksTotal++;
       const currentMustHaves = (req.must_haves ?? []).map((m) => m.toLowerCase());
-      const allFound = es.mustHaves.every((m) =>
-        currentMustHaves.some((cm) => cm.includes(m.toLowerCase())),
-      );
-      if (allFound) {
+      const expected = es.mustHaves.map((m) => m.toLowerCase());
+      if (
+        expected.length === currentMustHaves.length &&
+        expected.every((m) => currentMustHaves.includes(m))
+      ) {
         slotChecksPassed++;
       } else {
         violations.push(
           `JGA Must-haves mismatch: expected [${es.mustHaves.join(', ')}], got [${currentMustHaves.join(', ')}]`,
         );
       }
+    }
+
+    if (es.dealBreakers !== undefined) {
+      slotChecksTotal++;
+      const actual = (req.deal_breakers ?? []).map((d) => d.toLowerCase());
+      const expected = es.dealBreakers.map((d) => d.toLowerCase());
+      if (actual.length === expected.length && expected.every((d) => actual.includes(d)))
+        slotChecksPassed++;
+      else
+        violations.push(
+          `JGA Deal breakers mismatch: expected [${expected.join(', ')}], got [${actual.join(', ')}]`,
+        );
     }
 
     // Form factor check
@@ -130,6 +137,10 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
         } else {
           violations.push('JGA Form factor mismatch: expected foldable, got false/undefined');
         }
+      } else if (!req.form_factor?.foldable && !req.form_factor?.screen_size_range_in) {
+        slotChecksPassed++;
+      } else {
+        violations.push('JGA Form factor mismatch: expected standard');
       }
     }
 
@@ -158,15 +169,21 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
   // 3. Hard constraints on returned picks
   let hardConstraintSatisfied = true;
   const picks = result.kind === 'results' ? result.picks : [];
+  if (result.kind === 'results' && expectedKind === 'results' && picks.length === 0) {
+    hardConstraintSatisfied = false;
+    violations.push('No recommendations returned for an expected results turn');
+  }
+  const independentBudget = turn.expectedSlots?.budgetMaxUsd;
 
   for (const pick of picks) {
     const price = pick.msrpUsd ? Number.parseFloat(pick.msrpUsd) : null;
 
     // Budget gate
-    if (req.budget_usd?.max != null && price != null && price > req.budget_usd.max) {
+    const budget = independentBudget !== undefined ? independentBudget : req.budget_usd?.max;
+    if (budget != null && (price == null || !Number.isFinite(price) || price > budget)) {
       hardConstraintSatisfied = false;
       violations.push(
-        `Pick ${pick.brand} ${pick.model} ($${price}) violates budget max $${req.budget_usd.max}`,
+        `Pick ${pick.brand} ${pick.model} (${price == null ? 'unknown price' : `$${price}`}) violates budget max $${budget}`,
       );
     }
 
@@ -189,17 +206,33 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
   }
 
   // 4. Constraint Mutation Responsiveness (Immediate 0-turn latency)
+  const priorBudget =
+    priorTurnResults[priorTurnResults.length - 1]?.activeRequirements.budget_usd?.max;
+  const mutationEligible =
+    priorTurnResults.length > 0 &&
+    Boolean(
+      (turn.forbiddenBrands?.length ?? 0) > 0 ||
+      (independentBudget !== undefined && independentBudget !== priorBudget),
+    );
   let mutationResponsiveness = true;
   if (turn.forbiddenBrands && turn.forbiddenBrands.length > 0) {
     const hasForbiddenPick = picks.some((p) =>
       turn.forbiddenBrands?.some((fb) => p.brand.toLowerCase().includes(fb.toLowerCase())),
     );
     if (hasForbiddenPick) mutationResponsiveness = false;
+    if (
+      turn.forbiddenBrands.some(
+        (fb) =>
+          !(req.brand_preference?.disliked ?? []).some((d) => d.toLowerCase() === fb.toLowerCase()),
+      )
+    )
+      mutationResponsiveness = false;
   }
-  if (turn.expectedSlots?.budgetMaxUsd != null) {
+  if (independentBudget != null) {
+    if (req.budget_usd?.max !== independentBudget) mutationResponsiveness = false;
     const overBudgetPick = picks.some((p) => {
-      const price = p.msrpUsd ? Number.parseFloat(p.msrpUsd) : 0;
-      return price > (turn.expectedSlots?.budgetMaxUsd ?? Infinity);
+      const price = p.msrpUsd ? Number.parseFloat(p.msrpUsd) : NaN;
+      return !Number.isFinite(price) || price > independentBudget;
     });
     if (overBudgetPick) mutationResponsiveness = false;
   }
@@ -260,9 +293,21 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
           } else {
             violations.push(`Constraint Decay: platform "${prevPlatformMust}" forgotten`);
           }
-        } else {
-          retentionChecksPassed++;
+        } else violations.push('Constraint retention cannot be verified: no prior platform');
+      } else if (slot === 'top_aspect') {
+        const prior = priorTurnResults[priorTurnResults.length - 1];
+        if (!prior) violations.push('Constraint retention cannot be verified: no prior aspect');
+        else {
+          const defaults = new Map(ASPECT_NAMES.map((a) => [a, 1 / ASPECT_NAMES.length]));
+          const before = aspectsByWeight(
+            resolveAspectWeights(prior.activeRequirements, defaults),
+          )[0];
+          const now = aspectsByWeight(resolveAspectWeights(req, defaults))[0];
+          if (before === now) retentionChecksPassed++;
+          else violations.push(`Constraint Decay: top aspect changed from ${before} to ${now}`);
         }
+      } else {
+        violations.push(`Unsupported retention slot "${slot}"`);
       }
     }
   }
@@ -380,6 +425,7 @@ export function evaluateTurnDialogState(input: TurnEvaluationInput): TurnEvaluat
     constraintViolations: violations,
     hardConstraintSatisfied,
     mutationResponsiveness,
+    mutationEligible,
     retentionScore,
     refineIntentMatched,
     resetCleanliness,

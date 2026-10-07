@@ -14,6 +14,7 @@
 import { desc, eq } from 'drizzle-orm';
 
 import { getDb } from '../src/services/db/client';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import {
   catalogCandidates,
   creatorProfiles,
@@ -28,14 +29,17 @@ async function main(): Promise<void> {
   // 1. Phones & Identities
   const phoneRows = await db
     .select({ id: phones.id, slug: phones.slug, model: phones.model, brand: phones.brand })
-    .from(phones);
+    .from(phones)
+    .where(eq(phones.status, 'active'));
   const identityRows = await db
     .select({
       id: phoneIdentities.id,
       identityType: phoneIdentities.identityType,
       externalId: phoneIdentities.externalId,
     })
-    .from(phoneIdentities);
+    .from(phoneIdentities)
+    .innerJoin(phones, eq(phoneIdentities.phoneId, phones.id))
+    .where(eq(phones.status, 'active'));
 
   console.log(`[1] Catalog Phones & Identities:`);
   console.log(`    Active phones: ${phoneRows.length}`);
@@ -101,6 +105,7 @@ async function main(): Promise<void> {
       createdAt: catalogCandidates.createdAt,
     })
     .from(catalogCandidates)
+    .where(activeCatalogCandidateSql())
     .orderBy(desc(catalogCandidates.createdAt));
 
   console.log(`    Total candidates staged: ${candidates.length}`);

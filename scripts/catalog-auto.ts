@@ -80,16 +80,16 @@ function main(): void {
       ],
       optional: true,
     },
-    ...(env.GEMINI_API_KEY
-      ? [
-          {
-            label: 'Enrich remaining candidates from Wikipedia/GSMArena',
-            script: 'scripts/catalog-enrich-gsmarena.ts',
-            args: ['--limit', DEFAULT_ENRICH_LIMIT],
-            optional: true,
-          } satisfies Step,
-        ]
-      : []),
+    {
+      label: 'Enrich remaining candidates from Wikipedia/GSMArena',
+      script: 'scripts/catalog-enrich-gsmarena.ts',
+      args: [
+        '--limit',
+        DEFAULT_ENRICH_LIMIT,
+        ...(!env.GEMINI_API_KEY ? ['--max-llm-calls', '0'] : []),
+      ],
+      optional: true,
+    } satisfies Step,
     {
       label: 'Promote any ready candidates',
       script: 'scripts/catalog-promote.ts',
@@ -114,7 +114,7 @@ function main(): void {
   }
   if (!env.GEMINI_API_KEY) {
     console.log(
-      '[catalog:auto] GEMINI_API_KEY not configured; skipping Wikipedia/GSMArena LLM enrichment.',
+      '[catalog:auto] GEMINI_API_KEY not configured; using deterministic Wikipedia extraction only.',
     );
   }
 

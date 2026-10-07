@@ -205,4 +205,6 @@ legacy/**/Flutter/flutter_export_environment.sh
 legacy/ios/Runner/GeneratedPluginRegistrant.*
 /.claude/
 /.rocketride/
+/output/eval/
+/.playwright-cli/
 .rocketride/

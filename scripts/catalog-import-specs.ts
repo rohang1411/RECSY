@@ -25,6 +25,7 @@ import {
   stableCandidateKey,
 } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
 
@@ -218,10 +219,11 @@ async function main(): Promise<void> {
             lastDecisionAt: sql`now()`,
             updatedAt: sql`now()`,
           },
+          setWhere: activeCatalogCandidateSql(),
         })
         .returning({ id: catalogCandidates.id });
 
-      if (!candidate) throw new Error('candidate upsert returned no row');
+      if (!candidate) continue;
       if (!item.plan.ok) {
         quarantined += 1;
         continue;

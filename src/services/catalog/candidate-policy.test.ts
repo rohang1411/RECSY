@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   catalogReleaseRetryAfter,
   compareCatalogPriorityThenNewest,
+  compareCatalogEnrichmentFairness,
+  isCatalogRetryDue,
+  catalogExactModelKey,
   isFutureCatalogDate,
   isLikelyCatalogPhoneTitle,
   isReleasedCatalogCandidate,
@@ -22,6 +25,51 @@ describe('catalog candidate policy', () => {
     expect(isLikelyCatalogPhoneTitle('Apple iPhone 17 Pro')).toBe(true);
     expect(isLikelyCatalogPhoneTitle('Apple iPad Air 13 2026')).toBe(false);
     expect(isLikelyCatalogPhoneTitle('Apple iPhone 17 Pro and iPhone 17 Pro Max')).toBe(false);
+    for (const title of [
+      'Apple iPhone',
+      'Samsung Galaxy S Series Phones',
+      'Samsung Galaxy A Series Smartphones',
+      'Samsung Galaxy S24 & S24+',
+      'Sony Xperia 1 Series',
+      '',
+    ]) {
+      expect(isLikelyCatalogPhoneTitle(title)).toBe(false);
+    }
+    for (const title of [
+      'Apple iPhone Air',
+      'Google Pixel Fold',
+      'OnePlus Open',
+      'Nothing Phone (3a)',
+      'Sony Xperia 1 VI',
+    ]) {
+      expect(isLikelyCatalogPhoneTitle(title)).toBe(true);
+    }
+  });
+
+  it('gives unattempted phones a turn before repeated priority-brand retries', () => {
+    const samsung = { brand: 'Samsung', model: 'Galaxy S25', attempts: 0 };
+    const apple = { brand: 'Apple', model: 'iPhone 17', attempts: 5 };
+    expect(compareCatalogEnrichmentFairness(samsung, apple)).toBeLessThan(0);
+    expect(isCatalogRetryDue(new Date('2026-06-01'), now)).toBe(false);
+    expect(isCatalogRetryDue(null, now)).toBe(true);
+  });
+
+  it('keeps individual iPhone 18 variants eligible while excluding the combined entry', () => {
+    expect(isLikelyCatalogPhoneTitle('Apple iPhone 18 Pro')).toBe(true);
+    expect(isLikelyCatalogPhoneTitle('Apple iPhone 18 Pro Max')).toBe(true);
+    expect(isLikelyCatalogPhoneTitle('Apple iPhone 18 Pro and iPhone 18 Pro Max')).toBe(false);
+  });
+
+  it('matches exact existing models while preserving model variants', () => {
+    expect(catalogExactModelKey('Samsung', 'Samsung Galaxy S24+')).toBe(
+      catalogExactModelKey('Samsung', 'Galaxy S24 Plus'),
+    );
+    expect(catalogExactModelKey('Samsung', 'Galaxy S24')).not.toBe(
+      catalogExactModelKey('Samsung', 'Galaxy S24+'),
+    );
+    expect(catalogExactModelKey('Nothing', 'Nothing Phone 2a')).toBe(
+      catalogExactModelKey('Nothing', 'Phone (2a)'),
+    );
   });
 
   it('sorts by mainstream brand priority before newest release date', () => {

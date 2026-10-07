@@ -1,4 +1,5 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or, isNull } from 'drizzle-orm';
+import { activeCatalogCandidateSql } from '@/services/catalog/eligibility';
 
 import { getDb, type AppDb } from '@/services/db/client';
 import {
@@ -316,6 +317,7 @@ async function loadRecentIngestionRuns(db: AppDb): Promise<readonly PipelineRunR
       })
       .from(ingestRuns)
       .leftJoin(phones, eq(ingestRuns.phoneId, phones.id))
+      .where(or(isNull(ingestRuns.phoneId), ne(phones.status, 'archived')))
       .orderBy(desc(ingestRuns.startedAt))
       .limit(10),
     [],
@@ -398,6 +400,7 @@ async function loadRecentScorecardRuns(db: AppDb): Promise<readonly PipelineRunR
       })
       .from(scorecardRuns)
       .leftJoin(phones, eq(scorecardRuns.phoneId, phones.id))
+      .where(ne(phones.status, 'archived'))
       .orderBy(desc(scorecardRuns.startedAt))
       .limit(10),
     [],
@@ -468,6 +471,7 @@ async function loadResumeQueueRows(db: AppDb): Promise<readonly PipelineRunRow[]
       })
       .from(crawlQueue)
       .innerJoin(phones, eq(crawlQueue.phoneId, phones.id))
+      .where(ne(phones.status, 'archived'))
       .orderBy(asc(crawlQueue.scheduledFor))
       .limit(10),
     [],
@@ -567,7 +571,7 @@ async function loadCatalogRunRows(db: AppDb): Promise<readonly PipelineRunRow[]>
         })
         .from(catalogCandidates)
         .leftJoin(phones, eq(catalogCandidates.matchedPhoneId, phones.id))
-        .where(inArray(catalogCandidates.lastRunId, runIds))
+        .where(and(inArray(catalogCandidates.lastRunId, runIds), activeCatalogCandidateSql()))
         .orderBy(desc(catalogCandidates.updatedAt))
         .limit(80),
       [],
@@ -585,7 +589,13 @@ async function loadCatalogRunRows(db: AppDb): Promise<readonly PipelineRunRow[]>
           sourceKey: catalogQualityIssues.sourceKey,
         })
         .from(catalogQualityIssues)
-        .where(inArray(catalogQualityIssues.runId, runIds))
+        .leftJoin(catalogCandidates, eq(catalogQualityIssues.candidateId, catalogCandidates.id))
+        .where(
+          and(
+            inArray(catalogQualityIssues.runId, runIds),
+            or(isNull(catalogQualityIssues.candidateId), activeCatalogCandidateSql()),
+          ),
+        )
         .orderBy(desc(catalogQualityIssues.createdAt))
         .limit(80),
       [],

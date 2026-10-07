@@ -176,17 +176,17 @@ The safest mental model is:
 | `/settings`          | Client-side preference toggles (e.g. Enter-to-send)                    | `localStorage` via `useClientSetting`; [ADR 0013](adr/0013-recommender-summary-context-tie-honesty-settings.md)    |
 | `/api/health`        | Liveness/config probe                                                  | env validation only                                                                                                |
 | `/internal/pipeline` | Internal dashboard visualizing data lifecycle and pipeline metrics     | `INTERNAL_DASHBOARD_ENABLED` env, DB metrics, mock fixtures; [ADR 0016](adr/0016-internal-pipeline-observatory.md) |
-| `/internal/eval`     | Production Evaluation & Benchmarks Command Center                      | real-time test progress, primary KPI scorecards, bootstrap CIs, historical regression diffs, trace drawer          |
+| `/internal/eval`     | Internal evaluation runner and results                                 | preflight, explicit provider track, run provenance, case results, and errors; see [operator guide](eval/README.md) |
 
 ### API routes
 
-| Route                             | Purpose                                                                | Key behavior                                                                                                             |
-| --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `POST /api/recommend`             | Run the recommender pipeline                                           | creates/loads anonymous session, rate limits by IP hash, persists turn history                                           |
-| `POST /api/ask`                   | Ask grounded questions about one phone                                 | phone-scoped hybrid retrieval, citation-validated answer, NDJSON response (includes optional `retrievalTrace` on `done`) |
-| `GET /api/health`                 | Health endpoint                                                        | does not touch DB or LLM                                                                                                 |
-| `POST /api/internal/eval/run`     | Trigger benchmark execution (multi-turn CRS, offline RecSys, ALCE RAG) | executes benchmark suite, persists run summary & traces to Postgres (`benchmark_runs`/`benchmark_results`)               |
-| `GET /api/internal/eval/runs/:id` | Retrieve benchmark run details and granular results                    | returns run metadata, aggregate metrics summary, and per-test execution traces                                           |
+| Route                             | Purpose                                                | Key behavior                                                                                                             |
+| --------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/recommend`             | Run the recommender pipeline                           | creates/loads anonymous session, rate limits by IP hash, persists turn history                                           |
+| `POST /api/ask`                   | Ask grounded questions about one phone                 | phone-scoped hybrid retrieval, citation-validated answer, NDJSON response (includes optional `retrievalTrace` on `done`) |
+| `GET /api/health`                 | Health endpoint                                        | does not touch DB or LLM                                                                                                 |
+| `POST /api/internal/eval/run`     | Trigger a selected component benchmark after preflight | persists run summary and traces; production requires evaluation token                                                    |
+| `GET /api/internal/eval/runs/:id` | Retrieve benchmark run details and granular results    | returns run metadata, aggregate metrics summary, and per-test execution traces                                           |
 
 ### Main user journeys
 
@@ -206,27 +206,27 @@ The safest mental model is:
    A reviewer or collaborator opens `/internal/pipeline`, views live DB metrics, inspects phone evidence, and uses the guided walkthrough to understand the retrieval and recommender pipelines.
 
 5. System evaluation and verification
-   An engineer or reviewer opens `/internal/eval` to inspect model accuracy, dialogue state tracking (JGA, CRR, 0-turn latency), ranking precision (NDCG@3), ALCE citation precision, and concurrency latency curves.
+   An engineer or reviewer opens `/internal/eval` to run readiness checks and inspect component results, denominators, errors, and provenance. Current fixtures and lexical/self-derived metrics do not establish model accuracy or product quality; see [evaluation guide](eval/README.md).
 
 ### Feature Inventory
 
-| Feature                                     | State      | Notes                                                                                                                                                                        |
-| ------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Landing hero, feature cards, and navigation | shipped    | `/` — hero + “What you can do” (Recommend, Browse, Compare); [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                    |
-| Conversational recommender                  | shipped    | `/recommend` plus `POST /api/recommend`                                                                                                                                      |
-| Per-phone grounded Q-and-A                  | shipped    | `/p/[slug]` plus `POST /api/ask` — see scope prompt, in-UI copy, and collapsible retrieval trace [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md)                |
-| 7-axis scorecard                            | shipped    | rendered when aspect rows exist                                                                                                                                              |
-| Browse list and filters                     | shipped    | brand, MSRP, and foldable filters                                                                                                                                            |
-| Compare                                     | shipped    | direct `/compare` page with pickers and slug form                                                                                                                            |
-| About page                                  | shipped    | product framing and navigation                                                                                                                                               |
-| Product images and MSRP in UI               | shipped    | `PhoneImage` uses `<img>` + `referrerPolicy="no-referrer"` for external URLs; seed `image_url` via `db:setup` — [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md) |
-| SEO shell                                   | shipped    | metadata, sitemap, robots, OG shell                                                                                                                                          |
-| Installable PWA shell                       | shipped    | manifest and icons only                                                                                                                                                      |
-| Offline PWA behavior                        | planned    | no service worker yet                                                                                                                                                        |
-| Retrieval eval in CI                        | optional   | gated on a real Gemini key                                                                                                                                                   |
-| Feedback loop training                      | scaffolded | table exists, UI is not wired                                                                                                                                                |
-| Internal Pipeline Observatory               | shipped    | gated by `INTERNAL_DASHBOARD_ENABLED`, features live DB metrics, mock replays, and a guided walkthrough                                                                      |
-| Evaluation & Benchmarks Hub                 | shipped    | interactive command center at `/internal/eval`, Multi-Turn CRS benchmark, offline MAUT recommender, ALCE RAG eval, and concurrency profiler                                  |
+| Feature                                     | State      | Notes                                                                                                                                                                         |
+| ------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing hero, feature cards, and navigation | shipped    | `/` — hero + “What you can do” (Recommend, Browse, Compare); [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md)                                                     |
+| Conversational recommender                  | shipped    | `/recommend` plus `POST /api/recommend`                                                                                                                                       |
+| Per-phone grounded Q-and-A                  | shipped    | `/p/[slug]` plus `POST /api/ask` — see scope prompt, in-UI copy, and collapsible retrieval trace [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md)                 |
+| 7-axis scorecard                            | shipped    | rendered when aspect rows exist                                                                                                                                               |
+| Browse list and filters                     | shipped    | brand, MSRP, and foldable filters                                                                                                                                             |
+| Compare                                     | shipped    | direct `/compare` page with pickers and slug form                                                                                                                             |
+| About page                                  | shipped    | product framing and navigation                                                                                                                                                |
+| Product images and MSRP in UI               | shipped    | `PhoneImage` uses `<img>` + `referrerPolicy="no-referrer"` for external URLs; seed `image_url` via `db:setup` — [ADR 0011](adr/0011-phone-qa-scope-images-home-ask-trace.md)  |
+| SEO shell                                   | shipped    | metadata, sitemap, robots, OG shell                                                                                                                                           |
+| Installable PWA shell                       | shipped    | manifest and icons only                                                                                                                                                       |
+| Offline PWA behavior                        | planned    | no service worker yet                                                                                                                                                         |
+| Retrieval eval in CI                        | optional   | gated on a real Gemini key                                                                                                                                                    |
+| Feedback loop training                      | scaffolded | table exists, UI is not wired                                                                                                                                                 |
+| Internal Pipeline Observatory               | shipped    | gated by `INTERNAL_DASHBOARD_ENABLED`, features live DB metrics, mock replays, and a guided walkthrough                                                                       |
+| Evaluation & Benchmarks Hub                 | partial    | runner and portal exist; full Q&A lacks corpus coverage, multi-turn is blocked by connected DB schema drift, and no API-capacity or independent quality benchmark is complete |
 
 ## 5. System Overview
 
@@ -669,15 +669,9 @@ cards when ties or missing data are detected, and appends an honest chat
 bubble to the conversation so the signal is visible to anyone reading the
 chat back.
 
-### Relaxation ladder
+### Strict constraint handling
 
-When strict filtering returns nothing, the recommender progressively relaxes:
-
-1. widen `budget_max` once
-2. ignore foldable-only if the user requested foldable and still got nothing
-3. fall back to all active phones that still survive deal-breakers
-
-The API returns `relaxed` codes so the UI can be honest about any adjustments.
+The recommender preserves an active budget and requested form factor. A candidate with no verifiable price cannot pass a budget limit. When no phone fits, it returns no picks and the UI shows its no-match state. The `relaxed` field remains in the response shape for compatibility, but the ranker no longer widens budget or drops form factor to fill a list.
 
 ### Persistence and API behavior
 
@@ -1269,42 +1263,41 @@ These are lightweight and effectively no-op off Vercel.
 
 ### Local commands that matter most
 
-| Command                    | Purpose                                                 |
-| -------------------------- | ------------------------------------------------------- | ------ | ----- |
-| `pnpm dev`                 | run the web app locally                                 |
-| `pnpm typecheck`           | strict TypeScript verification                          |
-| `pnpm lint`                | ESLint                                                  |
-| `pnpm test`                | Vitest unit suite                                       |
-| `pnpm build`               | production build check                                  |
-| `pnpm db:setup`            | extensions, migrations, FTS, RLS, and seeds             |
-| `pnpm db:smoke`            | DB sanity checks                                        |
-| `pnpm ingest`              | run ingestion for one phone                             |
-| `pnpm retrieval:smoke`     | one live retrieval sanity check                         |
-| `pnpm scorecard:run`       | generate scorecard rows                                 |
-| `pnpm spec-embed:backfill` | populate `phones.spec_embedding`                        |
-| `pnpm eval:retrieval`      | fixture-driven retrieval evaluation                     |
-| `pnpm eval:benchmark`      | run scientific evaluation suites (`--suite=multi-turn   | recsys | rag`) |
-| `pnpm eval:stress`         | run L1 data-plane concurrency load profiler (1–100 VUs) |
-| `pnpm e2e`                 | Playwright browser tests                                |
+| Command                    | Purpose                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `pnpm dev`                 | run the web app locally                                                           |
+| `pnpm typecheck`           | strict TypeScript verification                                                    |
+| `pnpm lint`                | ESLint                                                                            |
+| `pnpm test`                | Vitest unit suite                                                                 |
+| `pnpm build`               | production build check                                                            |
+| `pnpm db:setup`            | extensions, migrations, FTS, RLS, and seeds                                       |
+| `pnpm db:smoke`            | DB sanity checks                                                                  |
+| `pnpm ingest`              | run ingestion for one phone                                                       |
+| `pnpm retrieval:smoke`     | one live retrieval sanity check                                                   |
+| `pnpm scorecard:run`       | generate scorecard rows                                                           |
+| `pnpm spec-embed:backfill` | populate `phones.spec_embedding`                                                  |
+| `pnpm eval:retrieval`      | older fixture-driven retrieval check; requires Gemini and corpus                  |
+| `pnpm eval:check`          | validate selected suite prerequisites without creating a run                      |
+| `pnpm eval:benchmark`      | run `recsys`, `rag`, `multi-turn`, `load-stress`, or `all` with an explicit track |
+| `pnpm eval:report`         | inspect a stored run by ID                                                        |
+| `pnpm eval:load`           | separate DB retrieval component probe                                             |
+| `pnpm e2e`                 | Playwright browser tests                                                          |
 
-### Scientific Evaluation & Benchmarks Hub
+### Evaluation operator guide
 
-Located under `src/services/eval/` and the `/internal/eval` Command Center:
+Use [the full operator guide](eval/README.md) for setup, commands, portal access, data coverage, metric interpretation, and failure triage. The [implementation plan](ImplementationPlans/20.%20evaluation-validity-and-operations-repair.md) holds the evidence ledger and open release gates.
 
-- **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`pnpm eval:benchmark --suite=multi-turn`):**
-  Evaluates 15 conversational trajectories spanning 37 dialog turns across non-linear preference evolutions (budget shifts, brand negations, subset refinements, hard resets, platform constraints). Measures strict Binary Joint Goal Accuracy (JGA), continuous Slot Accuracy, Constraint Retention Rate (CRR over active prior turns only), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1 (confusion-matrix harmonic mean), Reset Purge Cleanliness (erasure of residual state), Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and actual measured/simulated token accounting.
-- **Tier 2 — Offline MAUT Recommender Benchmark (`pnpm eval:benchmark --suite=recsys`):**
-  Evaluates ranking quality (NDCG@3/5, MRR), Constraint Satisfaction Rate (CSR, gating empty picks and unpriced phones), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 30 golden personas.
-- **Tier 3 — Grounded Q&A & Stanford ALCE Attributed Q&A (`pnpm eval:benchmark --suite=rag`):**
-  Evaluates the headline resume metric **Fully Supported Answer Rate (FSAR)** on 20 held-out answerable product queries, alongside **Appropriate Abstention Rate (AAR)** on 10 held-out insufficient-evidence queries, fine-grained Sentence-Level Citation Precision (`citePrec`), Citation Recall (`citeRec`), phantom citation detection, and boundary-aware numeric entailment evaluated directly against the exact evidence retrieved during generation (`qnaResult.retrieval.chunks`).
-- **Tier 4 — Retrieval Component Ablation Study (`pnpm eval:benchmark --suite=ablation`):**
-  Executes empirical head-to-head comparisons of Dense Vector Search (pgvector HNSW), Full-Text Search (tsvector/trigram), and RECSY Hybrid RRF+MMR against reference facts with Wilcoxon Signed-Rank tests for statistical significance ($p < 0.05$).
-- **Tier 5 — L1 Data-Plane Concurrency Stress Profiler (`pnpm eval:stress`):**
-  Simulates 1–100 concurrent virtual users (VUs) executing recommendation intake and search queries, measuring p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
-- **Web Command Center UI (`/internal/eval`):**
-  Interactive dashboard displaying real-time execution progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffing, turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export and rehydration.
-- **Persistence (`benchmark_runs` and `benchmark_results`):**
-  All benchmark runs, aggregate KPI metrics summaries, and granular execution traces are durably persisted to PostgreSQL via migration `0008_cute_komodo.sql`.
+The current development fixtures contain 30 recommendation personas, 20 Q&A cases labeled answerable by their author, 10 quarantined unanswerable cases, and 15 multi-turn trajectories / 37 turns. They are structurally validated and hashed before a run, but are not independently adjudicated. Full Q&A preflight still fails because one fixture phone is missing and four lack chunks. The applied client/session migration and atomic ownership writer were restored locally on 2026-10-06; schema incompatibility no longer blocks the isolated multi-turn path. That deterministic suite passes 14/15; one authored fixture conflicts with the product's clarification for unverifiable exclusions and requires review.
+
+Pilot review update 2026-10-07: the returned version 2 labels passed provenance/ID validation. Submitted judgments identify vector citation-support errors, a false FTS evidence-availability diagnosis, and an incomplete hybrid quota failure. All recorded variants concern one question. Review method is confirmed as AI-assisted and user-verified; sp03's intentional rejection concerns historical/current time scope and needs candidate remediation. No held-out percentage follows. See [the review receipt and adjudication](eval/REVIEW_ADJUDICATION_2026-10-07.md).
+
+The campaign now runs actual HTTP requests, DB writes, faults, and bounded open-arrival load using an explicitly controlled provider in a separate `eval_*` schema. Twenty-one functional/fault scenarios pass; these do not measure real model quality. The full authored ranker fixture returns 5/30 and needs review for unsupported hard-feature expectations; mandatory-feature coverage is limited and the product clarifies rather than certifying unknown features. The six-question source-backed live pilot is diagnostic candidate data, not reviewed gold: it stopped on Gemini 429 after 3/18 planned variant outcomes. Four verified false source assertions are quarantined before hybrid fusion, with retrieval diagnostics; the whole corpus has not been validated as factual gold. Its blinded rubric v2 separately asks about factual correctness and citation support, and the portal validates exported label provenance. No supported-answer percentage or held-out/hybrid-improvement claim is available. Local repairs are not yet published to the supplied Vercel deployment; unauthenticated evaluation history and malformed-JSON behavior remain verified deployed defects.
+
+Start with `pnpm eval:campaign --new-stage` for a new isolated corpus copy, then `pnpm eval:campaign --load` for controlled HTTP checks/load, or `pnpm eval:campaign --serve-only` for the local portal. Live execution is opt-in (`--live`), bounded to actual transport attempts and stopped on the first quota error. Verify a quota reset before explicitly resuming. `pnpm eval:snapshot` archives catalog/corpus including vectors; restore only into an empty stage. Preserve run artifacts and review exports. See [the operator guide](eval/README.md), [dated evidence report](eval/PRODUCTION_CAMPAIGN_2026-10-06.md), and [campaign plan](ImplementationPlans/21.%20production-evaluation-campaign.md) for exact commands, test scope and remaining gates.
+
+Recommender MAUT NDCG@3 is agreement with self-derived ranker labels, not independent ranking quality. Citation overlap is lexical, not semantic entailment or fully supported answer rate. The 10 unanswerable cases are not run as an abstention suite. Conversation mutation, refine, retention, and reset scores use eligible annotated turns; a zero denominator is unavailable. `load-stress` probes concurrent DB retrieval with a deterministic embedder; it does not measure HTTP capacity or pool saturation. There is no working `--suite=ablation` or `pnpm eval:stress` command in this checkout. The portal records selected provider, fixture/catalog fingerprints, code state, sample size, result status, failures, and per-case traces. Production evaluation APIs require `INTERNAL_DASHBOARD_ENABLED` and `INTERNAL_EVAL_TOKEN`.
+
+The five-case Q&A probe found zero FTS hits in all five cases while vector retrieval returned chunks. The portal shows this coverage signal and generation cache hits separately from uncached provider calls. Token totals describe only usage reported for current uncached calls. An FTS fallback experiment was reverted because its extra hits lacked reviewed relevance judgments; the operator guide and plan describe the evidence needed before a retrieval change.
 
 ### What `pnpm db:setup` actually does
 

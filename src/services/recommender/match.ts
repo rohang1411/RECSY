@@ -27,6 +27,7 @@ import {
 } from './constants';
 import type { PhoneCatalogEntry } from './catalog';
 import type { UserRequirements } from './requirements-schema';
+import { passesVerifiedHardFeatures } from './hard-features';
 import {
   detectPlatformPreferenceFromRequirements,
   isPlatformRequirement,
@@ -125,6 +126,7 @@ export function passesHardFilters(
   requirements: UserRequirements,
   opts: FilterPassOptions,
 ): boolean {
+  if (!passesVerifiedHardFeatures(entry, requirements)) return false;
   if (requirements.brand_preference.disliked.length > 0) {
     const b = entry.brand.toLowerCase();
     for (const d of requirements.brand_preference.disliked) {
@@ -144,11 +146,12 @@ export function passesHardFilters(
     if (!spec?.foldable) return false;
   }
 
-  if (ff?.weight_max_g != null && spec != null && spec.weight_g != null) {
-    if (spec.weight_g > ff.weight_max_g) return false;
+  if (ff?.weight_max_g != null) {
+    if (spec?.weight_g == null || spec.weight_g > ff.weight_max_g) return false;
   }
 
-  if (ff?.screen_size_range_in && spec != null) {
+  if (ff?.screen_size_range_in) {
+    if (!spec?.display?.size_in) return false;
     const [a, b] = ff.screen_size_range_in;
     const lo = Math.min(a, b);
     const hi = Math.max(a, b);
@@ -167,33 +170,27 @@ export function passesHardFilters(
     const max =
       opts.budgetMaxOverride ??
       (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
-    if (entry.localPrice != null) {
-      const price = Number.parseFloat(entry.localPrice);
-      if (!Number.isNaN(price) && price > max) return false;
-    }
+    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
+    if (!Number.isFinite(price) || price > max) return false;
   } else {
     const budget = requirements.budget_usd;
     if (budget?.max != null) {
       const max =
         opts.budgetMaxOverride ??
         (opts.relaxBudgetMax ? budget.max * RECOMMEND_BUDGET_RELAX_FACTOR : budget.max);
-      if (entry.msrpUsd != null) {
-        const price = Number.parseFloat(entry.msrpUsd);
-        if (!Number.isNaN(price) && price > max) return false;
-      }
+      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
+      if (!Number.isFinite(price) || price > max) return false;
     }
   }
 
   if (localBudget && localBudget.min != null) {
-    if (entry.localPrice != null) {
-      const price = Number.parseFloat(entry.localPrice);
-      if (!Number.isNaN(price) && price < localBudget.min) return false;
-    }
+    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
+    if (!Number.isFinite(price) || price < localBudget.min) return false;
   } else {
     const budget = requirements.budget_usd;
-    if (budget?.min != null && entry.msrpUsd != null) {
-      const price = Number.parseFloat(entry.msrpUsd);
-      if (!Number.isNaN(price) && price < budget.min) return false;
+    if (budget?.min != null) {
+      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
+      if (!Number.isFinite(price) || price < budget.min) return false;
     }
   }
 
@@ -458,36 +455,12 @@ export function rankCandidates(
     },
   };
 
-  let ranked = collectScored(catalog, ctx, {
+  const ranked = collectScored(catalog, ctx, {
     relaxBudgetMax: false,
     ignoreFoldable: false,
   });
 
-  if (ranked.length === 0 && requirements.budget_usd?.max != null) {
-    ranked = collectScored(catalog, ctx, {
-      relaxBudgetMax: true,
-      ignoreFoldable: false,
-    });
-    if (ranked.length > 0) relaxed.push('budget_max_widened');
-  }
-
-  if (ranked.length === 0 && requirements.form_factor?.foldable === true) {
-    ranked = collectScored(catalog, ctx, {
-      relaxBudgetMax: true,
-      ignoreFoldable: true,
-    });
-    if (ranked.length > 0) relaxed.push('foldable_preference_ignored');
-  }
-
-  if (ranked.length === 0) {
-    for (const entry of catalog) {
-      const haystack = buildSearchHaystack(entry);
-      if (dealBreakerHit(haystack, requirements.deal_breakers)) continue;
-      ranked.push(scoreEntry(entry, ctx));
-    }
-    ranked.sort((a, b) => b.score - a.score);
-    if (ranked.length > 0) relaxed.push('fallback_all_active_phones');
-  }
+  // An empty result is preferable to silently violating budget, platform or form factor.
 
   const picks = pickDiverseTop(ranked, RECOMMEND_TOP_PICKS, RECOMMEND_MAX_PER_BRAND);
 

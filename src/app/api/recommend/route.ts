@@ -14,6 +14,7 @@
  * Used by: `src/app/recommend/RecommendClient.tsx`.
  */
 import { randomBytes } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -21,11 +22,12 @@ import { ZodError, z } from 'zod';
 
 import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
 import { env } from '@/env';
-import { isAppError, toAppError } from '@/lib/errors';
+import { isAppError, publicErrorMessage, toAppError } from '@/lib/errors';
+import { readRequestJson } from '@/lib/request-json';
 import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { getDb } from '@/services/db/client';
-import { recommendationTurns } from '@/services/db/schema';
+import { recommendationSessions, recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
 import { requestLogger } from '@/services/logger';
 import { consumeRecommendRateLimit } from '@/services/rate-limit';
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const ip = getRequestClientIp(request);
     await consumeRecommendRateLimit(ip);
 
-    const json: unknown = await request.json();
+    const json = await readRequestJson(request, 16_384);
     const body = bodySchema.parse(json);
 
     const db = getDb();
@@ -96,41 +98,51 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
 
-    const t0 = performance.now();
-    const result = await runRecommendationPipeline({
-      db,
-      llm: getLlm(),
-      sessionId: session.id,
-      userMessage: body.message,
-      regionCode,
-      log: log.child({ sessionId: session.id }),
+    const sessionId = session.id;
+    const result = await db.transaction(async (tx) => {
+      // Serialize context loading and turn writes for this session across processes.
+      await tx
+        .select({ id: recommendationSessions.id })
+        .from(recommendationSessions)
+        .where(eq(recommendationSessions.id, sessionId))
+        .for('update');
+      const t0 = performance.now();
+      const result = await runRecommendationPipeline({
+        db: tx,
+        llm: getLlm(),
+        sessionId,
+        userMessage: body.message,
+        regionCode,
+        log: log.child({ sessionId }),
+      });
+      const latencyMs = Math.round(performance.now() - t0);
+
+      const turnIndex = await nextTurnIndex(tx, sessionId);
+
+      if (result.kind === 'clarify') {
+        await tx.insert(recommendationTurns).values({
+          sessionId,
+          turnIndex,
+          userMessage: body.message,
+          intent: 'clarify',
+          extractedRequirements: result.requirements as unknown as Record<string, unknown>,
+          clarifyingQuestion: result.clarifyingQuestion,
+          latencyMs,
+        });
+      } else {
+        await tx.insert(recommendationTurns).values({
+          sessionId,
+          turnIndex,
+          userMessage: body.message,
+          intent: 'recommend',
+          extractedRequirements: result.requirements as unknown as Record<string, unknown>,
+          candidatePhoneIds: result.picks.map((p) => p.phoneId),
+          picks: result.picks as unknown[],
+          latencyMs,
+        });
+      }
+      return result;
     });
-    const latencyMs = Math.round(performance.now() - t0);
-
-    const turnIndex = await nextTurnIndex(db, session.id);
-
-    if (result.kind === 'clarify') {
-      await db.insert(recommendationTurns).values({
-        sessionId: session.id,
-        turnIndex,
-        userMessage: body.message,
-        intent: 'clarify',
-        extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-        clarifyingQuestion: result.clarifyingQuestion,
-        latencyMs,
-      });
-    } else {
-      await db.insert(recommendationTurns).values({
-        sessionId: session.id,
-        turnIndex,
-        userMessage: body.message,
-        intent: 'recommend',
-        extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-        candidatePhoneIds: result.picks.map((p) => p.phoneId),
-        picks: result.picks as unknown[],
-        latencyMs,
-      });
-    }
 
     const res = NextResponse.json(
       {
@@ -176,7 +188,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return NextResponse.json(
       {
         code: app.code,
-        message: app.message,
+        message: publicErrorMessage(app),
         ...(devDebug != null ? { debug: devDebug } : {}),
       },
       { status: app.status, headers: { 'X-Trace-Id': traceId } },

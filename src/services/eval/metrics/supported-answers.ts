@@ -1,35 +1,18 @@
 /**
- * Fully Supported Answer Rate (FSAR) & Grounded Answerability Evaluation Engine.
- *
- * Implements research-grade evaluation of RAG product question answering,
- * grounded in Stanford ALCE (Attributed Language Evaluation for Citations and Entailment)
- * and frontier AI lab validation standards:
- *
- * 1. Fully Supported Answer Rate (FSAR) on held-out, answerable questions:
- *    - Questions receiving a useful, complete answer where EVERY material factual claim
- *      is directly entailed by cited retrieved passages / all answerable test questions.
- *    - Incomplete answers, unsupported claims, hallucinations, and refusals count as failures.
- *
- * 2. Appropriate Abstention Rate (AAR) on insufficient-evidence questions:
- *    - Measures whether the system correctly declines to guess or state facts when
- *      the corpus lacks evidence, avoiding catastrophic hallucinations.
- *
- * 3. Claim Support Precision:
- *    - Proportion of inline citations that factually entail the associated statement.
- *
- * 4. Factual Citation Recall:
- *    - Proportion of expected reference facts accurately stated and cited in the output.
+ * Development heuristics for answer text and citation checks. They rely on
+ * keywords, numeric-string presence, and refusal phrases. They cannot judge
+ * claim truth, completeness, semantic support, FSAR, or appropriate abstention.
  */
 
 import {
-  chunkSupportsSentence,
+  chunkPassesLexicalProxy,
   extractInlineCitations,
   extractNumericalEntities,
   splitIntoSentences,
-  verifyNumericalEntailment,
+  verifyNumericalStringPresence,
 } from './alce';
 
-export interface SupportedAnswerEvaluationInput {
+export interface AnswerHeuristicInput {
   readonly query: string;
   readonly answerText: string;
   readonly retrievedChunks: ReadonlyMap<string, string>;
@@ -37,30 +20,30 @@ export interface SupportedAnswerEvaluationInput {
   readonly numericalEntities?: readonly string[];
 }
 
-export interface SupportedAnswerResult {
+export interface AnswerHeuristicResult {
   readonly isAnswerable: true;
-  readonly isUsefulAndComplete: boolean;
-  readonly isFullySupported: boolean;
-  readonly claimSupportPrecision: number;
-  readonly factualRecall: number;
+  readonly appearsCompleteByKeywords: boolean;
+  readonly passesHeuristicChecks: boolean;
+  readonly lexicalCitationSupport: number;
+  readonly lexicalReferenceCoverage: number;
   readonly numericalCheckPassed: boolean;
-  readonly missingFacts: readonly string[];
+  readonly unmatchedReferenceFacts: readonly string[];
   readonly missingEntities: readonly string[];
-  readonly unsupportedClaims: readonly string[];
+  readonly unmatchedSentences: readonly string[];
   readonly violations: readonly string[];
 }
 
-export interface AbstentionEvaluationInput {
+export interface AbstentionHeuristicInput {
   readonly query: string;
   readonly answerText: string;
   readonly retrievedChunks: ReadonlyMap<string, string>;
   readonly expectedAbstentionReason?: string;
 }
 
-export interface AbstentionResult {
+export interface AbstentionHeuristicResult {
   readonly isAnswerable: false;
-  readonly abstainedAppropriately: boolean;
-  readonly refusalReason?: string;
+  readonly hasAbstentionPhrase: boolean;
+  readonly heuristicReason?: string;
   readonly violations: readonly string[];
 }
 
@@ -72,12 +55,9 @@ const COMMON_ABSTENTION_PATTERNS = [
 ];
 
 /**
- * Evaluates whether an answer to an answerable question is useful, complete,
- * and fully supported by its cited passages.
+ * Applies mechanical checks to an authored answerable case.
  */
-export function evaluateFullySupportedAnswer(
-  input: SupportedAnswerEvaluationInput,
-): SupportedAnswerResult {
+export function evaluateAnswerHeuristics(input: AnswerHeuristicInput): AnswerHeuristicResult {
   const { answerText, retrievedChunks, referenceFacts, numericalEntities = [] } = input;
   const violations: string[] = [];
   const trimmed = answerText.trim();
@@ -87,27 +67,27 @@ export function evaluateFullySupportedAnswer(
     violations.push('Answer is empty or trivially short (<20 characters)');
     return {
       isAnswerable: true,
-      isUsefulAndComplete: false,
-      isFullySupported: false,
-      claimSupportPrecision: 0,
-      factualRecall: 0,
+      appearsCompleteByKeywords: false,
+      passesHeuristicChecks: false,
+      lexicalCitationSupport: 0,
+      lexicalReferenceCoverage: 0,
       numericalCheckPassed: false,
-      missingFacts: referenceFacts,
+      unmatchedReferenceFacts: referenceFacts,
       missingEntities: numericalEntities,
-      unsupportedClaims: ['Empty/trivial answer'],
+      unmatchedSentences: ['Empty/trivial answer'],
       violations,
     };
   }
 
-  // 2. Guard against inappropriate refusal on answerable questions
+  // 2. Flag a refusal phrase on an authored answerable fixture.
   const looksLikeRefusal = COMMON_ABSTENTION_PATTERNS.some((p) => p.test(trimmed));
   if (looksLikeRefusal && referenceFacts.length > 0) {
-    violations.push('Model refused to answer an answerable question with available evidence');
+    violations.push('Refusal phrase detected on an authored answerable case');
   }
 
-  // 3. Completeness & Reference Fact Recall
+  // 3. Keyword coverage of the authored reference-fact text.
   const answerLower = trimmed.toLowerCase();
-  const missingFacts: string[] = [];
+  const unmatchedReferenceFacts: string[] = [];
   for (const fact of referenceFacts) {
     const factKeywords = fact
       .toLowerCase()
@@ -119,13 +99,13 @@ export function evaluateFullySupportedAnswer(
     const matchedKeywords = factKeywords.filter((k) => answerLower.includes(k));
     const coverage = matchedKeywords.length / factKeywords.length;
     if (coverage < 0.5) {
-      missingFacts.push(fact);
+      unmatchedReferenceFacts.push(fact);
     }
   }
 
-  const factualRecall =
+  const lexicalReferenceCoverage =
     referenceFacts.length > 0
-      ? (referenceFacts.length - missingFacts.length) / referenceFacts.length
+      ? (referenceFacts.length - unmatchedReferenceFacts.length) / referenceFacts.length
       : 1.0;
 
   // 4. Numerical Entities Check
@@ -133,7 +113,8 @@ export function evaluateFullySupportedAnswer(
   for (const expectedEnt of numericalEntities) {
     const rawNumber = expectedEnt.replace(/[^0-9.]/g, '');
     if (!rawNumber) continue;
-    const boundaryRegex = new RegExp(`(?:^|[^0-9.])${rawNumber}(?:[^0-9.]|$)`, 'i');
+    const escapedNumber = rawNumber.replace(/\./g, '\\.');
+    const boundaryRegex = new RegExp(`(?:^|[^0-9.])${escapedNumber}(?:[^0-9.]|$)`, 'i');
     if (!boundaryRegex.test(trimmed)) {
       missingEntities.push(expectedEnt);
     }
@@ -143,11 +124,11 @@ export function evaluateFullySupportedAnswer(
     violations.push(`Missing expected numerical entities: ${missingEntities.join(', ')}`);
   }
 
-  // 5. Claim Attribution & Citation Entailment
+  // 5. Citation ID and lexical overlap checks.
   const sentences = splitIntoSentences(trimmed);
   let totalCitations = 0;
-  let supportedCitations = 0;
-  const unsupportedClaims: string[] = [];
+  let lexicallyMatchedCitations = 0;
+  const unmatchedSentences: string[] = [];
 
   for (const sentence of sentences) {
     const citations = extractInlineCitations(sentence);
@@ -156,61 +137,64 @@ export function evaluateFullySupportedAnswer(
 
     if (citations.length === 0) {
       if (isMaterialFact) {
-        unsupportedClaims.push(`[Uncited Claim] "${sentence.slice(0, 80)}..."`);
-        violations.push(`Material claim lacks citation: "${sentence.slice(0, 80)}..."`);
+        unmatchedSentences.push(`[Uncited sentence] "${sentence.slice(0, 80)}..."`);
+        violations.push(`Long or numeric sentence lacks citation: "${sentence.slice(0, 80)}..."`);
       }
       continue;
     }
 
     totalCitations += citations.length;
-    let sentenceEntailed = false;
+    let sentenceMatchesLexically = false;
 
     for (const cid of citations) {
       const chunkText = retrievedChunks.get(cid);
       if (!chunkText) {
-        violations.push(`Phantom citation [${cid}] points to missing chunk`);
+        violations.push(`Unknown citation ID [${cid}] points to no retrieved chunk`);
         continue;
       }
 
-      if (chunkSupportsSentence(sentence, chunkText)) {
-        supportedCitations++;
-        sentenceEntailed = true;
+      if (chunkPassesLexicalProxy(sentence, chunkText)) {
+        lexicallyMatchedCitations++;
+        sentenceMatchesLexically = true;
       }
     }
 
-    if (!sentenceEntailed && isMaterialFact) {
-      unsupportedClaims.push(`[Unsupported Cited Claim] "${sentence.slice(0, 80)}..."`);
-      violations.push(`Cited claim is not supported by evidence: "${sentence.slice(0, 80)}..."`);
+    if (!sentenceMatchesLexically && isMaterialFact) {
+      unmatchedSentences.push(`[Lexical mismatch] "${sentence.slice(0, 80)}..."`);
+      violations.push(`Cited claim did not pass lexical overlap: "${sentence.slice(0, 80)}..."`);
     }
   }
 
-  const claimSupportPrecision = totalCitations > 0 ? supportedCitations / totalCitations : 0;
-  const isUsefulAndComplete = factualRecall >= 0.7 && numericalCheckPassed && !looksLikeRefusal;
-  const isFullySupported =
-    isUsefulAndComplete &&
-    unsupportedClaims.length === 0 &&
-    claimSupportPrecision >= 0.8 &&
+  const lexicalCitationSupport =
+    totalCitations > 0 ? lexicallyMatchedCitations / totalCitations : 0;
+  const appearsCompleteByKeywords =
+    lexicalReferenceCoverage >= 0.7 && numericalCheckPassed && !looksLikeRefusal;
+  const passesHeuristicChecks =
+    appearsCompleteByKeywords &&
+    unmatchedSentences.length === 0 &&
+    lexicalCitationSupport >= 0.8 &&
     totalCitations > 0;
 
   return {
     isAnswerable: true,
-    isUsefulAndComplete,
-    isFullySupported,
-    claimSupportPrecision: Math.round(claimSupportPrecision * 1000) / 1000,
-    factualRecall: Math.round(factualRecall * 1000) / 1000,
+    appearsCompleteByKeywords,
+    passesHeuristicChecks,
+    lexicalCitationSupport: Math.round(lexicalCitationSupport * 1000) / 1000,
+    lexicalReferenceCoverage: Math.round(lexicalReferenceCoverage * 1000) / 1000,
     numericalCheckPassed,
-    missingFacts,
+    unmatchedReferenceFacts,
     missingEntities,
-    unsupportedClaims,
+    unmatchedSentences,
     violations,
   };
 }
 
 /**
- * Evaluates whether an unanswerable / insufficient-evidence question was correctly
- * abstained from rather than generating unsupported claims.
+ * Detects refusal phrases and numeric strings in an authored insufficient-evidence case.
  */
-export function evaluateAbstention(input: AbstentionEvaluationInput): AbstentionResult {
+export function checkAbstentionPhraseHeuristic(
+  input: AbstentionHeuristicInput,
+): AbstentionHeuristicResult {
   const { answerText, retrievedChunks } = input;
   const violations: string[] = [];
   const trimmed = answerText.trim();
@@ -218,17 +202,17 @@ export function evaluateAbstention(input: AbstentionEvaluationInput): Abstention
   // If the answer explicitly declares insufficient information
   const abstained = COMMON_ABSTENTION_PATTERNS.some((p) => p.test(trimmed));
 
-  // If the answer made specific numerical claims without evidence
+  // Check numeric-string presence; absence is not proof of hallucination.
   const numericalClaims = extractNumericalEntities(trimmed);
   const chunkTextCombined = Array.from(retrievedChunks.values()).join(' ');
-  const numCheck = verifyNumericalEntailment(trimmed, [chunkTextCombined]);
+  const numCheck = verifyNumericalStringPresence(trimmed, [chunkTextCombined]);
 
   if (!abstained && numericalClaims.length > 0 && !numCheck.passed) {
-    violations.push('Hallucinated factual claims when corpus lacked evidence');
+    violations.push('Numeric string was absent from retrieved chunk text');
     return {
       isAnswerable: false,
-      abstainedAppropriately: false,
-      refusalReason: 'Hallucination: unsupported facts generated',
+      hasAbstentionPhrase: false,
+      heuristicReason: 'Numeric claim without matching corpus string',
       violations,
     };
   }
@@ -236,18 +220,18 @@ export function evaluateAbstention(input: AbstentionEvaluationInput): Abstention
   if (abstained) {
     return {
       isAnswerable: false,
-      abstainedAppropriately: true,
-      refusalReason: 'Correctly identified lack of evidence and declined to guess',
+      hasAbstentionPhrase: true,
+      heuristicReason: 'Refusal phrase detected; correctness requires independent review',
       violations,
     };
   }
 
-  // Answer neither abstained nor supported
-  violations.push('Answer failed to abstain on insufficient evidence question');
+  // No refusal phrase was detected; correctness is not established.
+  violations.push('No refusal phrase detected on an authored insufficient-evidence case');
   return {
     isAnswerable: false,
-    abstainedAppropriately: false,
-    refusalReason: 'Failed to abstain',
+    hasAbstentionPhrase: false,
+    heuristicReason: 'No refusal phrase detected',
     violations,
   };
 }

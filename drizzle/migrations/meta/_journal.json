@@ -64,6 +64,20 @@
       "when": 1790396666852,
       "tag": "0008_cute_komodo",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790709861347,
+      "tag": "0009_multi_session_chat_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791403946597,
+      "tag": "0010_archive_phone_status",
+      "breakpoints": true
     }
   ]
 }

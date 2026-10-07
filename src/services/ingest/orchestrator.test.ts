@@ -43,6 +43,45 @@ function makeOrchestrator(adapter: SourceAdapter): IngestOrchestrator {
 }
 
 describe('IngestOrchestrator unavailable sources', () => {
+  it('skips unchanged comparison content before disambiguation, curation, or embeddings', async () => {
+    const resolve = vi.fn();
+    const decide = vi.fn();
+    const embed = vi.fn();
+    const values = vi.fn(async () => []);
+    const db = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: async () => [{ id: 'existing' }] }) }),
+      }),
+      insert: () => ({ values }),
+    };
+    const adapter = {
+      type: 'youtube',
+      discover: vi.fn(async () => [candidate]),
+      fetch: vi.fn(async () => ({
+        body: 'unchanged review',
+        contentHash: 'same',
+        url: candidate.url,
+      })),
+      chunk: vi.fn(),
+    } as unknown as SourceAdapter;
+    const orchestrator = new IngestOrchestrator({
+      db: db as never,
+      llm: { embed } as unknown as LlmProvider,
+      adapters: [adapter],
+      curator: { decide } as never,
+      disambiguator: { resolve } as never,
+      aliasLoader: async () => [],
+    });
+    const result = await orchestrator.ingestPhone(phone);
+    expect(result.totals.skippedDuplicate).toBe(1);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(decide).not.toHaveBeenCalled();
+    expect(embed).not.toHaveBeenCalled();
+    expect(adapter.chunk).not.toHaveBeenCalled();
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'skipped', rejectedReason: 'unchanged-content' }),
+    );
+  });
   it('counts NotFoundError fetch failures as unusable skips, not adapter errors', async () => {
     const adapter: SourceAdapter = {
       type: 'youtube',

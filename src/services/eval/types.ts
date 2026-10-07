@@ -1,6 +1,6 @@
 /**
- * Core type definitions and contracts for RECSY Evaluation & Scalability Benchmarking.
- * Grounded in Multi-Attribute Utility Theory (MAUT) and Stanford ALCE.
+ * Core contracts for RECSY component evaluation. Some persisted tier and
+ * metric field names are historical; see the operator guide before interpreting them.
  */
 import type { AspectName } from '@/lib/constants';
 import type { UserRequirements } from '@/services/recommender/requirements-schema';
@@ -14,7 +14,7 @@ export type BenchmarkTier =
   | 'ABLATION'
   | 'MULTI_TURN_CRS';
 
-export type BenchmarkStatus = 'pending' | 'running' | 'success' | 'failed';
+export type BenchmarkStatus = 'pending' | 'running' | 'success' | 'failed' | 'unverified';
 export type TestCaseStatus = 'pass' | 'fail' | 'warn';
 export type TestCaseCategory = 'recsys' | 'rag' | 'stress' | 'ablation' | 'multi-turn';
 
@@ -39,8 +39,7 @@ export interface RecommenderPersonaFixture {
       readonly disliked: readonly string[];
     };
   };
-  readonly minExpectedNdcg3?: number;
-  readonly acceptableSlugs?: readonly string[];
+  readonly expectNoResults?: boolean;
 }
 
 export interface AttributedQaFixture {
@@ -50,7 +49,6 @@ export interface AttributedQaFixture {
   readonly query: string;
   readonly referenceFacts: readonly string[];
   readonly numericalEntities?: readonly string[];
-  readonly minExpectedCitePrec?: number;
 }
 
 export interface TrajectoryTurn {
@@ -128,12 +126,12 @@ export interface SentenceAttribution {
   readonly sentence: string;
   readonly citations: readonly string[];
   readonly hasValidChunkRefs: boolean;
-  readonly isEntailed: boolean;
+  readonly passesLexicalProxy: boolean;
   readonly numericalCheckPassed: boolean;
   readonly missingEntities: readonly string[];
 }
 
-export interface AlceAttributionResult {
+export interface CitationLexicalProxyResult {
   readonly citePrec: number;
   readonly citeRec: number;
   readonly phantomRate: number;
@@ -163,6 +161,9 @@ export interface LatencyPercentiles {
 }
 
 export interface LoadStressResult {
+  readonly targetComponent: 'data-plane-retrieval' | 'data-plane-recsys';
+  readonly catalogCount: number;
+  readonly targetChunkCount: number;
   readonly totalRequests: number;
   readonly successfulRequests: number;
   readonly failedRequests: number;
@@ -170,10 +171,12 @@ export interface LoadStressResult {
   readonly concurrencyVus: number;
   readonly durationMs: number;
   readonly qps: number;
+  readonly goodputQps: number;
+  readonly stageP95Ms: Record<string, number>;
   readonly latency: LatencyPercentiles;
-  readonly poolSaturationPercent: number;
   readonly eventLoopLagMs: number;
-  readonly statusCodes: Record<number, number>;
+  readonly errorCounts: Record<string, number>;
+  readonly errorSamples: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +197,7 @@ export interface TurnEvaluationResult {
   readonly constraintViolations: readonly string[];
   readonly hardConstraintSatisfied: boolean;
   readonly mutationResponsiveness: boolean;
+  readonly mutationEligible?: boolean;
   readonly retentionScore: number;
   readonly refineIntentMatched: boolean;
   readonly resetCleanliness?: number;
@@ -218,28 +222,33 @@ export interface TrajectoryEvaluationResult {
   readonly overallJga: number;
   readonly overallSlotAccuracy?: number;
   readonly overallRetentionRate: number | null;
-  readonly overallMutationLatency: number;
-  readonly refineIntentAccuracy: number;
-  readonly refineIntentF1: number;
-  readonly resetCleanliness: number;
-  readonly tokenUsage: {
+  readonly overallMutationResponsiveness: number | null;
+  readonly refineIntentAccuracy: number | null;
+  readonly refineIntentF1: number | null;
+  readonly resetCleanliness: number | null;
+  readonly tokenUsage?: {
     readonly tokensIn: number;
     readonly tokensOut: number;
-    readonly estimatedCostUsd: number;
     readonly isMeasured?: boolean;
   };
   readonly durationMs: number;
 }
 
 export interface BenchmarkRunMetricsSummary {
+  readonly providerTransportBudget?: Readonly<Record<string, unknown>>;
+  readonly executionError?: string;
   readonly ndcg3?: StatisticalSummary;
   readonly ndcg5?: StatisticalSummary;
   readonly mrr?: number;
   readonly ild3?: StatisticalSummary;
+  readonly ildCoverageCases?: number;
   readonly catalogCoverage?: number;
   readonly giniCoefficient?: number;
   readonly budgetCsr?: number;
   readonly dealbreakerCsr?: number;
+  readonly constraintPolicyCases?: number;
+  readonly noResultPolicyCases?: number;
+  readonly noResultPolicyPassed?: number;
   readonly citePrec?: StatisticalSummary;
   readonly citeRec?: StatisticalSummary;
   readonly phantomRate?: number;
@@ -248,6 +257,8 @@ export interface BenchmarkRunMetricsSummary {
   readonly latencyP95?: number;
   readonly latencyP99?: number;
   readonly peakQps?: number;
+  readonly goodputQps?: number;
+  readonly stageP95Ms?: Record<string, number>;
   readonly totalTests?: number;
   readonly passedTests?: number;
   readonly failedTests?: number;
@@ -264,9 +275,14 @@ export interface BenchmarkRunMetricsSummary {
     readonly tokensIn: number;
     readonly tokensOut: number;
     readonly totalTokens: number;
-    readonly estimatedCostUsd: number;
   };
-  // Q&A Grounded Answerability Metrics (ALCE + Supported Answer Rate)
+  readonly generationProviderCalls?: number;
+  readonly generationCacheHits?: number;
+  readonly generationUsageCoveredCalls?: number;
+  readonly retrievalObservedCases?: number;
+  readonly ftsZeroCases?: number;
+  readonly vectorZeroCases?: number;
+  // Legacy optional fields retained for stored-run compatibility; not established quality scores.
   readonly fullySupportedAnswerRate?: StatisticalSummary;
   readonly appropriateAbstentionRate?: number;
   readonly claimSupportPrecision?: StatisticalSummary;
@@ -283,6 +299,8 @@ export interface BenchmarkResultItem {
   readonly latencyMs: number;
   readonly scores: Record<string, number | null>;
   readonly tracePayload?: {
+    readonly expectedNoResults?: boolean;
+    readonly feasibleCount?: number;
     readonly actualPicks?: readonly {
       readonly slug: string;
       readonly score: number;
@@ -304,15 +322,23 @@ export interface BenchmarkResultItem {
     readonly citations?: readonly string[];
     readonly violations?: readonly string[];
     readonly missingNumericalEntities?: readonly string[];
+    readonly loadStress?: {
+      readonly targetComponent: string;
+      readonly catalogCount: number;
+      readonly targetChunkCount: number;
+      readonly errorCounts: Record<string, number>;
+      readonly stageP95Ms: Record<string, number>;
+      readonly eventLoopLagMs?: number;
+      readonly errorRate?: number;
+    };
     readonly multiTurnTrajectory?: {
       readonly turns: readonly TurnEvaluationResult[];
       readonly jga: number;
-      readonly crr: number;
-      readonly refineF1: number;
-      readonly resetCleanliness: number;
-      readonly tokensIn: number;
-      readonly tokensOut: number;
-      readonly estimatedCostUsd: number;
+      readonly crr: number | null;
+      readonly refineF1: number | null;
+      readonly resetCleanliness: number | null;
+      readonly tokensIn?: number;
+      readonly tokensOut?: number;
     };
   };
   readonly errorDetails?: string | null;

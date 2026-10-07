@@ -4,11 +4,11 @@
  * Simulates and evaluates stateful user conversations across turns:
  *   - Joint Goal Accuracy (JGA)
  *   - Constraint Retention Rate (CRR) & Anti-Forgetting
- *   - Constraint Mutation Latency (CML)
+ *   - Immediate constraint mutation responsiveness on annotated eligible turns
  *   - Refine vs Expand Scope Fidelity
  *   - Clean Hard Reset Purge
- *   - Cumulative Turn-by-Turn NDCG@3
- *   - Token Usage & Financial Cost Accounting
+ *   - Turn-by-turn self-derived MAUT agreement
+ *   - Provider-reported token usage when complete
  */
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
@@ -43,6 +43,16 @@ export interface MultiTurnRunnerOutput {
 
 const silentLog = pino({ level: 'silent' });
 
+/** A mutation is only scored on an annotated turn that actually changes a prior constraint. */
+export function immediateMutationResponsiveness(
+  turnResults: readonly Pick<TurnEvaluationResult, 'mutationEligible' | 'mutationResponsiveness'>[],
+): number | null {
+  const eligible = turnResults.filter((turn) => turn.mutationEligible);
+  return eligible.length
+    ? eligible.filter((turn) => turn.mutationResponsiveness).length / eligible.length
+    : null;
+}
+
 export async function runMultiTurnCrsBenchmark(
   options: MultiTurnRunnerOptions,
 ): Promise<MultiTurnRunnerOutput> {
@@ -71,7 +81,7 @@ export async function runMultiTurnCrsBenchmark(
 
   let totalTokensIn = 0;
   let totalTokensOut = 0;
-  let tokensMeasured = false;
+  let usageCoveredTurns = 0;
 
   for (let i = 0; i < fixtures.length; i++) {
     const fixture = fixtures[i]!;
@@ -89,6 +99,7 @@ export async function runMultiTurnCrsBenchmark(
     let trajHardViolations = 0;
     let trajTokensIn = 0;
     let trajTokensOut = 0;
+    let trajUsageCoveredTurns = 0;
     let trajRefineTp = 0;
     let trajRefineFp = 0;
     let trajRefineFn = 0;
@@ -110,14 +121,12 @@ export async function runMultiTurnCrsBenchmark(
       const latencyMs = Math.round(performance.now() - t0);
       const turnIndex = await nextTurnIndex(db, session.id);
 
-      // Accumulate measured or estimated tokens
-      if (pipelineResult.usage) {
-        tokensMeasured = true;
+      // Count only provider-reported usage. The current pipeline does not expose it.
+      if (llm.name !== 'deterministic-mock-llm' && pipelineResult.usage) {
+        usageCoveredTurns++;
+        trajUsageCoveredTurns++;
         trajTokensIn += pipelineResult.usage.tokensIn;
         trajTokensOut += pipelineResult.usage.tokensOut;
-      } else {
-        trajTokensIn += 520;
-        trajTokensOut += 180;
       }
 
       // Persist turn to ensure stateful continuation for subsequent turns
@@ -180,7 +189,7 @@ export async function runMultiTurnCrsBenchmark(
         }
       }
 
-      if (turn.forbiddenBrands?.length || turn.expectedSlots?.budgetMaxUsd != null) {
+      if (evaluatedTurn.mutationEligible) {
         totalMutations++;
         if (evaluatedTurn.mutationResponsiveness) successfulMutations++;
       }
@@ -218,10 +227,10 @@ export async function runMultiTurnCrsBenchmark(
       allCrrScores.push(avgCrr);
     }
 
-    const trajMutationLatency = turnResults.every((t) => t.mutationResponsiveness) ? 0 : 1;
+    const trajMutationResponsiveness = immediateMutationResponsiveness(turnResults);
     const trajRefineChecks = trajRefineTp + trajRefineFp + trajRefineFn + trajRefineTn;
     const trajRefineAcc =
-      trajRefineChecks > 0 ? (trajRefineTp + trajRefineTn) / trajRefineChecks : 1.0;
+      trajRefineChecks > 0 ? (trajRefineTp + trajRefineTn) / trajRefineChecks : null;
 
     // True Harmonic Mean F1 for Refine Intent
     const trajP =
@@ -229,17 +238,17 @@ export async function runMultiTurnCrsBenchmark(
     const trajR =
       trajRefineTp + trajRefineFn > 0 ? trajRefineTp / (trajRefineTp + trajRefineFn) : 0;
     const trajRefineF1 =
-      trajP + trajR > 0
-        ? (2 * trajP * trajR) / (trajP + trajR)
-        : trajRefineChecks > 0 && trajRefineTp === 0 && trajRefineFn === 0
-          ? 1.0
+      trajRefineChecks === 0 || trajRefineTp + trajRefineFn === 0
+        ? null
+        : trajP + trajR > 0
+          ? (2 * trajP * trajR) / (trajP + trajR)
           : 0.0;
 
     const resetTurns = turnResults.filter((t) => t.resetCleanliness !== undefined);
     const trajResetClean =
       resetTurns.length > 0
         ? resetTurns.reduce((a, b) => a + (b.resetCleanliness ?? 0), 0) / resetTurns.length
-        : 1.0;
+        : null;
 
     const isPass = avgJga >= 0.85 && trajHardViolations === 0;
     const isWarn = avgJga >= 0.7 && trajHardViolations === 0;
@@ -253,19 +262,22 @@ export async function runMultiTurnCrsBenchmark(
       overallJga: Math.round(avgJga * 1000) / 1000,
       overallSlotAccuracy: Math.round(avgSlotAcc * 1000) / 1000,
       overallRetentionRate: avgCrr !== null ? Math.round(avgCrr * 1000) / 1000 : null,
-      overallMutationLatency: trajMutationLatency,
-      refineIntentAccuracy: Math.round(trajRefineAcc * 1000) / 1000,
-      refineIntentF1: Math.round(trajRefineF1 * 1000) / 1000,
-      resetCleanliness: Math.round(trajResetClean * 1000) / 1000,
-      tokenUsage: {
-        tokensIn: trajTokensIn,
-        tokensOut: trajTokensOut,
-        estimatedCostUsd:
-          Math.round(
-            ((trajTokensIn * 0.1) / 1_000_000 + (trajTokensOut * 0.4) / 1_000_000) * 10000,
-          ) / 10000,
-        isMeasured: tokensMeasured,
-      },
+      overallMutationResponsiveness:
+        trajMutationResponsiveness !== null
+          ? Math.round(trajMutationResponsiveness * 1000) / 1000
+          : null,
+      refineIntentAccuracy: trajRefineAcc !== null ? Math.round(trajRefineAcc * 1000) / 1000 : null,
+      refineIntentF1: trajRefineF1 !== null ? Math.round(trajRefineF1 * 1000) / 1000 : null,
+      resetCleanliness: trajResetClean !== null ? Math.round(trajResetClean * 1000) / 1000 : null,
+      ...(trajUsageCoveredTurns === fixture.turns.length
+        ? {
+            tokenUsage: {
+              tokensIn: trajTokensIn,
+              tokensOut: trajTokensOut,
+              isMeasured: true,
+            },
+          }
+        : {}),
       durationMs: trajDurationMs,
     };
 
@@ -283,7 +295,7 @@ export async function runMultiTurnCrsBenchmark(
         jga: trajResult.overallJga,
         slotAccuracy: trajResult.overallSlotAccuracy ?? null,
         crr: trajResult.overallRetentionRate,
-        mutationLatency: trajResult.overallMutationLatency,
+        mutationResponsiveness: trajResult.overallMutationResponsiveness,
         refineF1: trajResult.refineIntentF1,
         refineAccuracy: trajResult.refineIntentAccuracy,
         csr: trajHardViolations === 0 ? 1 : 0,
@@ -292,12 +304,15 @@ export async function runMultiTurnCrsBenchmark(
         multiTurnTrajectory: {
           turns: turnResults,
           jga: trajResult.overallJga,
-          crr: trajResult.overallRetentionRate ?? 1.0,
+          crr: trajResult.overallRetentionRate,
           refineF1: trajResult.refineIntentF1,
           resetCleanliness: trajResult.resetCleanliness,
-          tokensIn: trajResult.tokenUsage.tokensIn,
-          tokensOut: trajResult.tokenUsage.tokensOut,
-          estimatedCostUsd: trajResult.tokenUsage.estimatedCostUsd,
+          ...(trajResult.tokenUsage
+            ? {
+                tokensIn: trajResult.tokenUsage.tokensIn,
+                tokensOut: trajResult.tokenUsage.tokensOut,
+              }
+            : {}),
         },
       },
       createdAt: new Date(),
@@ -312,59 +327,53 @@ export async function runMultiTurnCrsBenchmark(
   const turnNdcgSummary = computeStatisticalSummary(allTurnNdcgScores);
 
   const mutationResponsiveness =
-    totalMutations > 0 ? Math.round((successfulMutations / totalMutations) * 1000) / 1000 : 1.0;
+    totalMutations > 0
+      ? Math.round((successfulMutations / totalMutations) * 1000) / 1000
+      : undefined;
 
   // Global Refine Intent F1 & Accuracy
   const totalRefineDecisions = totalRefineTp + totalRefineFp + totalRefineFn + totalRefineTn;
-  const globalRefineAccuracy =
-    totalRefineDecisions > 0
-      ? Math.round(((totalRefineTp + totalRefineTn) / totalRefineDecisions) * 1000) / 1000
-      : 1.0;
-  void globalRefineAccuracy;
-
   const globalP =
     totalRefineTp + totalRefineFp > 0 ? totalRefineTp / (totalRefineTp + totalRefineFp) : 0;
   const globalR =
     totalRefineTp + totalRefineFn > 0 ? totalRefineTp / (totalRefineTp + totalRefineFn) : 0;
   const refineIntentF1 =
-    globalP + globalR > 0
-      ? Math.round(((2 * globalP * globalR) / (globalP + globalR)) * 1000) / 1000
-      : totalRefineTp === 0 && totalRefineFn === 0
-        ? 1.0
+    totalRefineDecisions === 0 || totalRefineTp + totalRefineFn === 0
+      ? null
+      : globalP + globalR > 0
+        ? Math.round(((2 * globalP * globalR) / (globalP + globalR)) * 1000) / 1000
         : 0.0;
 
   const resetCleanliness =
-    totalResets > 0 ? Math.round((successfulResets / totalResets) * 1000) / 1000 : 1.0;
+    totalResets > 0 ? Math.round((successfulResets / totalResets) * 1000) / 1000 : undefined;
   const multiTurnCsr =
     totalTurnsCount > 0 ? Math.round((totalTurnsCsrPassed / totalTurnsCount) * 1000) / 1000 : 1.0;
 
-  // Gemini 2.0 Flash pricing: $0.10 / 1M input tokens, $0.40 / 1M output tokens
-  const estimatedCostUsd =
-    Math.round(((totalTokensIn * 0.1) / 1_000_000 + (totalTokensOut * 0.4) / 1_000_000) * 10000) /
-    10000;
-
   const passedTests = benchmarkResultItems.filter((r) => r.status === 'pass').length;
-  const failedTests = benchmarkResultItems.filter((r) => r.status === 'fail').length;
+  const failedTests = benchmarkResultItems.filter((r) => r.status !== 'pass').length;
 
   return {
     summary: {
       jointGoalAccuracy: jgaSummary,
       slotAccuracy: slotAccSummary,
       constraintRetentionRate: crrSummary,
-      mutationResponsiveness,
-      refineIntentF1,
-      resetCleanliness,
+      ...(mutationResponsiveness != null ? { mutationResponsiveness } : {}),
+      ...(refineIntentF1 !== null ? { refineIntentF1 } : {}),
+      ...(resetCleanliness != null ? { resetCleanliness } : {}),
       multiTurnCsr,
       meanTurnNdcg3: turnNdcgSummary,
       totalTests: benchmarkResultItems.length,
       passedTests,
       failedTests,
-      tokenUsage: {
-        tokensIn: totalTokensIn,
-        tokensOut: totalTokensOut,
-        totalTokens: totalTokensIn + totalTokensOut,
-        estimatedCostUsd,
-      },
+      ...(usageCoveredTurns === totalTurnsCount
+        ? {
+            tokenUsage: {
+              tokensIn: totalTokensIn,
+              tokensOut: totalTokensOut,
+              totalTokens: totalTokensIn + totalTokensOut,
+            },
+          }
+        : {}),
     },
     results: benchmarkResultItems,
     totalDurationMs,

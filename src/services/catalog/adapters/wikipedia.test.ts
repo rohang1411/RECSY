@@ -157,18 +157,27 @@ describe('Wikipedia catalog adapter', () => {
       }),
     );
 
-    const result = await fetchWikipediaSpecs('Apple', 'iPhone 17 Pro Max');
+    const deferred = await fetchWikipediaSpecs('Apple', 'iPhone 17 Pro', { allowLlm: false });
+    expect(deferred.diagnostics.failureReason).toBe('llm-budget');
+    expect(structuredMock).not.toHaveBeenCalled();
+
+    const mismatch = await fetchWikipediaSpecs('Apple', 'iPhone 17 Pro Max');
+    expect(mismatch.spec).toBeNull();
+    expect(mismatch.diagnostics.failureReason).toBe('model-mismatch');
+    expect(structuredMock).not.toHaveBeenCalled();
+
+    const result = await fetchWikipediaSpecs('Apple', 'iPhone 17 Pro');
 
     expect(result.spec).toMatchObject({ chipset: 'Apple A19 Pro' });
     expect(result.diagnostics).toMatchObject({
-      queriesTried: ['iPhone 17 Pro Max'],
+      queriesTried: ['iPhone 17 Pro'],
       matchedTitle: 'IPhone 17 Pro',
       infobox: 'found',
       llmAttempted: true,
     });
     expect(result.diagnostics.specFieldCount).toBeGreaterThan(0);
     expect(structuredMock).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: 8192 }));
-  });
+  }, 10_000);
 
   it('extracts core specs deterministically before using the LLM', async () => {
     vi.stubGlobal(
@@ -230,7 +239,14 @@ describe('Wikipedia catalog adapter', () => {
     expect(structuredMock).not.toHaveBeenCalled();
   });
 
-  it('extracts core specs from Wikipedia template-heavy iPhone-style infoboxes', async () => {
+  it('requires model-specific extraction for shared template-heavy infoboxes', async () => {
+    structuredMock.mockResolvedValue({
+      value: {
+        ...SPEC,
+        battery_mah: 5088,
+        display: { size_in: 6.9, resolution: '2868x1320', refresh_rate_hz: 120 },
+      },
+    });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -280,17 +296,19 @@ describe('Wikipedia catalog adapter', () => {
     expect(result.spec).toMatchObject({
       chipset: 'Apple A19 Pro',
       ram_gb: 12,
-      storage_options_gb: [256, 512, 1024, 2048],
-      battery_mah: 3988,
-      os: 'Original: iOS 26',
+      storage_options_gb: [256, 512, 1024],
+      battery_mah: 5088,
+      os: 'iOS 26',
       rear_cameras: [{ type: 'main', mp: 48 }],
     });
     expect(result.spec?.display).toMatchObject({
-      size_in: 6.3,
-      resolution: '2622x1206',
+      size_in: 6.9,
+      resolution: '2868x1320',
       refresh_rate_hz: 120,
     });
-    expect(result.diagnostics.extractionMethod).toBe('deterministic');
-    expect(structuredMock).not.toHaveBeenCalled();
+    expect(result.diagnostics.extractionMethod).toBe('llm');
+    expect(structuredMock.mock.calls[0]?.[0].messages[0].content).toContain(
+      'Extract only Apple iPhone 17 Pro Max',
+    );
   });
 });

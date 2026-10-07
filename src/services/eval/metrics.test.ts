@@ -1,5 +1,6 @@
 /**
- * Vitest Mathematical & Scientific Verification Suite for Evaluation Metrics.
+ * Unit checks for evaluation math and mechanical proxies. These tests do not
+ * validate the truth of authored labels or product quality.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -15,11 +16,14 @@ import {
   computeShannonEntropy,
 } from './metrics/diversity';
 import {
-  evaluateAlceAttribution,
+  evaluateCitationLexicalProxy,
   extractInlineCitations,
-  verifyNumericalEntailment,
+  verifyNumericalStringPresence,
 } from './metrics/alce';
-import { evaluateFullySupportedAnswer, evaluateAbstention } from './metrics/supported-answers';
+import {
+  evaluateAnswerHeuristics,
+  checkAbstentionPhraseHeuristic,
+} from './metrics/supported-answers';
 import {
   computeBootstrapConfidenceInterval,
   computeStatisticalSummary,
@@ -27,7 +31,50 @@ import {
 } from './metrics/statistics';
 import { computeLatencyPercentiles, computeThroughputQps } from './metrics/latency-profiler';
 import { evaluatePickConstraints } from './metrics/constraints';
+import { checkCandidateConstraints } from './metrics/maut';
+import type { PhoneCatalogEntry } from '@/services/recommender/catalog';
 import type { RecommenderPersonaFixture } from './types';
+
+describe('self-derived MAUT feasibility', () => {
+  it('rejects an unpriced phone under a budget and an unverified foldable', () => {
+    const phone: PhoneCatalogEntry = {
+      phoneId: 'phone-1',
+      slug: 'phone-1',
+      brand: 'Example',
+      model: 'Fold',
+      tagline: null,
+      msrpUsd: null,
+      imageUrl: null,
+      spec: null,
+      specEmbedding: null,
+      aspectScores: new Map(),
+    };
+    const fixture: RecommenderPersonaFixture = {
+      id: 'policy-1',
+      name: 'Impossible request',
+      category: 'policy',
+      userQuery: 'A foldable under $300',
+      requirements: {
+        budget_usd: { max: 300 },
+        form_factor: 'foldable',
+        priorities: [{ aspect: 'value', weight: 1 }],
+        use_cases: [],
+        must_haves: ['foldable'],
+        deal_breakers: [],
+        brand_preference: { liked: [], disliked: [] },
+      },
+      expectNoResults: true,
+    };
+    const result = checkCandidateConstraints(phone, fixture);
+    expect(result.satisfies).toBe(false);
+    expect(result.violations).toEqual(
+      expect.arrayContaining([
+        'Price is missing or invalid under an active budget',
+        'Requires foldable form factor',
+      ]),
+    );
+  });
+});
 
 describe('Ranking Quality Metrics (NDCG & MRR)', () => {
   it('computes DCG and IDCG with theoretical accuracy', () => {
@@ -102,7 +149,7 @@ describe('Diversity & Beyond-Accuracy Metrics', () => {
   });
 });
 
-describe('Stanford ALCE Citation & Attribution Engine', () => {
+describe('mechanical citation and lexical-overlap checks', () => {
   it('extracts inline UUID citation tags', () => {
     const text =
       'Battery is 5000mAh [c:11111111-1111-1111-1111-111111111111] and charges fast [c:22222222-2222-2222-2222-222222222222].';
@@ -113,13 +160,13 @@ describe('Stanford ALCE Citation & Attribution Engine', () => {
     ]);
   });
 
-  it('verifies numerical entailment against cited chunks', () => {
+  it('checks numeric-string presence in cited chunks', () => {
     const sentence = 'The phone features 45W fast charging and a 5000 mAh battery.';
     const chunkWithBoth = ['The device supports 45W wired charging with its 5000 mAh cell.'];
     const chunkMissing45W = ['The device has a 5000 mAh cell but charges at standard speed.'];
 
-    expect(verifyNumericalEntailment(sentence, chunkWithBoth).passed).toBe(true);
-    const missing = verifyNumericalEntailment(sentence, chunkMissing45W);
+    expect(verifyNumericalStringPresence(sentence, chunkWithBoth).passed).toBe(true);
+    const missing = verifyNumericalStringPresence(sentence, chunkMissing45W);
     expect(missing.passed).toBe(false);
     expect(missing.missingEntities).toContain('45w');
   });
@@ -132,7 +179,7 @@ describe('Stanford ALCE Citation & Attribution Engine', () => {
     chunkMap.set(c1, 'The battery capacity is 5000 mAh with 25W charging speed.');
 
     const text = `The phone has a 5000 mAh battery [c:${c1}]. It also has 100x zoom [c:${cPhantom}].`;
-    const result = evaluateAlceAttribution(text, chunkMap);
+    const result = evaluateCitationLexicalProxy(text, chunkMap);
 
     expect(result.totalCitations).toBe(2);
     expect(result.citePrec).toBe(0.5); // 1 valid, 1 phantom
@@ -197,6 +244,40 @@ describe('Constraint Satisfaction Policy Gates', () => {
       brand_preference: { liked: ['Apple'], disliked: ['Xiaomi'] },
     },
   };
+
+  it('fails invalid and below-minimum prices without certifying unknown feature coverage', () => {
+    const fixture = {
+      ...dummyFixture,
+      requirements: {
+        ...dummyFixture.requirements,
+        budget_usd: { min: 500 },
+        must_haves: ['iOS', 'NFC'],
+      },
+    };
+    const pick = {
+      phoneId: 'p',
+      slug: 'phone',
+      brand: 'Apple',
+      model: 'Phone',
+      score: 1,
+      summary: 'Good phone',
+      msrpUsd: 'NaN',
+      localPrice: null,
+      localCurrency: null,
+      imageUrl: null,
+    };
+    const invalid = evaluatePickConstraints([pick], fixture);
+    expect(invalid.budgetSatisfied).toBe(false);
+    expect(invalid.violations.join(' ')).toContain('minimum $500');
+    expect(invalid.violations.join(' ')).not.toContain('undefined');
+    expect(evaluatePickConstraints([{ ...pick, msrpUsd: '499' }], fixture).budgetSatisfied).toBe(
+      false,
+    );
+    const inBudget = evaluatePickConstraints([{ ...pick, msrpUsd: '600' }], fixture);
+    expect(inBudget.budgetSatisfied).toBe(true);
+    expect(inBudget.allSatisfied).toBe(false);
+    expect(inBudget.violations.join(' ')).toContain('Unverified Constraint Coverage');
+  });
 
   it('detects budget and platform violations', () => {
     const picks = [
@@ -265,12 +346,12 @@ describe('ChatGPT Counterexamples & Rigorous Evaluation Audits', () => {
 
     // Claim is completely unrelated to screen specs (claims water resistance)
     const text = `The phone has 50m water resistance and titanium frame [c:${cid}].`;
-    const result = evaluateAlceAttribution(text, chunkMap);
+    const result = evaluateCitationLexicalProxy(text, chunkMap);
 
     // Previously this gave citePrec = 1.0 merely because cid existed in chunkMap.
-    // Now chunkSupportsSentence checks content overlap, so precision is 0.0.
+    // Now chunkPassesLexicalProxy checks content overlap, so precision is 0.0.
     expect(result.citePrec).toBe(0.0);
-    expect(result.sentenceAttributions[0]!.isEntailed).toBe(false);
+    expect(result.sentenceAttributions[0]!.passesLexicalProxy).toBe(false);
   });
 
   it('[Counterexample 2] returns citePrec = 0.0 when answer provides zero citations', () => {
@@ -278,7 +359,7 @@ describe('ChatGPT Counterexamples & Rigorous Evaluation Audits', () => {
     chunkMap.set('c1', 'The phone has a 5000 mAh battery.');
 
     const text = 'The phone has exceptional battery life and fast charging.';
-    const result = evaluateAlceAttribution(text, chunkMap);
+    const result = evaluateCitationLexicalProxy(text, chunkMap);
 
     // Previously an uncited answer gave citePrec = 1.0 (vacuous truth).
     // Now uncited answers correctly receive 0.0.
@@ -286,20 +367,32 @@ describe('ChatGPT Counterexamples & Rigorous Evaluation Audits', () => {
     expect(result.totalCitations).toBe(0);
   });
 
-  it('[Counterexample 3] fails numerical entailment for $99 against evidence $999', () => {
+  it('[Counterexample 3] rejects $99 when evidence only contains $999', () => {
     const sentence = 'The phone starts at $99 in the United States.';
     const evidence = ['The flagship device retails at $999 for the 256GB model.'];
 
     // Previously substring matching allowed '99' to pass inside '999'.
     // Now boundary-aware matching catches the factual discrepancy.
-    const check = verifyNumericalEntailment(sentence, evidence);
+    const check = verifyNumericalStringPresence(sentence, evidence);
     expect(check.passed).toBe(false);
     expect(check.missingEntities).toContain('$99');
   });
 });
 
-describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)', () => {
-  it('passes FSAR for complete, factually entailed, and cited answers', () => {
+describe('answer-text and refusal-phrase heuristics', () => {
+  it('requires a literal decimal point in an expected numeric string', () => {
+    const result = evaluateAnswerHeuristics({
+      query: 'What is the measured value?',
+      answerText: 'The measurement is 99x9 units, as described in the source passage [c:chunk-1].',
+      retrievedChunks: new Map([['chunk-1', 'The measurement is 99x9 units.']]),
+      referenceFacts: ['99.9 units'],
+      numericalEntities: ['99.9'],
+    });
+    expect(result.numericalCheckPassed).toBe(false);
+    expect(result.missingEntities).toContain('99.9');
+  });
+
+  it('passes the encoded lexical and numeric checks on a simple matching example', () => {
     const cid = 'chunk-100';
     const chunkMap = new Map<string, string>();
     chunkMap.set(
@@ -309,7 +402,7 @@ describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)
 
     const answer =
       'The OnePlus 12 has a large 5400 mAh battery with 100W wired fast charging [c:' + cid + '].';
-    const result = evaluateFullySupportedAnswer({
+    const result = evaluateAnswerHeuristics({
       query: 'What is the battery and charging speed of the OnePlus 12?',
       answerText: answer,
       retrievedChunks: chunkMap,
@@ -317,13 +410,13 @@ describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)
       numericalEntities: ['5400', '100w'],
     });
 
-    expect(result.isFullySupported).toBe(true);
-    expect(result.isUsefulAndComplete).toBe(true);
-    expect(result.claimSupportPrecision).toBe(1.0);
-    expect(result.factualRecall).toBe(1.0);
+    expect(result.passesHeuristicChecks).toBe(true);
+    expect(result.appearsCompleteByKeywords).toBe(true);
+    expect(result.lexicalCitationSupport).toBe(1.0);
+    expect(result.lexicalReferenceCoverage).toBe(1.0);
   });
 
-  it('fails FSAR when material factual claims lack inline citations', () => {
+  it('rejects a material sentence without an inline citation', () => {
     const cid = 'chunk-100';
     const chunkMap = new Map<string, string>();
     chunkMap.set(cid, 'The OnePlus 12 features a 5400 mAh battery.');
@@ -332,7 +425,7 @@ describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)
       'The OnePlus 12 features a 5400 mAh battery [c:' +
       cid +
       ']. It also charges at 100W in just 26 minutes.';
-    const result = evaluateFullySupportedAnswer({
+    const result = evaluateAnswerHeuristics({
       query: 'What is the battery and charging speed of the OnePlus 12?',
       answerText: answer,
       retrievedChunks: chunkMap,
@@ -340,32 +433,32 @@ describe('Fully Supported Answer Rate (FSAR) & Appropriate Abstention Rate (AAR)
       numericalEntities: ['5400', '100w'],
     });
 
-    expect(result.isFullySupported).toBe(false);
-    expect(result.unsupportedClaims.length).toBeGreaterThan(0);
+    expect(result.passesHeuristicChecks).toBe(false);
+    expect(result.unmatchedSentences.length).toBeGreaterThan(0);
   });
 
-  it('evaluates Appropriate Abstention Rate (AAR) on unanswerable queries', () => {
+  it('detects an explicit insufficient-evidence phrase', () => {
     const chunkMap = new Map<string, string>();
     chunkMap.set('c1', 'The phone is IP68 water resistant up to 1.5 meters for 30 minutes.');
 
-    // Model correctly abstains when asked about 50m scuba diving
+    // A refusal phrase is detected; this does not prove the answer is correct.
     const abstainedAnswer =
       'I do not have enough information to confirm scuba diving at 40 meters. The reviews only note IP68 certification up to 1.5 meters.';
-    const passResult = evaluateAbstention({
+    const passResult = checkAbstentionPhraseHeuristic({
       query: 'Can it survive scuba diving at 40 meters?',
       answerText: abstainedAnswer,
       retrievedChunks: chunkMap,
     });
-    expect(passResult.abstainedAppropriately).toBe(true);
+    expect(passResult.hasAbstentionPhrase).toBe(true);
 
-    // Model hallucinating false facts fails abstention
+    // An unsupported numeric claim has no refusal phrase.
     const hallucinatedAnswer =
       'Yes, the phone handles deep scuba diving down to 40 meters without issues.';
-    const failResult = evaluateAbstention({
+    const failResult = checkAbstentionPhraseHeuristic({
       query: 'Can it survive scuba diving at 40 meters?',
       answerText: hallucinatedAnswer,
       retrievedChunks: chunkMap,
     });
-    expect(failResult.abstainedAppropriately).toBe(false);
+    expect(failResult.hasAbstentionPhrase).toBe(false);
   });
 });

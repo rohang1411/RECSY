@@ -17,7 +17,7 @@ import { and, eq } from 'drizzle-orm';
 
 import type { AspectName } from '@/lib/constants';
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
-import type { AppDb } from '@/services/db/client';
+import type { AppQueryDb } from '@/services/db/client';
 import { aspectDefinitions, aspects, phones, phoneRegionalDetails } from '@/services/db/schema';
 
 import { parseVectorColumn } from './vector-utils';
@@ -41,7 +41,7 @@ export interface PhoneCatalogEntry {
 
 /** Active phones with parsed specs and aspect scores (latest rows in `aspects`). */
 export async function loadRecommendationCatalog(
-  db: AppDb,
+  db: AppQueryDb,
   regionCode: string = 'US',
 ): Promise<PhoneCatalogEntry[]> {
   const rows = await db

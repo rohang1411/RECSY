@@ -36,7 +36,11 @@ function isBotChallengePage(body: string): boolean {
   );
 }
 
-export async function fetchGsmarenaSpecs(brand: string, model: string): Promise<PhoneSpec | null> {
+export async function fetchGsmarenaSpecs(
+  brand: string,
+  model: string,
+  options: { readonly onLlmAttempt?: () => void } = {},
+): Promise<PhoneSpec | null> {
   const query = `${brand} ${model}`.trim().replace(/\s+/g, '+');
   const searchUrl = `https://${GSMARENA_HOST}/res.php3?sSearch=${encodeURIComponent(query)}`;
 
@@ -77,6 +81,7 @@ If wattage is missing but fast charging is supported, leave watts blank or 0.
 GSMArena Data:
 ${JSON.stringify(specs, null, 2)}`;
 
+    options.onLlmAttempt?.();
     const { value } = await llm.structured({
       model: env.LLM_CHAT_MODEL,
       schema: PhoneSpecSchema,

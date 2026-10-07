@@ -30,6 +30,7 @@ import {
 import type { CatalogImportRecord } from '../src/services/catalog';
 import { env } from '../src/env';
 import { getDb } from '../src/services/db/client';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { catalogCandidates, catalogRuns, catalogSourceProfiles } from '../src/services/db/schema';
 
@@ -384,10 +385,11 @@ async function main(): Promise<void> {
             lastDecisionAt: sql`now()`,
             updatedAt: sql`now()`,
           },
+          setWhere: activeCatalogCandidateSql(),
         })
         .returning({ id: catalogCandidates.id });
 
-      if (!candidate) throw new Error('candidate upsert returned no row');
+      if (!candidate) continue;
       if (stage.kind === 'needs_enrichment') {
         needsEnrichment += 1;
         continue;

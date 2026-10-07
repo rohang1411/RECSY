@@ -34,6 +34,7 @@ const FALLBACK_DB_DATA: CommandCenterDatabaseSummary = {
     pendingCount: 0,
     queuedCount: 0,
     inPipelineCount: 0,
+    archivedCount: 0,
   },
   topBlockedReason: 'None',
 };

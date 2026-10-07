@@ -1,0 +1,74 @@
+{
+  "version": "source-pilot-1",
+  "status": "authored candidates awaiting independent review",
+  "purpose": "Small source-backed diagnostic pilot, not representative held-out gold and not sufficient for a resume percentage.",
+  "cases": [
+    {
+      "id": "sp01",
+      "phoneSlug": "apple-iphone-16",
+      "category": "feature-behavior",
+      "query": "How do Studio and Cinematic Audio Mix modes differ on the iPhone 16?",
+      "supportingChunkIds": ["023ad845-9708-4623-a995-a3302fa43a0d"],
+      "candidateFacts": [
+        "Studio cuts background noise to produce a studio-like sound.",
+        "Cinematic focuses on people in the center of the frame and retains background chatter as ambient noise."
+      ]
+    },
+    {
+      "id": "sp02",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "physical-tradeoff",
+      "query": "How much heavier is the iPhone 16 Pro than the iPhone 15 Pro, and what changes contribute to that weight?",
+      "supportingChunkIds": ["05e4c01a-fb43-4cce-8e9f-7134d9c1fd8f"],
+      "candidateFacts": [
+        "199g versus 187g, an increase of 12g.",
+        "A larger body, the 5x tetraprism zoom camera and a bigger battery contribute to the increase."
+      ]
+    },
+    {
+      "id": "sp03",
+      "phoneSlug": "google-pixel-9",
+      "category": "software-limitation",
+      "query": "What limitations did the reviewer encounter with Call Notes, and does it need to be enabled for each call?",
+      "supportingChunkIds": ["009cb791-fe0a-46f9-a902-853fb27a97e8"],
+      "candidateFacts": [
+        "The reviewer encountered transcription errors in addresses or street names.",
+        "It must be manually enabled for each call and announces that the call is being recorded.",
+        "The recording or transcript can be checked afterward."
+      ]
+    },
+    {
+      "id": "sp04",
+      "phoneSlug": "google-pixel-9-pro",
+      "category": "feature-configuration",
+      "query": "Is Video Boost enabled by default on the Pixel 9 Pro, and where does the reviewer say it must be switched on?",
+      "supportingChunkIds": ["11cd6717-84cc-4722-80b1-7eccd4de1b48"],
+      "candidateFacts": [
+        "It is not enabled by default.",
+        "It must be enabled in the video settings menu while the camera is in video mode."
+      ]
+    },
+    {
+      "id": "sp05",
+      "phoneSlug": "oneplus-13",
+      "category": "regional-charging",
+      "query": "How does OnePlus 13 wired charging differ between the U.S. and other markets, and what charge levels did the reviewer measure at 15 and 30 minutes with the U.S. charger?",
+      "supportingChunkIds": ["0289f38b-d9b2-47aa-b88b-d1fafb763f59"],
+      "candidateFacts": [
+        "80W in the U.S. versus 100W in most markets.",
+        "The reviewer measured 56% at 15 minutes and 92% at 30 minutes with an 80W charger."
+      ]
+    },
+    {
+      "id": "sp06",
+      "phoneSlug": "samsung-galaxy-s25-ultra",
+      "category": "thermal-design",
+      "query": "What thermal-management changes does the review describe for the Galaxy S25 Ultra's vapor chamber and CPU?",
+      "supportingChunkIds": ["05c30b20-0e9f-4209-af8d-55de97bffc18"],
+      "candidateFacts": [
+        "The vapor chamber is 40% larger.",
+        "A new Thermal Interface Material covers the CPU beneath the vapor chamber."
+      ]
+    }
+  ]
+}

@@ -21,6 +21,11 @@
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
+import {
+  compareCatalogEnrichmentFairness,
+  isCatalogRetryDue,
+} from '../src/services/catalog/candidate-policy';
 import {
   fetchGsmarenaSpecs,
   isGsmarenaCatalogAvailable,
@@ -31,7 +36,6 @@ import {
   type WikipediaDiagnostics,
 } from '../src/services/catalog/adapters/wikipedia';
 import {
-  brandPriorityRank,
   buildCanonicalKey,
   buildPromotionPlan,
   catalogReleaseRetryAfter,
@@ -125,17 +129,23 @@ async function main() {
     .select()
     .from(catalogCandidates)
     .where(
-      or(
-        inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
-        and(
-          eq(catalogCandidates.status, 'promoted'),
-          sql`'low_completeness' = any(${catalogCandidates.issueCodes})`,
-          args.retryAll
-            ? undefined
-            : or(
-                isNull(catalogCandidates.retryAfter),
-                lte(catalogCandidates.retryAfter, new Date()),
-              ),
+      and(
+        activeCatalogCandidateSql(),
+        args.retryAll
+          ? undefined
+          : or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
+        or(
+          inArray(catalogCandidates.decision, ['pending_review', 'quarantine']),
+          and(
+            eq(catalogCandidates.status, 'promoted'),
+            sql`'low_completeness' = any(${catalogCandidates.issueCodes})`,
+            args.retryAll
+              ? undefined
+              : or(
+                  isNull(catalogCandidates.retryAfter),
+                  lte(catalogCandidates.retryAfter, new Date()),
+                ),
+          ),
         ),
       ),
     );
@@ -159,26 +169,26 @@ async function main() {
   const retryEligibleRows = releasedRows.filter((candidate) => isRetryEligible(candidate, args));
 
   // Filter out candidates without brand/model and obvious non-phone devices,
-  // then sort by the shared catalog priority: mainstream brand first, newest
-  // release next, then unresolved pending rows before older quarantines.
+  // Give unattempted and least-recently-attempted candidates a turn first;
+  // brand priority and release recency break ties without starving other models.
   const pending = retryEligibleRows
     .filter(isLikelyPhoneCandidate)
-    .filter(isPriorityOrFreshCandidate)
-    .sort((a, b) => {
-      const rankA = brandPriorityRank(a.brand);
-      const rankB = brandPriorityRank(b.brand);
-      if (rankA !== rankB) return rankA - rankB;
-
-      const dateA = candidateReleaseTime(a.row);
-      const dateB = candidateReleaseTime(b.row);
-      if (dateA !== dateB) return dateB - dateA;
-
-      const stateA = candidateStatePriority(a.row);
-      const stateB = candidateStatePriority(b.row);
-      if (stateA !== stateB) return stateA - stateB;
-
-      return a.row.candidateTitle.localeCompare(b.row.candidateTitle);
-    })
+    .sort((a, b) =>
+      compareCatalogEnrichmentFairness(
+        {
+          ...a,
+          attempts: a.row.attempts,
+          lastDecisionAt: a.row.lastDecisionAt,
+          launchDate: candidateReleaseValue(a.row),
+        },
+        {
+          ...b,
+          attempts: b.row.attempts,
+          lastDecisionAt: b.row.lastDecisionAt,
+          launchDate: candidateReleaseValue(b.row),
+        },
+      ),
+    )
     .slice(0, args.limit);
 
   if (pending.length === 0) {
@@ -189,7 +199,7 @@ async function main() {
   }
 
   console.log(
-    `${LOG} Processing ${pending.length} candidates in brand-priority + newest-first order.`,
+    `${LOG} Processing ${pending.length} candidates in fair retry order (brand and recency break ties).`,
   );
 
   const [run] = await db
@@ -218,21 +228,21 @@ async function main() {
   let llmCalls = 0;
   let wikiHits = 0;
   let gsmarenaHits = 0;
+  let budgetDeferred = 0;
 
   for (const candidate of pending) {
     const brand = candidate.brand;
     const model = candidate.model;
-    if (args.maxLlmCalls <= 0) {
-      console.log(
-        `  -> Max LLM calls is 0 (preview mode); skipping LLM extraction for [${brand} ${model}].`,
-      );
-      continue;
-    }
-    if (llmCalls >= args.maxLlmCalls) {
-      console.log(`  -> LLM budget exhausted; leaving remaining candidates pending.`);
-      await markLlmBudgetExhausted(db, candidate.row);
-      continue;
-    }
+    await db
+      .update(catalogCandidates)
+      .set({
+        attempts: sql`${catalogCandidates.attempts} + 1`,
+        lastRunId: run?.id,
+        updatedAt: new Date(),
+        lastDecisionAt: new Date(),
+        retryAfter: catalogReleaseRetryAfter(null),
+      })
+      .where(eq(catalogCandidates.id, candidate.row.id));
     console.log(`${LOG} [${brand} ${model}] Fetching specs...`);
 
     let spec = null;
@@ -243,7 +253,9 @@ async function main() {
     // Tier 1: Wikipedia API
     // -----------------------------------------------------------------------
     if (wikiAvailable) {
-      const wikipediaResult = await fetchWikipediaSpecs(brand, model);
+      const wikipediaResult = await fetchWikipediaSpecs(brand, model, {
+        allowLlm: llmCalls < args.maxLlmCalls,
+      });
       wikipediaDiagnostics = wikipediaResult.diagnostics;
       spec = wikipediaResult.spec;
       if (wikipediaDiagnostics.llmAttempted) {
@@ -259,6 +271,8 @@ async function main() {
         wikiHits++;
         sourceKey = 'wikipedia_infobox';
         console.log(`  -> Found on Wikipedia`);
+      } else if (wikipediaDiagnostics.failureReason === 'llm-budget') {
+        console.log('  -> Infobox found; structured extraction deferred by the LLM budget.');
       } else if (gsmarenaAvailable) {
         console.log(`  -> Not found on Wikipedia; trying GSMArena fallback...`);
       } else {
@@ -269,12 +283,15 @@ async function main() {
     // -----------------------------------------------------------------------
     // Tier 2: GSMArena (warm standby - may be blocked by Cloudflare Turnstile)
     // -----------------------------------------------------------------------
-    if (!spec && gsmarenaAvailable) {
-      spec = await fetchGsmarenaSpecs(brand, model);
+    if (!spec && gsmarenaAvailable && llmCalls < args.maxLlmCalls) {
+      spec = await fetchGsmarenaSpecs(brand, model, {
+        onLlmAttempt: () => {
+          llmCalls++;
+        },
+      });
       if (spec) {
         gsmarenaHits++;
         sourceKey = 'gsmarena_specs';
-        llmCalls++;
         if (run) {
           await db
             .update(catalogRuns)
@@ -296,6 +313,12 @@ async function main() {
         }
         continue;
       }
+    }
+
+    if (!spec && wikipediaDiagnostics?.failureReason === 'llm-budget') {
+      budgetDeferred++;
+      await markLlmBudgetExhausted(db, candidate.row);
+      continue;
     }
 
     if (!spec) {
@@ -394,7 +417,7 @@ async function main() {
         status: 'success',
         stage: 'done',
         updatedCount: updated,
-        skippedCount: skipped,
+        skippedCount: skipped + budgetDeferred,
         quarantinedCount: quarantined,
         llmCallCount: llmCalls,
         finishedAt: sql`now()`,
@@ -404,7 +427,7 @@ async function main() {
 
   console.log(
     `${LOG} Done. Updated=${updated}, Promoted=${promoted}, Quarantined=${quarantined}, ` +
-      `NeedsEnrichment=${needsEnrichment}, Skipped=${skipped}, Deferred=${deferred}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
+      `NeedsEnrichment=${needsEnrichment}, Skipped=${skipped}, Deferred=${deferred}, BudgetDeferred=${budgetDeferred}, LLM Calls=${llmCalls}, Wikipedia Hits=${wikiHits}, GSMArena Hits=${gsmarenaHits}`,
   );
 }
 
@@ -425,12 +448,10 @@ function parseNonNegativeInt(value: string | undefined, flag: string): number {
 }
 
 function isLikelyPhoneCandidate(candidate: ResolvedCatalogCandidate): boolean {
-  const text = `${candidate.row.candidateTitle} ${candidate.model}`.toLowerCase();
-  return isLikelyCatalogPhoneTitle(text);
-}
-
-function candidateReleaseTime(candidate: CatalogCandidateRow): number {
-  return catalogReleaseTimestamp(candidateReleaseValue(candidate));
+  return (
+    isLikelyCatalogPhoneTitle(candidate.row.candidateTitle) &&
+    isLikelyCatalogPhoneTitle(candidate.model)
+  );
 }
 
 function candidateReleaseValue(candidate: CatalogCandidateRow): string | undefined {
@@ -453,57 +474,9 @@ function isUnreleasedCandidate(candidate: CatalogCandidateRow): boolean {
   return isFutureCatalogDate(candidateReleaseValue(candidate)) || hasWeakReleaseEvidence(candidate);
 }
 
-function candidateStatePriority(candidate: CatalogCandidateRow): number {
-  if (candidate.decision === 'pending_review') return 0;
-  if (candidate.status === 'discovered') return 1;
-  if (candidate.status === 'quarantined') return 2;
-  return 3;
-}
-
-function isPriorityOrFreshCandidate(candidate: ResolvedCatalogCandidate): boolean {
-  if (isMainstreamPriorityBrand(candidate.brand)) return true;
-  if (
-    candidate.row.status === 'promoted' &&
-    candidate.row.issueCodes.includes('low_completeness')
-  ) {
-    return true;
-  }
-  // Long-tail rows get one enrichment attempt while freshly discovered. If
-  // they quarantine, leave them for explicit retry windows so they cannot
-  // crowd out Apple/Samsung/Pixel/Nothing/etc. on every scheduled run.
-  return (
-    candidate.row.decision === 'pending_review' &&
-    (candidate.row.status === 'discovered' || candidate.row.status === 'failed_transient')
-  );
-}
-
 function isRetryEligible(candidate: ResolvedCatalogCandidate, args: CliArgs): boolean {
   if (args.retryAll) return true;
-  if (
-    candidate.row.retryAfter &&
-    candidate.row.retryAfter > new Date() &&
-    shouldRespectRetryAfter(candidate.row)
-  ) {
-    return false;
-  }
-  if (isMainstreamPriorityBrand(candidate.brand) && !isUnreleasedCandidate(candidate.row))
-    return true;
-  if (!candidate.row.retryAfter) return true;
-  if (candidate.row.retryAfter <= new Date()) return true;
-  if (
-    candidate.row.decision === 'pending_review' &&
-    candidate.row.status === 'discovered' &&
-    candidate.row.issueCodes.includes('spec_projection_missing')
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function shouldRespectRetryAfter(candidate: CatalogCandidateRow): boolean {
-  return candidate.issueCodes.some((code) =>
-    ['speculative_candidate', 'unreleased_candidate', 'oem_url_not_found'].includes(code),
-  );
+  return isCatalogRetryDue(candidate.row.retryAfter);
 }
 
 function isCoreIncompletePlan(issues: readonly { severity: string; code: string }[]): boolean {
@@ -625,23 +598,13 @@ async function markLlmBudgetExhausted(
   db: ReturnType<typeof getDb>,
   candidate: CatalogCandidateRow,
 ): Promise<void> {
-  const brand =
-    recordString(candidate.normalizedIdentityJson, 'brand') ??
-    recordString(candidate.claimsJson, 'brand') ??
-    '';
-  const isPriority = isMainstreamPriorityBrand(brand);
   await db
     .update(catalogCandidates)
     .set({
       decision: candidate.decision ?? 'pending_review',
-      status:
-        candidate.status === 'promoted'
-          ? 'promoted'
-          : isPriority
-            ? 'discovered'
-            : 'failed_transient',
+      status: candidate.status === 'promoted' ? 'promoted' : 'discovered',
       issueCodes: [...new Set([...candidate.issueCodes, 'llm_budget_exhausted'])],
-      retryAfter: isPriority ? null : new Date(Date.now() + 24 * 60 * 60 * 1000),
+      retryAfter: new Date(Date.now() + 24 * 60 * 60 * 1000),
       lastDecisionAt: new Date(),
       updatedAt: new Date(),
     })

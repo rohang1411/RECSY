@@ -34,6 +34,8 @@ ALTER TABLE chunks                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aspect_definitions       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aspects                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recommendation_sessions  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recommendation_clients   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recommendation_shares    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recommendation_turns     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recommendation_feedback  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_queries             ENABLE ROW LEVEL SECURITY;

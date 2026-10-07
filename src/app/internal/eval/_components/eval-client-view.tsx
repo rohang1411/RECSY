@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   CheckCircle2,
   Clock,
@@ -19,8 +19,9 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { BenchmarkRunRecord, BenchmarkResultItem, BenchmarkTier } from '@/services/eval/types';
+import type { BenchmarkRunRecord, BenchmarkResultItem } from '@/services/eval/types';
 import { BenchmarkReportSchema } from '@/services/eval/export/report-schema';
+import { CampaignEvidence } from './campaign-evidence';
 
 function formatBenchmarkDate(value: string | Date): string {
   const d = new Date(value);
@@ -41,21 +42,27 @@ function formatBenchmarkTime(value: string | Date): string {
 
 interface EvalClientViewProps {
   readonly initialRuns: readonly BenchmarkRunRecord[];
+  readonly initialError?: string | null;
 }
 
-export function EvalClientView({ initialRuns }: EvalClientViewProps) {
+export function EvalClientView({ initialRuns, initialError }: EvalClientViewProps) {
   const [runs, setRuns] = useState<readonly BenchmarkRunRecord[]>(initialRuns);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRuns[0]?.id ?? null);
-  const [selectedRunDetails, setSelectedRunDetails] = useState<BenchmarkRunRecord | null>(
-    initialRuns[0] ?? null,
-  );
+  const [selectedRunDetails, setSelectedRunDetails] = useState<BenchmarkRunRecord | null>(null);
 
   // Runner controls
   const [selectedSuite, setSelectedSuite] = useState<
     'recsys' | 'rag' | 'load-stress' | 'multi-turn' | 'all'
   >('recsys');
-  const [selectedTier, setSelectedTier] = useState<BenchmarkTier>('OFFLINE_RECSYS');
+  const [providerTrack, setProviderTrack] = useState<'stub' | 'live'>('stub');
+  const [accessToken, setAccessToken] = useState('');
+  const [historyError, setHistoryError] = useState<string | null>(initialError ?? null);
+  const [preflightReport, setPreflightReport] = useState<Record<string, unknown> | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [campaign, setCampaign] = useState<Record<string, unknown> | null>(null);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
   const [concurrencyVus, setConcurrencyVus] = useState<number>(10);
+  const [totalRequests, setTotalRequests] = useState<number>(100);
   const [sampleScale, setSampleScale] = useState<'quick' | 'full'>('full');
 
   // Live progress
@@ -77,23 +84,113 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
   const [compareBaselineId, setCompareBaselineId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reviewInputRef = useRef<HTMLInputElement>(null);
+  const loadCampaign = async () => {
+    try {
+      const response = await fetch('/api/internal/eval/campaign', {
+        headers: accessToken ? { 'x-recsy-eval-token': accessToken } : {},
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Campaign artifacts could not be loaded');
+      setCampaign(data.summary);
+      setCampaignError(null);
+    } catch (error) {
+      setCampaignError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const downloadReview = async () => {
+    try {
+      const response = await fetch('/api/internal/eval/campaign?artifact=review', {
+        headers: accessToken ? { 'x-recsy-eval-token': accessToken } : {},
+      });
+      if (!response.ok)
+        throw new Error((await response.json()).error ?? 'Review package is unavailable');
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'recsy-blinded-review.html';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setCampaignError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const importReview = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const response = await fetch('/api/internal/eval/campaign', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(accessToken ? { 'x-recsy-eval-token': accessToken } : {}),
+        },
+        body: await file.text(),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Review import failed');
+      setCampaign(data.summary);
+      setCampaignError(null);
+    } catch (error) {
+      setCampaignError(error instanceof Error ? error.message : String(error));
+    }
+    event.target.value = '';
+  };
+
+  useEffect(() => {
+    const firstRunId = initialRuns[0]?.id;
+    if (!firstRunId) return;
+    let cancelled = false;
+    fetch(`/api/internal/eval/runs/${firstRunId}`)
+      .then(async (res) => {
+        const data = (await res.json()) as { run?: BenchmarkRunRecord; error?: string };
+        if (!res.ok || !data.run)
+          throw new Error(data.error ?? `Run details failed (HTTP ${res.status})`);
+        if (!cancelled) setSelectedRunDetails(data.run);
+      })
+      .catch((error) => {
+        if (!cancelled) setHistoryError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRuns]);
 
   // Load run details when clicked
   const handleSelectRun = async (runId: string) => {
     setSelectedRunId(runId);
     try {
-      const res = await fetch(`/api/internal/eval/runs/${runId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedRunDetails(data.run);
-      }
-    } catch {
-      toast.error('Failed to load run details');
+      const res = await fetch(`/api/internal/eval/runs/${runId}`, {
+        headers: accessToken ? { 'x-recsy-eval-token': accessToken } : {},
+      });
+      const data = (await res.json()) as { run?: BenchmarkRunRecord; error?: string };
+      if (!res.ok || !data.run)
+        throw new Error(data.error ?? `Run details failed (HTTP ${res.status})`);
+      setSelectedRunDetails(data.run);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleLoadHistory = async () => {
+    try {
+      const res = await fetch('/api/internal/eval/runs', {
+        headers: accessToken ? { 'x-recsy-eval-token': accessToken } : {},
+      });
+      const data = (await res.json()) as { runs?: BenchmarkRunRecord[]; error?: string };
+      if (!res.ok || !data.runs)
+        throw new Error(data.error ?? `Run history failed (HTTP ${res.status})`);
+      setRuns(data.runs);
+      setHistoryError(null);
+      if (data.runs[0]) await handleSelectRun(data.runs[0].id);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : String(error));
     }
   };
 
   // Run benchmark suite
   const handleExecuteBenchmark = async () => {
+    setRunError(null);
     setIsRunning(true);
     setProgressStep(0);
     setProgressTotal(sampleScale === 'quick' ? 5 : 30);
@@ -103,22 +200,28 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
     try {
       const res = await fetch('/api/internal/eval/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'x-recsy-eval-token': accessToken } : {}),
+        },
         body: JSON.stringify({
           suite: selectedSuite,
-          tier: selectedTier,
+          providerTrack,
           concurrencyVus,
+          ...(selectedSuite === 'load-stress' ? { totalRequests } : {}),
           sampleScale,
         }),
       });
 
       if (!res.ok || !res.body) {
-        throw new Error('Failed to start benchmark stream');
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Failed to start benchmark stream (HTTP ${res.status})`);
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let terminalEvent = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -130,31 +233,74 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          let event: {
+            type?: string;
+            step?: number;
+            total?: number;
+            activeTest?: string;
+            interimQps?: number;
+            run?: BenchmarkRunRecord;
+            message?: string;
+          };
           try {
-            const event = JSON.parse(line);
-            if (event.type === 'progress') {
-              setProgressStep(event.step);
-              setProgressTotal(event.total);
-              setActiveTestLabel(event.activeTest);
-              if (event.interimQps) setLiveQps(event.interimQps);
-            } else if (event.type === 'done' && event.run) {
-              toast.success('Benchmark suite completed successfully!');
-              setRuns((prev) => [event.run, ...prev]);
-              setSelectedRunId(event.run.id);
-              setSelectedRunDetails(event.run);
-            } else if (event.type === 'error') {
-              toast.error(`Benchmark failed: ${event.message}`);
-            }
+            event = JSON.parse(line);
           } catch {
-            // Ignore parse errors on malformed chunks
+            throw new Error(`Malformed benchmark stream event: ${line.slice(0, 120)}`);
+          }
+          if (event.type === 'progress') {
+            setProgressStep(event.step ?? 0);
+            setProgressTotal(event.total ?? 0);
+            setActiveTestLabel(event.activeTest ?? 'Running');
+            if (event.interimQps != null) setLiveQps(event.interimQps);
+          } else if (event.type === 'done' && event.run) {
+            const completedRun = event.run;
+            terminalEvent = true;
+            if (completedRun.status === 'success')
+              toast.success('Benchmark completed; inspect run boundary and evidence');
+            else
+              toast.error(
+                `Benchmark completed with ${completedRun.failedTests} non-passing attempts`,
+              );
+            setRuns((prev) => [completedRun, ...prev]);
+            setSelectedRunId(completedRun.id);
+            setSelectedRunDetails(completedRun);
+          } else if (event.type === 'error') {
+            terminalEvent = true;
+            throw new Error(event.message ?? 'Benchmark failed without a diagnostic');
           }
         }
       }
+      if (!terminalEvent) throw new Error('Benchmark stream ended without a final result');
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      setRunError(errorMsg);
       toast.error(`Execution error: ${errorMsg}`);
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handlePreflight = async () => {
+    setRunError(null);
+    setPreflightReport(null);
+    try {
+      const params = new URLSearchParams({ suite: selectedSuite, sampleScale });
+      const res = await fetch(`/api/internal/eval/preflight?${params}`, {
+        headers: accessToken ? { 'x-recsy-eval-token': accessToken } : {},
+      });
+      const data = (await res.json()) as {
+        ready: boolean;
+        report?: Record<string, unknown>;
+        error?: string;
+      };
+      if (!res.ok || !data.ready || !data.report)
+        throw new Error(data.error ?? `Preflight failed (HTTP ${res.status})`);
+      setPreflightReport(data.report);
+      toast.success('Fixtures, catalog, and selected corpus are ready');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setRunError(message);
+      toast.error(message);
     }
   };
 
@@ -169,9 +315,12 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
       version: '2.0',
       exportedAt: new Date().toISOString(),
       systemInfo: {
-        nodeVersion: 'Node 20.x',
+        nodeVersion:
+          typeof selectedRunDetails.config?.nodeVersion === 'string'
+            ? selectedRunDetails.config.nodeVersion
+            : 'unrecorded',
         commitHash: selectedRunDetails.commitHash,
-        environment: 'RECSY Command Center Production Benchmark',
+        environment: 'RECSY evaluation; see run.config for provider and boundary',
       },
       run: {
         id: selectedRunDetails.id,
@@ -269,16 +418,20 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
 
       const res = await fetch('/api/internal/eval/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'x-recsy-eval-token': accessToken } : {}),
+        },
       });
 
       if (!res.ok) {
-        throw new Error('Server rejected imported benchmark payload');
+        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Import rejected (HTTP ${res.status})`);
       }
 
       const data = await res.json();
-      toast.success('Benchmark report successfully rehydrated and persisted!');
+      toast.success('Report imported as unverified evidence');
       setRuns((prev) => [data.run, ...prev]);
       setSelectedRunId(data.run.id);
       setSelectedRunDetails(data.run);
@@ -306,13 +459,28 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
   });
 
   const baselineRun = runs.find((r) => r.id === compareBaselineId);
+  const baselineComparable = Boolean(
+    baselineRun &&
+    selectedRunDetails &&
+    baselineRun.config?.suite === selectedRunDetails.config?.suite &&
+    baselineRun.config?.providerTrack === selectedRunDetails.config?.providerTrack &&
+    JSON.stringify(baselineRun.config?.preflight ?? null) ===
+      JSON.stringify(selectedRunDetails.config?.preflight ?? null) &&
+    baselineRun.config?.preflight != null,
+  );
+  const selectedLoadTrace = selectedRunDetails?.results?.find(
+    (result) => result.category === 'stress',
+  )?.tracePayload?.loadStress;
+  const loadStages = Object.entries(selectedLoadTrace?.stageP95Ms ?? {}).sort(
+    (a, b) => b[1] - a[1],
+  );
 
   return (
     <div className="flex-1 space-y-6 p-6 font-sans lg:p-8">
       {/* ------------------------------------------------------------------ */}
       {/* Header & Meta                                                      */}
       {/* ------------------------------------------------------------------ */}
-      <div className="border-border/40 flex flex-col gap-4 border-b pb-6 md:flex-row md:items-center md:justify-between">
+      <div className="border-border/40 flex flex-col gap-4 border-b pb-6">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-foreground flex items-center gap-2 font-mono text-2xl font-bold tracking-tight">
@@ -320,13 +488,130 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               Evaluation & Benchmarks Hub
             </h1>
             <span className="bg-primary/10 text-primary border-primary/20 rounded border px-2 py-0.5 font-mono text-xs font-semibold">
-              ALCE & MAUT Calibrated
+              Measurement boundaries shown per run
             </span>
           </div>
           <p className="text-muted-foreground mt-1 font-mono text-sm">
-            Research-grade offline ranking accuracy, fine-grained citation attribution, and multi-VU
-            data-plane concurrency telemetry.
+            Development fixtures and component tests. Stub and self-derived scores are not
+            product-quality evidence.
           </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <label htmlFor="eval-access-token">Evaluation access token</label>
+          <input
+            id="eval-access-token"
+            type="password"
+            autoComplete="off"
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            placeholder="Production only"
+            className="border-border bg-background rounded border px-3 py-2"
+          />
+          <button
+            type="button"
+            onClick={handleLoadHistory}
+            className="border-border rounded border px-3 py-2"
+          >
+            Load run history
+          </button>
+          <label htmlFor="eval-provider-track">Provider track</label>
+          <select
+            id="eval-provider-track"
+            value={providerTrack}
+            disabled={isRunning}
+            onChange={(e) => setProviderTrack(e.target.value as 'stub' | 'live')}
+            className="border-border bg-background rounded border px-3 py-2"
+          >
+            <option value="stub">Deterministic stub (development only)</option>
+            <option value="live">Configured live provider (may incur quota/cost)</option>
+          </select>
+          <button
+            type="button"
+            onClick={handlePreflight}
+            disabled={isRunning}
+            className="border-border rounded border px-3 py-2 disabled:opacity-50"
+          >
+            Check fixtures and data
+          </button>
+        </div>
+        {historyError && (
+          <div
+            role="alert"
+            className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600"
+          >
+            {historyError}
+          </div>
+        )}
+        {runError && (
+          <div
+            role="alert"
+            className="rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-500"
+          >
+            {runError}
+          </div>
+        )}
+        {preflightReport && (
+          <div className="border-border rounded border p-3 font-mono text-xs">
+            Ready: {String(preflightReport.catalogCount)} catalog phones. Fixture counts:{' '}
+            {JSON.stringify(preflightReport.fixtureCounts)}. Missing Q&A phones:{' '}
+            {JSON.stringify(preflightReport.qaMissingPhones)}. Missing corpus:{' '}
+            {JSON.stringify(preflightReport.qaMissingCorpus)}. Dataset hashes are retained in run
+            metadata.
+          </div>
+        )}
+        <div className="border-border space-y-3 rounded border p-3 text-sm">
+          <p>
+            Local production evaluation campaign: source-backed candidate pilot, blinded review,
+            HTTP failure checks and controlled-provider load. Answer-quality and production-capacity
+            claims remain blocked until their evidence gates pass.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={loadCampaign}
+              className="border-border rounded border px-3 py-2"
+            >
+              Load campaign evidence
+            </button>
+            <button
+              type="button"
+              onClick={downloadReview}
+              className="border-border rounded border px-3 py-2"
+            >
+              Download blinded review
+            </button>
+            <button
+              type="button"
+              onClick={() => reviewInputRef.current?.click()}
+              className="border-border rounded border px-3 py-2"
+            >
+              Import review labels
+            </button>
+            <input
+              type="file"
+              accept=".json"
+              ref={reviewInputRef}
+              onChange={importReview}
+              className="hidden"
+            />
+          </div>
+          {campaignError && (
+            <p role="alert" className="text-red-500">
+              {campaignError}
+            </p>
+          )}
+          {campaign && (
+            <>
+              <CampaignEvidence summary={campaign} />
+              <details>
+                <summary>Raw campaign evidence and failure examples</summary>
+                <pre className="max-h-96 overflow-auto text-xs whitespace-pre-wrap">
+                  {JSON.stringify(campaign, null, 2)}
+                </pre>
+              </details>
+            </>
+          )}
         </div>
 
         {/* Action Buttons: Export & Import */}
@@ -364,6 +649,129 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
         </div>
       </div>
 
+      {selectedRunDetails && (
+        <section
+          className="border-border bg-card rounded border p-4 text-sm"
+          aria-label="Run provenance"
+        >
+          <p className="font-semibold">
+            Selected run: {selectedRunDetails.status} · {selectedRunDetails.passedTests}/
+            {selectedRunDetails.totalTests} passing · {selectedRunDetails.failedTests} non-passing
+          </p>
+          {selectedRunDetails.metricsSummary?.executionError && (
+            <p role="alert" className="mt-2 text-red-500">
+              Execution failed: {selectedRunDetails.metricsSummary.executionError}
+            </p>
+          )}
+          <p>
+            Source: {selectedRunDetails.triggerSource}. Provider track:{' '}
+            {String(selectedRunDetails.config?.providerTrack ?? 'unrecorded')}. Boundary:{' '}
+            {String(selectedRunDetails.config?.measurementBoundary ?? 'unrecorded')}.
+          </p>
+          {(selectedRunDetails.triggerSource === 'unverified-import' ||
+            !selectedRunDetails.config?.preflight ||
+            selectedRunDetails.config?.workingTreeDirty !== false) && (
+            <p className="text-amber-600">
+              Imported, legacy, or uncommitted code provenance. These results are not suitable for a
+              resume claim.
+            </p>
+          )}
+          <details>
+            <summary>Fixture, catalog, model and run metadata</summary>
+            <pre className="mt-2 overflow-auto text-xs whitespace-pre-wrap">
+              {JSON.stringify(
+                { commitHash: selectedRunDetails.commitHash, config: selectedRunDetails.config },
+                null,
+                2,
+              )}
+            </pre>
+          </details>
+        </section>
+      )}
+      {selectedRunDetails?.metricsSummary?.generationProviderCalls != null && (
+        <section
+          className="border-border bg-card rounded border p-4 text-sm"
+          aria-label="Generation usage coverage"
+        >
+          <p>
+            Generation: {selectedRunDetails.metricsSummary.generationProviderCalls} uncached
+            provider calls, {selectedRunDetails.metricsSummary.generationCacheHits ?? 0} cache hits;
+            usage reported for {selectedRunDetails.metricsSummary.generationUsageCoveredCalls ?? 0}/
+            {selectedRunDetails.metricsSummary.generationProviderCalls} uncached calls.
+          </p>
+          <p>
+            {selectedRunDetails.metricsSummary.tokenUsage
+              ? `Current-run uncached generation tokens: ${selectedRunDetails.metricsSummary.tokenUsage.tokensIn} in / ${selectedRunDetails.metricsSummary.tokenUsage.tokensOut} out.`
+              : 'Current-run generation token total unavailable or no uncached generation calls.'}
+          </p>
+          <p className="text-muted-foreground">
+            Embedding usage is outside this total. Cached responses can include usage from an
+            earlier request and are excluded.
+          </p>
+        </section>
+      )}
+      {selectedRunDetails?.metricsSummary?.retrievalObservedCases != null && (
+        <section
+          className="border-border bg-card rounded border p-4 text-sm"
+          aria-label="Q&A retrieval signal coverage"
+        >
+          <p className="font-semibold">Q&A retrieval signals</p>
+          <p>
+            FTS returned zero chunks for{' '}
+            {selectedRunDetails.metricsSummary.ftsZeroCases ?? 'unrecorded'}/
+            {selectedRunDetails.metricsSummary.retrievalObservedCases} observed cases; vector
+            returned zero for {selectedRunDetails.metricsSummary.vectorZeroCases ?? 'unrecorded'}/
+            {selectedRunDetails.metricsSummary.retrievalObservedCases}.
+          </p>
+          <p className="text-muted-foreground">
+            A zero sparse branch means that case relied on vector retrieval. Review per-case counts
+            and evidence before judging answer quality.
+          </p>
+        </section>
+      )}
+      {selectedLoadTrace && (
+        <section
+          className="border-border bg-card space-y-2 rounded border p-4 text-sm"
+          aria-label="Retrieval probe diagnostics"
+        >
+          <h2 className="font-semibold">DB retrieval probe diagnostics</h2>
+          <p>
+            {selectedLoadTrace.catalogCount} catalog phones; {selectedLoadTrace.targetChunkCount}{' '}
+            chunks on the selected phone. Successful goodput:{' '}
+            {selectedRunDetails?.metricsSummary?.goodputQps ?? 'unrecorded'} requests/s;
+            completed-attempt p95: {selectedRunDetails?.metricsSummary?.latencyP95 ?? 'unrecorded'}{' '}
+            ms.
+          </p>
+          <p>
+            Stage p95 (successful attempts):{' '}
+            {loadStages.length
+              ? loadStages.map(([name, ms]) => `${name} ${ms} ms`).join(' · ')
+              : 'unrecorded'}
+            .
+          </p>
+          {loadStages[0] && (
+            <p>
+              Largest observed stage p95: {loadStages[0][0]}. Confirm the cause with database/server
+              traces before calling it a bottleneck.
+            </p>
+          )}
+          <p>
+            Errors:{' '}
+            {Object.keys(selectedLoadTrace.errorCounts).length
+              ? JSON.stringify(selectedLoadTrace.errorCounts)
+              : 'none recorded'}
+            .
+          </p>
+          {selectedLoadTrace.eventLoopLagMs != null && (
+            <p>Maximum sampled event-loop delay: {selectedLoadTrace.eventLoopLagMs} ms.</p>
+          )}
+          <p className="text-muted-foreground">
+            This short deterministic-embedder probe does not measure HTTP capacity or database pool
+            occupancy.
+          </p>
+        </section>
+      )}
+
       {/* ------------------------------------------------------------------ */}
       {/* Interactive Control Rail                                           */}
       {/* ------------------------------------------------------------------ */}
@@ -381,7 +789,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
           {/* Suite Selector */}
           <div>
             <label className="text-muted-foreground mb-1 block font-mono text-xs">
@@ -392,44 +800,43 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               onChange={(e) => {
                 const s = e.target.value as 'recsys' | 'rag' | 'load-stress' | 'multi-turn' | 'all';
                 setSelectedSuite(s);
-                if (s === 'recsys') setSelectedTier('OFFLINE_RECSYS');
-                else if (s === 'rag') setSelectedTier('RAG_ALCE');
-                else if (s === 'load-stress') setSelectedTier('L1_DATA_PLANE');
-                else if (s === 'multi-turn') setSelectedTier('MULTI_TURN_CRS');
+                setPreflightReport(null);
               }}
               disabled={isRunning}
               className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
             >
-              <option value="recsys">Recommender Offline (NDCG, ILD, CSR)</option>
+              <option value="recsys">Ranker consistency and constraint checks</option>
               <option value="multi-turn">Multi-Turn Conversational CRS (JGA, CRR, CSR)</option>
-              <option value="rag">Attributed Q&A (ALCE CitePrec/Recall)</option>
-              <option value="load-stress">Data-Plane Concurrency Stress (1-100 VUs)</option>
+              <option value="rag">Q&A citation and lexical proxy checks</option>
+              <option value="load-stress">DB retrieval component load (1-100 workers)</option>
               <option value="all">Full Comprehensive Suite</option>
             </select>
           </div>
 
           {/* Concurrency Level */}
-          <div>
-            <label className="text-muted-foreground mb-1 block font-mono text-xs">
-              Concurrency (Virtual Users)
-            </label>
-            <div className="flex items-center gap-1.5">
-              {[1, 5, 10, 25, 50, 100].map((vu) => (
-                <button
-                  key={vu}
-                  onClick={() => setConcurrencyVus(vu)}
-                  disabled={isRunning}
-                  className={`flex-1 rounded border py-1.5 font-mono text-xs font-medium transition-colors ${
-                    concurrencyVus === vu
-                      ? 'border-primary bg-primary/10 text-primary font-bold'
-                      : 'border-border/60 hover:bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {vu}
-                </button>
-              ))}
+          {selectedSuite === 'load-stress' && (
+            <div>
+              <label className="text-muted-foreground mb-1 block font-mono text-xs">
+                Concurrent workers (DB load probe)
+              </label>
+              <div className="flex items-center gap-1.5">
+                {[1, 5, 10, 25, 50, 100].map((vu) => (
+                  <button
+                    key={vu}
+                    onClick={() => setConcurrencyVus(vu)}
+                    disabled={isRunning}
+                    className={`flex-1 rounded border py-1.5 font-mono text-xs font-medium transition-colors ${
+                      concurrencyVus === vu
+                        ? 'border-primary bg-primary/10 text-primary font-bold'
+                        : 'border-border/60 hover:bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {vu}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Dataset Scale */}
           <div>
@@ -442,10 +849,32 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               disabled={isRunning}
               className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
             >
-              <option value="full">Full Golden Set (50 Personas/Queries)</option>
-              <option value="quick">Quick Verification (5 Test Cases)</option>
+              <option value="full">
+                Full authored fixture set (30 personas, 20 Q&A, 15 conversations)
+              </option>
+              <option value="quick">Quick subset (5 personas or Q&A, 3 conversations)</option>
             </select>
           </div>
+          {selectedSuite === 'load-stress' && (
+            <div>
+              <label
+                htmlFor="eval-total-requests"
+                className="text-muted-foreground mb-1 block font-mono text-xs"
+              >
+                Completed attempts (1–10,000)
+              </label>
+              <input
+                id="eval-total-requests"
+                type="number"
+                min={1}
+                max={10000}
+                value={totalRequests}
+                disabled={isRunning}
+                onChange={(e) => setTotalRequests(Number(e.target.value))}
+                className="border-border bg-background w-full rounded border px-3 py-2 font-mono text-xs"
+              />
+            </div>
+          )}
 
           {/* Run Button */}
           <div className="flex items-end">
@@ -523,7 +952,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               )}
             </div>
             <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Target: ≥ 90.0% (Slot Match)
+              Exact match on annotated slots; see trace for unchecked fields
             </p>
           </div>
 
@@ -552,7 +981,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               )}
             </div>
             <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Target: ≥ 95.0% (Anti-Decay)
+              Eligible annotated retention checks only
             </p>
           </div>
 
@@ -613,18 +1042,18 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
           {/* Multi-Turn 6: Token Usage & Cost */}
           <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
             <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Tokens & Cost Accounting
+              Provider-reported generation tokens
             </p>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.tokenUsage?.totalTokens != null
                   ? currentSummary.tokenUsage.totalTokens.toLocaleString()
-                  : '0'}
+                  : '--'}
               </p>
             </div>
             <p className="text-muted-foreground font-mono text-[10px]">
-              In: {currentSummary?.tokenUsage?.tokensIn?.toLocaleString() ?? 0} | $
-              {currentSummary?.tokenUsage?.estimatedCostUsd?.toFixed(4) ?? '0.0000'}
+              In: {currentSummary?.tokenUsage?.tokensIn?.toLocaleString() ?? '--'}; retrieval tokens
+              not included
             </p>
           </div>
         </div>
@@ -633,7 +1062,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
           {/* Metric 1: NDCG@3 */}
           <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
             <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Recommender NDCG@3
+              MAUT agreement NDCG@3
             </p>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
@@ -645,13 +1074,15 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                 </span>
               )}
             </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">Target: ≥ 0.880</p>
+            <p className="text-muted-foreground font-mono text-[10px]">
+              Labels derive from ranker rules; not independent relevance
+            </p>
           </div>
 
-          {/* Metric 2: ALCE Citation Precision */}
+          {/* Metric 2: lexical citation proxy */}
           <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
             <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Citation Precision
+              Lexical citation support proxy
             </p>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
@@ -670,7 +1101,9 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                 </span>
               )}
             </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">Target: ≥ 95.0%</p>
+            <p className="text-muted-foreground font-mono text-[10px]">
+              Word overlap is not semantic entailment
+            </p>
           </div>
 
           {/* Metric 3: Tail Latency p95 */}
@@ -702,8 +1135,23 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               </p>
             </div>
             <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Dealbreaker Leakage: 0.0%
+              Dealbreaker keyword checks:{' '}
+              {currentSummary?.dealbreakerCsr != null
+                ? `${(currentSummary.dealbreakerCsr * 100).toFixed(1)}%`
+                : '--'}
             </p>
+            {currentSummary?.constraintPolicyCases != null && (
+              <p className="text-muted-foreground font-mono text-[10px]">
+                Answerable policy cases: {currentSummary.constraintPolicyCases}
+              </p>
+            )}
+            {currentSummary?.noResultPolicyCases != null &&
+              currentSummary.noResultPolicyCases > 0 && (
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Expected no-result cases: {currentSummary.noResultPolicyPassed ?? 0}/
+                  {currentSummary.noResultPolicyCases}
+                </p>
+              )}
           </div>
 
           {/* Metric 5: Intra-List Diversity (ILD) */}
@@ -716,7 +1164,9 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                 {currentSummary?.ild3?.mean != null ? currentSummary.ild3.mean.toFixed(3) : '--'}
               </p>
             </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">Target: ≥ 0.280</p>
+            <p className="text-muted-foreground font-mono text-[10px]">
+              Embedding coverage: {currentSummary?.ildCoverageCases ?? '--'} cases
+            </p>
           </div>
 
           {/* Metric 6: Gini Index & Coverage */}
@@ -800,7 +1250,13 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
         </div>
 
         {/* Side-by-Side Regression Diff Table (When Baseline Selected) */}
-        {baselineRun && selectedRunDetails && (
+        {baselineRun && selectedRunDetails && !baselineComparable && (
+          <p className="font-mono text-xs text-amber-500">
+            Comparison unavailable: suite, provider, fixture hashes, or catalog snapshot differ or
+            are missing.
+          </p>
+        )}
+        {baselineRun && selectedRunDetails && baselineComparable && (
           <div className="border-border/80 bg-background/80 mt-3 overflow-x-auto rounded border p-3">
             <table className="w-full text-left font-mono text-xs">
               <thead>
@@ -815,7 +1271,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
               <tbody className="divide-border/30 divide-y">
                 {/* NDCG Diff */}
                 <tr>
-                  <td className="py-1.5 font-medium">Recommender NDCG@3</td>
+                  <td className="py-1.5 font-medium">MAUT agreement NDCG@3</td>
                   <td className="py-1.5">
                     {baselineRun.metricsSummary?.ndcg3?.mean?.toFixed(3) ?? '--'}
                   </td>
@@ -843,14 +1299,14 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                   </td>
                   <td className="py-1.5">
                     <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      OPTIMAL
+                      Descriptive
                     </span>
                   </td>
                 </tr>
 
                 {/* CitePrec Diff */}
                 <tr>
-                  <td className="py-1.5 font-medium">Citation Precision (ALCE)</td>
+                  <td className="py-1.5 font-medium">Lexical citation support proxy</td>
                   <td className="py-1.5">
                     {baselineRun.metricsSummary?.citePrec?.mean
                       ? `${(baselineRun.metricsSummary.citePrec.mean * 100).toFixed(1)}%`
@@ -882,7 +1338,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                   </td>
                   <td className="py-1.5">
                     <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      FAITHFUL
+                      Descriptive
                     </span>
                   </td>
                 </tr>
@@ -921,7 +1377,7 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                   </td>
                   <td className="py-1.5">
                     <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      VERIFIED
+                      Component only
                     </span>
                   </td>
                 </tr>
@@ -1048,12 +1504,12 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                         )}
                         {r.scores.ndcg3 != null && (
                           <span className="text-primary font-bold">
-                            NDCG: {r.scores.ndcg3.toFixed(2)}
+                            MAUT agreement: {r.scores.ndcg3.toFixed(2)}
                           </span>
                         )}
                         {r.scores.citePrec != null && (
                           <span className="font-bold text-emerald-500">
-                            CitePrec: {(r.scores.citePrec * 100).toFixed(0)}%
+                            Lexical citation proxy: {(r.scores.citePrec * 100).toFixed(0)}%
                           </span>
                         )}
                       </td>
@@ -1140,10 +1596,15 @@ export function EvalClientView({ initialRuns }: EvalClientViewProps) {
                       JGA: {(inspectItem.tracePayload.multiTurnTrajectory.jga * 100).toFixed(0)}%
                     </span>
                     <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-bold text-emerald-500">
-                      CRR: {(inspectItem.tracePayload.multiTurnTrajectory.crr * 100).toFixed(0)}%
+                      CRR:{' '}
+                      {inspectItem.tracePayload.multiTurnTrajectory.crr != null
+                        ? `${(inspectItem.tracePayload.multiTurnTrajectory.crr * 100).toFixed(0)}%`
+                        : 'not evaluated'}
                     </span>
                     <span className="bg-muted text-muted-foreground rounded px-2 py-0.5">
-                      ${inspectItem.tracePayload.multiTurnTrajectory.estimatedCostUsd.toFixed(4)}
+                      {inspectItem.tracePayload.multiTurnTrajectory.tokensIn != null
+                        ? `${inspectItem.tracePayload.multiTurnTrajectory.tokensIn} reported input tokens`
+                        : 'Token usage unavailable'}
                     </span>
                   </div>
                 </div>

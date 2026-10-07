@@ -30,6 +30,7 @@ function getClient(): ReturnType<typeof postgres> {
       max: env.NODE_ENV === 'production' ? 10 : 6,
       idle_timeout: 20,
       prepare: false, // required for Supabase's pgbouncer transaction mode
+      connection: { search_path: `${env.DATABASE_SCHEMA}, extensions` },
     });
   }
   return _client;
@@ -44,6 +45,11 @@ export function getDb(): ReturnType<typeof drizzle<typeof schema>> {
 
 /** Drizzle instance type — use in `import type` contexts (avoids value imports only for `typeof`). */
 export type AppDb = ReturnType<typeof getDb>;
+/** Common query surface for an ordinary database or a transaction. */
+export type AppQueryDb = Pick<
+  AppDb,
+  'select' | 'insert' | 'update' | 'delete' | 'execute' | 'query'
+>;
 
 /**
  * Raw `postgres` driver handle — needed by retrieval primitives that issue

@@ -3,8 +3,8 @@
  * Prune and unlock catalog refresh candidates.
  *
  * This is a queue hygiene step, not a destructive cleanup by default. It
- * removes non-phones and long-tail quarantines from the active enrichment queue
- * while making priority-brand candidates retryable.
+ * excludes non-phones, reconciles existing identities, and releases legacy
+ * long-tail exclusions. Ordinary failures retain their retry cooldowns.
  *
  * Usage:
  *   pnpm catalog:prune --dry-run
@@ -15,13 +15,15 @@ import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
   DEFAULT_MAINSTREAM_BRAND_PRIORITY,
   isLikelyCatalogPhoneTitle,
-  isMainstreamPriorityBrand,
   isReleasedCatalogCandidate,
   normalizeIdentityText,
 } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
-import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
+import { catalogCandidates, catalogRuns, phones } from '../src/services/db/schema';
+import { catalogExactModelKey } from '../src/services/catalog/candidate-policy';
+import { PhoneSpecSchema } from '../src/features/phones/schema';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 
 interface CliArgs {
   readonly dryRun: boolean;
@@ -127,6 +129,30 @@ async function main(): Promise<void> {
   const unlockIds = actions
     .filter((action) => action.kind === 'unlock_priority')
     .map((action) => action.id);
+  const existingPhones = await db
+    .select({ id: phones.id, brand: phones.brand, model: phones.model, spec: phones.specJson })
+    .from(phones)
+    .where(eq(phones.status, 'active'));
+  const phonesByModel = new Map<string, string[]>();
+  for (const p of existingPhones) {
+    if (!PhoneSpecSchema.safeParse(p.spec).success) continue;
+    const key = catalogExactModelKey(p.brand, p.model);
+    phonesByModel.set(key, [...(phonesByModel.get(key) ?? []), p.id]);
+  }
+  const matchedExisting = rows.flatMap((row) => {
+    if (
+      row.matchedPhoneId ||
+      row.status !== 'discovered' ||
+      !row.issueCodes.includes('spec_projection_missing') ||
+      actions.some((a) => a.id === row.id)
+    )
+      return [];
+    const brand = candidateBrand(row);
+    if (!brand) return [];
+    const model = stringValue(row.normalized.model) ?? row.title;
+    const ids = phonesByModel.get(catalogExactModelKey(brand, model)) ?? [];
+    return ids.length === 1 ? [{ candidateId: row.id, phoneId: ids[0]! }] : [];
+  });
 
   const cutoff = new Date(Date.now() - args.olderThanDays * 24 * 60 * 60 * 1000);
   const deleteIds =
@@ -136,13 +162,31 @@ async function main(): Promise<void> {
             .select({ id: catalogCandidates.id })
             .from(catalogCandidates)
             .where(
-              and(eq(catalogCandidates.status, 'skipped'), lt(catalogCandidates.updatedAt, cutoff)),
+              and(
+                activeCatalogCandidateSql(),
+                eq(catalogCandidates.status, 'skipped'),
+                lt(catalogCandidates.updatedAt, cutoff),
+              ),
             )
             .limit(args.limit)
         ).map((row) => row.id)
       : [];
 
   if (!args.dryRun) {
+    for (const match of matchedExisting) {
+      await db
+        .update(catalogCandidates)
+        .set({
+          matchedPhoneId: match.phoneId,
+          status: 'skipped',
+          decision: 'matched_existing',
+          issueCodes: ['matched_existing'],
+          retryAfter: null,
+          lastDecisionAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(catalogCandidates.id, match.candidateId));
+    }
     if (nonPhoneIds.length > 0) {
       await db
         .update(catalogCandidates)
@@ -191,7 +235,7 @@ async function main(): Promise<void> {
         .set({
           decision: 'pending_review',
           status: 'discovered',
-          issueCodes: sql`array_remove(array_remove(${catalogCandidates.issueCodes}, 'long_tail_pruned'), 'llm_budget_exhausted')`,
+          issueCodes: sql`array_remove(array_remove(array_remove(array_remove(${catalogCandidates.issueCodes}, 'long_tail_pruned'), 'llm_budget_exhausted'), 'unreleased_candidate'), 'speculative_candidate')`,
           retryAfter: null,
           lastDecisionAt: sql`now()`,
           updatedAt: sql`now()`,
@@ -213,7 +257,7 @@ async function main(): Promise<void> {
         limit: args.limit,
       },
       skippedCount: nonPhoneIds.length + longTailIds.length + unreleasedIds.length,
-      updatedCount: unlockIds.length,
+      updatedCount: unlockIds.length + matchedExisting.length,
       requestCount: 0,
       llmCallCount: 0,
       finishedAt: sql`now()`,
@@ -223,7 +267,7 @@ async function main(): Promise<void> {
 
   const prefix = args.dryRun ? '[catalog:prune] dry-run' : '[catalog:prune] done';
   console.log(
-    `${prefix} scanned=${rows.length} non_phone=${nonPhoneIds.length} unreleased=${unreleasedIds.length} long_tail=${longTailIds.length} unlocked=${unlockIds.length} deleted=${deleteIds.length} llm_calls=0`,
+    `${prefix} scanned=${rows.length} non_phone=${nonPhoneIds.length} unreleased=${unreleasedIds.length} long_tail=${longTailIds.length} unlocked=${unlockIds.length} matched_existing=${matchedExisting.length} deleted=${deleteIds.length} llm_calls=0`,
   );
 }
 
@@ -234,21 +278,21 @@ type PruneAction =
   | { readonly kind: 'unlock_priority'; readonly id: string };
 
 function classifyCandidate(row: CandidateRow): PruneAction | null {
-  if (row.matchedPhoneId || row.status === 'promoted' || row.status === 'ready_to_promote') {
+  if (row.issueCodes.includes('archived_candidate') || row.issueCodes.includes('non_phone_device'))
     return null;
-  }
-
   const brand = candidateBrand(row);
   const model = stringValue(row.normalized.model) ?? stringValue(row.raw.model) ?? row.title;
-  const title = [row.title, brand, model].filter(Boolean).join(' ');
   const rawDeviceType = normalizeIdentityText(
     stringValue(row.raw.device_type) ?? stringValue(row.raw.deviceType) ?? '',
   );
 
   const isRawNonPhone =
     rawDeviceType.length > 0 && !['phone', 'smartphone', 'mobile'].includes(rawDeviceType);
-  const isTitleNonPhone = !isLikelyCatalogPhoneTitle(title);
+  const isTitleNonPhone =
+    !isLikelyCatalogPhoneTitle(row.title) || !isLikelyCatalogPhoneTitle(model);
   if (isRawNonPhone || isTitleNonPhone) return { kind: 'skip_non_phone', id: row.id };
+  if (row.matchedPhoneId || row.status === 'promoted' || row.status === 'ready_to_promote')
+    return null;
 
   const released = isReleasedCatalogCandidate({
     brand,
@@ -260,26 +304,11 @@ function classifyCandidate(row: CandidateRow): PruneAction | null {
   });
   if (!released) return { kind: 'skip_unreleased', id: row.id };
 
-  if (isMainstreamPriorityBrand(brand)) {
-    if (row.status === 'skipped' && row.issueCodes.includes('non_phone_device')) return null;
-    if (
-      row.status !== 'discovered' ||
-      row.decision !== 'pending_review' ||
-      row.retryAfter !== null ||
-      row.issueCodes.includes('long_tail_pruned') ||
-      row.issueCodes.includes('llm_budget_exhausted')
-    ) {
-      return { kind: 'unlock_priority', id: row.id };
-    }
-    return null;
-  }
-
   if (
-    row.status === 'quarantined' ||
-    row.status === 'failed' ||
-    row.status === 'failed_transient'
+    row.status === 'skipped' &&
+    (row.issueCodes.includes('long_tail_pruned') || row.issueCodes.includes('unreleased_candidate'))
   ) {
-    return { kind: 'skip_long_tail', id: row.id };
+    return { kind: 'unlock_priority', id: row.id };
   }
   return null;
 }

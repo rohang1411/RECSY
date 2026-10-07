@@ -18,7 +18,7 @@ async function main(): Promise<void> {
 
   console.log('\n======================================================');
   console.log(`RECSY v2 — Data-Plane Concurrency Stress Profiler`);
-  console.log(`Target: Hybrid Retrieval & In-Memory Ranker`);
+  console.log(`Target: DB hybrid retrieval with deterministic query embedding`);
   console.log(`Concurrency: ${concurrencyVus} Virtual Users | Total Requests: ${totalRequests}`);
   console.log('======================================================\n');
 
@@ -48,11 +48,16 @@ async function main(): Promise<void> {
   console.log('------------------------------------------------------');
   console.log('THROUGHPUT & CAPACITY:');
   console.log('------------------------------------------------------');
-  console.log(`Peak Throughput:     ${result.qps} QPS`);
+  console.log(`Attempt throughput:  ${result.qps} requests/s`);
+  console.log(`Successful goodput:  ${result.goodputQps} requests/s`);
   console.log(
     `Success Rate:        ${result.successfulRequests}/${result.totalRequests} (${(100 - result.errorRate).toFixed(1)}%)`,
   );
-  console.log(`Pool Saturation:     ${result.poolSaturationPercent}% (Max Connections: 20)`);
+  console.log(
+    `Catalog / chunks:    ${result.catalogCount} phones / ${result.targetChunkCount} target chunks`,
+  );
+  if (result.errorSamples.length)
+    console.log(`Failure samples:     ${result.errorSamples.join(' | ')}`);
   console.log(`Max Event Loop Lag:  ${result.eventLoopLagMs} ms (Target: < 15ms)`);
   console.log(`Duration:            ${(result.durationMs / 1000).toFixed(2)}s\n`);
 

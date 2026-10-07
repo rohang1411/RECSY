@@ -72,8 +72,7 @@ export class FtsSearch implements Retriever {
 
     const { sql, log } = this.deps;
 
-    // Tier 1: tsvector match via websearch_to_tsquery + ts_rank_cd. Fast
-    // path; handles 95% of user intent.
+    // Tier 1: tsvector match via websearch_to_tsquery + ts_rank_cd.
     const tsvRows = await sql<FtsSearchRow[]>`
       WITH q AS (
         SELECT websearch_to_tsquery('english', ${normalised}) AS query

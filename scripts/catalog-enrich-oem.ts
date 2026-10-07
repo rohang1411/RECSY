@@ -10,12 +10,16 @@
  *   pnpm catalog:enrich-oem --url https://example.com/product/phone --dry-run
  *   pnpm catalog:enrich-oem --from-candidates --limit 25 --promote --update-existing
  */
-import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
+import {
+  compareCatalogEnrichmentFairness,
+  isCatalogRetryDue,
+} from '../src/services/catalog/candidate-policy';
 
 import {
   buildCanonicalKey,
   buildPromotionPlan,
-  compareCatalogPriorityThenNewest,
   extractOemProductPage,
   fetchOemPageHtml,
   hashJson,
@@ -164,9 +168,22 @@ async function main(): Promise<void> {
   let promoted = 0;
   let skipped = 0;
   let failedFetches = 0;
+  const attemptedCandidates = new Set<string>();
 
   try {
     for (const seed of seeds) {
+      if (seed.candidateId && !args.dryRun && !attemptedCandidates.has(seed.candidateId)) {
+        attemptedCandidates.add(seed.candidateId);
+        await db
+          .update(catalogCandidates)
+          .set({
+            attempts: sql`${catalogCandidates.attempts} + 1`,
+            lastDecisionAt: new Date(),
+            // Source-specific cooldown leaves the Wikipedia fallback eligible.
+            claimsJson: sql`${catalogCandidates.claimsJson} || ${JSON.stringify({ _oemRetryAfter: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })}::jsonb`,
+          })
+          .where(eq(catalogCandidates.id, seed.candidateId));
+      }
       if (fetched > 0) {
         await sleep(args.minRequestGapMs);
       }
@@ -185,7 +202,6 @@ async function main(): Promise<void> {
           !args.dryRun
         ) {
           skipped += 1;
-          await markSpeculativeOemMiss(db, seed.candidateId);
         }
         continue;
       }
@@ -228,8 +244,6 @@ async function main(): Promise<void> {
         .from(catalogCandidates)
         .where(eq(catalogCandidates.stableKey, item.stableKey))
         .limit(1);
-      if (prior.length === 0) created += 1;
-      else updated += 1;
 
       const [candidate] = await db
         .insert(catalogCandidates)
@@ -258,6 +272,7 @@ async function main(): Promise<void> {
           confidence: item.plan.ok ? '0.95' : '0.00',
           issueCodes: item.plan.ok ? [] : [...new Set(item.plan.issues.map((issue) => issue.code))],
           lastDecisionAt: new Date(),
+          retryAfter: item.plan.ok ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         })
         .onConflictDoUpdate({
           target: catalogCandidates.stableKey,
@@ -277,10 +292,17 @@ async function main(): Promise<void> {
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
             lastDecisionAt: sql`now()`,
             updatedAt: sql`now()`,
+            retryAfter: sql`excluded.retry_after`,
           },
+          setWhere: activeCatalogCandidateSql(),
         })
         .returning({ id: catalogCandidates.id });
-      if (!candidate) throw new Error('candidate upsert returned no row');
+      if (!candidate) {
+        skipped++;
+        continue;
+      }
+      if (prior.length === 0) created += 1;
+      else updated += 1;
 
       if (!item.plan.ok) {
         quarantined += 1;
@@ -351,12 +373,16 @@ async function readCandidateSeeds(
       title: catalogCandidates.candidateTitle,
       sourceUrl: catalogCandidates.sourceUrl,
       raw: catalogCandidates.rawCandidateJson,
+      claims: catalogCandidates.claimsJson,
       normalized: catalogCandidates.normalizedIdentityJson,
       retryAfter: catalogCandidates.retryAfter,
+      attempts: catalogCandidates.attempts,
+      lastDecisionAt: catalogCandidates.lastDecisionAt,
     })
     .from(catalogCandidates)
     .where(
       and(
+        activeCatalogCandidateSql(),
         inArray(catalogCandidates.status, [
           'discovered',
           'quarantined',
@@ -367,14 +393,17 @@ async function readCandidateSeeds(
         or(isNull(catalogCandidates.retryAfter), lte(catalogCandidates.retryAfter, new Date())),
       ),
     )
-    .orderBy(desc(catalogCandidates.updatedAt))
-    .limit(Math.max(limit * 20, 100));
+    .orderBy(asc(catalogCandidates.attempts), asc(catalogCandidates.lastDecisionAt));
 
   const sortedRows = rows
-    .filter((row) =>
-      isLikelyCatalogPhoneTitle(
-        [row.title, stringValue(row.normalized.model)].filter(Boolean).join(' '),
-      ),
+    .filter((row) => {
+      const retryAfter = stringValue(row.claims._oemRetryAfter);
+      return isCatalogRetryDue(retryAfter ? new Date(retryAfter) : null);
+    })
+    .filter(
+      (row) =>
+        isLikelyCatalogPhoneTitle(row.title) &&
+        isLikelyCatalogPhoneTitle(stringValue(row.normalized.model) ?? row.title),
     )
     .filter((row) =>
       isReleasedCatalogCandidate({
@@ -387,13 +416,15 @@ async function readCandidateSeeds(
       }),
     )
     .sort((a, b) =>
-      compareCatalogPriorityThenNewest(
+      compareCatalogEnrichmentFairness(
         {
           brand: stringValue(a.normalized.brand),
           model: stringValue(a.normalized.model),
           title: a.title,
           launchDate: stringValue(a.normalized.launchDate),
           releaseDate: stringValue(a.normalized.releaseDate) ?? stringValue(a.raw.releaseDate),
+          attempts: a.attempts,
+          lastDecisionAt: a.lastDecisionAt,
         },
         {
           brand: stringValue(b.normalized.brand),
@@ -401,6 +432,8 @@ async function readCandidateSeeds(
           title: b.title,
           launchDate: stringValue(b.normalized.launchDate),
           releaseDate: stringValue(b.normalized.releaseDate) ?? stringValue(b.raw.releaseDate),
+          attempts: b.attempts,
+          lastDecisionAt: b.lastDecisionAt,
         },
       ),
     );
@@ -473,23 +506,6 @@ function stagePlan(record: CatalogImportRecord) {
     claimsJson,
   });
   return { record, externalId, canonicalKey, stableKey, claimsJson, plan };
-}
-
-async function markSpeculativeOemMiss(
-  db: ReturnType<typeof getDb>,
-  candidateId: string,
-): Promise<void> {
-  await db
-    .update(catalogCandidates)
-    .set({
-      decision: 'pending_review',
-      status: 'failed_transient',
-      issueCodes: ['speculative_candidate', 'oem_url_not_found'],
-      retryAfter: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-      lastDecisionAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(catalogCandidates.id, candidateId));
 }
 
 function hasUsableCandidateReleaseDate(

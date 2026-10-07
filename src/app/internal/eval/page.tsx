@@ -3,25 +3,29 @@ import { getDb } from '@/services/db/client';
 import { listBenchmarkRuns } from '@/services/eval/storage/benchmark-repository';
 import type { BenchmarkRunRecord } from '@/services/eval/types';
 import { EvalClientView } from './_components/eval-client-view';
+import { env } from '@/env';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Evaluation & Benchmarks Hub | RECSY Command Center',
   description:
-    'Research-grade offline ranking evaluation (NDCG, ILD), Stanford ALCE citation attribution, and multi-VU concurrency stress benchmarks.',
+    'RECSY component evaluation with explicit fixture, provider and measurement boundaries.',
 };
 
 export default async function EvalPage() {
-  const db = getDb();
   let initialRuns: BenchmarkRunRecord[] = [];
+  let initialError: string | null = null;
 
-  try {
-    initialRuns = await listBenchmarkRuns(db, 30);
-  } catch {
-    // Graceful fallback if migrations haven't run yet
-    initialRuns = [];
+  if (env.NODE_ENV !== 'production') {
+    try {
+      initialRuns = await listBenchmarkRuns(getDb(), 30);
+    } catch (error) {
+      initialError = `Run history unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  } else {
+    initialError = 'Enter the evaluation access token to load run history.';
   }
 
-  return <EvalClientView initialRuns={initialRuns} />;
+  return <EvalClientView initialRuns={initialRuns} initialError={initialError} />;
 }

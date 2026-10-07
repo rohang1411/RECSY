@@ -1,18 +1,14 @@
 /**
- * Multi-Concurrency Data-Plane & Infrastructure Stress Runner.
- *
- * Implements high-throughput load benchmarking across 1→100 Virtual Users (VUs)
- * without incurring external SaaS LLM costs or hitting third-party rate limits.
- *
- * Stresses:
- *   - Supabase Postgres 17 connection pool
- *   - pgvector HNSW concurrent vector cosine distance (<=>)
- *   - In-memory RRF fusion and MMR matrix computation
- *   - Node.js event loop lag and heap memory allocation
+ * Bounded component load probe. It runs concurrent DB retrieval with a selected
+ * embedder or in-memory ranking. It is not an HTTP, pool, or service-capacity test.
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { inArray } from 'drizzle-orm';
 import { ASPECT_NAMES } from '@/lib/constants';
 import type { AppDb } from '@/services/db/client';
+import { chunks } from '@/services/db/schema';
+import type { LlmProvider } from '@/services/llm/types';
+import { DeterministicLlmProvider } from '../stub/deterministic-llm';
 import { loadRecommendationCatalog } from '@/services/recommender/catalog';
 import { rankCandidates } from '@/services/recommender/match';
 import { createHybridRetriever } from '@/services/retrieval/factory';
@@ -24,6 +20,8 @@ export interface LoadStressOptions {
   readonly targetComponent: 'data-plane-retrieval' | 'data-plane-recsys';
   readonly concurrencyVus: number; // 1, 5, 10, 25, 50, 100
   readonly totalRequests: number;
+  readonly llm?: LlmProvider;
+  readonly phoneId?: string;
   readonly onProgress?: (completed: number, total: number, curQps: number) => void;
 }
 
@@ -31,22 +29,31 @@ export async function runLoadStressBenchmark(
   options: LoadStressOptions,
 ): Promise<LoadStressResult> {
   const { db, targetComponent, concurrencyVus, totalRequests, onProgress } = options;
+  if (!Number.isInteger(concurrencyVus) || concurrencyVus < 1 || concurrencyVus > 100)
+    throw new Error('load configuration: concurrencyVus must be 1..100');
+  if (!Number.isInteger(totalRequests) || totalRequests < 1 || totalRequests > 10000)
+    throw new Error('load configuration: totalRequests must be 1..10000');
 
   const latenciesMs: number[] = [];
-  const statusCodes: Record<number, number> = { 200: 0, 429: 0, 500: 0 };
+  const errorCounts: Record<string, number> = {};
+  const errorSamples: string[] = [];
+  const stageLatencies: Record<string, number[]> = {
+    embedding: [],
+    vector: [],
+    fts: [],
+    rrf: [],
+    mmr: [],
+  };
   let successfulRequests = 0;
   let failedRequests = 0;
 
-  // Setup performance hooks
-  const eventLoopHistogram = monitorEventLoopDelay({ resolution: 10 });
-  eventLoopHistogram.enable();
-
-  const startTime = performance.now();
-  let completedCount = 0;
-
-  // Pre-load components to ensure fair throughput benchmarking
+  // Setup is deliberately excluded from measured request time.
   const catalog = await loadRecommendationCatalog(db);
-  const retriever = createHybridRetriever();
+  if (catalog.length === 0) throw new Error('load preflight: active catalog is empty');
+  const retriever =
+    targetComponent === 'data-plane-retrieval'
+      ? createHybridRetriever({ llm: options.llm ?? new DeterministicLlmProvider() })
+      : null;
   const defaultWeights = new Map(ASPECT_NAMES.map((a) => [a, 1 / ASPECT_NAMES.length]));
 
   const dummyReqs = {
@@ -73,29 +80,55 @@ export async function runLoadStressBenchmark(
     'build quality titanium drop resistance',
   ];
 
-  const firstPhoneId = catalog[0]?.phoneId;
+  const chunkRows =
+    targetComponent === 'data-plane-retrieval'
+      ? await db
+          .select({ phoneId: chunks.phoneId })
+          .from(chunks)
+          .where(
+            inArray(
+              chunks.phoneId,
+              catalog.map((p) => p.phoneId),
+            ),
+          )
+      : [];
+  const chunkCounts = new Map<string, number>();
+  for (const row of chunkRows)
+    chunkCounts.set(row.phoneId, (chunkCounts.get(row.phoneId) ?? 0) + 1);
+  const chosenPhoneId = options.phoneId ?? [...chunkCounts].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const targetChunkCount = chosenPhoneId ? (chunkCounts.get(chosenPhoneId) ?? 0) : 0;
+  if (targetComponent === 'data-plane-retrieval' && targetChunkCount === 0)
+    throw new Error(
+      'load preflight: no chunks for selected active phone; refusing no-op retrieval benchmark',
+    );
+  const eventLoopHistogram = monitorEventLoopDelay({ resolution: 10 });
+  eventLoopHistogram.enable();
+  const startTime = performance.now();
+  let issuedCount = 0;
+  let finishedCount = 0;
 
   // Worker loop for each Virtual User
   const runWorker = async () => {
     while (true) {
-      if (completedCount >= totalRequests) {
+      if (issuedCount >= totalRequests) {
         break;
       }
 
-      completedCount++;
-      const queryIdx = completedCount % testQueries.length;
+      issuedCount++;
+      const queryIdx = issuedCount % testQueries.length;
       const query = testQueries[queryIdx] ?? 'battery life';
 
       const t0 = performance.now();
       try {
         if (targetComponent === 'data-plane-recsys') {
           // Stress the full in-memory ranker across all active catalog devices
-          rankCandidates(catalog, dummyReqs, defaultWeights);
+          const ranked = rankCandidates(catalog, dummyReqs, defaultWeights);
+          if (ranked.picks.length === 0) throw new Error('ranker returned zero picks');
         } else {
           // Stress database hybrid search (pgvector HNSW + FTS + RRF)
-          if (firstPhoneId) {
-            await retriever.search({
-              phoneId: firstPhoneId,
+          if (chosenPhoneId && retriever) {
+            const result = await retriever.search({
+              phoneId: chosenPhoneId,
               query,
               options: {
                 kPerRetriever: 10,
@@ -103,24 +136,35 @@ export async function runLoadStressBenchmark(
                 minDistinctSources: 1,
               },
             });
+            if (result.chunks.length === 0) throw new Error('retriever returned zero chunks');
+            if (result.debug.vector.error || result.debug.fts.error)
+              throw new Error(
+                `retrieval stage failed: vector=${result.debug.vector.error ?? 'ok'}; fts=${result.debug.fts.error ?? 'ok'}`,
+              );
+            stageLatencies.embedding?.push(result.debug.embedding?.ms ?? 0);
+            stageLatencies.vector?.push(result.debug.vector.ms);
+            stageLatencies.fts?.push(result.debug.fts.ms);
+            stageLatencies.rrf?.push(result.debug.rrf.ms);
+            stageLatencies.mmr?.push(result.debug.mmr.ms);
           }
         }
 
         const elapsed = performance.now() - t0;
         latenciesMs.push(elapsed);
-        statusCodes[200] = (statusCodes[200] ?? 0) + 1;
         successfulRequests++;
-      } catch {
+      } catch (error) {
         const elapsed = performance.now() - t0;
         latenciesMs.push(elapsed);
-        statusCodes[500] = (statusCodes[500] ?? 0) + 1;
         failedRequests++;
+        const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        errorCounts[message] = (errorCounts[message] ?? 0) + 1;
+        if (errorSamples.length < 10) errorSamples.push(message);
       }
-
-      if (completedCount % 5 === 0 || completedCount === totalRequests) {
+      finishedCount++;
+      if (finishedCount % 5 === 0 || finishedCount === totalRequests) {
         const curDuration = performance.now() - startTime;
-        const curQps = computeThroughputQps(completedCount, curDuration);
-        onProgress?.(completedCount, totalRequests, curQps);
+        const curQps = computeThroughputQps(successfulRequests, curDuration);
+        onProgress?.(finishedCount, totalRequests, curQps);
       }
     }
   };
@@ -135,12 +179,18 @@ export async function runLoadStressBenchmark(
   const maxEventLoopLagMs = Math.round(eventLoopHistogram.max / 1e6); // nanoseconds -> ms
   const latencies = computeLatencyPercentiles(latenciesMs);
   const qps = computeThroughputQps(totalRequests, totalDurationMs);
+  const goodputQps = computeThroughputQps(successfulRequests, totalDurationMs);
   const errorRate = totalRequests > 0 ? (failedRequests / totalRequests) * 100 : 0;
-
-  // Approximate pool saturation (concurrency vs max connections of 20)
-  const poolSaturationPercent = Math.min(100, Math.round((concurrencyVus / 20) * 100));
+  const stageP95Ms = Object.fromEntries(
+    Object.entries(stageLatencies)
+      .filter(([, values]) => values.length > 0)
+      .map(([name, values]) => [name, computeLatencyPercentiles(values).p95]),
+  );
 
   return {
+    targetComponent,
+    catalogCount: catalog.length,
+    targetChunkCount,
     totalRequests,
     successfulRequests,
     failedRequests,
@@ -148,9 +198,11 @@ export async function runLoadStressBenchmark(
     concurrencyVus,
     durationMs: Math.round(totalDurationMs),
     qps,
+    goodputQps,
+    stageP95Ms,
     latency: latencies,
-    poolSaturationPercent,
     eventLoopLagMs: maxEventLoopLagMs,
-    statusCodes,
+    errorCounts,
+    errorSamples,
   };
 }

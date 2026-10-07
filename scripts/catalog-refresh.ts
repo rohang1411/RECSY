@@ -20,9 +20,11 @@ import {
   compareCatalogPriorityThenNewest,
   discoverRecentWikidataPhones,
   hashJson,
+  isLikelyCatalogPhoneTitle,
   stableCandidateKey,
 } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import {
   catalogCandidates,
@@ -182,6 +184,7 @@ async function main(): Promise<void> {
 
     let created = 0;
     let updated = 0;
+    let skipped = 0;
     for (const candidate of sortedCandidates) {
       const stableKey = stableCandidateKey({
         sourceKey: candidate.sourceKey,
@@ -217,8 +220,6 @@ async function main(): Promise<void> {
         .from(catalogCandidates)
         .where(eq(catalogCandidates.stableKey, stableKey))
         .limit(1);
-      if (prior.length === 0) created += 1;
-      else updated += 1;
 
       const canonicalKey =
         candidate.brand && candidate.model
@@ -229,7 +230,7 @@ async function main(): Promise<void> {
             })
           : null;
 
-      await db
+      const changed = await db
         .insert(catalogCandidates)
         .values({
           firstRunId: run.id,
@@ -270,7 +271,7 @@ async function main(): Promise<void> {
             candidateTitle: sql`excluded.candidate_title`,
             rawCandidateJson: sql`excluded.raw_candidate_json`,
             normalizedIdentityJson: sql`excluded.normalized_identity_json`,
-            claimsJson: sql`excluded.claims_json`,
+            claimsJson: sql`${catalogCandidates.claimsJson}`,
             canonicalKey: sql`excluded.canonical_key`,
             contentHash: sql`excluded.content_hash`,
             lastSnapshotId: sql`excluded.last_snapshot_id`,
@@ -296,24 +297,20 @@ async function main(): Promise<void> {
                 else excluded.issue_codes
               end
             `,
-            retryAfter: sql`
-              case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
-                then ${catalogCandidates.retryAfter}
-                else null
-              end
-            `,
+            retryAfter: sql`${catalogCandidates.retryAfter}`,
             seenCount: sql`${catalogCandidates.seenCount} + 1`,
-            lastDecisionAt: sql`
-              case
-                when ${catalogCandidates.status} in ('quarantined', 'skipped', 'ready_to_promote', 'promoted', 'failed_transient')
-                then ${catalogCandidates.lastDecisionAt}
-                else now()
-              end
-            `,
+            lastDecisionAt: sql`${catalogCandidates.lastDecisionAt}`,
             updatedAt: sql`now()`,
           },
-        });
+          setWhere: and(
+            activeCatalogCandidateSql(),
+            sql`${catalogCandidates.rawCandidateJson} is distinct from excluded.raw_candidate_json`,
+          ),
+        })
+        .returning({ id: catalogCandidates.id });
+      if (changed.length === 0) skipped += 1;
+      else if (prior.length === 0) created += 1;
+      else updated += 1;
     }
 
     await db
@@ -328,7 +325,7 @@ async function main(): Promise<void> {
         stage: 'done',
         createdCount: created,
         updatedCount: updated,
-        skippedCount: 0,
+        skippedCount: skipped,
         quarantinedCount: 0,
         requestCount: 1,
         llmCallCount: 0,
@@ -339,7 +336,7 @@ async function main(): Promise<void> {
 
     console.log(
       `[catalog:refresh] done source=${args.source} discovered=${candidates.length} ` +
-        `created=${created} updated=${updated} promoted=0 llm_calls=0`,
+        `created=${created} updated=${updated} skipped=${skipped} promoted=0 llm_calls=0`,
     );
     console.log(
       '[catalog:refresh] note: Wikidata candidates are staged as pending_review until a no-LLM spec source can satisfy PhoneSpecSchema.',
@@ -368,12 +365,14 @@ function sortWikidataCandidates<
     releaseDate?: string | null;
   },
 >(candidates: readonly T[]): T[] {
-  return [...candidates].sort((a, b) =>
-    compareCatalogPriorityThenNewest(
-      { brand: a.brand, model: a.model, title: a.title, releaseDate: a.releaseDate },
-      { brand: b.brand, model: b.model, title: b.title, releaseDate: b.releaseDate },
-    ),
-  );
+  return [...candidates]
+    .filter((c) => isLikelyCatalogPhoneTitle(c.title))
+    .sort((a, b) =>
+      compareCatalogPriorityThenNewest(
+        { brand: a.brand, model: a.model, title: a.title, releaseDate: a.releaseDate },
+        { brand: b.brand, model: b.model, title: b.title, releaseDate: b.releaseDate },
+      ),
+    );
 }
 
 function discoveryFetchLimit(limit: number): number {

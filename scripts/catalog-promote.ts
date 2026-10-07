@@ -16,6 +16,7 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import { promoteCatalogCandidate } from '../src/services/catalog';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
@@ -105,15 +106,18 @@ async function main(): Promise<void> {
           .select({ id: catalogCandidates.id })
           .from(catalogCandidates)
           .where(
-            or(
-              inArray(catalogCandidates.status, ['ready_to_promote', 'validated']),
-              and(
-                inArray(catalogCandidates.status, [
-                  'discovered',
-                  'quarantined',
-                  'failed_transient',
-                ]),
-                sql`${catalogCandidates.claimsJson} ? 'promotion'`,
+            and(
+              activeCatalogCandidateSql(),
+              or(
+                inArray(catalogCandidates.status, ['ready_to_promote', 'validated']),
+                and(
+                  inArray(catalogCandidates.status, [
+                    'discovered',
+                    'quarantined',
+                    'failed_transient',
+                  ]),
+                  sql`${catalogCandidates.claimsJson} ? 'promotion'`,
+                ),
               ),
             ),
           )

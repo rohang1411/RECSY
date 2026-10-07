@@ -12,6 +12,7 @@ import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import { llm } from '@/services/llm';
 
 import { normalizeIdentityText } from '../identity';
+import { catalogExactModelKey } from '../candidate-policy';
 import {
   findMissingCoreFields,
   projectPhoneSpec,
@@ -28,7 +29,12 @@ export interface WikipediaDiagnostics {
   readonly matchedTitle: string | null;
   readonly infobox: 'found' | 'missing' | 'no-article';
   readonly specFieldCount: number;
-  readonly failureReason?: 'no-article' | 'no-infobox' | 'llm-empty';
+  readonly failureReason?:
+    | 'no-article'
+    | 'no-infobox'
+    | 'llm-empty'
+    | 'llm-budget'
+    | 'model-mismatch';
   readonly llmAttempted: boolean;
   readonly extractionMethod: 'none' | 'deterministic' | 'llm';
 }
@@ -238,11 +244,16 @@ function extractInfobox(wikitext: string): string | null {
   return wikitext.slice(startMatch.index, i);
 }
 
-async function parseInfoboxWithLlm(infoboxWikitext: string): Promise<PhoneSpec | null> {
+async function parseInfoboxWithLlm(
+  infoboxWikitext: string,
+  brand: string,
+  model: string,
+): Promise<PhoneSpec | null> {
   const prompt = `You are extracting phone specifications from a raw Wikipedia infobox in wikitext format.
 Convert the infobox data into the required JSON schema for a PhoneSpec object.
 
 Rules:
+- Extract only ${brand} ${model}. This article may cover multiple models. Do not copy a sibling model's specs or combine values across variants. Omit fields whose exact variant is unclear.
 - Only include fields that are clearly present in the infobox. Do NOT invent or guess values.
 - Return compact JSON only. Do not include explanatory text.
 - Camera entries should be extracted from fields like "camera", "rear camera", "main camera", "back camera".
@@ -284,6 +295,7 @@ ${infoboxWikitext}`;
 export async function fetchWikipediaSpecs(
   brand: string,
   model: string,
+  options: { readonly allowLlm?: boolean } = {},
 ): Promise<WikipediaFetchResult> {
   try {
     const search = await searchPhoneTitleWithDiagnostics(brand, model);
@@ -328,11 +340,37 @@ export async function fetchWikipediaSpecs(
     }
 
     const deterministicInput = parseInfoboxDeterministically(infobox);
+    const sharedArticle =
+      catalogExactModelKey(brand, model) !==
+      catalogExactModelKey(brand, wikitextResult.title ?? pageTitle);
+    const normalizedInfobox = normalizeIdentityText(infobox);
+    const variantTokens = normalizeIdentityText(model)
+      .split(' ')
+      .filter(
+        (token) =>
+          !normalizeIdentityText(wikitextResult.title ?? pageTitle)
+            .split(' ')
+            .includes(token),
+      );
+    if (
+      sharedArticle &&
+      !variantTokens.every((token) => normalizedInfobox.split(' ').includes(token))
+    ) {
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          matchedTitle: wikitextResult.title ?? pageTitle,
+          infobox: 'found',
+          failureReason: 'model-mismatch',
+        }),
+      };
+    }
     const deterministicProjection = projectPhoneSpec(deterministicInput, {
       allowEstimatedLaunchSpecs: true,
       brand,
     });
-    if (deterministicProjection.ok && deterministicProjection.spec) {
+    if (!sharedArticle && deterministicProjection.ok && deterministicProjection.spec) {
       return {
         spec: deterministicProjection.spec,
         diagnostics: diagnostics({
@@ -347,7 +385,18 @@ export async function fetchWikipediaSpecs(
 
     await sleep(1000);
 
-    const spec = await parseInfoboxWithLlm(infobox);
+    if (options.allowLlm === false) {
+      return {
+        spec: null,
+        diagnostics: diagnostics({
+          queriesTried: search.queriesTried,
+          matchedTitle: wikitextResult.title ?? pageTitle,
+          infobox: 'found',
+          failureReason: 'llm-budget',
+        }),
+      };
+    }
+    const spec = await parseInfoboxWithLlm(infobox, brand, model);
     if (!spec) {
       console.warn(`[wikipedia-catalog] LLM failed to produce a valid spec for "${pageTitle}"`);
       return {

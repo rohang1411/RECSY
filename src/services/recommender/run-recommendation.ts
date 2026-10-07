@@ -18,7 +18,7 @@
 import type { Logger } from 'pino';
 
 import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/lib/constants';
-import type { AppDb } from '@/services/db/client';
+import type { AppQueryDb } from '@/services/db/client';
 import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
@@ -31,6 +31,7 @@ import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
+import { unsupportedHardFeatures } from './hard-features';
 
 export type RecommendApiPick = {
   readonly phoneId: string;
@@ -134,7 +135,7 @@ function promoteRequirements(
 }
 
 export async function runRecommendationPipeline(input: {
-  readonly db: AppDb;
+  readonly db: AppQueryDb;
   readonly llm: LlmProvider;
   readonly sessionId: string;
   readonly userMessage: string;
@@ -154,6 +155,14 @@ export async function runRecommendationPipeline(input: {
   });
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });
+  const unsupported = unsupportedHardFeatures(requirements);
+  if (unsupported.length) {
+    return {
+      kind: 'clarify',
+      requirements,
+      clarifyingQuestion: `I can't verify these required conditions from the available catalog: ${unsupported.join(', ')}. Can you specify a measurable requirement or explicitly relax these conditions?`,
+    };
+  }
 
   if (requirements.confidence < RECOMMENDER_CLARIFY_THRESHOLD) {
     const q =
@@ -174,11 +183,16 @@ export async function runRecommendationPipeline(input: {
   let queryEmbedding: readonly number[] | undefined;
   if (hasSpecEmb) {
     const qtext = buildRecommenderQueryText(requirements);
-    const emb = await input.llm.embed([qtext], undefined, {
-      area: 'Recommendation',
-      feature: 'Semantic query embedding',
-      source: '/api/recommend',
-    });
+    const emb = await input.llm.embed(
+      [qtext],
+      undefined,
+      {
+        area: 'Recommendation',
+        feature: 'Semantic query embedding',
+        source: '/api/recommend',
+      },
+      { taskType: 'RETRIEVAL_QUERY' },
+    );
     queryEmbedding = emb.embeddings[0];
   } else {
     input.log.info(

@@ -90,6 +90,35 @@ function req(partial: Partial<UserRequirements>): UserRequirements {
   } as UserRequirements;
 }
 
+describe('hard feature verification', () => {
+  const options = { relaxBudgetMax: false, ignoreFoldable: false };
+  it('rejects unsupported mandatory features instead of quietly ranking them', () => {
+    expect(
+      passesHardFilters(
+        entry({ slug: 'test', spec: spec('Android') }),
+        req({ must_haves: ['titanium frame'] }),
+        options,
+      ),
+    ).toBe(false);
+  });
+  it('requires explicit NFC evidence and does not treat a missing value as false or true', () => {
+    const phone = entry({ slug: 'test', spec: spec('Android') });
+    expect(passesHardFilters(phone, req({ must_haves: ['NFC'] }), options)).toBe(true);
+    expect(passesHardFilters({ ...phone, spec: null }, req({ must_haves: ['NFC'] }), options)).toBe(
+      false,
+    );
+  });
+  it('requires positive wireless charging wattage', () => {
+    const phone = entry({
+      slug: 'test',
+      spec: { ...spec('Android'), charging: { wired_w: 30, wireless_w: 0 } },
+    });
+    expect(passesHardFilters(phone, req({ must_haves: ['wireless charging'] }), options)).toBe(
+      false,
+    );
+  });
+});
+
 const equalWeights = new Map<AspectName, number>(
   (['camera', 'battery', 'performance', 'display', 'build', 'software', 'value'] as const).map(
     (a) => [a, 1 / 7],
@@ -261,5 +290,20 @@ describe('match helpers', () => {
     expect(
       passesHardFilters(unavailable, emptyReq, { relaxBudgetMax: false, ignoreFoldable: false }),
     ).toBe(false);
+  });
+
+  it('never recommends an unpriced or over-budget phone under a strict cap', () => {
+    const missingPrice = entry({ slug: 'unknown', msrpUsd: null });
+    const overBudget = entry({ slug: 'expensive', msrpUsd: '800.00' });
+    const requirement = req({ budget_usd: { max: 300 } });
+    expect(
+      passesHardFilters(missingPrice, requirement, {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(false);
+    const ranked = rankCandidates([missingPrice, overBudget], requirement, equalWeights);
+    expect(ranked.picks).toEqual([]);
+    expect(ranked.relaxed).toEqual([]);
   });
 });

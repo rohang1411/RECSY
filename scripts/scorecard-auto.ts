@@ -161,6 +161,7 @@ Options:
         llm,
         log,
         chunkFingerprint: fingerprint,
+        force: args.force,
         aspectDelayMs: 4500, // 4.5s pacing for free tier
         shouldStop: shouldStopForTime,
       });

@@ -1,17 +1,8 @@
 /**
- * Stanford ALCE (Attributed Language Models) & Fine-Grained Citation Attribution Engine.
- *
- * References:
- *   - Gao et al., EMNLP 2023: "ALCE: Empirical Analysis of Attributed Language Models"
- *   - Min et al., EMNLP 2023: "FActScore: Fine-grained Atomic Evaluation of Factual Precision"
- *
- * Implements:
- *   - Sentence-Level Citation Precision (CitePrec)
- *   - Sentence-Level Citation Recall (CiteRec)
- *   - Zero-Tolerance Phantom Citation Rate (PhantomRate)
- *   - Tier-1 Deterministic Numerical & Entity NLI Entailment
+ * Mechanical citation checks: ID membership, numeric-string presence, and
+ * word overlap. These checks are not semantic entailment, ALCE, or FActScore.
  */
-import type { AlceAttributionResult, SentenceAttribution } from '../types';
+import type { CitationLexicalProxyResult, SentenceAttribution } from '../types';
 
 const CITATION_REGEX = /\[c:([0-9a-fA-F-]{36}|[a-zA-Z0-9_-]+)\]/gi;
 
@@ -85,7 +76,7 @@ const COMMON_STOPWORDS = new Set([
   'where',
 ]);
 
-export function verifyNumericalEntailment(
+export function verifyNumericalStringPresence(
   sentence: string,
   chunkTexts: readonly string[],
 ): { passed: boolean; missingEntities: string[] } {
@@ -117,11 +108,11 @@ export function verifyNumericalEntailment(
   };
 }
 
-export function chunkSupportsSentence(sentence: string, chunkText: string): boolean {
+export function chunkPassesLexicalProxy(sentence: string, chunkText: string): boolean {
   const cleanSentence = sentence.replace(CITATION_REGEX, '');
 
-  // 1. Numerical claims must be entailed by this chunk
-  const numCheck = verifyNumericalEntailment(cleanSentence, [chunkText]);
+  // 1. Numeric strings must also appear in the chunk.
+  const numCheck = verifyNumericalStringPresence(cleanSentence, [chunkText]);
   if (!numCheck.passed) return false;
 
   // 2. Meaningful content words must overlap
@@ -143,25 +134,25 @@ export function chunkSupportsSentence(sentence: string, chunkText: string): bool
   return overlapRatio >= 0.35;
 }
 
-export function evaluateAlceAttribution(
+export function evaluateCitationLexicalProxy(
   answerText: string,
   retrievedChunks: ReadonlyMap<string, string>,
-): AlceAttributionResult {
+): CitationLexicalProxyResult {
   const sentences = splitIntoSentences(answerText);
   const sentenceAttributions: SentenceAttribution[] = [];
 
   let totalCitations = 0;
-  let supportedCitations = 0;
+  let lexicallyMatchedCitations = 0;
   let phantomCitations = 0;
   let citedSentences = 0;
-  let fullySupportedSentences = 0;
+  let lexicallyMatchedSentences = 0;
 
   for (const sentence of sentences) {
     const citations = extractInlineCitations(sentence);
     totalCitations += citations.length;
 
     let hasValidRefs = false;
-    let allChunksEntailed = false;
+    let passesLexicalProxy = false;
     let numericalPassed = true;
     let missingEntities: string[] = [];
 
@@ -174,8 +165,8 @@ export function evaluateAlceAttribution(
         if (chunkText) {
           hasValidRefs = true;
           associatedChunks.push(chunkText);
-          if (chunkSupportsSentence(sentence, chunkText)) {
-            supportedCitations++;
+          if (chunkPassesLexicalProxy(sentence, chunkText)) {
+            lexicallyMatchedCitations++;
           }
         } else {
           phantomCitations++;
@@ -183,35 +174,35 @@ export function evaluateAlceAttribution(
       }
 
       if (associatedChunks.length > 0) {
-        const numCheck = verifyNumericalEntailment(sentence, associatedChunks);
+        const numCheck = verifyNumericalStringPresence(sentence, associatedChunks);
         numericalPassed = numCheck.passed;
         missingEntities = numCheck.missingEntities;
 
-        // A sentence is considered entailed if at least one cited chunk directly supports it
-        allChunksEntailed =
-          numericalPassed && associatedChunks.some((c) => chunkSupportsSentence(sentence, c));
+        // At least one cited chunk passes the lexical and numeric-string checks.
+        passesLexicalProxy =
+          numericalPassed && associatedChunks.some((c) => chunkPassesLexicalProxy(sentence, c));
       }
     }
 
-    if (allChunksEntailed) {
-      fullySupportedSentences++;
+    if (passesLexicalProxy) {
+      lexicallyMatchedSentences++;
     }
 
     sentenceAttributions.push({
       sentence,
       citations,
       hasValidChunkRefs: hasValidRefs,
-      isEntailed: allChunksEntailed,
+      passesLexicalProxy,
       numericalCheckPassed: numericalPassed,
       missingEntities,
     });
   }
 
-  // Citation Precision: Proportion of citations that actually entail the attached sentence
-  const citePrec = totalCitations > 0 ? supportedCitations / totalCitations : 0.0;
+  // Historical field name: fraction of citations passing the lexical proxy.
+  const citePrec = totalCitations > 0 ? lexicallyMatchedCitations / totalCitations : 0.0;
 
-  // Citation Recall: Proportion of sentences that are cited and fully entailed
-  const citeRec = sentences.length > 0 ? fullySupportedSentences / sentences.length : 0.0;
+  // Historical field name: fraction of sentences passing the lexical proxy.
+  const citeRec = sentences.length > 0 ? lexicallyMatchedSentences / sentences.length : 0.0;
 
   // Phantom Citation Rate: Proportion of citations pointing to nonexistent chunks
   const phantomRate = totalCitations > 0 ? phantomCitations / totalCitations : 0.0;

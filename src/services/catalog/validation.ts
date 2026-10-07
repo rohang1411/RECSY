@@ -7,7 +7,7 @@
  * Used by: catalog promotion, tests, reports.
  */
 import type { CatalogSpecProjectionInput } from './spec-project';
-import { isFutureCatalogDate } from './candidate-policy';
+import { isFutureCatalogDate, isLikelyCatalogPhoneTitle } from './candidate-policy';
 import { findMissingCoreFields } from './spec-project';
 
 export interface CatalogValidationIssue {
@@ -36,6 +36,15 @@ export function validateCatalogCandidate(
   }
   if (!input.model) {
     issues.push(blocker('missing_model', 'model is required', 'model'));
+  }
+  if (
+    input.model &&
+    (!isLikelyCatalogPhoneTitle(input.model) ||
+      !isLikelyCatalogPhoneTitle(`${input.brand ?? ''} ${input.model}`))
+  ) {
+    issues.push(
+      blocker('non_phone_device', 'catalog entries must identify one phone model', 'model'),
+    );
   }
 
   for (const missing of findMissingCoreFields(input.spec)) {

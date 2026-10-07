@@ -125,6 +125,9 @@ jobs:
       GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
       GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
       GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+      GEMINI_API_KEY_6: ${{ secrets.GEMINI_API_KEY_6 }}
+      GEMINI_API_KEYS_EXTRA: ${{ secrets.GEMINI_API_KEYS_EXTRA }}
       GEMINI_RATE_LIMIT_PROFILE: google_ai_studio_free
       GEMINI_FREE_RPM: '5'
       GEMINI_FREE_TPM_INPUT: '250000'
@@ -210,6 +213,8 @@ jobs:
             fi
           fi
 
+          pnpm exec tsx scripts/catalog-prune.ts
+
           if [ "$OEM_ENRICH" = "true" ]; then
             ARGS="--from-candidates --limit $OEM_LIMIT --min-request-gap-ms 2000"
             if [ "$PROMOTE" = "true" ]; then
@@ -222,7 +227,8 @@ jobs:
             pnpm exec tsx scripts/catalog-enrich-gsmarena.ts --limit "$OEM_LIMIT"
             pnpm exec tsx scripts/catalog-promote.ts --ready --limit 50 --update-existing
           else
-            echo "::notice title=Skipping Wikipedia enrichment::GEMINI_API_KEY is not configured. Pending catalog candidates will remain staged until a no-LLM OEM source or structured import supplies complete specs."
+            pnpm exec tsx scripts/catalog-enrich-gsmarena.ts --limit "$OEM_LIMIT" --max-llm-calls 0
+            pnpm exec tsx scripts/catalog-promote.ts --ready --limit 50 --update-existing
           fi
 
           if [ "$MEDIA_BACKFILL" = "true" ]; then
@@ -233,7 +239,7 @@ jobs:
         if: success() && needs.secrets-gate.outputs.gemini == 'true'
         run: |
           # Generate spec_embedding for any phone promoted or updated this run
-          # (promotion sets spec_embedding = NULL). The backfill script processes
+          # (only changed spec inputs clear spec_embedding). The backfill script processes
           # only NULL rows by default so this is safe to run every time.
           pnpm exec tsx scripts/backfill-spec-embeddings.ts
 

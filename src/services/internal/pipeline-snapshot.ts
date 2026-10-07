@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { env } from '@/env';
 
 import { getDb, type AppDb } from '@/services/db/client';
 import { sourceTypeEnum } from '@/services/db/schema';
@@ -347,6 +348,11 @@ async function getCoreStats(db: AppDb): Promise<{
   readonly overduePhones: number;
 }> {
   const rows = (await db.execute(sql`
+    with phones as (select * from ${sql.identifier(env.DATABASE_SCHEMA)}.phones where status <> 'archived'),
+      sources as (select s.* from ${sql.identifier(env.DATABASE_SCHEMA)}.sources s join phones p on p.id = s.phone_id),
+      chunks as (select c.* from ${sql.identifier(env.DATABASE_SCHEMA)}.chunks c join phones p on p.id = c.phone_id),
+      aspects as (select a.* from ${sql.identifier(env.DATABASE_SCHEMA)}.aspects a join phones p on p.id = a.phone_id),
+      ingest_runs as (select r.* from ${sql.identifier(env.DATABASE_SCHEMA)}.ingest_runs r left join ${sql.identifier(env.DATABASE_SCHEMA)}.phones p on p.id = r.phone_id where p.status <> 'archived' or r.phone_id is null)
     select
       (select count(*)::int from phones) as phones_total,
       (select count(distinct phone_id)::int from sources) as phones_with_evidence,
@@ -397,6 +403,7 @@ async function getSourceTypeCounts(db: AppDb): Promise<readonly SourceTypeCountR
   return (await db.execute(sql`
     select type::text, count(*)::int
     from sources
+    where phone_id in (select id from phones where status <> 'archived')
     group by type
   `)) as unknown as SourceTypeCountRow[];
 }
@@ -405,12 +412,21 @@ async function getIngestStatusCounts(db: AppDb): Promise<readonly IngestStatusCo
   return (await db.execute(sql`
     select status::text, count(*)::int
     from ingest_runs
+    where phone_id is null or phone_id in (select id from phones where status <> 'archived')
     group by status
   `)) as unknown as IngestStatusCountRow[];
 }
 
 async function getTableCounts(db: AppDb): Promise<ReadonlyMap<string, number>> {
   const rows = (await db.execute(sql`
+    with phones as (select * from ${sql.identifier(env.DATABASE_SCHEMA)}.phones where status <> 'archived'),
+      phone_aliases as (select a.* from ${sql.identifier(env.DATABASE_SCHEMA)}.phone_aliases a join phones p on p.id = a.phone_id),
+      sources as (select s.* from ${sql.identifier(env.DATABASE_SCHEMA)}.sources s join phones p on p.id = s.phone_id),
+      chunks as (select c.* from ${sql.identifier(env.DATABASE_SCHEMA)}.chunks c join phones p on p.id = c.phone_id),
+      source_phone_links as (select l.* from ${sql.identifier(env.DATABASE_SCHEMA)}.source_phone_links l join phones p on p.id = l.phone_id join sources s on s.id = l.source_id),
+      aspects as (select a.* from ${sql.identifier(env.DATABASE_SCHEMA)}.aspects a join phones p on p.id = a.phone_id),
+      ingest_runs as (select r.* from ${sql.identifier(env.DATABASE_SCHEMA)}.ingest_runs r left join ${sql.identifier(env.DATABASE_SCHEMA)}.phones p on p.id = r.phone_id where p.status <> 'archived' or r.phone_id is null),
+      crawl_queue as (select q.* from ${sql.identifier(env.DATABASE_SCHEMA)}.crawl_queue q join phones p on p.id = q.phone_id)
     select 'phones' as name, count(*)::int as count from phones
     union all select 'phone_aliases', count(*)::int from phone_aliases
     union all select 'sources', count(*)::int from sources

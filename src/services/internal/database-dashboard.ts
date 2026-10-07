@@ -1,9 +1,19 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
+import {
+  activeCatalogCandidateSql,
+  isArchivedCatalogCandidate,
+} from '@/services/catalog/eligibility';
 
 import { getDb, type AppDb } from '@/services/db/client';
 import { catalogCandidates, catalogQualityIssues, crawlQueue, phones } from '@/services/db/schema';
 
-export type DeviceCategory = 'promoted' | 'blocked' | 'pending' | 'pipeline' | 'queued';
+export type DeviceCategory =
+  | 'promoted'
+  | 'blocked'
+  | 'pending'
+  | 'pipeline'
+  | 'queued'
+  | 'archived';
 
 export type BlockedReasonItem = {
   readonly code: string;
@@ -44,9 +54,12 @@ export type DatabaseDashboardSummary = {
   readonly pendingCount: number;
   readonly queuedCount: number;
   readonly inPipelineCount: number;
+  readonly archivedCount: number;
 };
 
 export type DatabaseDashboardData = {
+  readonly dataWarning: string | null;
+  readonly entryCount: number;
   readonly summary: DatabaseDashboardSummary;
   readonly blockedReasons: readonly BlockedReasonItem[];
   readonly devices: readonly DeviceRowItem[];
@@ -84,6 +97,7 @@ const EMPTY_DASHBOARD_DATA: DatabaseDashboardSummary = {
   pendingCount: 0,
   queuedCount: 0,
   inPipelineCount: 0,
+  archivedCount: 0,
 };
 
 async function safeQuery<T>(
@@ -126,6 +140,9 @@ export async function loadDatabaseDashboardData(
       error instanceof Error ? error.message : String(error),
     );
     return {
+      dataWarning:
+        'Database inventory is temporarily unavailable. Refresh to retry; the counts below are not verified.',
+      entryCount: 0,
       summary: EMPTY_DASHBOARD_DATA,
       blockedReasons: [],
       devices: [],
@@ -149,11 +166,11 @@ async function loadDatabaseDashboardDataInternal(
     baseData = cachedDashboardBase;
   } else {
     const db = getDb();
-    const [summary, candidateRows, issuesRows, activePhoneRows] = await Promise.all([
-      loadDatabaseSummary(db),
-      safeQuery(loadCandidates(db), [], 'loadCandidates', 3500),
-      safeQuery(loadRecentQualityIssues(db), [], 'loadRecentQualityIssues', 3500),
-      safeQuery(loadActivePhones(db), [], 'loadActivePhones', 3500),
+    const summary = await loadDatabaseSummary(db, true);
+    const activePhoneRows = await requireQuery(loadActivePhones(db), 'loadActivePhones');
+    const [candidateRows, issuesRows] = await Promise.all([
+      requireQuery(loadCandidates(db), 'loadCandidates'),
+      requireQuery(loadRecentQualityIssues(db), 'loadRecentQualityIssues'),
     ]);
 
     const issuesByCandidateId = new Map<string, typeof issuesRows>();
@@ -166,21 +183,32 @@ async function loadDatabaseDashboardDataInternal(
 
     const reasonCountMap = new Map<string, number>();
     const deviceItems: DeviceRowItem[] = [];
+    const promotedSlugs = new Set<string>();
 
     for (const candidate of candidateRows) {
       const candidateIssues = issuesByCandidateId.get(candidate.id) ?? [];
-      const category = categorizeCandidate(candidate.status, candidate.decision);
+      const category =
+        candidate.excluded ||
+        isArchivedCatalogCandidate(candidate.issueCodes) ||
+        candidate.matchedStatus === 'archived'
+          ? 'archived'
+          : categorizeCandidate(candidate.status, candidate.decision);
       const blockedReason = deriveBlockedReason(candidate, candidateIssues);
+      if (category === 'promoted' && candidate.matchedSlug) {
+        if (promotedSlugs.has(candidate.matchedSlug)) continue;
+        promotedSlugs.add(candidate.matchedSlug);
+      }
 
       if (category === 'blocked' && candidate.issueCodes) {
+        const reasonCodes = new Set<string>();
         for (const code of candidate.issueCodes) {
           if (code) {
-            reasonCountMap.set(code, (reasonCountMap.get(code) ?? 0) + 1);
+            reasonCodes.add(code);
           }
         }
         if (candidateIssues.length > 0) {
           for (const issue of candidateIssues) {
-            reasonCountMap.set(issue.code, (reasonCountMap.get(issue.code) ?? 0) + 1);
+            reasonCodes.add(issue.code);
           }
         }
         if (
@@ -189,8 +217,10 @@ async function loadDatabaseDashboardDataInternal(
           candidateIssues.length === 0
         ) {
           const simplifiedError = simplifyError(candidate.lastError);
-          reasonCountMap.set(simplifiedError, (reasonCountMap.get(simplifiedError) ?? 0) + 1);
+          reasonCodes.add(simplifiedError);
         }
+        for (const code of reasonCodes)
+          reasonCountMap.set(code, (reasonCountMap.get(code) ?? 0) + 1);
       }
 
       deviceItems.push({
@@ -214,7 +244,7 @@ async function loadDatabaseDashboardDataInternal(
         confidence: candidate.confidence,
         attempts: candidate.attempts,
         retryAfter: candidate.retryAfter ? candidate.retryAfter.toISOString() : null,
-        phoneSlug: candidate.matchedSlug,
+        phoneSlug: category === 'archived' ? null : candidate.matchedSlug,
         updatedAt: candidate.updatedAt
           ? candidate.updatedAt.toISOString()
           : new Date().toISOString(),
@@ -222,7 +252,9 @@ async function loadDatabaseDashboardDataInternal(
     }
 
     const candidatePhoneSlugs = new Set(
-      deviceItems.filter((d) => d.phoneSlug).map((d) => d.phoneSlug as string),
+      deviceItems
+        .filter((d) => d.phoneSlug && d.category === 'promoted')
+        .map((d) => d.phoneSlug as string),
     );
 
     for (const phone of activePhoneRows) {
@@ -259,7 +291,7 @@ async function loadDatabaseDashboardDataInternal(
 
     const brandSet = new Set<string>();
     for (const item of deviceItems) {
-      if (item.brand) brandSet.add(item.brand);
+      if (item.brand && item.category !== 'archived') brandSet.add(item.brand);
     }
     const brands = Array.from(brandSet).sort();
 
@@ -275,7 +307,9 @@ async function loadDatabaseDashboardDataInternal(
   const { summary, blockedReasons, devices: deviceItems, brands } = baseData;
 
   // Apply filters
-  let filteredDevices = deviceItems;
+  let filteredDevices = deviceItems.filter((d) =>
+    filters.status === 'archived' ? d.category === 'archived' : d.category !== 'archived',
+  );
 
   if (filters.status && filters.status !== 'all') {
     filteredDevices = filteredDevices.filter((d) => d.category === filters.status);
@@ -310,6 +344,8 @@ async function loadDatabaseDashboardDataInternal(
   }
 
   return {
+    dataWarning: null,
+    entryCount: deviceItems.filter((d) => d.category !== 'archived').length,
     summary,
     blockedReasons,
     devices: filteredDevices,
@@ -317,18 +353,23 @@ async function loadDatabaseDashboardDataInternal(
   };
 }
 
-async function loadDatabaseSummary(db: AppDb): Promise<DatabaseDashboardSummary> {
+async function requireQuery<T>(promise: Promise<T>, label: string): Promise<T> {
+  const result = await safeQuery<T | undefined>(promise, undefined, label, 8000);
+  if (result === undefined) throw new Error(`${label}: database query unavailable`);
+  return result;
+}
+
+async function loadDatabaseSummary(db: AppDb, strict = false): Promise<DatabaseDashboardSummary> {
   try {
     const [activePhonesCount, candidateSummary, queueSummary] = await Promise.all([
-      safeQuery(
+      requireQuery(
         db
           .select({ count: sql<number>`count(*)::int`.mapWith(Number) })
           .from(phones)
           .where(eq(phones.status, 'active')),
-        [{ count: 0 }],
         'loadActivePhonesCount',
       ),
-      safeQuery(
+      requireQuery(
         db
           .select({
             total: sql<number>`count(*)::int`.mapWith(Number),
@@ -337,11 +378,11 @@ async function loadDatabaseSummary(db: AppDb): Promise<DatabaseDashboardSummary>
                 Number,
               ),
             blocked:
-              sql<number>`count(*) filter (where ${catalogCandidates.status} in ('quarantined', 'failed', 'failed_transient', 'rate_limited', 'quota_exhausted') or ${catalogCandidates.decision} = 'quarantine')::int`.mapWith(
+              sql<number>`count(*) filter (where ${catalogCandidates.status} in ('quarantined', 'failed', 'failed_transient', 'rate_limited', 'quota_exhausted') or ${catalogCandidates.decision} = 'quarantine' or (${catalogCandidates.status} = 'skipped' and ${catalogCandidates.decision} = 'skip'))::int`.mapWith(
                 Number,
               ),
             pending:
-              sql<number>`count(*) filter (where ${catalogCandidates.decision} = 'pending_review' or (${catalogCandidates.status} = 'validated' and ${catalogCandidates.decision} is null))::int`.mapWith(
+              sql<number>`count(*) filter (where (${catalogCandidates.decision} = 'pending_review' or (${catalogCandidates.status} = 'validated' and ${catalogCandidates.decision} is null)) and ${catalogCandidates.status} not in ('quarantined', 'failed', 'failed_transient', 'rate_limited', 'quota_exhausted', 'ready_to_promote') and ${catalogCandidates.decision} is distinct from 'quarantine')::int`.mapWith(
                 Number,
               ),
             queued:
@@ -349,15 +390,15 @@ async function loadDatabaseSummary(db: AppDb): Promise<DatabaseDashboardSummary>
                 Number,
               ),
             inPipeline:
-              sql<number>`count(*) filter (where ${catalogCandidates.status} in ('discovered', 'fetched', 'extracted'))::int`.mapWith(
+              sql<number>`count(*) filter (where ${catalogCandidates.status} in ('discovered', 'fetched', 'extracted') and ${catalogCandidates.decision} is distinct from 'pending_review' and ${catalogCandidates.decision} is distinct from 'promote')::int`.mapWith(
                 Number,
               ),
           })
-          .from(catalogCandidates),
-        [{ total: 0, promoted: 0, blocked: 0, pending: 0, queued: 0, inPipeline: 0 }],
+          .from(catalogCandidates)
+          .where(activeCatalogCandidateSql()),
         'loadCandidateSummary',
       ),
-      safeQuery(
+      requireQuery(
         db
           .select({
             queueCount:
@@ -365,8 +406,9 @@ async function loadDatabaseSummary(db: AppDb): Promise<DatabaseDashboardSummary>
                 Number,
               ),
           })
-          .from(crawlQueue),
-        [{ queueCount: 0 }],
+          .from(crawlQueue)
+          .innerJoin(phones, eq(crawlQueue.phoneId, phones.id))
+          .where(eq(phones.status, 'active')),
         'loadQueueSummary',
       ),
     ]);
@@ -385,14 +427,26 @@ async function loadDatabaseSummary(db: AppDb): Promise<DatabaseDashboardSummary>
     return {
       totalActivePhones: active,
       totalCandidates: cand.total,
-      promotedCount: cand.promoted > 0 ? cand.promoted : active,
+      promotedCount: active,
       blockedCount: cand.blocked,
       pendingCount: cand.pending,
       queuedCount: cand.queued + queue,
       inPipelineCount: cand.inPipeline,
+      archivedCount: Number(
+        (
+          await requireQuery(
+            db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(catalogCandidates)
+              .where(sql`not (${activeCatalogCandidateSql()})`),
+            'loadArchivedCount',
+          )
+        )[0]?.count ?? 0,
+      ),
     };
   } catch (error) {
     console.warn('[database-dashboard] loadDatabaseSummary failed:', error);
+    if (strict) throw error;
     return EMPTY_DASHBOARD_DATA;
   }
 }
@@ -416,7 +470,10 @@ async function loadTopBlockedReason(db: AppDb): Promise<string> {
       })
       .from(catalogCandidates)
       .where(
-        sql`${catalogCandidates.status} in ('quarantined', 'failed', 'failed_transient', 'rate_limited', 'quota_exhausted') or ${catalogCandidates.decision} = 'quarantine'`,
+        and(
+          activeCatalogCandidateSql(),
+          sql`${catalogCandidates.status} in ('quarantined', 'failed', 'failed_transient', 'rate_limited', 'quota_exhausted') or ${catalogCandidates.decision} = 'quarantine'`,
+        ),
       )
       .groupBy(sql`1`)
       .orderBy(sql`2 desc`)
@@ -469,10 +526,12 @@ async function loadCandidates(db: AppDb) {
       matchedSlug: phones.slug,
       matchedBrand: phones.brand,
       matchedModel: phones.model,
+      matchedStatus: phones.status,
+      excluded: sql<boolean>`not (${activeCatalogCandidateSql()})`,
     })
     .from(catalogCandidates)
     .leftJoin(phones, eq(catalogCandidates.matchedPhoneId, phones.id))
-    .limit(300);
+    .orderBy(desc(catalogCandidates.updatedAt));
 
   return rows.sort((a, b) => {
     const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -505,20 +564,21 @@ async function loadActivePhones(db: AppDb) {
     })
     .from(phones)
     .where(eq(phones.status, 'active'))
-    .orderBy(desc(phones.updatedAt))
-    .limit(100);
+    .orderBy(desc(phones.updatedAt));
 }
 
 function categorizeCandidate(status: string, decision: string | null): DeviceCategory {
-  if (status === 'promoted' || decision === 'promote') return 'promoted';
+  if (status === 'ready_to_promote') return 'queued';
+  if (status === 'promoted' || decision === 'promote' || decision === 'matched_existing')
+    return 'promoted';
   if (
+    (status === 'skipped' && decision === 'skip') ||
     BLOCKED_STATUSES.includes(status as (typeof BLOCKED_STATUSES)[number]) ||
     decision === 'quarantine'
   ) {
     return 'blocked';
   }
   if (decision === 'pending_review' || (status === 'validated' && !decision)) return 'pending';
-  if (status === 'ready_to_promote') return 'queued';
   return 'pipeline';
 }
 

@@ -650,7 +650,7 @@ async function fetchRawPhoneStats(db: AppDb): Promise<readonly RawPhoneStatsRow[
         WHERE phone_id = p.id 
         ORDER BY started_at DESC LIMIT 1
       ) r ON true
-      WHERE p.status != 'discontinued' OR p.status IS NULL
+      WHERE p.status IN ('active', 'upcoming')
       ORDER BY p.brand ASC, p.model ASC
     )
     SELECT * FROM phone_stats;

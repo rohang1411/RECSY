@@ -8,28 +8,23 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getDb } from '@/services/db/client';
 import { executeBenchmarkSuite } from '@/services/eval/orchestrator';
+import { evalAccessError } from '@/services/eval/access';
+import { diagnoseEvaluationError } from '@/services/eval/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const runRequestSchema = z.object({
   suite: z.enum(['recsys', 'rag', 'load-stress', 'multi-turn', 'all']).default('recsys'),
+  providerTrack: z.enum(['stub', 'live']),
   concurrencyVus: z.number().int().min(1).max(100).default(1),
+  totalRequests: z.number().int().min(1).max(10000).optional(),
   sampleScale: z.enum(['quick', 'full']).default('full'),
-  tier: z
-    .enum([
-      'L1_DATA_PLANE',
-      'L2_WARM_API',
-      'L3_MACRO_LLM',
-      'OFFLINE_RECSYS',
-      'RAG_ALCE',
-      'ABLATION',
-      'MULTI_TURN_CRS',
-    ])
-    .default('OFFLINE_RECSYS'),
 });
 
 export async function POST(request: NextRequest): Promise<Response> {
+  const denied = evalAccessError(request);
+  if (denied) return denied;
   try {
     const json: unknown = await request.json().catch(() => ({}));
     const body = runRequestSchema.parse(json);
@@ -43,14 +38,20 @@ export async function POST(request: NextRequest): Promise<Response> {
           controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
         };
 
-        send({ type: 'start', suite: body.suite, vus: body.concurrencyVus });
+        send({
+          type: 'start',
+          suite: body.suite,
+          track: body.providerTrack,
+          vus: body.concurrencyVus,
+        });
 
         try {
           const runRecord = await executeBenchmarkSuite({
             db,
             suite: body.suite,
-            tier: body.tier,
+            providerTrack: body.providerTrack,
             concurrencyVus: body.concurrencyVus,
+            totalRequests: body.totalRequests,
             sampleScale: body.sampleScale,
             onProgress: (p) => {
               send({
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
           send({ type: 'done', run: runRecord });
         } catch (err: unknown) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorMsg = diagnoseEvaluationError(err);
           send({ type: 'error', message: errorMsg });
         } finally {
           controller.close();
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
     });
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorMsg = diagnoseEvaluationError(err);
     return Response.json({ error: errorMsg }, { status: 400 });
   }
 }

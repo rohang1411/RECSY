@@ -14,7 +14,7 @@
  *   pnpm catalog:backfill-images --force
  *   pnpm catalog:backfill-images --dry-run
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import { downloadAndSavePhoneImage, resolveStudioImageCandidate } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
@@ -104,7 +104,9 @@ async function main(): Promise<void> {
 
   let targetPhones;
   if (args.slug) {
-    targetPhones = await query.where(eq(phones.slug, args.slug)).limit(1);
+    targetPhones = await query
+      .where(and(eq(phones.slug, args.slug), sql`${phones.status} in ('active', 'upcoming')`))
+      .limit(1);
   } else if (args.force) {
     targetPhones = await query
       .where(sql`${phones.status} in ('active', 'upcoming')`)

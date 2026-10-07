@@ -10,6 +10,8 @@ export interface AskRetrievalTrace {
   /** `true` when the diversity floor could not be met with available sources. */
   readonly coverageRelaxed: boolean;
   readonly totalMs: number;
+  readonly degradedStages: readonly string[];
+  readonly excludedSourceChunkIds?: readonly string[];
   readonly stages: readonly {
     readonly name: string;
     readonly ms: number;
@@ -45,7 +47,12 @@ export function buildAskRetrievalTrace(retrieval: RetrievalResult): AskRetrieval
     ms: number;
     count?: number;
   }[] = [
-    { name: 'Vector (embed + cosine)', ms: Math.round(debug.vector.ms), count: debug.vector.count },
+    { name: 'Query embedding', ms: Math.round(debug.embedding?.ms ?? 0) },
+    {
+      name: debug.vector.error ? 'Vector search (unavailable)' : 'Vector cosine search',
+      ms: Math.round(debug.vector.ms),
+      count: debug.vector.count,
+    },
     { name: 'Full-text search', ms: Math.round(debug.fts.ms), count: debug.fts.count },
     { name: 'RRF fusion', ms: Math.round(debug.rrf.ms), count: debug.rrf.count },
     { name: 'MMR diversify', ms: Math.round(debug.mmr.ms), count: debug.mmr.count },
@@ -57,12 +64,25 @@ export function buildAskRetrievalTrace(retrieval: RetrievalResult): AskRetrieval
       count: debug.llmRerank.poolSize,
     });
   }
+  if (debug.sourceQuality)
+    stages.push({
+      name: 'Known source-conflict filter',
+      ms: Math.round(debug.sourceQuality.ms),
+      count: debug.sourceQuality.excludedChunkIds.length,
+    });
 
   return {
     chunkCount: chunks.length,
+    ...(debug.sourceQuality
+      ? { excludedSourceChunkIds: debug.sourceQuality.excludedChunkIds }
+      : {}),
     distinctSourceCount: dedupeSources(chunks).length,
     coverageRelaxed: debug.coverage.relaxed,
     totalMs: Math.round(debug.totalMs),
+    degradedStages: [
+      ...(debug.vector.error ? ['vector'] : []),
+      ...(debug.fts.error ? ['fts'] : []),
+    ],
     stages: stages as AskRetrievalTrace['stages'],
     sources: dedupeSources(chunks),
   };

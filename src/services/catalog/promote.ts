@@ -38,6 +38,7 @@ import {
 } from './spec-project';
 import { sha256Hex } from './snapshots';
 import { validateCatalogCandidate, type CatalogValidationIssue } from './validation';
+import { activeCatalogCandidateSql } from './eligibility';
 
 type PromotionIdentity = CatalogImportIdentity;
 type CatalogDb = Pick<AppDb, 'select' | 'insert' | 'update'>;
@@ -202,11 +203,23 @@ export async function promoteCatalogCandidate(
       claimsJson: catalogCandidates.claimsJson,
     })
     .from(catalogCandidates)
-    .where(eq(catalogCandidates.id, candidateId))
+    .where(and(eq(catalogCandidates.id, candidateId), activeCatalogCandidateSql()))
     .limit(1);
   const candidate = rows[0];
   if (!candidate) {
-    throw new Error(`catalog candidate not found: ${candidateId}`);
+    return {
+      action: 'blocked',
+      issues: [
+        {
+          severity: 'blocker',
+          code: 'archived_candidate',
+          message: 'candidate is missing or excluded from the active catalog',
+        },
+      ],
+      aliasesInserted: 0,
+      configurationsInserted: 0,
+      mediaInserted: 0,
+    };
   }
 
   const plan = buildPromotionPlan(candidate);
@@ -258,6 +271,40 @@ export async function promoteCatalogCandidate(
 
   return db.transaction(async (tx) => {
     const existingPhoneId = existingMatches[0];
+    if (existingPhoneId) {
+      const [existing] = await tx
+        .select({ status: phones.status })
+        .from(phones)
+        .where(eq(phones.id, existingPhoneId));
+      if (existing?.status === 'archived') {
+        await tx
+          .update(catalogCandidates)
+          .set({
+            status: 'skipped',
+            decision: 'skip',
+            matchedPhoneId: existingPhoneId,
+            issueCodes: ['archived_candidate'],
+            retryAfter: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(catalogCandidates.id, candidateId));
+        return {
+          action: 'blocked',
+          phoneId: existingPhoneId,
+          slug: plan.slug,
+          issues: [
+            {
+              severity: 'blocker',
+              code: 'archived_candidate',
+              message: 'existing phone was archived by catalog review',
+            },
+          ],
+          aliasesInserted: 0,
+          configurationsInserted: 0,
+          mediaInserted: 0,
+        };
+      }
+    }
     if (existingPhoneId && !opts.updateExisting) {
       await tx
         .update(catalogCandidates)
@@ -451,8 +498,10 @@ function phoneUpdateValues(plan: PromotionPlan) {
     imageUrl: values.imageUrl,
     status: values.status,
     specJson: values.specJson,
-    // Clear embedding so backfill-spec-embeddings re-generates it after the spec update.
-    specEmbedding: null,
+    specEmbedding: sql`case when ${phones.specJson} is distinct from ${JSON.stringify(values.specJson)}::jsonb
+      or ${phones.brand} is distinct from ${values.brand} or ${phones.model} is distinct from ${values.model}
+      or ${phones.tagline} is distinct from ${values.tagline}
+      then null else ${phones.specEmbedding} end`,
     regionAvailability: values.regionAvailability,
     // Intentionally omitted: nextIngestAt. Catalog updates must not reset the
     // ingest schedule set by the tiered ingest scheduler — that would
