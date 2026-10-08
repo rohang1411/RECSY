@@ -8,6 +8,10 @@ RECSY supports consecutive numbered variables through `GEMINI_API_KEY_6`, plus `
 
 The live quota fetch returned no rows and reported Cloud Monitoring disabled or uninitialized for all six configured projects. The locally signed-in Cloud user could not list services for the fifth project, so an owner/administrator of the relevant projects must complete the Cloud setup. Authentication of the Gemini keys is separate from Cloud Monitoring access.
 
+The dashboard no longer substitutes a configured local request cap for Google's free-tier allowance. Provider limits and remaining allowance stay unknown until compatible verified quota rows are available. Same-project keys are not counted as separate project budgets; model-specific and token quotas are not added into an interchangeable request budget. Local usage counters remain separate from provider quota verification.
+
+The browser check also exposed a command-center catalog-query timeout previously cached as a successful zero-phone summary. Canonical inventory queries now run before optional telemetry, and an incomplete catalog query is rejected rather than cached as verified data. If inventory is unavailable, the page displays an explicit warning and uses a separately verified ingestion phone count when available; otherwise it reports unknown counts.
+
 Google applies rate limits per project, not per API key. Another key in the same project does not create more free quota. Check the project's actual model limits and tier in AI Studio; do not interpret local pacing settings as Google entitlements. See [Google rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).
 
 ## 1. Create The Keys

@@ -16,17 +16,17 @@ export type LocalKeyQuotaBreakdown = {
   readonly apiKeyIndex: number;
   readonly callsToday: number;
   readonly tokensToday: number;
-  readonly remainingCalls: number;
-  readonly limit: number;
+  readonly remainingCalls: number | null;
+  readonly limit: number | null;
 };
 
 export type LocalQuotaSummary = {
   readonly callsToday: number;
   readonly inputTokensToday: number;
   readonly outputTokensToday: number;
-  readonly dailyLimitPerKey: number;
-  readonly totalDailyLimit: number;
-  readonly remainingCallsToday: number;
+  readonly dailyLimitPerKey: number | null;
+  readonly totalDailyLimit: number | null;
+  readonly remainingCallsToday: number | null;
   readonly keysBreakdown: readonly LocalKeyQuotaBreakdown[];
 };
 
@@ -222,8 +222,9 @@ export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
   const total = totals[0];
   const cache = cacheStats[0] ?? { entries: 0, hits: 0 };
   const configuredKeyCount = Math.max(1, getConfiguredGeminiKeyCount());
-  const dailyLimitPerKey = env.GEMINI_FREE_RPD ?? 20;
-  const totalDailyLimit = configuredKeyCount * dailyLimitPerKey;
+  const dailyLimitPerKey =
+    env.GEMINI_RATE_LIMIT_PROFILE === 'google_ai_studio_free' ? env.GEMINI_FREE_RPD : null;
+  const totalDailyLimit = dailyLimitPerKey === null ? null : configuredKeyCount * dailyLimitPerKey;
 
   const keyUsageMap = new Map<number, { calls: number; tokens: number }>();
   let callsToday = 0;
@@ -248,7 +249,7 @@ export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
       apiKeyIndex: idx,
       callsToday: stats.calls,
       tokensToday: stats.tokens,
-      remainingCalls: Math.max(0, dailyLimitPerKey - stats.calls),
+      remainingCalls: null,
       limit: dailyLimitPerKey,
     };
   });
@@ -259,7 +260,7 @@ export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
     outputTokensToday,
     dailyLimitPerKey,
     totalDailyLimit,
-    remainingCallsToday: Math.max(0, totalDailyLimit - callsToday),
+    remainingCallsToday: null,
     keysBreakdown,
   };
 

@@ -494,7 +494,7 @@ export async function loadCommandCenterDatabaseSummary(): Promise<CommandCenterD
 
   const db = getDb();
   const [summary, topBlockedReason] = await Promise.all([
-    loadDatabaseSummary(db),
+    loadDatabaseSummary(db, true),
     loadTopBlockedReason(db),
   ]);
 
