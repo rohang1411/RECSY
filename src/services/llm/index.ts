@@ -9,6 +9,7 @@ import { env } from '@/env';
 
 import { CachedLlmProvider } from './cache';
 import { GeminiProvider } from './gemini';
+import { ControlledProvider } from './controlled';
 import type { LlmProvider } from './types';
 
 let _llm: LlmProvider | null = null;
@@ -21,6 +22,8 @@ export function getLlm(): LlmProvider {
     switch (env.LLM_PROVIDER) {
       case 'gemini':
         return new GeminiProvider();
+      case 'controlled':
+        return new ControlledProvider();
       case 'groq':
         // Placeholder until a GroqProvider is added. Explicit failure is
         // preferable to silently falling back to Gemini.

@@ -3,7 +3,7 @@
  * into the orchestrator. Kept separate so tests can import the agent without
  * pulling Drizzle into the unit-test graph.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 
 import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { hasMissingDbObjectError } from '@/services/db/schema-guard';
@@ -27,7 +27,8 @@ export function makeDbAliasLoader(db: Db): () => Promise<readonly AliasRow[]> {
           priority: phoneAliases.priority,
         })
         .from(phoneAliases)
-        .innerJoin(phones, eq(phones.id, phoneAliases.phoneId));
+        .innerJoin(phones, eq(phones.id, phoneAliases.phoneId))
+        .where(ne(phones.status, 'archived'));
       return rows satisfies readonly AliasRow[];
     } catch (err) {
       if (hasMissingDbObjectError(err)) {
@@ -52,7 +53,7 @@ export function makeDbPhoneLookup(db: Db): PhoneLookupBySlug {
         model: phones.model,
       })
       .from(phones)
-      .where(eq(phones.slug, slug))
+      .where(and(eq(phones.slug, slug), ne(phones.status, 'archived')))
       .limit(1);
     return rows[0] ?? null;
   };

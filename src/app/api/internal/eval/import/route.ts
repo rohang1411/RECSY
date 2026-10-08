@@ -15,11 +15,14 @@ import {
   getBenchmarkRunById,
 } from '@/services/eval/storage/benchmark-repository';
 import type { BenchmarkResultItem, BenchmarkTier, TestCaseCategory } from '@/services/eval/types';
+import { evalAccessError } from '@/services/eval/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest): Promise<Response> {
+  const denied = evalAccessError(request);
+  if (denied) return denied;
   try {
     const json: unknown = await request.json();
     const parsed = BenchmarkReportSchema.parse(json);
@@ -28,12 +31,16 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     // Recreate run in DB
     const runId = await createBenchmarkRun(db, {
-      suiteName: `[Imported] ${parsed.run.suiteName}`,
+      suiteName: `[UNVERIFIED IMPORT] ${parsed.run.suiteName}`,
       tier: parsed.run.tier as BenchmarkTier,
-      triggerSource: 'import',
+      triggerSource: 'unverified-import',
       commitHash: parsed.systemInfo.commitHash,
       concurrencyVus: parsed.run.concurrencyVus,
-      config: parsed.run.config ?? {},
+      config: {
+        ...(parsed.run.config ?? {}),
+        evidenceStatus: 'unverified-import',
+        importedAt: new Date().toISOString(),
+      },
     });
 
     const results: BenchmarkResultItem[] = parsed.results.map((r, i) => ({
@@ -53,7 +60,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     await persistBenchmarkResults(db, runId, results);
 
     await updateBenchmarkRunProgress(db, runId, {
-      status: 'success',
+      status: 'unverified',
       totalTests: parsed.run.totalTests,
       passedTests: parsed.run.passedTests,
       failedTests: parsed.run.failedTests,

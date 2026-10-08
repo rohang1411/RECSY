@@ -23,6 +23,7 @@ import type {
   ChatInput,
   ChatResult,
   EmbedResult,
+  EmbedOptions,
   LlmProvider,
   LlmUsageContext,
   StructuredInput,
@@ -121,9 +122,10 @@ export class CachedLlmProvider implements LlmProvider {
     texts: readonly string[],
     model?: string,
     usageContext?: LlmUsageContext,
+    options?: EmbedOptions,
   ): Promise<EmbedResult> {
     // Embeddings are not cached at the request level — see module docstring.
-    return this.inner.embed(texts, model, usageContext);
+    return this.inner.embed(texts, model, usageContext, options);
   }
 
   // ---------------------------------------------------------------------

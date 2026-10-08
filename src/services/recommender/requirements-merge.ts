@@ -9,11 +9,13 @@
 import type { AspectName } from '@/lib/constants';
 
 import type { UserRequirements } from './requirements-schema';
+import { unsupportedHardFeatures } from './hard-features';
 
 type PlatformPreference = 'android' | 'ios';
 type PlatformFact = PlatformPreference | 'any';
 
 interface MessageFacts {
+  readonly rejectedAspects: readonly AspectName[];
   readonly reset: boolean;
   readonly budgetUsd: UserRequirements['budget_usd'] | null;
   readonly platform: PlatformFact | null;
@@ -253,9 +255,13 @@ function platformLabel(platform: PlatformPreference): string {
 }
 
 function extractPriorities(message: string): MessageFacts['priorities'] {
+  const positiveMessage = message.replace(
+    /\b(?:don't|do not|never)\s+(?:take|need|use)\s+(?:photos?|a camera)\b/gi,
+    '',
+  );
   const out: { aspect: AspectName; weight: number }[] = [];
   for (const item of ASPECT_KEYWORDS) {
-    if (item.patterns.some((pattern) => pattern.test(message))) {
+    if (item.patterns.some((pattern) => pattern.test(positiveMessage))) {
       out.push({ aspect: item.aspect, weight: item.weight });
     }
   }
@@ -277,10 +283,20 @@ function extractUseCases(message: string, priorities: readonly { aspect: AspectN
 function extractMustHaves(message: string, platform: PlatformFact | null): string[] {
   const out: string[] = [];
   if (platform === 'android' || platform === 'ios') out.push(platformLabel(platform));
-  if (/\bwireless charging\b/i.test(message)) out.push('wireless charging');
-  if (/\b(?:headphone jack|3\.5mm)\b/i.test(message)) out.push('3.5mm jack');
-  if (/\bnfc\b/i.test(message)) out.push('NFC');
-  if (/\bfast charging\b/i.test(message)) out.push('fast charging');
+  // Keep optional/negated clauses from turning into hard requirements.
+  const clauses = message.split(/[;,\n]|\.\s+|\band\b/i);
+  const mandatory = (pattern: RegExp) =>
+    clauses.some(
+      (clause) =>
+        pattern.test(clause) &&
+        !/\b(?:nice to have|not essential|a bonus|optional|ideally|don't need|do not need|no longer need)\b/i.test(
+          clause,
+        ),
+    );
+  if (mandatory(/\bwireless charging\b/i)) out.push('wireless charging');
+  if (mandatory(/\b(?:headphone jack|3\.5mm)\b/i)) out.push('3.5mm jack');
+  if (mandatory(/\bnfc\b/i)) out.push('NFC');
+  if (mandatory(/\bfast charging\b/i)) out.push('fast charging');
   return out;
 }
 
@@ -328,12 +344,24 @@ export function extractMessageFacts(message: string): MessageFacts {
   const priorities = extractPriorities(message);
 
   return {
+    rejectedAspects: /\b(?:don't|do not|never)\s+(?:take|need|use)\s+(?:photos?|a camera)\b/i.test(
+      message,
+    )
+      ? ['camera']
+      : [],
     reset,
     budgetUsd,
     platform,
     priorities,
     mustHaves: extractMustHaves(message, platform),
-    dealBreakers: [],
+    dealBreakers: /\b(?:dealbreakers?|refuse|avoid|without|hate|don't want|do not want)\b/i.test(
+      message,
+    )
+      ? [
+          ...(/\bbloatware\b/i.test(message) ? ['bloatware'] : []),
+          ...(/\bslow charging\b/i.test(message) ? ['slow charging'] : []),
+        ]
+      : [],
     useCases: extractUseCases(message, priorities),
     brandPreference: extractBrandPreference(message),
     formFactor: extractFormFactor(message),
@@ -348,6 +376,7 @@ function mergePriorities(
   const weights = new Map<AspectName, number>();
   const add = (items: readonly { aspect: AspectName; weight: number }[], multiplier: number) => {
     for (const item of items) {
+      if (facts.rejectedAspects.includes(item.aspect)) continue;
       const next = Math.max(weights.get(item.aspect) ?? 0, item.weight * multiplier);
       weights.set(item.aspect, next);
     }
@@ -424,25 +453,49 @@ export function mergeUserRequirements(input: {
   const extractedPlatform = detectPlatformPreferenceFromRequirements(input.extracted);
   const previousPlatform = previous ? detectPlatformPreferenceFromRequirements(previous) : null;
   const platform = facts.platform ?? extractedPlatform ?? previousPlatform;
+  const unsupported = new Set(
+    unsupportedHardFeatures(previous ?? input.extracted).map((t) => t.toLowerCase()),
+  );
+  const relaxedAll =
+    /\brelax\s+(?:those|these|the)\s+(?:requirements|conditions|constraints)\b/i.test(
+      input.userMessage,
+    );
+  const retainHard = (term: string) => {
+    if (relaxedAll && unsupported.has(term.toLowerCase())) return false;
+    const exact = escapeRegExp(term.trim());
+    return !new RegExp(
+      `\\b(?:relax|drop|remove|don't need|do not need|no longer need)\\s+(?:the requirement for\\s+)?${exact}\\b`,
+      'i',
+    ).test(input.userMessage);
+  };
 
   const merged: UserRequirements = {
     ...input.extracted,
     budget_usd: facts.budgetUsd ?? input.extracted.budget_usd ?? previous?.budget_usd ?? null,
     priorities: mergePriorities(previous, input.extracted, facts),
     must_haves: mergePlatformMustHaves(
-      [...(previous?.must_haves ?? []), ...input.extracted.must_haves, ...facts.mustHaves],
+      [...(previous?.must_haves ?? []), ...input.extracted.must_haves, ...facts.mustHaves].filter(
+        retainHard,
+      ),
       platform === 'any' ? null : platform,
     ),
-    deal_breakers: uniqueStrings([
-      ...(previous?.deal_breakers ?? []),
-      ...input.extracted.deal_breakers,
-      ...facts.dealBreakers,
-    ]),
+    deal_breakers: uniqueStrings(
+      [
+        ...(previous?.deal_breakers ?? []),
+        ...input.extracted.deal_breakers,
+        ...facts.dealBreakers,
+      ].filter(retainHard),
+    ),
     use_cases: uniqueStrings([
       ...(previous?.use_cases ?? []),
       ...input.extracted.use_cases,
       ...facts.useCases,
-    ]),
+    ]).filter(
+      (useCase) =>
+        !facts.rejectedAspects.some(
+          (aspect) => ASPECT_KEYWORDS.find((x) => x.aspect === aspect)?.useCase === useCase,
+        ),
+    ),
     brand_preference: mergeBrandPreference(previous, input.extracted, facts),
     form_factor: facts.formFactor ?? input.extracted.form_factor ?? previous?.form_factor,
     confidence: Math.max(input.extracted.confidence, previous?.confidence ?? 0),

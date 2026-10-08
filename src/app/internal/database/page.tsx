@@ -43,6 +43,12 @@ interface PageProps {
 
 function categoryBadge(category: DeviceCategory, status: string) {
   switch (category) {
+    case 'archived':
+      return (
+        <span className="border border-zinc-500/40 px-2 py-0.5 font-mono text-[10px] text-zinc-400 uppercase">
+          Archived
+        </span>
+      );
     case 'promoted':
       return (
         <span className="inline-flex items-center gap-1.5 border border-[#39ff88]/40 bg-[#39ff88]/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#39ff88] uppercase">
@@ -306,6 +312,14 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
       {/* CONDITIONAL PERSPECTIVE: VIEW 1 - CATALOG & CANDIDATES */}
       {viewParam === 'catalog' ? (
         <>
+          {catalogData.dataWarning && (
+            <p
+              role="status"
+              className="mt-6 border-l-2 border-[#ffe44d] pl-3 font-mono text-sm text-[#ffe44d]"
+            >
+              {catalogData.dataWarning}
+            </p>
+          )}
           {/* KPI Overview Grid */}
           <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-5">
             <div className="bg-background p-6">
@@ -360,7 +374,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               </p>
             </div>
 
-            <div className="bg-background p-6">
+            <div className="bg-background p-6 md:col-span-2 xl:col-span-1">
               <div className="flex items-center justify-between">
                 <p className="meta-label">Queued</p>
                 <span className="bg-muted-foreground size-2 rounded-full" />
@@ -430,7 +444,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               {/* Status Tabs */}
               <div className="flex flex-wrap gap-1 font-mono text-xs uppercase">
                 {[
-                  { id: 'all', label: 'All Entries', count: catalogData.devices.length },
+                  { id: 'all', label: 'All Entries', count: catalogData.entryCount },
                   { id: 'promoted', label: 'Promoted', count: catalogData.summary.promotedCount },
                   { id: 'blocked', label: 'Blocked', count: catalogData.summary.blockedCount },
                   {
@@ -444,6 +458,11 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                     count: catalogData.summary.inPipelineCount,
                   },
                   { id: 'queued', label: 'Queued', count: catalogData.summary.queuedCount },
+                  {
+                    id: 'archived',
+                    label: 'Excluded / Non-Phones',
+                    count: catalogData.summary.archivedCount,
+                  },
                 ].map((tab) => {
                   const active = statusParam === tab.id;
                   return (

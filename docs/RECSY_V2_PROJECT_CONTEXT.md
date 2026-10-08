@@ -14,9 +14,13 @@ intake, `POST /api/recommend` with cookie-backed `recommendation_sessions` /
 `recommendation_turns`, Flash **structured** `UserRequirements` extraction +
 clarify threshold, **aspect-weighted** ranking with budget / form-factor /
 brand filters, optional **cosine bump** vs `phones.spec_embedding` after
-`pnpm spec-embed:backfill`, deal-breaker keyword gate, must-have soft scoring,
-**two-per-brand** diversity in the top three picks, relaxation ladder when
-filters empty, separate **rate limit** from `/api/ask`, and `/browse` list.
+`pnpm spec-embed:backfill`, explicit NFC/wireless-charging evidence gates,
+**two-per-brand** diversity in the top three picks, strict constraint filtering
+that returns no picks when no verifiable candidate fits, separate **rate limit**
+from `/api/ask`, and `/browse` list. Unmodeled hard features/exclusions require
+clarification. The client/session migration regression was repaired locally on
+2026-10-06; controlled HTTP persistence/concurrency checks pass. The deployed
+build has not been updated or verified; see Section 17 for remaining release gates.
 **Living risk register:** Â§20 (feature & approach). **Still deferred:** Gemini
 **Pro tie-break**, richer NLP on must-haves â€” see [ADR 0007](./adr/0007-recommender-mvp.md)
 and [`docs/recommender/README.md`](./recommender/README.md).
@@ -630,12 +634,10 @@ copy; **feedback** rows on `recommendation_feedback` for offline eval.
 
 ### Fallback rules
 
-**MVP:** widen **budget max** once (fixed factor), then drop **foldable-only**
-if still empty, then rank **all active** phones that survive deal-breakers
-(surfaced as `relaxed` codes to the UI).
-
-**Principle (unchanged):** never pretend a great match exists when the corpus
-cannot support it â€” honest relaxation beats silent failure.
+**Current behavior:** preserve the user's budget and form-factor constraints.
+Candidates without a verifiable price cannot pass an active budget limit. If
+no candidate fits, return no picks and show the no-match UI; do not silently
+widen the budget or drop the requested form factor.
 
 ---
 
@@ -1148,47 +1150,46 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 ---
 
-## 17. Testing Strategy
+## 17. Testing & Evaluation Strategy
 
-| Layer                     | Tool                                     | Scope                                                                                           | CI?                    |
-| ------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
-| Unit                      | Vitest + `jsdom`                         | Pure functions, algorithms, metric math (`dialog-state.test.ts`, `metrics.test.ts`)             | ✓                      |
-| Integration (DB)          | Vitest with live Supabase                | Migrations, RLS, retrieval helpers                                                              | ✓ (env-gated)          |
-| E2E                       | Playwright                               | Phone SSR + mocked `/api/ask` NDJSON client path                                                | ✓ CI (`e2e` job)       |
-| Multi-Turn CRS Benchmark  | `pnpm eval:benchmark --suite=multi-turn` | Dialog state tracking (JGA, CRR, 0-turn latency, refine F1, reset clean, token/cost accounting) | ✓ (0-cost stub / live) |
-| Offline Recommender Eval  | `pnpm eval:benchmark --suite=recsys`     | MAUT ranking (NDCG@3/5, MRR, CSR, ILD@3 diversity, Gini, coverage) against 50 golden personas   | Local / CI             |
-| Attributed Q&A (ALCE)     | `pnpm eval:benchmark --suite=rag`        | Citation Precision, Citation Recall, Phantom Citation Rate, numerical entailment                | Local / CI             |
-| Data-Plane Stress Testing | `pnpm eval:stress`                       | Multi-VU concurrency load (1–100 VUs), p50/p90/p95/p99 latency, pool saturation, event loop lag | Local / Staging        |
+The operational source of truth for the evaluation harness, commands, dataset coverage, limitations, and current blockers is [the evaluation operator guide](eval/README.md). The [implementation and evidence plan](ImplementationPlans/20.%20evaluation-validity-and-operations-repair.md) records the release gates. Results from the deterministic provider or authored fixtures are development evidence only; they are not independent product-quality or production-readiness scores.
 
-### Scientific Evaluation & Benchmarks Hub (Command Center)
+| Check                    | Command or surface                                                        | Actual boundary                                                                            |
+| ------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Code checks              | `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`                  | Code and unit behavior; not product accuracy                                               |
+| Existing browser tests   | `pnpm e2e`                                                                | Checked-in Playwright flows; inspect each test for mocked paths                            |
+| Evaluation preflight     | `pnpm eval:check --suite=<suite> --sample=<quick or full>`                | Fixture structure, live schema, catalog and corpus prerequisites                           |
+| Recommender regression   | `pnpm eval:benchmark --suite=recsys --track=stub`                         | In-memory ranker with live DB catalog and 30 authored personas                             |
+| Grounded Q&A regression  | `pnpm eval:benchmark --suite=rag --track=stub or live`                    | Retrieval plus generation on 20 authored answerable queries; lexical citation proxies only |
+| Conversation regression  | `pnpm eval:benchmark --suite=multi-turn --track=stub or live`             | Annotated dialogue slots on 15 trajectories / 37 turns                                     |
+| Retrieval load probe     | `pnpm eval:benchmark --suite=load-stress --track=stub --vus=5 --total=25` | Concurrent DB retrieval, not HTTP API capacity                                             |
+| Portal and stored report | `/internal/eval`, `pnpm eval:report --id=<run-id>`                        | Run provenance, progress, per-case results and errors                                      |
 
-Implemented under `src/services/eval/` and the `/internal/eval` Command Center:
+`all` runs recommender, Q&A and multi-turn suites, but not load-stress. There is no `pnpm eval:stress` script and no `--suite=ablation` implementation in this checkout. Historical sections below describe prior intent and must not be read as currently validated results.
 
-- **Tier 1 — Multi-Turn Conversational Recommender (CRS) Suite (`scripts/eval-benchmark.ts --suite=multi-turn`):**
-  Evaluates 15 conversational trajectories spanning 52 turns across non-linear preference evolutions (budget tightening, anti-brand pivots, relative subset refinements, clean resets, and feature accumulation). Computes Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR / anti-decay), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting.
-- **Tier 2 — Offline Multi-Attribute Utility Theory (MAUT) Recommender Benchmark (`--suite=recsys`):**
-  Evaluates ranking accuracy (NDCG@3, NDCG@5, MRR), Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality.
-- **Tier 3 — Stanford ALCE Attributed Q&A (`--suite=rag`):**
-  Evaluates sentence-level attribution, citation precision/recall, phantom hallucination rate, and numeric fact entailment against retrieved context chunks.
-- **Tier 4 — L1 Data-Plane Concurrency Stress Profiler (`scripts/eval-load.ts`):**
-  Simulates 1–100 virtual users (VUs) executing concurrent queries; measures p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
-- **Web Command Center UI (`/internal/eval`):**
-  Interactive dashboard displaying real-time test progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffs, interactive turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export & rehydration.
-- **Persistence (`drizzle/migrations/0008_cute_komodo.sql`):**
-  All benchmark runs and granular test results are durably persisted to PostgreSQL `benchmark_runs` and `benchmark_results` tables.
+### Dataset and metric validity
+
+The 30 recommendation personas, 20 answerable Q&A cases, 10 quarantined unanswerable cases, and 15 conversation trajectories are authored fixtures in `fixtures/eval/`. Their counts are verified by preflight, but their relevance labels and source facts have not been independently adjudicated. The unanswerable file is validated and fingerprinted but is not an executed abstention suite. A perfect dataset is not a meaningful guarantee; source review, adjudication, leakage control, versioning, and coverage analysis remain open.
+
+The ranking NDCG@3/MRR labels are derived from the production MAUT scoring signals and therefore measure agreement with the ranker rather than independent shopper relevance. The product returns at most three picks, so NDCG@5 is inapplicable. Budget and dealbreaker checks evaluate actual returned picks; missing prices and empty results fail answerable cases. The impossible foldable case explicitly expects no result and is excluded from ranking/CSR denominators. Dialogue JGA is binary for annotated slots only; slot accuracy is separate. Immediate mutation responsiveness, refine F1, retention, and reset checks are reported only when eligible annotated turns exist; a zero denominator is unavailable, not a perfect score or a one-turn latency. Q&A citation-ID validity, lexical overlap, and numeric string checks cannot establish sentence-level factual entailment, ALCE equivalence, fully supported answer rate, or appropriate abstention. Do not quote these proxy scores on a resume as product quality.
+
+The portal and CLI record fixture hashes, catalog fingerprint/count, code commit and dirty-tree status, selected provider/model, sample, run status, failures, and measurement boundary. Stub and live tracks are explicit. Q&A reports vector/FTS hit coverage and distinguishes cache hits from uncached generation calls; current-run token totals appear only when the provider reports usage for every uncached call. Cached historical usage is not current-run spend, and there is no assumed monetary cost. The load probe counts completed attempts, success goodput, errors and retrieval-stage latency. It does not measure HTTP capacity, event-loop lag, or database-pool saturation.
+
+### Connected-database status on 2026-10-05 (historical)
+
+Preflight found 74 active US phones. Full Q&A coverage is blocked: `cmf-phone-1` is absent and four fixture phones (`nothing-phone-2a`, `google-pixel-8a`, `oneplus-open`, `samsung-galaxy-s24`) have no chunks. The first five Q&A cases pass the quick _prerequisite_ check only. The connected `recommendation_sessions` table requires `client_id`, which this checkout's session writer and migrations do not supply; multi-turn and `all` are blocked before execution, and the recommendation API needs schema/code reconciliation.
+
+### Production evaluation follow-up on 2026-10-06
+
+The original applied migration 0009, client models and atomic owner/session writer were restored; the migration hash matches the live journal. Session context and turn persistence now share a row-locked transaction. A fresh logical schema built from migrations supports the actual HTTP flows; this shares the existing database host and is not independent production capacity. Corpus and full catalog/vector snapshot replay are recorded with hashes. The old full Q&A coverage blockers above remain and must not be silently omitted.
+
+Current evidence: 21/21 controlled HTTP functional/fault checks; 80 files / 499 unit tests passed; authored deterministic multi-turn checks 14/15, with the remaining fixture expecting a recommendation despite unverifiable hard exclusions. The full authored ranker fixture returns 5/30, exposing both unsupported hard-feature labels and the product's limited verifiable feature coverage. Four stored false USB assertions were verified against Apple specifications and are excluded by local hybrid retrieval before fusion, with exclusions shown in traces. The issue ledger is explicit and not an exhaustive truth classifier. The review rubric v2 separates factual correctness from citation support and requires date/device/region adjudication; historical Call Notes behavior differs from current Google instructions. The live six-question diagnostic pilot stopped on a provider 429 after three of eighteen planned variant outcomes. Review labels were received and imported on 2026-10-07; the review is AI-assisted and user-verified; sp03's rejection was clarified as historical/current behavior mismatch and needs candidate time-scope remediation (see [review adjudication](eval/REVIEW_ADJUDICATION_2026-10-07.md)); **no fully-supported-answer percentage, held-out benchmark claim, hybrid improvement or production-readiness claim is established**. The deployed evaluation-history API was publicly readable and malformed JSON still returned 500; local fixes need publication and deployed verification. See [the detailed evidence report](eval/PRODUCTION_CAMPAIGN_2026-10-06.md), [campaign plan](ImplementationPlans/21.%20production-evaluation-campaign.md), and [operator workflow](eval/README.md) for measured load results, review steps and outstanding gates.
+
+Historical 2026-10-05 component evidence: an earlier in-memory recommender run passed 30/30 authored cases before the stricter verified-feature coverage gate; the current full run is 5/30 as recorded above. The earlier score does not describe current behavior or independent shopper relevance. A five-case live Q&A probe required semantic review on all five cases; FTS returned no chunks while vector retrieval did. An unjudged FTS fallback experiment was reverted because extra hits did not establish better relevance. Separate 25-attempt DB retrieval probes at one and five workers were not API load tests. The 2026-10-06 controlled HTTP campaign now records 780 arrivals, 745 admitted requests, 35 generator drops, and failed baseline/burst latency objectives; it uses a fixture provider and does not establish live-provider production capacity. Full live quality, reviewed held-out results and production readiness remain unestablished. Exact current results and limitations are in [the evidence report](eval/PRODUCTION_CAMPAIGN_2026-10-06.md).
 
 ### Conventions
 
-- Tests sit next to the unit under test: `foo.ts` + `foo.test.ts`.
-- **Scorecard** — pure helpers (`query-build`, `definitions`, `recency`,
-  `extraction-schema`) are covered by Vitest; the full agent path needs DB +
-  Gemini (manual / script).
-- **Recommender** — `match.ts`, `vector-utils`, `spec-embedding-text`, and
-  `extract-requirements` (mock `LlmProvider`) have unit tests; full `/api/recommend`
-  path is verified via the multi-turn CRS benchmark suite.
-- **Deterministic CI Mode** — `DeterministicLlmProvider` simulates structured preference extraction and state tracking with 0 Gemini tokens and $0.00 cost, preventing API quota exhaustion in automated test runs.
-- Coverage target: **80% on `src/services/`** (the plumbing that _must_
-  not regress). Product code gets lighter coverage on the happy path.
+Tests sit next to the unit under test. Unit tests verify encoded behavior; they do not replace end-to-end product checks or a human-reviewed held-out benchmark. Review the actual evidence ledger and per-case traces before publishing any numerical claim.
 
 ---
 
@@ -1520,6 +1521,17 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-10-06 — Executed campaign and production defect repair
+
+- Restored the applied client/session migration and ownership writer; serialized concurrent turns; corrected request bounds, JSON/error classification, persistence-before-success, query embedding task type and unverified hardware/exclusion behavior.
+- Added isolated campaign setup, controlled provider/fault tests, open-arrival HTTP load with source hashes, complete corpus/vector snapshot and replay, transport budgets, capped live comparison, blinded review/export/import and portal campaign evidence. Review labels and raw evidence remain separate from proxies and authored fixtures.
+- The live pilot stopped on quota; human review and production deployment acceptance remain open. See Section 17 and the dated evidence report for actual results. Earlier blockers and failed attempts are retained as historical evidence.
+
+### 2026-10-05 — Evaluation validity repair and connected-database audit
+
+- Added fixture/schema/catalog/corpus preflight, run provenance, explicit stub/live selection, bounded retrieval load accounting, error diagnostics, and production evaluation-token gating. Corrected strict budget and form-factor behavior after a real component run exposed unpriced picks passing budget checks.
+- Current runs and blockers are recorded in [campaign plan 21](ImplementationPlans/21.%20production-evaluation-campaign.md); plan 20 preserves historical findings. Q&A still lacks catalog/corpus coverage for five fixture phones. The `recommendation_sessions.client_id` mismatch is repaired locally and verified through isolated HTTP tests; the remote build still requires publication and verification. No live-model quality or production-readiness claim is established.
+
 ### 2026-09-27 — Google Pixel 10 & 11 Series Integration, Studio Media Backfill & Recommender Age Policy Enforcement
 
 - **Google Pixel 10 & 11 Series Integration (`src/services/catalog/flagship-registry.ts`)**:
@@ -1558,21 +1570,10 @@ dissenting_quotes)`.
   - Downloaded high-resolution studio imagery for all 18 newly added phones into `public/phones/`. Verified that **59/59 active phones (100%)** have verified local studio imagery and `mediaStatus = 'local_ok'`.
   - Backfilled 768-dimensional Gemini vector embeddings via `scripts/backfill-spec-embeddings.ts` for all 18 newly added phones (`spec_embedding IS NOT NULL` is 100% across all 59 phones).
 
-### 2026-09-26 — Production Evaluation & Benchmarks Hub, Multi-Turn CRS Dialogue State Benchmark, ALCE Attribution & Concurrency Stress Testing
+### 2026-09-26 — Initial evaluation hub implementation (historical; claims corrected 2026-10-05)
 
-- **Multi-Turn Conversational Recommender (CRS) Suite (`scripts/eval-benchmark.ts --suite=multi-turn`)**:
-  - Implemented dialogue state tracking evaluation covering 15 realistic conversational trajectories across 52 turns with non-linear preference updates (budget expansions/contractions, anti-brand pivots, relative subset refinements, clean resets, and feature accumulation).
-  - Evaluates Joint Goal Accuracy (JGA), Constraint Retention Rate (CRR / anti-decay), Constraint Mutation Latency (0-turn responsiveness), Refine Intent F1, Reset Purge Cleanliness, Multi-Turn Policy CSR (zero dealbreaker leakage), dynamic turn NDCG@3, and exact Gemini token & cost accounting.
-  - Enhanced brand negation heuristics in `src/services/recommender/requirements-merge.ts` to capture subtle negative sentiment (`hate`, `dislike`, `do not show`, `maybe`, `productivity`, `multitasking`).
-- **Tier 2 Offline MAUT Recommender & Tier 3 Stanford ALCE RAG Benchmarks**:
-  - Added offline MAUT ranking benchmark (`--suite=recsys`) measuring NDCG@3/5, MRR, Constraint Satisfaction Rate (CSR), Intra-List Diversity (ILD@3 cosine distance), Catalog Coverage, and Gini inequality across 50 golden personas.
-  - Added Stanford ALCE attribution evaluation (`--suite=rag`) evaluating sentence-level citation precision, citation recall, phantom citation rate, and numeric fact entailment against retrieved context chunks.
-- **L1 Data-Plane Concurrency Stress Profiler (`scripts/eval-load.ts` / `pnpm eval:stress`)**:
-  - Simulates 1–100 concurrent virtual users (VUs) executing recommendation intake and search queries, measuring p50/p90/p95/p99 tail latencies, event loop lag, and connection pool saturation.
-- **Web Command Center UI (`/internal/eval`)**:
-  - Interactive dashboard displaying real-time execution progress, primary KPI scorecards with 95% Bootstrap Confidence Intervals ($B=1,000$, $\alpha=0.05$), historical run regression diffing, turn-by-turn trace drawer with trajectory timeline, and portable JSON/CSV report export and rehydration.
-- **Database Schema Migration (`0008_cute_komodo.sql`)**:
-  - Added `benchmark_runs` and `benchmark_results` tables with `metrics_summary` JSONB and `trace_payload` JSONB columns to durably store benchmark telemetry in PostgreSQL.
+- Added evaluation scripts, authored fixtures, dashboard, and `benchmark_runs` / `benchmark_results` persistence in migration `0008_cute_komodo.sql`.
+- The original change note overstated dataset size, implementation scope, attribution validity, token/cost accounting, and load instrumentation. Current fixtures contain 30 personas and 15 trajectories / 37 turns, not 50 personas or 52 turns. NDCG@5, FSAR/AAR, ALCE entailment, ablation significance, event-loop lag, pool saturation, and `pnpm eval:stress` were not verified implementations. Use [the operator guide](eval/README.md) for actual commands and measurement boundaries.
 
 ### 2026-09-17 — Catalog enrichment unblocking, Nothing phone discovery & pipeline hardening
 

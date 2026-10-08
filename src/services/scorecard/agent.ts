@@ -11,7 +11,7 @@ import { isLikelyGeminiQuotaExhaustedError } from '@/services/llm/gemini-request
 import type { LlmProvider, ChatMessage } from '@/services/llm/types';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievedChunk } from '@/services/retrieval/types';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { scorecardRuns, aspectDefinitions, aspects, phones } from '@/services/db/schema';
 
 import {
@@ -26,7 +26,7 @@ import {
 } from './extraction-schema';
 import { buildCombinedRetrievalQuery } from './query-build';
 import { recencyConfidenceBoost } from './recency';
-import { getCompletedAspectsForFingerprint } from './staleness';
+import { computeChunkFingerprint, getCompletedAspectsForFingerprint } from './staleness';
 import type { AspectDefinitionRow, ScorecardQuote } from './types';
 
 export interface ScorecardRunContext {
@@ -38,6 +38,7 @@ export interface ScorecardRunContext {
   readonly llm: LlmProvider;
   readonly log: Logger;
   readonly chunkFingerprint?: string;
+  readonly force?: boolean;
   readonly aspectDelayMs?: number;
   readonly shouldStop?: () => boolean;
 }
@@ -391,10 +392,14 @@ export async function runScorecardForPhone(ctx: ScorecardRunContext): Promise<{
   stopped: boolean;
   fingerprint: string;
 }> {
+  ctx = {
+    ...ctx,
+    chunkFingerprint: ctx.chunkFingerprint ?? (await computeChunkFingerprint(ctx.db, ctx.phoneId)),
+  };
   const rows = await ctx.db.select().from(aspectDefinitions);
   const latest = latestAspectDefinitionsByAspect(rows);
   const reusable =
-    ctx.chunkFingerprint !== undefined
+    !ctx.force && ctx.chunkFingerprint !== undefined
       ? await getCompletedAspectsForFingerprint(ctx.db, ctx.phoneId, ctx.chunkFingerprint)
       : new Set<(typeof ASPECT_NAMES)[number]>();
   let updated = 0;
@@ -415,10 +420,10 @@ export async function runScorecardForPhone(ctx: ScorecardRunContext): Promise<{
       continue;
     }
 
-    if (reusable.has(name)) {
+    if (!ctx.chunkFingerprint || reusable.has(name)) {
       const now = new Date();
       await recordTelemetry(ctx, def, 'skipped', {
-        skipReason: 'aspect_chunks_unchanged',
+        skipReason: !ctx.chunkFingerprint ? 'empty_corpus' : 'aspect_chunks_unchanged',
         startedAt: now,
       });
       skipped += 1;
@@ -454,7 +459,7 @@ export async function loadPhoneBySlug(
       status: phones.status,
     })
     .from(phones)
-    .where(eq(phones.slug, slug))
+    .where(and(eq(phones.slug, slug), ne(phones.status, 'archived')))
     .limit(1);
 
   if (!phone) return null;

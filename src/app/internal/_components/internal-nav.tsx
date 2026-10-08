@@ -85,7 +85,7 @@ export function InternalNav() {
           <span className="status-dot text-accent" data-state="running" />
         </div>
         <p className="text-muted-foreground mt-2 font-mono text-xs tracking-[0.12em]">
-          RECSY v2.0.4 / Operational
+          RECSY / Command Center
         </p>
       </div>
 
@@ -158,11 +158,11 @@ export function InternalNav() {
       <div className="border-outline-variant text-muted-foreground border-t p-4 font-mono text-[11px]">
         <div className="flex items-center justify-between">
           <span>Postgres DB</span>
-          <span className="text-accent font-semibold">Active</span>
+          <span className="text-accent font-semibold">Configured</span>
         </div>
         <div className="mt-1 flex items-center justify-between">
           <span>Gemini Rail</span>
-          <span className="font-semibold text-[#39ff88]">Dual-Rail</span>
+          <span className="font-semibold text-[#39ff88]">See quota monitor</span>
         </div>
       </div>
     </aside>

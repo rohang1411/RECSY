@@ -114,3 +114,21 @@ export function toAppError(err: unknown): AppError {
   }
   return new AppError('INTERNAL', 'Unknown error', { context: { raw: String(err) } });
 }
+
+/** Public responses carry stable codes and trace IDs; operator logs retain causes. */
+export function publicErrorMessage(error: AppError): string {
+  switch (error.code) {
+    case 'INTERNAL':
+      return 'The request could not be completed. Please try again.';
+    case 'INTEGRATION_ERROR':
+      return 'A required service is unavailable. Please try again.';
+    case 'LLM_ERROR':
+      return 'The answer service is unavailable. Please try again.';
+    case 'LLM_TIMEOUT':
+      return 'The answer service timed out. Please try again.';
+    case 'LLM_SCHEMA_VIOLATION':
+      return 'The answer service returned an invalid response. Please try again.';
+    default:
+      return error.message;
+  }
+}

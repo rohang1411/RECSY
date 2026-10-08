@@ -19,7 +19,7 @@
  *   - Different adapters for the same phone run serially too. Parallelising
  *     them would ~double peak network pressure for small gains.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 
 import { NotFoundError } from '@/lib/errors';
 import { phones, sources } from '@/services/db/schema';
@@ -238,6 +238,29 @@ export class IngestOrchestrator {
             { url: candidate.url, chunks: rawChunks.length, bytes: raw.body.length },
             'dry-run: would have embedded + written',
           );
+          continue;
+        }
+
+        // Source identity is URL-wide, including comparisons previously assigned to another phone.
+        const known = await this.opts.db
+          .select({ id: sources.id })
+          .from(sources)
+          .where(
+            sql`${sources.url} = ${candidate.url} and ${sources.contentHash} = ${raw.contentHash} and ${sources.status} = 'active'`,
+          )
+          .limit(1);
+        if (known.length > 0) {
+          await this.writer.recordRejectedRun({
+            adapterName: adapter.type,
+            phoneId: phone.id,
+            sourceUrl: candidate.url,
+            candidateTitle: candidate.title,
+            stage: 'fetch',
+            rejectedReason: 'unchanged-content',
+            tier: options.tier ?? null,
+            discoveryStrategy: options.discoveryStrategy ?? null,
+          });
+          skippedDuplicate++;
           continue;
         }
 
@@ -561,7 +584,7 @@ async function loadPhone(db: Db, slug: string): Promise<PhoneRef> {
       launchDate: phones.launchDate,
     })
     .from(phones)
-    .where(eq(phones.slug, slug))
+    .where(and(eq(phones.slug, slug), ne(phones.status, 'archived')))
     .limit(1);
   const row = rows[0];
   if (!row) {

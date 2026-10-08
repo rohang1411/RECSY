@@ -26,7 +26,7 @@ export interface PickResumePhonesOptions {
   readonly limit?: number;
   readonly shard?: number;
   readonly totalShards?: number;
-  /** Include active phones with zero chunks (ignores next_ingest_at). Default true. */
+  /** Include active phones with zero chunks when their retry cooldown is due. Default true. */
   readonly includeEmptyCorpus?: boolean;
 }
 
@@ -45,6 +45,11 @@ function retriableFailureWhere(since: Date, now: Date, errorCodes: readonly stri
     gte(ingestRuns.startedAt, since),
     isNotNull(ingestRuns.phoneId),
     or(isNull(ingestRuns.retryAfter), lte(ingestRuns.retryAfter, now)),
+    sql`not exists (select 1 from ingest_runs resolved
+      where resolved.phone_id = ${ingestRuns.phoneId}
+        and resolved.source_url is not distinct from ${ingestRuns.sourceUrl}
+        and resolved.started_at > ${ingestRuns.startedAt}
+        and resolved.status in ('success', 'skipped'))`,
   );
 }
 
@@ -77,7 +82,7 @@ function applyShardAndLimit(rows: PickedPhone[], opts: PickResumePhonesOptions):
 
 /**
  * Active/upcoming phones with no chunks in the DB (empty corpus).
- * Ignores `next_ingest_at` so a failed overnight batch can be retried immediately.
+ * Respects `next_ingest_at` so failed batches cannot monopolize every resume run.
  */
 export async function pickPhonesEmptyCorpus(
   db: Db,
@@ -104,6 +109,7 @@ export async function pickPhonesEmptyCorpus(
     .where(
       and(
         sql`${phones.status} in ('active', 'upcoming')`,
+        or(isNull(phones.nextIngestAt), lte(phones.nextIngestAt, new Date())),
         sql`not exists (select 1 from chunks c where c.phone_id = ${phones.id})`,
       ),
     )
@@ -192,7 +198,14 @@ export async function pickResumePhones(
       nextIngestAt: phones.nextIngestAt,
     })
     .from(phones)
-    .where(inArray(phones.id, [...phoneIdSet]));
+    .where(
+      and(
+        inArray(phones.id, [...phoneIdSet]),
+        sql`${phones.status} in ('active', 'upcoming')`,
+        or(isNull(phones.nextIngestAt), lte(phones.nextIngestAt, now)),
+      ),
+    )
+    .orderBy(sql`coalesce(${phones.lastIngestAt}, '1970-01-01'::timestamptz) asc`);
 
   const ranked = rows
     .map((r) => toPickedPhone(r))

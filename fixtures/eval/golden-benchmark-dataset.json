@@ -1,6 +1,6 @@
 {
-  "version": "2.0",
-  "description": "RECSY Golden Evaluation Benchmark Dataset: 30 Recommender Personas & 20 Attributed QA queries.",
+  "version": "2.1-dev",
+  "description": "RECSY authored development fixtures: 30 recommendation personas and 20 answerable Q&A queries. These are not independently adjudicated labels.",
   "recommenderPersonas": [
     {
       "id": "rec-001",
@@ -17,8 +17,7 @@
         "must_haves": ["all-day battery"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-002",
@@ -36,8 +35,7 @@
         "must_haves": ["120Hz display", "top chipset"],
         "deal_breakers": ["thermal throttling"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-003",
@@ -55,8 +53,7 @@
         "must_haves": ["iOS"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["Apple"], "disliked": ["Samsung"] }
-      },
-      "minExpectedNdcg3": 0.9
+      }
     },
     {
       "id": "rec-004",
@@ -73,8 +70,7 @@
         "must_haves": ["telephoto zoom", "4K60"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-005",
@@ -93,8 +89,7 @@
         "must_haves": ["compact size"],
         "deal_breakers": ["heavy weight"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-006",
@@ -112,8 +107,7 @@
         "must_haves": ["smooth UI"],
         "deal_breakers": ["bloatware"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-007",
@@ -131,8 +125,7 @@
         "must_haves": ["foldable"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-008",
@@ -150,8 +143,7 @@
         "must_haves": ["Android"],
         "deal_breakers": ["bloatware"],
         "brand_preference": { "liked": ["Google"], "disliked": ["Apple"] }
-      },
-      "minExpectedNdcg3": 0.9
+      }
     },
     {
       "id": "rec-009",
@@ -169,8 +161,7 @@
         "must_haves": ["fast charging", "OLED"],
         "deal_breakers": ["slow charging"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-010",
@@ -188,8 +179,7 @@
         "must_haves": [],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": ["Samsung"] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-011",
@@ -207,8 +197,7 @@
         "must_haves": ["high brightness"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-012",
@@ -226,8 +215,7 @@
         "must_haves": ["flagship chipset"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["OnePlus", "Nothing"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-013",
@@ -245,8 +233,7 @@
         "must_haves": ["good battery"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-014",
@@ -264,8 +251,7 @@
         "must_haves": ["OIS camera"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["Google"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-015",
@@ -283,8 +269,7 @@
         "must_haves": ["long software support"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["Google", "Samsung", "Apple"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-016",
@@ -302,8 +287,7 @@
         "must_haves": [],
         "deal_breakers": [],
         "brand_preference": { "liked": ["Nothing", "CMF"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-017",
@@ -321,8 +305,7 @@
         "must_haves": ["telephoto periscope"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-018",
@@ -341,8 +324,7 @@
         "must_haves": ["compact"],
         "deal_breakers": ["heavy weight"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-019",
@@ -359,8 +341,7 @@
         "must_haves": ["massive battery"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-020",
@@ -378,8 +359,7 @@
         "must_haves": ["stereo speakers"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-021",
@@ -396,8 +376,7 @@
         "must_haves": ["stylus"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["Samsung"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.9
+      }
     },
     {
       "id": "rec-022",
@@ -415,13 +394,12 @@
         "must_haves": ["4k front camera"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-023",
-      "name": "Budget Relaxation Boundary Test",
-      "category": "edge-relaxation",
+      "name": "Impossible Foldable No-Result Policy Test",
+      "category": "policy-no-result",
       "userQuery": "I want a book-style foldable phone under $300.",
       "requirements": {
         "budget_usd": { "max": 300 },
@@ -435,7 +413,7 @@
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
       },
-      "minExpectedNdcg3": 0.7
+      "expectNoResults": true
     },
     {
       "id": "rec-024",
@@ -453,8 +431,7 @@
         "must_haves": ["Android"],
         "deal_breakers": ["bloatware"],
         "brand_preference": { "liked": ["Google"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.9
+      }
     },
     {
       "id": "rec-025",
@@ -472,8 +449,7 @@
         "must_haves": ["bright screen"],
         "deal_breakers": ["dim display"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-026",
@@ -490,8 +466,7 @@
         "must_haves": ["titanium or premium glass"],
         "deal_breakers": ["plastic"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     },
     {
       "id": "rec-027",
@@ -509,8 +484,7 @@
         "must_haves": ["fast charging"],
         "deal_breakers": [],
         "brand_preference": { "liked": ["OnePlus"], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.9
+      }
     },
     {
       "id": "rec-028",
@@ -528,8 +502,7 @@
         "must_haves": ["fast shutter"],
         "deal_breakers": ["shutter lag"],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-029",
@@ -547,8 +520,7 @@
         "must_haves": ["flip foldable"],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.85
+      }
     },
     {
       "id": "rec-030",
@@ -568,8 +540,7 @@
         "must_haves": [],
         "deal_breakers": [],
         "brand_preference": { "liked": [], "disliked": [] }
-      },
-      "minExpectedNdcg3": 0.88
+      }
     }
   ],
   "attributedQaQueries": [
@@ -579,8 +550,7 @@
       "category": "battery-charging",
       "query": "What is the battery life and real-world charging speed on the iPhone 16 Pro?",
       "referenceFacts": ["battery capacity", "charging wattage", "screen-on time"],
-      "numericalEntities": ["hours", "w", "minutes"],
-      "minExpectedCitePrec": 0.9
+      "numericalEntities": ["hours", "w", "minutes"]
     },
     {
       "id": "rag-002",
@@ -588,24 +558,21 @@
       "category": "camera-zoom",
       "query": "Does the smaller iPhone 16 Pro have the 5x telephoto optical zoom lens?",
       "referenceFacts": ["5x optical zoom", "tetraprism periscope lens", "120mm focal length"],
-      "numericalEntities": ["5x", "120mm"],
-      "minExpectedCitePrec": 0.95
+      "numericalEntities": ["5x", "120mm"]
     },
     {
       "id": "rag-003",
       "phoneSlug": "samsung-galaxy-s24-ultra",
       "category": "display-anti-reflective",
       "query": "How effective is the Gorilla Armor anti-reflective glass on the S24 Ultra display?",
-      "referenceFacts": ["Corning Gorilla Armor", "reduced glare", "anti-reflective coating"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["Corning Gorilla Armor", "reduced glare", "anti-reflective coating"]
     },
     {
       "id": "rag-004",
       "phoneSlug": "samsung-galaxy-s24-ultra",
       "category": "thermal-gaming",
       "query": "How does the S24 Ultra perform during heavy 3D gaming and does it throttle thermally?",
-      "referenceFacts": ["Snapdragon 8 Gen 3", "vapor chamber cooling", "frame rate stability"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["Snapdragon 8 Gen 3", "vapor chamber cooling", "frame rate stability"]
     },
     {
       "id": "rag-005",
@@ -613,16 +580,14 @@
       "category": "ai-software",
       "query": "What are the major AI features and software support policy on the Pixel 9 Pro XL?",
       "referenceFacts": ["7 years of OS updates", "Gemini on-device", "Pixel Drop updates"],
-      "numericalEntities": ["7 years", "7"],
-      "minExpectedCitePrec": 0.95
+      "numericalEntities": ["7 years", "7"]
     },
     {
       "id": "rag-006",
       "phoneSlug": "google-pixel-9-pro-xl",
       "category": "camera-video-boost",
       "query": "How does Video Boost and Night Sight video perform on Pixel 9 Pro XL?",
-      "referenceFacts": ["cloud-based Video Boost", "Night Sight video", "low light processing"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["cloud-based Video Boost", "Night Sight video", "low light processing"]
     },
     {
       "id": "rag-007",
@@ -634,8 +599,7 @@
         "80W or 100W SuperVOOC fast charging",
         "50W wireless charging"
       ],
-      "numericalEntities": ["5400", "80w", "100w"],
-      "minExpectedCitePrec": 0.95
+      "numericalEntities": ["5400", "80w", "100w"]
     },
     {
       "id": "rag-008",
@@ -643,8 +607,7 @@
       "category": "display-brightness",
       "query": "What is the peak brightness of the OnePlus 12 display in direct sunlight?",
       "referenceFacts": ["4500 nits peak brightness", "ProXDR display", "120Hz LTPO"],
-      "numericalEntities": ["4500", "nits"],
-      "minExpectedCitePrec": 0.9
+      "numericalEntities": ["4500", "nits"]
     },
     {
       "id": "rag-009",
@@ -655,16 +618,14 @@
         "polycarbonate plastic back",
         "Glyph interface lights",
         "essential notifications"
-      ],
-      "minExpectedCitePrec": 0.9
+      ]
     },
     {
       "id": "rag-010",
       "phoneSlug": "nothing-phone-2a",
       "category": "performance-daily",
       "query": "How does the Dimensity 7200 Pro chipset hold up for everyday daily tasks?",
-      "referenceFacts": ["Dimensity 7200 Pro", "Nothing OS 2.5", "smooth animations"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["Dimensity 7200 Pro", "Nothing OS 2.5", "smooth animations"]
     },
     {
       "id": "rag-011",
@@ -676,16 +637,14 @@
         "over 10 hours screen-on time",
         "efficient A18 Pro"
       ],
-      "numericalEntities": ["hours"],
-      "minExpectedCitePrec": 0.9
+      "numericalEntities": ["hours"]
     },
     {
       "id": "rag-012",
       "phoneSlug": "samsung-galaxy-z-fold-6",
       "category": "durability-crease",
       "query": "Is the screen crease noticeable on the Galaxy Z Fold 6 and how durable is the hinge?",
-      "referenceFacts": ["dual-rail hinge", "Armor Aluminum", "crease is still tactile"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["dual-rail hinge", "Armor Aluminum", "crease is still tactile"]
     },
     {
       "id": "rag-013",
@@ -693,40 +652,28 @@
       "category": "value-camera",
       "query": "Does the Pixel 8a match the camera quality of the flagship Pixel 8?",
       "referenceFacts": ["Tensor G3", "64MP main sensor", "Google computational photography"],
-      "numericalEntities": ["64mp"],
-      "minExpectedCitePrec": 0.9
+      "numericalEntities": ["64mp"]
     },
     {
       "id": "rag-014",
       "phoneSlug": "cmf-phone-1",
       "category": "budget-modular",
       "query": "How does the removable back cover and modular accessory system work on the CMF Phone 1?",
-      "referenceFacts": [
-        "modular screws",
-        "swappable back covers",
-        "stand and lanyard accessories"
-      ],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["modular screws", "swappable back covers", "stand and lanyard accessories"]
     },
     {
       "id": "rag-015",
       "phoneSlug": "samsung-galaxy-a55-5g",
       "category": "midrange-build",
       "query": "What build materials are used on the Galaxy A55 5G frame and glass?",
-      "referenceFacts": ["metal aluminum frame", "Gorilla Glass Victus+", "glass back"],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["metal aluminum frame", "Gorilla Glass Victus+", "glass back"]
     },
     {
       "id": "rag-016",
       "phoneSlug": "oneplus-open",
       "category": "foldable-multitasking",
       "query": "How does Open Canvas multitasking work on the OnePlus Open inner display?",
-      "referenceFacts": [
-        "Open Canvas virtual desk",
-        "triple app split screen",
-        "lightweight hinge"
-      ],
-      "minExpectedCitePrec": 0.9
+      "referenceFacts": ["Open Canvas virtual desk", "triple app split screen", "lightweight hinge"]
     },
     {
       "id": "rag-017",
@@ -737,8 +684,7 @@
         "capacitive Camera Control",
         "two-stage shutter",
         "swipe zoom and exposure"
-      ],
-      "minExpectedCitePrec": 0.9
+      ]
     },
     {
       "id": "rag-018",
@@ -750,8 +696,7 @@
         "48MP 5x telephoto",
         "smaller 6.3 inch form factor"
       ],
-      "numericalEntities": ["5x", "48mp"],
-      "minExpectedCitePrec": 0.95
+      "numericalEntities": ["5x", "48mp"]
     },
     {
       "id": "rag-019",
@@ -759,8 +704,7 @@
       "category": "compact-flagship",
       "query": "How is the battery life on the base 6.2-inch Samsung Galaxy S24?",
       "referenceFacts": ["4000 mAh battery", "one day light usage", "25W charging"],
-      "numericalEntities": ["4000", "25w"],
-      "minExpectedCitePrec": 0.9
+      "numericalEntities": ["4000", "25w"]
     },
     {
       "id": "rag-020",
@@ -772,8 +716,7 @@
         "no wireless charging",
         "100W wired charging"
       ],
-      "numericalEntities": ["5500", "100w"],
-      "minExpectedCitePrec": 0.95
+      "numericalEntities": ["5500", "100w"]
     }
   ]
 }

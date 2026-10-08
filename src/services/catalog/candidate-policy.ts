@@ -6,6 +6,7 @@
  * useful catalog updates.
  */
 import { brandPriorityRank, isMainstreamPriorityBrand } from './brand-priority';
+import { normalizeIdentityText } from './identity';
 
 export interface CatalogPriorityCandidate {
   readonly brand?: string | null;
@@ -82,8 +83,10 @@ export function isLikelyCatalogPhoneTitle(title: string): boolean {
   const trimmed = title.trim();
   return (
     !RAW_QID_TITLE_RE.test(trimmed) &&
+    trimmed.length > 0 &&
     !NON_PHONE_TITLE_RE.test(trimmed) &&
     !MULTI_PHONE_TITLE_RE.test(trimmed) &&
+    !FAMILY_TITLE_RE.test(trimmed) &&
     !LEGACY_MODEL_OR_FEATURE_PHONE_RE.test(trimmed)
   );
 }
@@ -117,8 +120,38 @@ const RAW_QID_TITLE_RE = /^Q\d+$/i;
 const NON_PHONE_TITLE_RE =
   /\b(?:ipad|tablet|pad|etpad|acepad|iconia|watch|macbook|laptop|chromebook|earbuds|headphones|smart\s+tv)\b/i;
 
-const MULTI_PHONE_TITLE_RE =
-  /\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b.{0,80}\s(?:and|&)\s.{0,80}\b(?:iphone|galaxy|pixel|oneplus|nothing phone|moto|xperia|redmi|poco|oppo|vivo|honor|huawei)\b/i;
+const MULTI_PHONE_TITLE_RE = /\s(?:and|&)\s/i;
 
+const FAMILY_TITLE_RE =
+  /\bseries\b|^(?:apple\s+)?iphone$|^(?:samsung\s+)?galaxy(?:\s+[aszmf])?$|^(?:google\s+)?pixel$|^(?:sony\s+)?xperia$|\b(?:smartphones|phones)\s*$/i;
+
+export function isCatalogRetryDue(retryAfter: Date | null | undefined, now = new Date()): boolean {
+  return !retryAfter || retryAfter <= now;
+}
+
+export function catalogExactModelKey(brand: string, model: string): string {
+  const normalizedBrand = normalizeIdentityText(brand);
+  let normalizedModel = normalizeIdentityText(model);
+  if (normalizedModel.startsWith(`${normalizedBrand} `))
+    normalizedModel = normalizedModel.slice(normalizedBrand.length + 1);
+  return `${normalizedBrand}:${normalizedModel}`;
+}
+
+export function compareCatalogEnrichmentFairness(
+  a: CatalogPriorityCandidate & {
+    readonly attempts: number;
+    readonly lastDecisionAt?: Date | null;
+  },
+  b: CatalogPriorityCandidate & {
+    readonly attempts: number;
+    readonly lastDecisionAt?: Date | null;
+  },
+): number {
+  return (
+    a.attempts - b.attempts ||
+    (a.lastDecisionAt?.getTime() ?? 0) - (b.lastDecisionAt?.getTime() ?? 0) ||
+    compareCatalogPriorityThenNewest(a, b)
+  );
+}
 const LEGACY_MODEL_OR_FEATURE_PHONE_RE =
   /\b(?:sgh|sch|sph|gt-[a-z0-9]+|sm-[a-z0-9]{3,}|corby|genoa|w2[0-9]|a100|s5\s+neo|stellar|j2\s+core)\b/i;

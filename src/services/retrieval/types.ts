@@ -143,10 +143,12 @@ export interface RetrievalResult {
 
 /** Per-stage observability data. Use it for logs, not as a public API. */
 export interface RetrievalDebug {
+  readonly sourceQuality?: { readonly ms: number; readonly excludedChunkIds: readonly string[] };
   readonly phoneId: string;
   readonly query: string;
-  readonly vector: { readonly count: number; readonly ms: number };
-  readonly fts: { readonly count: number; readonly ms: number };
+  readonly embedding?: { readonly ms: number };
+  readonly vector: { readonly count: number; readonly ms: number; readonly error?: string };
+  readonly fts: { readonly count: number; readonly ms: number; readonly error?: string };
   readonly rrf: { readonly count: number; readonly ms: number };
   readonly mmr: { readonly count: number; readonly ms: number };
   readonly coverage: { readonly sourceCount: number; readonly relaxed: boolean };

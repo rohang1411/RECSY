@@ -9,3 +9,6 @@ public
 next-env.d.ts
 # Pre-rewrite Flutter project — preserved for reference, not formatted.
 legacy
+# Preserve original imported review payloads and generated evaluation evidence.
+docs/GPT Retrieval Reviews
+output

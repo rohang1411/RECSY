@@ -17,8 +17,12 @@
  */
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
-import type { AppDb } from '@/services/db/client';
-import { recommendationSessions, recommendationTurns } from '@/services/db/schema';
+import type { AppDb, AppQueryDb } from '@/services/db/client';
+import {
+  recommendationClients,
+  recommendationSessions,
+  recommendationTurns,
+} from '@/services/db/schema';
 
 import {
   normalizeUserRequirements,
@@ -45,26 +49,40 @@ export async function insertRecommendationSession(
     userAgent: string | null;
   },
 ): Promise<RecommendationSessionRow> {
-  const [row] = await db
-    .insert(recommendationSessions)
-    .values({
-      sessionCookie: input.sessionCookie,
-      ipHash: input.ipHash ?? undefined,
-      userAgent: input.userAgent ?? undefined,
-    })
-    .returning();
-  if (!row) throw new Error('Failed to insert recommendation session');
-  return row;
+  // Ownership is established on the product path, atomically with the session.
+  // Never attach a new session to an arbitrary pre-existing client to satisfy the FK.
+  return db.transaction(async (tx) => {
+    const [client] = await tx
+      .insert(recommendationClients)
+      .values({
+        clientToken: input.sessionCookie,
+        ipHash: input.ipHash ?? undefined,
+        userAgent: input.userAgent ?? undefined,
+      })
+      .returning({ id: recommendationClients.id });
+    if (!client) throw new Error('Failed to establish recommendation session ownership');
+    const [row] = await tx
+      .insert(recommendationSessions)
+      .values({ clientId: client.id, sessionCookie: input.sessionCookie })
+      .returning();
+    if (!row) throw new Error('Failed to insert recommendation session');
+    return row;
+  });
 }
 
 export async function findSessionByCookie(
-  db: AppDb,
+  db: AppQueryDb,
   sessionCookie: string,
 ): Promise<RecommendationSessionRow | null> {
   const [row] = await db
     .select()
     .from(recommendationSessions)
-    .where(eq(recommendationSessions.sessionCookie, sessionCookie))
+    .where(
+      and(
+        eq(recommendationSessions.sessionCookie, sessionCookie),
+        eq(recommendationSessions.status, 'active'),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -73,7 +91,7 @@ export async function findSessionByCookie(
 // Turn helpers
 // ---------------------------------------------------------------------------
 
-export async function nextTurnIndex(db: AppDb, sessionId: string): Promise<number> {
+export async function nextTurnIndex(db: AppQueryDb, sessionId: string): Promise<number> {
   const [last] = await db
     .select({ turnIndex: recommendationTurns.turnIndex })
     .from(recommendationTurns)
@@ -97,7 +115,7 @@ export async function nextTurnIndex(db: AppDb, sessionId: string): Promise<numbe
  * over.
  */
 export async function getLatestRequirementsForSession(
-  db: AppDb,
+  db: AppQueryDb,
   sessionId: string,
 ): Promise<UserRequirements | null> {
   const turns = await db
@@ -125,7 +143,10 @@ export async function getLatestRequirementsForSession(
  * Returns the phone IDs of the most recent `recommend`-intent turn picks,
  * or `[]` if the session has no prior picks.
  */
-export async function getLatestRecommendPickIds(db: AppDb, sessionId: string): Promise<string[]> {
+export async function getLatestRecommendPickIds(
+  db: AppQueryDb,
+  sessionId: string,
+): Promise<string[]> {
   const [turn] = await db
     .select({ candidatePhoneIds: recommendationTurns.candidatePhoneIds })
     .from(recommendationTurns)

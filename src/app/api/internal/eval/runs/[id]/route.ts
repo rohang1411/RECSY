@@ -8,6 +8,7 @@ import {
   getBenchmarkRunById,
   deleteBenchmarkRun,
 } from '@/services/eval/storage/benchmark-repository';
+import { evalAccessError } from '@/services/eval/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,9 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_request: Request, context: RouteContext): Promise<Response> {
+export async function GET(request: Request, context: RouteContext): Promise<Response> {
+  const denied = evalAccessError(request);
+  if (denied) return denied;
   try {
     const { id } = await context.params;
     const db = getDb();
@@ -33,7 +36,9 @@ export async function GET(_request: Request, context: RouteContext): Promise<Res
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext): Promise<Response> {
+export async function DELETE(request: Request, context: RouteContext): Promise<Response> {
+  const denied = evalAccessError(request);
+  if (denied) return denied;
   try {
     const { id } = await context.params;
     const db = getDb();

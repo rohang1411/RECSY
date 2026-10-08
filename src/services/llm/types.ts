@@ -79,6 +79,11 @@ export interface EmbedResult {
   readonly usage: { readonly tokensIn: number };
 }
 
+export interface EmbedOptions {
+  readonly taskType?: 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT';
+  readonly signal?: AbortSignal;
+}
+
 export interface LlmProvider {
   readonly name: string;
   /** Blocking chat completion. */
@@ -92,5 +97,6 @@ export interface LlmProvider {
     texts: readonly string[],
     model?: string,
     usageContext?: LlmUsageContext,
+    options?: EmbedOptions,
   ): Promise<EmbedResult>;
 }

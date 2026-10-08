@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "status": "review-required; source support alone cannot establish factual correctness",
+  "checkedAt": "2026-10-07",
+  "scope": "Targeted source spot checks; not an exhaustive source-truth audit. Original corpus and results are preserved.",
+  "issues": [
+    {
+      "id": "usb-review-conflicts",
+      "kind": "verified-specification-conflict",
+      "chunkIds": [
+        "6fdc4562-ca0b-41c1-ac74-abb17e850321",
+        "71131eba-7f3d-42ec-b1be-7d055b25201b",
+        "8ffc6cee-7841-4ca0-a440-38c4247661eb",
+        "97a26b82-0a70-41d9-ba10-a61f0face0ef"
+      ],
+      "issue": "Stored review passages describe iPhone 16 Pro/Pro Max USB as 20 Gbps or Thunderbolt 4. Apple's device specifications list USB 3 up to 10 Gbps. Some passages stored under the base iPhone describe Pro hardware; phone-ID joins cannot establish sentence-level attribution.",
+      "authoritativeSources": [
+        "https://support.apple.com/en-us/121031",
+        "https://support.apple.com/en-us/121032"
+      ],
+      "action": "The local HybridRetriever now quarantines these four verified-conflict chunk IDs before fusion for all variants. Original corpus/pilot evidence remains immutable. Review equivalent claims in future corpus versions; this targeted guard is not an exhaustive source-truth classifier. Source-truth release gate remains open."
+    },
+    {
+      "id": "call-notes-time-scope",
+      "kind": "historical-versus-current-behavior",
+      "caseIds": ["sp03"],
+      "chunkIds": ["009cb791-fe0a-46f9-a902-853fb27a97e8"],
+      "issue": "The old review describes manual activation on each call. Google's current help includes automatic activation options. Interpret the review historically; its undated ingestion record cannot establish current behavior. The candidate question needs independent time-scope review.",
+      "authoritativeSources": ["https://support.google.com/phoneapp/answer/15257579?hl=en"],
+      "action": "Reviewer should assess historical attribution and ambiguity. Future current-feature gold requires dated, region-matched primary evidence."
+    }
+  ]
+}

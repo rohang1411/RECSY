@@ -14,6 +14,7 @@ import { asc, desc, gte, sql } from 'drizzle-orm';
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { catalogCandidates, catalogRuns } from '../src/services/db/schema';
+import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 
 interface CliArgs {
   readonly days: number;
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
       n: sql<number>`count(*)::int`,
     })
     .from(catalogCandidates)
+    .where(activeCatalogCandidateSql())
     .groupBy(catalogCandidates.status, catalogCandidates.decision)
     .orderBy(desc(sql<number>`count(*)`));
 
@@ -98,7 +100,8 @@ async function main(): Promise<void> {
       longTailPruned: sql<number>`count(*) filter (where ${catalogCandidates.status} = 'skipped' and 'long_tail_pruned' = any(${catalogCandidates.issueCodes}))::int`,
       unreleasedBlocked: sql<number>`count(*) filter (where 'unreleased_candidate' = any(${catalogCandidates.issueCodes}))::int`,
     })
-    .from(catalogCandidates);
+    .from(catalogCandidates)
+    .where(activeCatalogCandidateSql());
 
   const candidateDetails =
     args.namesLimit > 0
@@ -112,6 +115,7 @@ async function main(): Promise<void> {
             updatedAt: catalogCandidates.updatedAt,
           })
           .from(catalogCandidates)
+          .where(activeCatalogCandidateSql())
           .orderBy(
             asc(catalogCandidates.status),
             asc(catalogCandidates.decision),

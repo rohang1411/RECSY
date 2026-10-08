@@ -99,7 +99,8 @@ async function main(): Promise<void> {
       model: phones.model,
       launchDate: phones.launchDate,
     })
-    .from(phones);
+    .from(phones)
+    .where(sql`${phones.status} in ('active', 'upcoming')`);
 
   let totalCandidates = 0;
   let totalEnqueued = 0;
@@ -165,7 +166,8 @@ async function main(): Promise<void> {
   try {
     const existingPhones = await db
       .select({ slug: phones.slug, canonicalKey: phones.canonicalKey })
-      .from(phones);
+      .from(phones)
+      .where(sql`${phones.status} in ('active', 'upcoming')`);
     const existingSlugs = new Set(existingPhones.map((p) => p.slug));
     const existingPhoneKeys = new Set(
       existingPhones.map((p) => p.canonicalKey).filter((k): k is string => Boolean(k)),

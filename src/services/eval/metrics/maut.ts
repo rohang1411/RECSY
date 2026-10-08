@@ -1,14 +1,8 @@
 /**
  * Multi-Attribute Utility Theory (MAUT) and Constraint Satisfaction (CSP) engine.
  *
- * Ground truth relevance in multi-criteria recommendation systems cannot be based
- * on arbitrary human guesses that become stale when new catalog items are ingested.
- *
- * This module deterministically computes:
- *   1. Constraint Satisfaction C(p, q) in {0, 1}
- *   2. Multi-Attribute Utility U*(p | q) in [0, 1]
- *   3. Dynamic Graded Relevance rel*(p | q) in {0, 1, 2, 3}
- *   4. Ideal DCG (IDCG) upper bound for any catalog state
+ * Self-derived ranker-utility reference, not independent relevance ground truth.
+ * It is useful for implementation consistency checks only.
  */
 import { ASPECT_NAMES } from '@/lib/constants';
 import type { PhoneCatalogEntry } from '@/services/recommender/catalog';
@@ -19,6 +13,7 @@ import {
   resolveAspectWeights,
 } from '@/services/recommender/match';
 import { cosineSimilarity } from '@/services/recommender/vector-utils';
+import { passesVerifiedHardFeatures } from '@/services/recommender/hard-features';
 import type { RecommenderPersonaFixture } from '../types';
 
 export interface EvaluatedCandidateUtility {
@@ -50,10 +45,23 @@ export function checkCandidateConstraints(
   const req = fixture.requirements;
   const price = phone.msrpUsd ? Number.parseFloat(phone.msrpUsd) : null;
 
-  // 1. Budget constraint
-  if (req.budget_usd?.max != null && price != null) {
-    if (price > req.budget_usd.max) {
-      violations.push(`Price $${price} exceeds budget max $${req.budget_usd.max}`);
+  if (
+    !passesVerifiedHardFeatures(phone, {
+      must_haves: [...req.must_haves],
+      deal_breakers: [...req.deal_breakers],
+    })
+  )
+    violations.push('Mandatory feature/exclusion compliance is unverified or unsupported');
+
+  // 1. Budget constraint. Missing or invalid price cannot establish feasibility.
+  if (req.budget_usd?.max != null || req.budget_usd?.min != null) {
+    if (price == null || !Number.isFinite(price)) {
+      violations.push('Price is missing or invalid under an active budget');
+    } else {
+      if (req.budget_usd.max != null && price > req.budget_usd.max)
+        violations.push(`Price $${price} exceeds budget max $${req.budget_usd.max}`);
+      if (req.budget_usd.min != null && price < req.budget_usd.min)
+        violations.push(`Price $${price} is below budget min $${req.budget_usd.min}`);
     }
   }
 
@@ -83,19 +91,14 @@ export function checkCandidateConstraints(
 
   // 4. Form factor
   if (req.form_factor === 'foldable') {
-    const isFoldable =
-      phone.spec?.foldable === true ||
-      haystack.includes('fold') ||
-      haystack.includes('flip') ||
-      haystack.includes('foldable');
+    const isFoldable = phone.spec?.foldable === true;
     if (!isFoldable) {
       violations.push('Requires foldable form factor');
     }
   } else if (req.form_factor === 'compact') {
     const sz = phone.spec?.display?.size_in;
-    if (sz != null && (sz < 5.0 || sz > 6.35)) {
-      violations.push(`Display size ${sz}" is outside compact range [5.0", 6.35"]`);
-    }
+    if (sz == null || sz < 5.0 || sz > 6.3)
+      violations.push(`Display size ${sz ?? 'unknown'}" is outside compact range [5.0", 6.3"]`);
   }
 
   // 5. Disliked brands
@@ -123,8 +126,9 @@ export function computeCandidateUtilityScore(
   const weights = resolveAspectWeights(
     {
       confidence: 1.0,
-      budget_usd:
-        req.budget_usd?.max != null ? { max: req.budget_usd.max, min: req.budget_usd.min } : null,
+      budget_usd: req.budget_usd
+        ? { ...req.budget_usd, max: req.budget_usd.max ?? Infinity }
+        : null,
       priorities: req.priorities,
       use_cases: [...(req.use_cases ?? [])],
       must_haves: [...(req.must_haves ?? [])],
@@ -217,8 +221,6 @@ export function evaluateCatalogUtility(
   const p70 = feasibleCount > 0 ? (feasibleUtilities[Math.floor(feasibleCount * 0.7)] ?? 0) : 0;
   const p90 = feasibleCount > 0 ? (feasibleUtilities[Math.floor(feasibleCount * 0.9)] ?? 0) : 0;
 
-  const acceptableSet = new Set(fixture.acceptableSlugs ?? []);
-
   const evaluated: EvaluatedCandidateUtility[] = intermediate.map((item) => {
     let grade = 0;
     if (item.satisfies) {
@@ -231,11 +233,6 @@ export function evaluateCatalogUtility(
       } else {
         grade = 1; // within constraints gets at least 1
       }
-    }
-
-    // Explicit acceptable slugs override to at least Grade 2
-    if (acceptableSet.has(item.phone.slug) && grade < 2) {
-      grade = 2;
     }
 
     return {

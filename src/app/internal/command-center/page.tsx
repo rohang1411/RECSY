@@ -9,6 +9,7 @@ import {
   type CommandCenterDatabaseSummary,
 } from '@/services/internal/database-dashboard';
 import { loadLlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
+import { summarizeVerifiedDailyQuota } from '@/services/internal/gemini-quota-summary';
 import {
   loadCommandCenterIngestionSummary,
   type PhoneIngestionSummary,
@@ -34,6 +35,7 @@ const FALLBACK_DB_DATA: CommandCenterDatabaseSummary = {
     pendingCount: 0,
     queuedCount: 0,
     inPipelineCount: 0,
+    archivedCount: 0,
   },
   topBlockedReason: 'None',
 };
@@ -68,12 +70,12 @@ const FALLBACK_LLM_USAGE: LlmUsageMonitorData = {
     callsToday: 0,
     inputTokensToday: 0,
     outputTokensToday: 0,
-    dailyLimitPerKey: 1500,
-    totalDailyLimit: 1500,
-    remainingCallsToday: 1500,
+    dailyLimitPerKey: null,
+    totalDailyLimit: null,
+    remainingCallsToday: null,
     keysBreakdown: [],
   },
-  configuredKeyCount: 1,
+  configuredKeyCount: 0,
   topAreas: [],
   recentEvents: [],
   modelMix: [],
@@ -95,13 +97,13 @@ function statusTone(status: string) {
 }
 
 export default async function CommandCenterPage() {
-  const [dbDataResult, llmUsageResult, allRunsResult, ingestionSummaryResult] =
-    await Promise.allSettled([
-      loadCommandCenterDatabaseSummary(),
-      loadLlmUsageMonitorData(),
-      loadAllUnifiedPipelineRuns(),
-      loadCommandCenterIngestionSummary(),
-    ]);
+  // Give canonical inventory reads priority over optional usage and run telemetry.
+  const [dbDataResult] = await Promise.allSettled([loadCommandCenterDatabaseSummary()]);
+  const [llmUsageResult, allRunsResult, ingestionSummaryResult] = await Promise.allSettled([
+    loadLlmUsageMonitorData(),
+    loadAllUnifiedPipelineRuns(),
+    loadCommandCenterIngestionSummary(),
+  ]);
 
   const dbData = dbDataResult.status === 'fulfilled' ? dbDataResult.value : FALLBACK_DB_DATA;
   const llmUsage =
@@ -113,16 +115,21 @@ export default async function CommandCenterPage() {
       : FALLBACK_INGESTION_SUMMARY;
 
   const { summary, topBlockedReason } = dbData;
+  const inventoryAvailable = dbDataResult.status === 'fulfilled';
+  const activePhoneCount = inventoryAvailable
+    ? summary.totalActivePhones
+    : ingestionSummaryResult.status === 'fulfilled'
+      ? ingestionSummary.totalActivePhones
+      : null;
+  const telemetryPartial =
+    !inventoryAvailable ||
+    llmUsageResult.status === 'rejected' ||
+    allRunsResult.status === 'rejected' ||
+    ingestionSummaryResult.status === 'rejected' ||
+    llmUsage.googleQuota.status !== 'ok';
   const recentRuns = allRuns.slice(0, 6);
 
-  const dailyRemaining =
-    llmUsage.googleQuota.status === 'ok' && llmUsage.googleQuota.rows.length > 0
-      ? llmUsage.googleQuota.rows.reduce(
-          (sum, r) =>
-            r.unit === 'day' && typeof r.remaining === 'number' ? sum + r.remaining : sum,
-          0,
-        )
-      : llmUsage.localQuota.remainingCallsToday;
+  const dailyRemaining = summarizeVerifiedDailyQuota(llmUsage.googleQuota).remaining;
 
   return (
     <main className="px-grid-margin min-w-0 flex-1 py-10">
@@ -140,7 +147,7 @@ export default async function CommandCenterPage() {
         <div className="flex items-center gap-4">
           <div className="text-primary inline-flex items-center gap-2 font-mono text-xs tracking-[0.14em] uppercase">
             <span className="status-dot text-accent" data-state="running" />
-            System Status: Operational
+            Telemetry: {telemetryPartial ? 'Partial' : 'Available'}
           </div>
           <span className="border-outline-variant text-muted-foreground border px-2.5 py-1 font-mono text-xs">
             v2.0.4
@@ -148,12 +155,19 @@ export default async function CommandCenterPage() {
         </div>
       </header>
 
+      {!inventoryAvailable ? (
+        <p role="alert" className="mt-4 border border-[#ff9f1c]/30 p-3 text-sm text-[#ff9f1c]">
+          Catalog summary unavailable. Candidate totals are unknown; active-phone counts use
+          verified ingestion data when available.
+        </p>
+      ) : null}
+
       {/* Top High-Level Metrics */}
       <section className="border-outline-variant bg-outline-variant mt-10 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
         <div className="bg-background relative overflow-hidden p-6">
           <p className="meta-label">Phones active</p>
           <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
-            {summary.totalActivePhones.toLocaleString('en-US')}
+            {activePhoneCount === null ? 'Unknown' : activePhoneCount.toLocaleString('en-US')}
           </p>
           <p className="text-muted-foreground mt-2 text-sm">Promoted canonical catalog devices</p>
           <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
@@ -171,11 +185,12 @@ export default async function CommandCenterPage() {
             ) : null}
           </div>
           <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
-            {summary.totalCandidates.toLocaleString('en-US')}
+            {inventoryAvailable ? summary.totalCandidates.toLocaleString('en-US') : 'Unknown'}
           </p>
           <p className="text-muted-foreground mt-2 text-sm">
-            {summary.pendingCount} pending, {summary.queuedCount} queued, {summary.blockedCount}{' '}
-            blocked
+            {inventoryAvailable
+              ? `${summary.pendingCount} pending, ${summary.queuedCount} queued, ${summary.blockedCount} blocked`
+              : 'Catalog query unavailable'}
           </p>
           <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
             &#123;&#125;
@@ -183,9 +198,9 @@ export default async function CommandCenterPage() {
         </div>
 
         <div className="bg-background relative overflow-hidden p-6">
-          <p className="meta-label">Free Gemini left today</p>
+          <p className="meta-label">Verified Gemini quota left</p>
           <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold text-[#39ff88]">
-            {dailyRemaining.toLocaleString('en-US')}
+            {dailyRemaining === null ? 'Unknown' : dailyRemaining.toLocaleString('en-US')}
           </p>
           <p className="text-muted-foreground mt-2 text-sm">
             {llmUsage.configuredKeyCount} active{' '}
@@ -299,17 +314,21 @@ export default async function CommandCenterPage() {
                   <Database className="size-5" aria-hidden />
                 </span>
                 <span className="text-muted-foreground font-mono text-[11px] uppercase">
-                  {summary.totalCandidates} records
+                  {inventoryAvailable
+                    ? `${summary.totalCandidates} records`
+                    : 'Record count unavailable'}
                 </span>
               </div>
               <h2 className="text-primary font-display group-hover:text-accent mt-5 text-2xl font-bold uppercase transition-colors">
                 Database Dashboard
               </h2>
               <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                Dual-perspective database observatory: catalog candidate promotion (
-                {summary.promotedCount} promoted, {summary.blockedCount} blocked) and phone
-                ingestion readiness ({ingestionSummary.completedCount}/
-                {ingestionSummary.totalActivePhones} ingested).
+                {inventoryAvailable
+                  ? `${summary.promotedCount} promoted, ${summary.blockedCount} blocked.`
+                  : 'Catalog summary unavailable.'}{' '}
+                {ingestionSummaryResult.status === 'fulfilled'
+                  ? `${ingestionSummary.completedCount}/${ingestionSummary.totalActivePhones} phones ingested.`
+                  : 'Ingestion summary unavailable.'}
               </p>
               {summary.blockedCount > 0 ? (
                 <div className="mt-4 border border-[#ff3b30]/30 bg-[#ff3b30]/5 p-2.5 text-xs">

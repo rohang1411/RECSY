@@ -8,7 +8,7 @@
  * Retry policy: schema-violating structured outputs are retried once with an
  * error-feedback message appended, as specified in `LlmProvider.structured`.
  *
- * Optional backup API keys (`GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, `GEMINI_API_KEY_4`)
+ * Optional backup API keys (numbered slots 2-6 and `GEMINI_API_KEYS_EXTRA`)
  * and client-side pacing
  * (`GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free`) support Google AI Studio
  * free-tier style caps; authoritative limits remain on Google's side.
@@ -35,16 +35,19 @@ import {
   isLikelyGeminiQuotaExhaustedError,
 } from './gemini-request-governor';
 import { recordLlmUsageEvent } from './usage';
+import { getConfiguredGeminiKeys } from './gemini-keys';
 import type {
   ChatDelta,
   ChatInput,
   ChatResult,
   EmbedResult,
+  EmbedOptions,
   LlmProvider,
   LlmUsageContext,
   StructuredInput,
   StructuredResult,
 } from './types';
+import { ProviderRequestBudget, type ProviderBudgetOptions } from './request-budget';
 
 /**
  * Output dimensionality for `gemini-embedding-001` (Matryoshka truncation).
@@ -88,6 +91,7 @@ function briefStructuredFailure(err: unknown, max = 500): string {
  * call wastes quota and surfaces misleading "validation twice" messages.
  */
 function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
+  if (err instanceof LlmError && err.message.includes('Evaluation provider budget')) return true;
   if (err instanceof APICallError) return true;
   if (err instanceof Error && err.name === 'AI_APICallError') return true;
   if (err instanceof Error && err.name === 'AI_RetryError') return true;
@@ -100,15 +104,26 @@ export class GeminiProvider implements LlmProvider {
   private readonly clients: readonly GoogleGenAI[];
   private readonly governor: GeminiRequestGovernor | null;
   private preferredKeyIndex = 0;
+  readonly evaluationBudget?: ProviderRequestBudget;
+  private readonly maxRetries: number;
+  private readonly timeoutMs: number;
 
-  constructor() {
-    const keys = [
-      env.GEMINI_API_KEY,
-      env.GEMINI_API_KEY_2,
-      env.GEMINI_API_KEY_3,
-      env.GEMINI_API_KEY_4,
-    ].filter((k): k is string => typeof k === 'string' && k.length > 0);
-    this.clients = keys.map((apiKey) => createGoogleGenerativeAI({ apiKey }));
+  constructor(options?: {
+    budget?: ProviderBudgetOptions;
+    maxKeys?: number;
+    maxRetries?: number;
+    timeoutMs?: number;
+  }) {
+    this.evaluationBudget = options?.budget ? new ProviderRequestBudget(options.budget) : undefined;
+    this.maxRetries = options?.maxRetries ?? 2;
+    this.timeoutMs = options?.timeoutMs ?? 45_000;
+    const keys = getConfiguredGeminiKeys(env).map((key) => key.apiKey);
+    this.clients = keys.slice(0, options?.maxKeys ?? keys.length).map((apiKey) =>
+      createGoogleGenerativeAI({
+        apiKey,
+        ...(this.evaluationBudget ? { fetch: this.evaluationBudget.fetch } : {}),
+      }),
+    );
     this.governor =
       env.GEMINI_RATE_LIMIT_PROFILE === 'google_ai_studio_free'
         ? new GeminiRequestGovernor(this.clients.length, {
@@ -161,6 +176,8 @@ export class GeminiProvider implements LlmProvider {
         return { value, inputTokens, outputTokens, keyIndex };
       } catch (err) {
         lastErr = err;
+        // Preserve the actual 429 cause; do not replace it with a later budget error.
+        if (this.evaluationBudget?.snapshot().quotaStopped) throw err;
         if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
           continue;
         }
@@ -204,7 +221,8 @@ export class GeminiProvider implements LlmProvider {
             messages: toModelMessages(input.messages),
             temperature: input.temperature,
             maxOutputTokens: input.maxOutputTokens,
-            abortSignal: input.signal,
+            abortSignal: this.requestSignal(input.signal),
+            maxRetries: this.maxRetries,
           });
           return {
             value: {
@@ -247,7 +265,8 @@ export class GeminiProvider implements LlmProvider {
       messages: toModelMessages(input.messages),
       temperature: input.temperature,
       maxOutputTokens: input.maxOutputTokens,
-      abortSignal: input.signal,
+      abortSignal: this.requestSignal(input.signal),
+      maxRetries: this.maxRetries,
     });
 
     try {
@@ -320,7 +339,8 @@ export class GeminiProvider implements LlmProvider {
             schemaDescription: input.schemaDescription,
             temperature: input.temperature ?? 0,
             maxOutputTokens: input.maxOutputTokens,
-            abortSignal: input.signal,
+            abortSignal: this.requestSignal(input.signal),
+            maxRetries: this.maxRetries,
             providerOptions: {
               google: {
                 thinkingConfig: {
@@ -392,7 +412,6 @@ export class GeminiProvider implements LlmProvider {
         console.error('--- GEMINI VALIDATION ERROR ---');
         console.error('First Attempt:', briefStructuredFailure(lastError));
         console.error('Second Attempt:', briefStructuredFailure(retryErr));
-        console.error('Raw Retry Error:', retryErr);
         console.error('--------------------------------');
         throw new LlmSchemaViolation(
           'Gemini structured output failed validation twice',
@@ -413,12 +432,13 @@ export class GeminiProvider implements LlmProvider {
     texts: readonly string[],
     model?: string,
     usageContext?: LlmUsageContext,
+    options?: EmbedOptions,
   ): Promise<EmbedResult> {
     const embedModel = model ?? env.LLM_EMBEDDING_MODEL;
     const startedAt = performance.now();
     const googleOptions: { outputDimensionality: number; taskType: string } = {
       outputDimensionality: EMBEDDING_DIMENSIONS,
-      taskType: 'RETRIEVAL_DOCUMENT',
+      taskType: options?.taskType ?? 'RETRIEVAL_DOCUMENT',
     };
     try {
       const { value, inputTokens, keyIndex } = await this.executeWithGeminiKeys({
@@ -428,6 +448,8 @@ export class GeminiProvider implements LlmProvider {
           const result = await embedMany({
             model: google.embedding(embedModel),
             values: [...texts],
+            maxRetries: this.maxRetries,
+            abortSignal: this.requestSignal(options?.signal),
             providerOptions: { google: googleOptions },
           });
           const tokensIn = result.usage?.tokens ?? 0;
@@ -461,6 +483,11 @@ export class GeminiProvider implements LlmProvider {
         err,
       );
     }
+  }
+
+  private requestSignal(signal?: AbortSignal): AbortSignal {
+    const deadline = AbortSignal.timeout(this.timeoutMs);
+    return signal ? AbortSignal.any([signal, deadline]) : deadline;
   }
 
   private recordUsage(input: {

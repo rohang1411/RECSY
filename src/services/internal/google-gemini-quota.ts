@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createSign } from 'node:crypto';
 
 import { env } from '@/env';
+import { getConfiguredGeminiKeys } from '@/services/llm/gemini-keys';
 
 type ServiceAccount = {
   readonly client_email: string;
@@ -66,21 +67,13 @@ let quotaCache: { readonly result: GeminiQuotaFetchResult; readonly expiresAtMs:
   null;
 
 export function getConfiguredGeminiQuotaProjects(): readonly GeminiQuotaProject[] {
-  return (env.GOOGLE_CLOUD_QUOTA_PROJECT_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((projectId, index) => ({ projectId, apiKeyIndex: index }));
+  return getConfiguredGeminiKeys(env).flatMap((key) =>
+    key.projectId ? [{ projectId: key.projectId, apiKeyIndex: key.apiKeyIndex }] : [],
+  );
 }
 
 export function getConfiguredGeminiKeyCount(): number {
-  return [
-    env.GEMINI_API_KEY,
-    env.GEMINI_API_KEY_2,
-    env.GEMINI_API_KEY_3,
-    env.GEMINI_API_KEY_4,
-  ].filter((value) => typeof value === 'string' && value.length > 0).length;
+  return getConfiguredGeminiKeys(env).length;
 }
 
 export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResult> {

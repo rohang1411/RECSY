@@ -41,7 +41,7 @@ Rules:
 - budget_local: { min?: number, max: number, currency: "${currency}" }
 - budget_usd: Set this only if the user explicitly mentions USD or dollars.
 - priorities: up to 7 entries, one per aspect you can infer. Use these exact lowercase slugs: camera, battery, performance, display, build, software, value. Weights may be 0–1 or 0–100 (relative); they are renormalised to sum to 1.
-- must_haves: concrete requirements (e.g. "wireless charging", "3.5mm jack").
+- must_haves: explicitly mandatory concrete requirements (e.g. "wireless charging", "3.5mm jack"). Do not turn optional preferences such as "nice to have", "ideally", or "a bonus" into mandatory constraints; put them in priorities or use_cases.
 - deal_breakers: things that disqualify a phone for this user.
 - use_cases: short phrases (e.g. "travel photos", "gaming", "one-handed use").
 - form_factor: foldable true only if they want a foldable. If they give a screen size range in inches, use screen_size_min_in and screen_size_max_in (two numbers, not an array). weight_max_g only if stated.

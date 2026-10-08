@@ -47,7 +47,7 @@ async function main(): Promise<void> {
       console.error(`[scorecard:run] phone not active: ${slug}`);
       process.exit(1);
     }
-    const { updated, failed } = await runScorecardForPhone({
+    const { updated, failed, skipped } = await runScorecardForPhone({
       phoneId: phone.id,
       brand: phone.brand,
       model: phone.model,
@@ -56,7 +56,10 @@ async function main(): Promise<void> {
       llm,
       log,
     });
-    if (updated === 0) {
+    if (skipped > 0 && failed === 0 && updated === 0) {
+      await markScorecardComplete(db, { phoneId: phone.id });
+      console.log(`[scorecard:run] ${slug}: ${skipped} aspects skipped; no LLM extraction needed`);
+    } else if (updated === 0) {
       console.warn(
         `[scorecard:run] ${failed} aspect(s) failed, 0 updated for ${slug}. If you see 429/quota in logs, add GEMINI_API_KEY_2 / GEMINI_API_KEY_3 / GEMINI_API_KEY_4, set GEMINI_RATE_LIMIT_PROFILE=google_ai_studio_free, or raise limits / billing on Google AI Studio.`,
       );
@@ -80,7 +83,7 @@ async function main(): Promise<void> {
 
   for (const p of active) {
     log.info({ slug: p.slug }, 'scoring phone');
-    const { updated } = await runScorecardForPhone({
+    const { updated, skipped, failed } = await runScorecardForPhone({
       phoneId: p.id,
       brand: p.brand,
       model: p.model,
@@ -89,10 +92,12 @@ async function main(): Promise<void> {
       llm,
       log,
     });
-    if (updated > 0) {
+    if (updated + skipped > 0 && failed === 0) {
       await markScorecardComplete(db, { phoneId: p.id });
     }
-    console.log(`[scorecard:run] ${p.slug}: ${updated} aspects`);
+    console.log(
+      `[scorecard:run] ${p.slug}: ${updated} updated, ${skipped} skipped, ${failed} failed`,
+    );
   }
 
   console.log(`[scorecard:run] OK — ${active.length} phones`);

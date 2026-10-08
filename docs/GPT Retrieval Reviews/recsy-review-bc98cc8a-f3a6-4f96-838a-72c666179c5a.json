@@ -1,0 +1,75 @@
+{
+  "reviewVersion": 2,
+  "runId": "bc98cc8a-f3a6-4f96-838a-72c666179c5a",
+  "resultSha256": "03326907755ea4742beed8744cacc18a1c146e49c20cf0e490e3b14fd099c11e",
+  "corpusSha256": "c7afadf0f9630da7db97211a4458a6b7fbd882ded3d6b89092adb22ad9c605b2",
+  "reviewer": "rs-1",
+  "reviewedAt": "2026-10-07T19:20:44.085Z",
+  "questions": [
+    {
+      "caseId": "sp01",
+      "answerability": "answerable",
+      "candidateFactsValid": "yes",
+      "notes": "Supporting ID: 023ad845-9708-4623-a995-a3302fa43a0d (WIRED).\n\nVerification: The excerpt confirms that Apple brought Audio Mix to the iPhone 16. It explicitly states that Studio mode cuts out all background noise to make the subject sound like they are in a studio, while Cinematic mode focuses on people in the center of the frame and retains background chatter as ambient noise. The candidate facts and device attribution are factually accurate."
+    },
+    {
+      "caseId": "sp02",
+      "answerability": "answerable",
+      "candidateFactsValid": "yes",
+      "notes": "Supporting ID: 05e4c01a-fb43-4cce-8e9f-7134d9c1fd8f (TechRadar).\n\nVerification: The excerpt states that the iPhone 16 Pro weighs 199g compared to the iPhone 15 Pro at 187g (a 12g increase). It identifies the taller and wider body dimensions, the upgrade to the 12MP 5x tetraprism zoom camera lens, and a larger battery as the factors driving the weight increase. All claims and phone attributions are exact."
+    },
+    {
+      "caseId": "sp03",
+      "answerability": "answerable",
+      "candidateFactsValid": "no",
+      "notes": "Supporting ID: 009cb791-fe0a-46f9-a902-853fb27a97e8 (WIRED).\n\nVerification: The excerpt documents specific transcription errors on addresses/street names (\"1812 Atlantic\" became \"18 Club\"; \"Nostrand Avenue\" became \"Nordstrom Avenue\"). It verifies that the user must manually turn on the feature during each call, that it injects an audio warning announcing that the call is being recorded, and that the user can listen to the audio playback or review the full transcript afterward. Candidate facts are accurate."
+    },
+    {
+      "caseId": "sp04",
+      "answerability": "answerable",
+      "candidateFactsValid": "yes",
+      "notes": "Supporting ID: 11cd6717-84cc-4722-80b1-7eccd4de1b48 (TechRadar).\n\nVerification: The reviewer notes that they assumed Video Boost was active by default but found it is not. The excerpt explains that it is located under a special video settings menu accessible only when the camera is actively in video mode. Both facts and attribution are verified."
+    },
+    {
+      "caseId": "sp05",
+      "answerability": "answerable",
+      "candidateFactsValid": "yes",
+      "notes": "Supporting ID: 0289f38b-d9b2-47aa-b88b-d1fafb763f59 (Tom's Guide).\n\nVerification: The review states that the OnePlus 13 supports 100W charging in most markets and 80W in the U.S. due to voltage differences. Test measurements recorded 56% battery at 15 minutes and 92% at 30 minutes using an 80W brick. Both facts are accurate."
+    },
+    {
+      "caseId": "sp06",
+      "answerability": "answerable",
+      "candidateFactsValid": "yes",
+      "notes": "Supporting ID: 05c30b20-0e9f-4209-af8d-55de97bffc18 (TechRadar).\n\nVerification: The excerpt specifies a \"40%-larger vapor chamber\" and states that it is paired with a new Thermal Interface Material (TIM) covering the CPU, which is then covered by the vapor chamber. The candidate facts and phone attribution are fully verified."
+    }
+  ],
+  "answers": [
+    {
+      "blindId": "A-504cddab-692b-4f47-b33f-24613de78d08",
+      "allClaimsSupported": "no",
+      "allClaimsFactuallyCorrect": "yes",
+      "complete": "yes",
+      "citationsCorrect": "no",
+      "phoneAttributionCorrect": "yes",
+      "notes": "Citation/support issue: The core Studio-vs.-Cinematic distinction is fully supported. ID 023ad845-9708-4623-a995-a3302fa43a0d supports Studio reducing background noise and Cinematic focusing on people in the center while retaining background ambience; ID edd5b2a9-abf4-4e60-a056-3a8059b93677 supports Cinematic placing speaking voices in front channels and environmental audio in surround.  \nHowever, ID e8eb561d-a15b-476e-bd52-7273cce7b719 describes Audio Mix generally suppressing background noise and enhancing the speaker's voice; it does not specifically attribute that behavior to Studio Mode. Also, ID 2353aeb8-5bb6-4593-97e0-e6a46f8e6b51 establishes slider customization on the iPhone 16 Plus, not directly the base iPhone 16. The latter statement is factually correct based on Apple's documentation, but the frozen citation supplied with the answer does not establish the exact phone attribution. No core answer content is missing."
+    },
+    {
+      "blindId": "A-e10a855b-2877-4cc4-a346-fc7a9eb951a6",
+      "allClaimsSupported": "no",
+      "allClaimsFactuallyCorrect": "no",
+      "complete": "no",
+      "citationsCorrect": "no",
+      "phoneAttributionCorrect": "yes",
+      "notes": "The statement that reviews have not been collected is contradicted by the supplied retrieval context, which contains multiple iPhone 16 review excerpts. In particular, ID 023ad845-9708-4623-a995-a3302fa43a0d directly answers the question."
+    },
+    {
+      "blindId": "A-25af1e97-ef7a-44f3-b864-ef325cc6a17e",
+      "allClaimsSupported": "yes",
+      "allClaimsFactuallyCorrect": "yes",
+      "complete": "no",
+      "citationsCorrect": "yes",
+      "phoneAttributionCorrect": "yes",
+      "notes": "Omission: No substantive answer was produced because execution failed. The question was answerable from frozen evidence, most directly ID 023ad845-9708-4623-a995-a3302fa43a0d.\n\nBecause the response contains no substantive product claims or citations, there are no unsupported/factually incorrect claims, incorrect citations, or phone-attribution errors to identify; however, the answer is entirely incomplete."
+    }
+  ]
+}

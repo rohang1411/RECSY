@@ -27,6 +27,7 @@ import { enforceSourceCoverage } from './coverage';
 import { llmRerankChunkOrder, mergeLlmHeadWithMmrTail } from './llm-rerank';
 import { mmrRerank } from './mmr';
 import { reciprocalRankFusion } from './rrf';
+import { quarantinedChunkIds } from './source-quality';
 import type {
   RetrievalDebug,
   RetrievalOptions,
@@ -56,10 +57,10 @@ export interface HybridSearchInput extends Omit<RetrievalRequest, 'k' | 'queryEm
 }
 
 const QUERY_EMBEDDING_CACHE_MAX = 128;
-const queryEmbeddingCache = new Map<string, Promise<readonly number[]>>();
+let providerEmbeddingCaches = new WeakMap<LlmProvider, Map<string, Promise<readonly number[]>>>();
 
 export function resetHybridRetrieverQueryEmbeddingCache(): void {
-  queryEmbeddingCache.clear();
+  providerEmbeddingCaches = new WeakMap();
 }
 
 export class HybridRetriever {
@@ -81,39 +82,83 @@ export class HybridRetriever {
 
     // Step 1: embed the query. Done up-front so vector + FTS can run in
     // parallel with the same input object.
+    const embeddingStart = performance.now();
     const queryEmbedding = await this.embedQuery(query);
+    const embeddingMs = performance.now() - embeddingStart;
 
     // Step 2: parallel vector + FTS.
-    const vectorStart = performance.now();
-    const ftsStart = performance.now();
-    const [vectorChunks, ftsChunks] = await Promise.all([
-      this.deps.vector
-        .search({
-          phoneId,
-          query,
-          k: opts.kPerRetriever,
-          queryEmbedding,
-        })
-        .catch((err) => {
-          log.warn({ err: toAppError(err).message }, 'vector retriever failed');
-          return [] as readonly RetrievedChunk[];
-        }),
-      this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever }).catch((err) => {
-        log.warn({ err: toAppError(err).message }, 'fts retriever failed');
-        return [] as readonly RetrievedChunk[];
-      }),
+    const [vectorResult, ftsResult] = await Promise.all([
+      (async () => {
+        const stageStart = performance.now();
+        try {
+          const chunks = await this.deps.vector.search({
+            phoneId,
+            query,
+            k: opts.kPerRetriever,
+            queryEmbedding,
+          });
+          return {
+            chunks,
+            ms: performance.now() - stageStart,
+            error: undefined as string | undefined,
+          };
+        } catch (err) {
+          const error = toAppError(err).message;
+          log.warn({ err: error }, 'vector retriever failed');
+          return {
+            chunks: [] as readonly RetrievedChunk[],
+            ms: performance.now() - stageStart,
+            error,
+          };
+        }
+      })(),
+      (async () => {
+        const stageStart = performance.now();
+        try {
+          const chunks = await this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever });
+          return {
+            chunks,
+            ms: performance.now() - stageStart,
+            error: undefined as string | undefined,
+          };
+        } catch (err) {
+          const error = toAppError(err).message;
+          log.warn({ err: error }, 'fts retriever failed');
+          return {
+            chunks: [] as readonly RetrievedChunk[],
+            ms: performance.now() - stageStart,
+            error,
+          };
+        }
+      })(),
     ]);
-
-    const vectorMs = performance.now() - vectorStart;
-    const ftsMs = performance.now() - ftsStart;
+    const qualityStart = performance.now();
+    const excludedChunkIds = [
+      ...new Set(
+        [...vectorResult.chunks, ...ftsResult.chunks]
+          .filter((chunk) => quarantinedChunkIds.has(chunk.chunkId))
+          .map((chunk) => chunk.chunkId),
+      ),
+    ];
+    const vectorChunks = vectorResult.chunks.filter(
+      (chunk) => !quarantinedChunkIds.has(chunk.chunkId),
+    );
+    const ftsChunks = ftsResult.chunks.filter((chunk) => !quarantinedChunkIds.has(chunk.chunkId));
+    const sourceQuality = { ms: performance.now() - qualityStart, excludedChunkIds };
+    const vectorMs = vectorResult.ms;
+    const ftsMs = ftsResult.ms;
 
     if (vectorChunks.length === 0 && ftsChunks.length === 0) {
       log.info({ query }, 'hybrid retrieval returned no candidates');
       return buildResult({
+        sourceQuality,
         phoneId,
         query,
+        embeddingMs,
         vectorMs,
         ftsMs,
+        vectorError: vectorResult.error,
+        ftsError: ftsResult.error,
         vectorCount: 0,
         ftsCount: 0,
         final: [],
@@ -190,10 +235,16 @@ export class HybridRetriever {
     });
 
     const result = buildResult({
+      sourceQuality,
+      rrfCount: fused.length,
+      mmrCount: mmrRanked.length,
       phoneId,
       query,
+      embeddingMs,
       vectorMs,
       ftsMs,
+      vectorError: vectorResult.error,
+      ftsError: ftsResult.error,
       rrfMs,
       mmrMs,
       vectorCount: vectorChunks.length,
@@ -220,16 +271,26 @@ export class HybridRetriever {
 
   private async embedQuery(query: string): Promise<readonly number[]> {
     const { llm, embeddingModel } = this.deps;
-    const key = `${embeddingModel ?? 'default'}\0${query}`;
+    let queryEmbeddingCache = providerEmbeddingCaches.get(llm);
+    if (!queryEmbeddingCache) {
+      queryEmbeddingCache = new Map();
+      providerEmbeddingCaches.set(llm, queryEmbeddingCache);
+    }
+    const key = `${embeddingModel ?? 'default'}\0RETRIEVAL_QUERY\0${query}`;
     let cached = queryEmbeddingCache.get(key);
 
     if (!cached) {
       cached = llm
-        .embed([query], embeddingModel, {
-          area: 'Retrieval',
-          feature: 'Query embedding',
-          source: 'HybridRetriever',
-        })
+        .embed(
+          [query],
+          embeddingModel,
+          {
+            area: 'Retrieval',
+            feature: 'Query embedding',
+            source: 'HybridRetriever',
+          },
+          { taskType: 'RETRIEVAL_QUERY' },
+        )
         .then(({ embeddings }) => {
           const vec = embeddings[0];
           if (!vec || vec.length === 0) {
@@ -241,14 +302,18 @@ export class HybridRetriever {
           queryEmbeddingCache.delete(key);
           throw err;
         });
-      rememberQueryEmbedding(key, cached);
+      rememberQueryEmbedding(queryEmbeddingCache, key, cached);
     }
 
     return cached;
   }
 }
 
-function rememberQueryEmbedding(key: string, value: Promise<readonly number[]>): void {
+function rememberQueryEmbedding(
+  queryEmbeddingCache: Map<string, Promise<readonly number[]>>,
+  key: string,
+  value: Promise<readonly number[]>,
+): void {
   if (queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
     const oldest = queryEmbeddingCache.keys().next().value;
     if (oldest !== undefined) queryEmbeddingCache.delete(oldest);
@@ -264,10 +329,16 @@ function resolveOptions(partial: RetrievalOptions | undefined): Required<Retriev
 }
 
 interface BuildResultArgs {
+  readonly sourceQuality?: RetrievalDebug['sourceQuality'];
+  readonly rrfCount?: number;
+  readonly mmrCount?: number;
   readonly phoneId: string;
   readonly query: string;
+  readonly embeddingMs: number;
   readonly vectorMs: number;
   readonly ftsMs: number;
+  readonly vectorError?: string;
+  readonly ftsError?: string;
   readonly rrfMs?: number;
   readonly mmrMs?: number;
   readonly vectorCount: number;
@@ -285,10 +356,20 @@ function buildResult(args: BuildResultArgs): RetrievalResult {
     debug: {
       phoneId: args.phoneId,
       query: args.query,
-      vector: { count: args.vectorCount, ms: args.vectorMs },
-      fts: { count: args.ftsCount, ms: args.ftsMs },
-      rrf: { count: args.final.length, ms: args.rrfMs ?? 0 },
-      mmr: { count: args.final.length, ms: args.mmrMs ?? 0 },
+      embedding: { ms: args.embeddingMs },
+      ...(args.sourceQuality ? { sourceQuality: args.sourceQuality } : {}),
+      vector: {
+        count: args.vectorCount,
+        ms: args.vectorMs,
+        ...(args.vectorError ? { error: args.vectorError } : {}),
+      },
+      fts: {
+        count: args.ftsCount,
+        ms: args.ftsMs,
+        ...(args.ftsError ? { error: args.ftsError } : {}),
+      },
+      rrf: { count: args.rrfCount ?? args.final.length, ms: args.rrfMs ?? 0 },
+      mmr: { count: args.mmrCount ?? args.final.length, ms: args.mmrMs ?? 0 },
       coverage: { sourceCount: args.sourceCount, relaxed: args.relaxed },
       ...(args.llmRerank !== undefined ? { llmRerank: args.llmRerank } : {}),
       totalMs: performance.now() - args.start,

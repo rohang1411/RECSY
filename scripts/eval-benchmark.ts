@@ -2,45 +2,50 @@
 /**
  * CLI Evaluation Benchmark Runner: `pnpm eval:benchmark`.
  *
- * Runs offline Recommender ranking and Stanford ALCE attribution benchmarks,
- * printing rigorous statistical summaries (NDCG, ILD, CSR, CitePrec, CI95) to terminal.
+ * Runs bounded component evaluations and prints their measured, labeled summaries.
  */
 import { getDb } from '@/services/db/client';
 import { executeBenchmarkSuite } from '@/services/eval/orchestrator';
 
 async function main(): Promise<void> {
   console.log('\n======================================================');
-  console.log('RECSY v2 — Scientific System Evaluation Benchmark');
+  console.log('RECSY v2 — Evaluation Runner');
   console.log('======================================================\n');
 
   const db = getDb();
 
   const args = process.argv.slice(2);
-  const suiteArg =
-    args.find((a) => a.startsWith('--suite=') || a === '--suite')?.split('=')[1] ?? 'recsys';
-  const sampleArg =
-    args.find((a) => a.startsWith('--sample=') || a === '--sample')?.split('=')[1] ?? 'full';
+  const suiteArg = args.find((a) => a.startsWith('--suite='))?.split('=')[1] ?? 'recsys';
+  const sampleArg = args.find((a) => a.startsWith('--sample='))?.split('=')[1] ?? 'full';
+  const trackArg = args.find((a) => a.startsWith('--track='))?.split('=')[1] ?? 'stub';
+  const vusArg = args.find((a) => a.startsWith('--vus='))?.split('=')[1];
+  const totalArg = args.find((a) => a.startsWith('--total='))?.split('=')[1];
+  if (!['recsys', 'rag', 'multi-turn', 'all', 'load-stress'].includes(suiteArg))
+    throw new Error(`Unknown suite: ${suiteArg}`);
+  if (!['quick', 'full'].includes(sampleArg)) throw new Error(`Unknown sample: ${sampleArg}`);
+  if (!['stub', 'live'].includes(trackArg)) throw new Error(`Unknown track: ${trackArg}`);
+  const concurrencyVus = vusArg == null ? 1 : Number(vusArg);
+  const totalRequests = totalArg == null ? undefined : Number(totalArg);
+  if (!Number.isInteger(concurrencyVus) || concurrencyVus < 1 || concurrencyVus > 100)
+    throw new Error('--vus must be an integer from 1 to 100');
+  if (
+    totalRequests !== undefined &&
+    (!Number.isInteger(totalRequests) || totalRequests < 1 || totalRequests > 10000)
+  )
+    throw new Error('--total must be an integer from 1 to 10000');
 
-  const suite = (
-    ['recsys', 'rag', 'multi-turn', 'all'].includes(suiteArg) ? suiteArg : 'recsys'
-  ) as 'recsys' | 'rag' | 'multi-turn' | 'all';
+  const suite = suiteArg as 'recsys' | 'rag' | 'multi-turn' | 'all' | 'load-stress';
   const sampleScale = (sampleArg === 'quick' ? 'quick' : 'full') as 'quick' | 'full';
 
-  const tier =
-    suite === 'rag'
-      ? 'RAG_ALCE'
-      : suite === 'multi-turn'
-        ? 'MULTI_TURN_CRS'
-        : suite === 'all'
-          ? 'L3_MACRO_LLM'
-          : 'OFFLINE_RECSYS';
-
-  console.log(`[eval:benchmark] Starting benchmark suite: "${suite}" (sample: ${sampleScale})...`);
+  console.log(
+    `[eval:benchmark] Suite=${suite} sample=${sampleScale} provider=${trackArg}. Stub results are development checks, not live-model evidence.`,
+  );
   const run = await executeBenchmarkSuite({
     db,
     suite,
-    tier,
-    concurrencyVus: 1,
+    providerTrack: trackArg as 'stub' | 'live',
+    concurrencyVus,
+    totalRequests,
     sampleScale,
     onProgress: (p) => {
       process.stdout.write(
@@ -50,17 +55,17 @@ async function main(): Promise<void> {
   });
 
   console.log('\n\n------------------------------------------------------');
-  console.log('PRIMARY EVALUATION RESULTS (95% Bootstrap CIs):');
+  console.log('COMPONENT RESULTS (development fixtures; not product quality):');
   console.log('------------------------------------------------------');
   const m = run.metricsSummary;
 
   if (m?.ndcg3) {
     console.log(
-      `Recommender NDCG@3:    ${m.ndcg3.mean.toFixed(3)} ± ${((m.ndcg3.ci95[1] - m.ndcg3.ci95[0]) / 2).toFixed(3)}  (CI95: [${m.ndcg3.ci95[0]}, ${m.ndcg3.ci95[1]}])`,
+      `Ranker MAUT agreement NDCG@3: ${m.ndcg3.mean.toFixed(3)} (n=${m.ndcg3.sampleSize}; self-derived labels)`,
     );
   }
   if (m?.mrr != null) {
-    console.log(`Mean Reciprocal Rank:  ${m.mrr.toFixed(3)}`);
+    console.log(`Self-derived MAUT MRR: ${m.mrr.toFixed(3)}`);
   }
   if (m?.ild3) {
     console.log(
@@ -71,28 +76,42 @@ async function main(): Promise<void> {
     console.log(`Catalog Coverage:      ${(m.catalogCoverage * 100).toFixed(1)}%`);
   }
   if (m?.giniCoefficient != null) {
-    console.log(`Catalog Gini Index:    ${m.giniCoefficient.toFixed(3)}  (Target: <= 0.380)`);
+    console.log(`Catalog Gini Index:    ${m.giniCoefficient.toFixed(3)}`);
   }
   if (m?.budgetCsr != null) {
-    console.log(`Budget Policy CSR:     ${(m.budgetCsr * 100).toFixed(1)}%  (Zero Tolerance)`);
+    console.log(
+      `Budget Policy Checks:  ${(m.budgetCsr * 100).toFixed(1)}% (n=${m.constraintPolicyCases ?? 'unrecorded'})`,
+    );
   }
   if (m?.dealbreakerCsr != null) {
-    console.log(`Dealbreaker Leakage:   ${((1 - m.dealbreakerCsr) * 100).toFixed(2)}%`);
+    console.log(
+      `Dealbreaker/answerable-empty checks: ${(m.dealbreakerCsr * 100).toFixed(1)}% (n=${m.constraintPolicyCases ?? 'unrecorded'})`,
+    );
+  }
+  if (m?.noResultPolicyCases) {
+    console.log(
+      `Expected no-result policy: ${m.noResultPolicyPassed ?? 0}/${m.noResultPolicyCases} cases`,
+    );
   }
 
-  // RAG / ALCE Attribution Metrics
+  // Q&A mechanical citation proxies
   if (m?.citePrec) {
     console.log(
-      `Citation Precision:    ${(m.citePrec.mean * 100).toFixed(1)}% ± ${(((m.citePrec.ci95[1] - m.citePrec.ci95[0]) / 2) * 100).toFixed(1)}% (CI95: [${m.citePrec.ci95[0]}, ${m.citePrec.ci95[1]}])`,
+      `Lexical citation support proxy: ${(m.citePrec.mean * 100).toFixed(1)}% (n=${m.citePrec.sampleSize}; not semantic entailment)`,
     );
   }
   if (m?.citeRec) {
     console.log(
-      `Citation Recall:       ${(m.citeRec.mean * 100).toFixed(1)}% ± ${(((m.citeRec.ci95[1] - m.citeRec.ci95[0]) / 2) * 100).toFixed(1)}%`,
+      `Lexical sentence coverage: ${(m.citeRec.mean * 100).toFixed(1)}% (n=${m.citeRec.sampleSize})`,
     );
   }
   if (m?.phantomRate != null) {
-    console.log(`Phantom Citation Rate: ${(m.phantomRate * 100).toFixed(2)}%  (Target: 0.00%)`);
+    console.log(`Unknown citation-ID rate: ${(m.phantomRate * 100).toFixed(2)}%`);
+  }
+  if (m?.retrievalObservedCases != null) {
+    console.log(
+      `Q&A retrieval signals: FTS zero in ${m.ftsZeroCases ?? 'unrecorded'}/${m.retrievalObservedCases}; vector zero in ${m.vectorZeroCases ?? 'unrecorded'}/${m.retrievalObservedCases} cases`,
+    );
   }
 
   // Multi-Turn Conversational Recommender (CRS) Metrics
@@ -108,21 +127,31 @@ async function main(): Promise<void> {
   }
   if (m?.mutationResponsiveness != null) {
     console.log(
-      `Mutation Response Rate:${(m.mutationResponsiveness * 100).toFixed(1)}%  (0-Turn Latency)`,
+      `Immediate mutation response: ${(m.mutationResponsiveness * 100).toFixed(1)}% of eligible annotated turns`,
     );
   }
   if (m?.refineIntentF1 != null) {
-    console.log(`Refine Intent Accuracy:${(m.refineIntentF1 * 100).toFixed(1)}%`);
+    console.log(`Refine Intent F1:      ${(m.refineIntentF1 * 100).toFixed(1)}%`);
   }
   if (m?.resetCleanliness != null) {
     console.log(`Reset Purge Clean:     ${(m.resetCleanliness * 100).toFixed(1)}%`);
   }
   if (m?.multiTurnCsr != null) {
-    console.log(`Multi-Turn Policy CSR: ${(m.multiTurnCsr * 100).toFixed(1)}%  (Zero Tolerance)`);
+    console.log(`Multi-Turn Policy Checks: ${(m.multiTurnCsr * 100).toFixed(1)}%`);
   }
   if (m?.tokenUsage) {
     console.log(
-      `Token Accounting:      ${m.tokenUsage.tokensIn.toLocaleString()} tokens in / ${m.tokenUsage.tokensOut.toLocaleString()} out (Est Cost: $${m.tokenUsage.estimatedCostUsd.toFixed(4)})`,
+      `Uncached provider-reported generation tokens: ${m.tokenUsage.tokensIn.toLocaleString()} in / ${m.tokenUsage.tokensOut.toLocaleString()} out`,
+    );
+  }
+  if (m?.generationProviderCalls != null) {
+    console.log(
+      `Generation calls: ${m.generationProviderCalls} uncached, ${m.generationCacheHits ?? 0} cache hits; usage reported for ${m.generationUsageCoveredCalls ?? 0}/${m.generationProviderCalls} uncached calls`,
+    );
+  }
+  if (m?.goodputQps != null) {
+    console.log(
+      `DB retrieval probe: ${run.passedTests}/${run.totalTests} successful attempts at ${run.concurrencyVus} workers; goodput ${m.goodputQps}/s; p95 ${m.latencyP95}ms; stage p95 ${JSON.stringify(m.stageP95Ms ?? {})}`,
     );
   }
 
@@ -130,6 +159,9 @@ async function main(): Promise<void> {
     `\nTests: ${run.passedTests} passed, ${run.failedTests} failed, total ${run.totalTests}`,
   );
   console.log(`Duration: ${(run.durationMs / 1000).toFixed(2)}s | Benchmark Run ID: ${run.id}\n`);
+  console.log(
+    `Run status: ${run.status}; commit: ${run.commitHash ?? 'unavailable'}; provider: ${String(run.config?.provider ?? 'unavailable')}`,
+  );
 
   const nonPassing = run.results?.filter((r) => r.status !== 'pass') ?? [];
   if (nonPassing.length > 0) {
@@ -137,14 +169,14 @@ async function main(): Promise<void> {
     for (const r of nonPassing) {
       let scoreStr = '';
       if (r.category === 'recsys') {
-        scoreStr = `NDCG@3=${r.scores?.ndcg3?.toFixed(3)}`;
+        scoreStr = `MAUT agreement NDCG@3=${r.scores?.ndcg3?.toFixed(3) ?? 'unavailable'}`;
       } else if (r.category === 'rag') {
-        scoreStr = `CitePrec=${r.scores?.citePrec?.toFixed(3)}, CiteRec=${r.scores?.citeRec?.toFixed(3)}`;
+        scoreStr = `lexicalSupport=${r.scores?.citePrec?.toFixed(3)}, sentenceCoverage=${r.scores?.citeRec?.toFixed(3)}`;
       } else if (r.category === 'multi-turn') {
         scoreStr = `JGA=${r.scores?.jga != null ? (r.scores.jga * 100).toFixed(0) : '--'}%, CRR=${r.scores?.crr != null ? (r.scores.crr * 100).toFixed(0) : '--'}%`;
       }
       console.log(
-        `[${r.status.toUpperCase()}] ${r.testCaseId}: ${scoreStr}, query="${r.inputQuery}"`,
+        `[${r.status.toUpperCase()}] ${r.testCaseId}: ${scoreStr}, query="${r.inputQuery}"${r.errorDetails ? `, error=${r.errorDetails}` : ''}`,
       );
     }
     console.log('-------------------------------\n');

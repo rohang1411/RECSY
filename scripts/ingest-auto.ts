@@ -24,6 +24,7 @@ import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { phones } from '../src/services/db/schema';
+import { classifyIngestOutcome } from '../src/services/ingest/outcome';
 import {
   ArticleAdapter,
   GsmArenaAdapter,
@@ -473,16 +474,15 @@ async function main(): Promise<void> {
       const hasQuotaFailures = summary.adapters.some((a) =>
         a.errors.some((e) => /quota|RESOURCE_EXHAUSTED|daily request budget/i.test(e.error)),
       );
-      const lastIngestStatus =
-        !wroteContent && hasQuotaFailures
-          ? 'quota_exhausted'
-          : !wroteContent && summary.totals.errors > 0
-            ? 'failed'
-            : wroteContent && summary.totals.errors > 0
-              ? 'partial'
-              : wroteContent
-                ? 'success'
-                : 'failed';
+      const [corpus] = await db.execute<{ present: boolean }>(sql`select exists (
+        select 1 from chunks c join sources s on s.id = c.source_id
+        where c.phone_id = ${phone.id} and s.status = 'active'
+      ) as present`);
+      const lastIngestStatus = classifyIngestOutcome({
+        ...summary.totals,
+        hasActiveCorpus: corpus?.present ?? false,
+        hasQuotaFailures,
+      });
 
       if (!args.dryRun) {
         await db
@@ -490,9 +490,16 @@ async function main(): Promise<void> {
           .set({ lastIngestStatus, updatedAt: sql`now()` })
           .where(eq(phones.id, phone.id));
 
-        if (wroteContent) {
-          await markIngested(db, { phoneId: phone.id, tier: phone.tier });
-
+        await markIngested(db, { phoneId: phone.id, tier: phone.tier });
+        if (summary.totals.errors > 0) {
+          await db
+            .update(phones)
+            .set({
+              nextIngestAt: new Date(Date.now() + (hasQuotaFailures ? 24 : 6) * 60 * 60 * 1000),
+            })
+            .where(eq(phones.id, phone.id));
+        }
+        if (wroteContent || lastIngestStatus === 'success') {
           // Nudge scorecard schedule — re-score 24h after fresh ingestion
           // Only bring forward, never push back a sooner deadline.
           if (summary.totals.chunksWritten > 0) {
@@ -521,7 +528,7 @@ async function main(): Promise<void> {
               unusable: summary.totals.skippedUnusable,
               errors: summary.totals.errors,
             },
-            'ingest produced no sources or chunks; leaving phone due for retry (not rescheduling)',
+            'no new usable evidence; next attempt scheduled with cooldown',
           );
         }
       } else {
@@ -529,6 +536,17 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       failures += 1;
+      if (!args.dryRun) {
+        await db
+          .update(phones)
+          .set({
+            lastIngestAt: new Date(),
+            lastIngestStatus: 'failed',
+            nextIngestAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+            updatedAt: new Date(),
+          })
+          .where(eq(phones.id, phone.id));
+      }
       const queuedForPhone = queuedByPhone.get(phone.id) ?? [];
       if (!args.dryRun && queuedForPhone.length > 0) {
         await markCrawlQueueFailed(

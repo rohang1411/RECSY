@@ -19,14 +19,23 @@ export const env = createEnv({
     NODE_ENV: z.enum(['development', 'preview', 'production']).default('development'),
 
     DATABASE_URL: z.string().url(),
+    DATABASE_SCHEMA: z
+      .string()
+      .regex(/^(public|eval_[a-z0-9_]+)$/)
+      .default('public'),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
-    LLM_PROVIDER: z.enum(['gemini', 'groq']).default('gemini'),
+    LLM_PROVIDER: z.enum(['gemini', 'groq', 'controlled']).default('gemini'),
+    EVAL_CONTROLLED_PROVIDER_URL: z.string().url().optional(),
+    EVAL_CONTROLLED_PROVIDER_TOKEN: z.string().min(16).optional(),
     GEMINI_API_KEY: z.string().min(1),
     /** Optional backup Google AI Studio keys (separate projects). Rotated when a prior key hits quota (429 / daily cap). */
     GEMINI_API_KEY_2: z.string().optional(),
     GEMINI_API_KEY_3: z.string().optional(),
     GEMINI_API_KEY_4: z.string().optional(),
+    GEMINI_API_KEY_5: z.string().optional(),
+    GEMINI_API_KEY_6: z.string().optional(),
+    GEMINI_API_KEYS_EXTRA: z.string().optional(),
     /**
      * When `google_ai_studio_free`, the Gemini client paces requests per key using
      * GEMINI_FREE_RPM / GEMINI_FREE_TPM_INPUT / GEMINI_FREE_RPD (see Google AI Studio docs).
@@ -92,6 +101,7 @@ export const env = createEnv({
       .string()
       .default('false')
       .transform((v) => v.toLowerCase() === 'true'),
+    INTERNAL_EVAL_TOKEN: z.string().min(16).optional().or(z.literal('')),
     MOBILEAPI_API_KEY: z.string().optional(),
 
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
@@ -120,12 +130,18 @@ export const env = createEnv({
     // for server-side consumers like `logger` and LLM bootstrapping.
     NODE_ENV: process.env.NODE_ENV ?? 'development',
     DATABASE_URL: process.env.DATABASE_URL,
+    DATABASE_SCHEMA: process.env.DATABASE_SCHEMA ?? 'public',
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
+    EVAL_CONTROLLED_PROVIDER_URL: process.env.EVAL_CONTROLLED_PROVIDER_URL,
+    EVAL_CONTROLLED_PROVIDER_TOKEN: process.env.EVAL_CONTROLLED_PROVIDER_TOKEN,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
     GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
     GEMINI_API_KEY_4: process.env.GEMINI_API_KEY_4,
+    GEMINI_API_KEY_5: process.env.GEMINI_API_KEY_5,
+    GEMINI_API_KEY_6: process.env.GEMINI_API_KEY_6,
+    GEMINI_API_KEYS_EXTRA: process.env.GEMINI_API_KEYS_EXTRA,
     GEMINI_RATE_LIMIT_PROFILE: process.env.GEMINI_RATE_LIMIT_PROFILE ?? 'off',
     GEMINI_FREE_RPM: process.env.GEMINI_FREE_RPM ?? '5',
     GEMINI_FREE_TPM_INPUT: process.env.GEMINI_FREE_TPM_INPUT ?? '250000',
@@ -156,6 +172,7 @@ export const env = createEnv({
     REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET,
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
     INTERNAL_DASHBOARD_ENABLED: process.env.INTERNAL_DASHBOARD_ENABLED ?? 'false',
+    INTERNAL_EVAL_TOKEN: process.env.INTERNAL_EVAL_TOKEN,
     MOBILEAPI_API_KEY: process.env.MOBILEAPI_API_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
     SENTRY_DSN: process.env.SENTRY_DSN ?? '',

@@ -28,10 +28,10 @@ import {
   RETRIEVAL_TOP_K_POST_RERANK,
   RETRIEVAL_TOP_K_PRE_RERANK,
 } from '@/lib/constants';
-import { LlmError, ValidationError } from '@/lib/errors';
+import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
-import type { ChatMessage, ChatUsage, LlmProvider } from '@/services/llm/types';
+import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/types';
 
@@ -66,6 +66,14 @@ export interface PhoneQnaResult {
   readonly retrieval: RetrievalResult;
   readonly usage: ChatUsage;
   readonly model: string;
+  /** Successful generation calls in this invocation; cached responses have zero current-run tokens. */
+  readonly generationAccounting: {
+    readonly providerCalls: number;
+    readonly cacheHits: number;
+    readonly reportedUsageCalls: number;
+    readonly tokensIn: number;
+    readonly tokensOut: number;
+  };
 }
 
 const SYSTEM_PREAMBLE = `You are RECSY — concise, neutral, and honest about smartphones.
@@ -124,7 +132,7 @@ async function chatAnswer(
   llm: LlmProvider,
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
-): Promise<{ text: string; usage: ChatUsage; model: string }> {
+): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
     messages,
@@ -133,7 +141,7 @@ async function chatAnswer(
     usageContext: { area: 'Phone Q&A', feature: 'Grounded answer', source: '/api/ask' },
     signal,
   });
-  return { text: result.text, usage: result.usage, model: result.model };
+  return result;
 }
 
 /**
@@ -146,9 +154,8 @@ async function chatAnswer(
 export const NO_CONTEXT_MODEL = 'no-context@v1';
 
 const GENERIC_NO_CONTEXT_MESSAGE =
-  "We haven't collected reviews for this phone yet, so I can't answer questions about it from real sources right now. " +
-  'Our ingestion pipeline refreshes phones automatically (new launches first, older devices on a slower cadence), so this page should populate on its own soon. ' +
-  'In the meantime, try the recommender for cross-device picks, or Compare for side-by-side specs.';
+  "I couldn't find review evidence for this question, so I can't give a supported answer. " +
+  'Try a more specific question, the recommender for cross-device picks, or Compare for side-by-side specs.';
 
 /**
  * Build a user-friendly, time-aware empty-corpus message. We prefer brand +
@@ -165,23 +172,19 @@ export function buildNoContextMessage(phoneMeta: PhoneQnaInput['phoneMeta'] | un
   const now = Date.now();
 
   const parts: string[] = [];
-  parts.push(`We don't have ingested reviews for ${label} yet.`);
+  parts.push(
+    `I couldn't find review evidence for this question about ${label}, so I can't give a supported answer.`,
+  );
 
   if (lastAt) {
     const daysAgo = Math.max(0, Math.round((now - lastAt.getTime()) / (24 * 60 * 60 * 1000)));
     if (daysAgo <= 1) {
-      parts.push(
-        "Our last ingestion run didn't surface any long-form reviews — the phone may still be new or niche.",
-      );
+      parts.push('The last recorded ingestion ran within the past day.');
     } else {
       parts.push(
-        `Our last ingestion for it ran ${daysAgo === 1 ? '1 day' : `${daysAgo} days`} ago and didn't find usable reviews.`,
+        `The last recorded ingestion ran ${daysAgo === 1 ? '1 day' : `${daysAgo} days`} ago.`,
       );
     }
-  } else {
-    parts.push(
-      "We haven't run an ingestion pass for it yet — it will be picked up on the next scheduled crawl.",
-    );
   }
 
   if (nextAt && nextAt.getTime() > now) {
@@ -212,8 +215,8 @@ function toDate(v: Date | string | null | undefined): Date | null {
  * and retries once with a stricter prompt if the model hallucinates chunk ids.
  *
  * Short-circuits with a transparent explanatory message (no LLM call) when
- * retrieval returns **zero chunks** — the phone has no corpus, so the honest
- * answer is "nothing has been ingested yet". This avoids paying for a model
+ * retrieval returns **zero chunks**. This does not establish that the phone has
+ * no corpus; the query may have matched nothing. This avoids paying for a model
  * refusal that reads like a bug to end users.
  */
 export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult> {
@@ -237,6 +240,13 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   });
 
   if (retrieval.chunks.length === 0) {
+    if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
+      throw new IntegrationError('Retrieval failed without usable evidence', {
+        phoneId,
+        vectorError: retrieval.debug.vector.error,
+        ftsError: retrieval.debug.fts.error,
+      });
+    }
     log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
     return {
       text: buildNoContextMessage(input.phoneMeta),
@@ -244,19 +254,31 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       retrieval,
       usage: { tokensIn: 0, tokensOut: 0 },
       model: NO_CONTEXT_MODEL,
+      generationAccounting: {
+        providerCalls: 0,
+        cacheHits: 0,
+        reportedUsageCalls: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+      },
     };
   }
 
   const allowed = new Set(retrieval.chunks.map((c) => c.chunkId.toLowerCase()));
 
   let messages = buildMessages(query, retrieval, undefined);
-  let { text, usage, model } = await chatAnswer(llm, messages, signal);
+  const generationCalls: ChatResult[] = [];
+  let answer = await chatAnswer(llm, messages, signal);
+  generationCalls.push(answer);
+  let { text, usage, model } = answer;
 
   let validated = validateCitationTags(text, allowed);
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    ({ text, usage, model } = await chatAnswer(llm, messages, signal));
+    answer = await chatAnswer(llm, messages, signal);
+    generationCalls.push(answer);
+    ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);
   }
 
@@ -268,7 +290,23 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   }
 
   const citations = resolveCitations(text, retrieval.chunks);
-  return { text, citations, retrieval, usage, model };
+  const uncachedCalls = generationCalls.filter((call) => !call.cached);
+  return {
+    text,
+    citations,
+    retrieval,
+    usage,
+    model,
+    generationAccounting: {
+      providerCalls: uncachedCalls.length,
+      cacheHits: generationCalls.length - uncachedCalls.length,
+      reportedUsageCalls: uncachedCalls.filter(
+        (call) => call.usage.tokensIn > 0 && call.usage.tokensOut > 0,
+      ).length,
+      tokensIn: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensIn, 0),
+      tokensOut: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensOut, 0),
+    },
+  };
 }
 
 /** Split final text into small chunks for NDJSON streaming replay. */

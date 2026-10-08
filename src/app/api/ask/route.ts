@@ -20,7 +20,8 @@ import { ZodError, z } from 'zod';
 
 import { env } from '@/env';
 import { MAX_CHAT_MESSAGE_BYTES } from '@/lib/constants';
-import { toAppError } from '@/lib/errors';
+import { publicErrorMessage, toAppError } from '@/lib/errors';
+import { readRequestJson } from '@/lib/request-json';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
 import { chunkTextForStream, persistChatQuery, runPhoneQna } from '@/services/chat/answer';
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const ip = getRequestClientIp(request);
     await consumeAskRateLimit(ip);
 
-    const json: unknown = await request.json();
+    const json = await readRequestJson(request, 24_576);
     const body = askBodySchema.parse(json);
 
     const db = getDb();
@@ -82,9 +83,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const enc = new TextEncoder();
+    let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
       async start(controller) {
         const write = (obj: unknown) => {
+          if (cancelled || request.signal.aborted) return;
           controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
         };
 
@@ -119,37 +125,38 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
 
           const latencyMs = Math.round(performance.now() - t0);
-          write({
-            type: 'done',
-            citations: result.citations,
-            usage: result.usage,
-            model: result.model,
-            retrievalMs: result.retrieval.debug.totalMs,
-            retrievalTrace: buildAskRetrievalTrace(result.retrieval),
-          });
-
-          void persistChatQuery({
+          const persistenceStart = performance.now();
+          await persistChatQuery({
             phoneId: phone.id,
             query: body.query,
             answer: result.text,
             citations: result.citations,
             retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
             latencyMs,
-            tokensIn: result.usage.tokensIn,
-            tokensOut: result.usage.tokensOut,
+            tokensIn: result.generationAccounting.tokensIn,
+            tokensOut: result.generationAccounting.tokensOut,
             model: result.model,
-          }).catch((err) => {
-            log.error({ err: toAppError(err).message }, 'persistChatQuery failed');
+          });
+          write({
+            type: 'done',
+            citations: result.citations,
+            usage: result.usage,
+            generationAccounting: result.generationAccounting,
+            model: result.model,
+            persistenceMs: performance.now() - persistenceStart,
+            retrievalMs: result.retrieval.debug.totalMs,
+            retrievalTrace: buildAskRetrievalTrace(result.retrieval),
           });
         } catch (err) {
           const app = toAppError(err);
+          log.error({ err, code: app.code }, 'Q&A request failed');
           write({
             type: 'error',
             code: app.code,
-            message: app.message,
+            message: publicErrorMessage(app),
           });
         } finally {
-          controller.close();
+          if (!cancelled) controller.close();
         }
       },
     });
@@ -170,8 +177,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
     const app = toAppError(err);
+    log.error({ err, code: app.code }, 'Q&A request setup failed');
     return Response.json(
-      { code: app.code, message: app.message },
+      { code: app.code, message: publicErrorMessage(app) },
       { status: app.status, headers: { 'X-Trace-Id': traceId } },
     );
   }

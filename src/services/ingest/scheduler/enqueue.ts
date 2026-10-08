@@ -8,7 +8,7 @@
  * We also expose a small helper to (re)compute `next_ingest_at` for every
  * phone that's missing one — used when bootstrapping after the migration.
  */
-import { eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { phones } from '@/services/db/schema';
 
@@ -45,7 +45,7 @@ export async function bootstrapNextIngestAt(
   const rows = await db
     .select({ id: phones.id, launchDate: phones.launchDate })
     .from(phones)
-    .where(isNull(phones.nextIngestAt));
+    .where(and(isNull(phones.nextIngestAt), ne(phones.status, 'archived')));
   if (rows.length === 0) return { updated: 0 };
 
   let updated = 0;

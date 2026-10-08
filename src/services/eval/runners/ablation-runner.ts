@@ -9,7 +9,14 @@
  * Runs non-parametric Wilcoxon Signed-Rank tests to prove statistical significance.
  */
 import type { AppDb } from '@/services/db/client';
+import { getPostgres } from '@/services/db/client';
+import { getLlm } from '@/services/llm';
+import type { LlmProvider } from '@/services/llm/types';
+import { logger } from '@/services/logger';
+import { FtsSearch } from '@/services/retrieval/fts';
+import { VectorSearch } from '@/services/retrieval/vector';
 import { createHybridRetriever } from '@/services/retrieval/factory';
+import type { RetrievedChunk } from '@/services/retrieval/types';
 import { computeWilcoxonSignedRank } from '../metrics/statistics';
 import { computeNdcgAtK } from '../metrics/ranking';
 import type { AttributedQaFixture } from '../types';
@@ -34,8 +41,17 @@ export async function runRetrievalAblationStudy(
   db: AppDb,
   phoneId: string,
   fixtures: readonly AttributedQaFixture[],
+  llmProvider?: LlmProvider,
 ): Promise<AblationStudyResult> {
-  const retriever = createHybridRetriever();
+  const llm = llmProvider ?? getLlm();
+  const sql = getPostgres();
+  const log = logger.child({ component: 'ablation' });
+  const vectorRetriever = new VectorSearch(
+    { sql, log: log.child({ retriever: 'vector' }) },
+    { withEmbeddings: false },
+  );
+  const ftsRetriever = new FtsSearch({ sql, log: log.child({ retriever: 'fts' }) });
+  const hybridRetriever = createHybridRetriever({ llm });
 
   const vectorScores: number[] = [];
   const ftsScores: number[] = [];
@@ -45,36 +61,89 @@ export async function runRetrievalAblationStudy(
   const ftsLatencies: number[] = [];
   const hybridLatencies: number[] = [];
 
-  for (const fixture of fixtures) {
-    // 1. Vector only search
-    const t0 = performance.now();
-    const vecResults = await retriever.search({
-      phoneId,
-      query: fixture.query,
-      options: { kPerRetriever: 8, targetResults: 5, minDistinctSources: 1 },
-    });
-    vectorLatencies.push(performance.now() - t0);
+  function gradeChunk(chunkText: string, referenceFacts: readonly string[]): number {
+    const textLower = chunkText.toLowerCase();
+    let matches = 0;
+    for (const fact of referenceFacts) {
+      const keywords = fact
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .split(/\s+/)
+        .filter((w) => w.length > 4);
 
-    // Simulated grades based on query match density
-    const vecGrades = vecResults.chunks.map((c) => (c.score > 0.03 ? 3 : 1));
-    const idealGrades = [3, 3, 2, 2, 1];
+      if (
+        keywords.length > 0 &&
+        keywords.filter((k) => textLower.includes(k)).length >= Math.ceil(keywords.length * 0.4)
+      ) {
+        matches++;
+      }
+    }
+    if (matches >= 2) return 3;
+    if (matches === 1) return 2;
+    return 0;
+  }
+
+  const idealGrades = [3, 3, 2, 2, 1];
+
+  for (const fixture of fixtures) {
+    // 0. Embed query for dense search
+    let queryEmbedding: readonly number[] | undefined;
+    try {
+      const embRes = await llm.embed([fixture.query]);
+      queryEmbedding = embRes.embeddings[0];
+    } catch {
+      queryEmbedding = new Array(768).fill(0.01);
+    }
+
+    // 1. Vector only search (pgvector HNSW)
+    const t0 = performance.now();
+    let vecChunks: readonly RetrievedChunk[] = [];
+    try {
+      vecChunks = await vectorRetriever.search({
+        phoneId,
+        query: fixture.query,
+        queryEmbedding,
+        k: 8,
+      });
+    } catch {
+      vecChunks = [];
+    }
+    vectorLatencies.push(performance.now() - t0);
+    const vecGrades = vecChunks.map((c) => gradeChunk(c.text, fixture.referenceFacts));
     vectorScores.push(computeNdcgAtK(vecGrades, idealGrades, 3).ndcg);
 
-    // 2. Hybrid RRF search
-    const t1 = performance.now();
-    const hybridResults = await retriever.search({
-      phoneId,
-      query: fixture.query,
-      options: { kPerRetriever: 20, targetResults: 8, minDistinctSources: 1 },
-    });
-    hybridLatencies.push(performance.now() - t1);
+    // 2. FTS only search (Postgres tsvector & trigram)
+    const tFts = performance.now();
+    let ftsChunks: readonly RetrievedChunk[] = [];
+    try {
+      ftsChunks = await ftsRetriever.search({
+        phoneId,
+        query: fixture.query,
+        k: 8,
+      });
+    } catch {
+      ftsChunks = [];
+    }
+    ftsLatencies.push(performance.now() - tFts);
+    const ftsGrades = ftsChunks.map((c) => gradeChunk(c.text, fixture.referenceFacts));
+    ftsScores.push(computeNdcgAtK(ftsGrades, idealGrades, 3).ndcg);
 
-    const hybridGrades = hybridResults.chunks.map((c) => (c.score > 0.02 ? 3 : 2));
+    // 3. Hybrid RRF + MMR search (RECSY production)
+    const tHybrid = performance.now();
+    let hybridChunks: readonly RetrievedChunk[] = [];
+    try {
+      const res = await hybridRetriever.search({
+        phoneId,
+        query: fixture.query,
+        options: { kPerRetriever: 20, targetResults: 8, minDistinctSources: 1 },
+      });
+      hybridChunks = res.chunks;
+    } catch {
+      hybridChunks = [];
+    }
+    hybridLatencies.push(performance.now() - tHybrid);
+    const hybridGrades = hybridChunks.map((c) => gradeChunk(c.text, fixture.referenceFacts));
     hybridScores.push(computeNdcgAtK(hybridGrades, idealGrades, 3).ndcg);
-
-    // 3. FTS simulated baseline
-    ftsScores.push(Math.max(0.4, computeNdcgAtK(vecGrades, idealGrades, 3).ndcg - 0.15));
-    ftsLatencies.push(15);
   }
 
   const avg = (arr: number[]) =>

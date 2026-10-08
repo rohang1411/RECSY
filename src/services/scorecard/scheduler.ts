@@ -4,7 +4,7 @@
  * Provides functions to pick phones due for scorecard generation and to mark
  * them as completed, updating their next scheduled run time.
  */
-import { eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { ASPECT_NAMES } from '@/lib/constants';
 import { phones } from '@/services/db/schema';
 import type { AppDb } from '@/services/db/client';
@@ -172,7 +172,7 @@ export async function bootstrapNextScorecardAt(
   const rows = await db
     .select({ id: phones.id })
     .from(phones)
-    .where(isNull(phones.nextScorecardAt));
+    .where(and(isNull(phones.nextScorecardAt), ne(phones.status, 'archived')));
 
   if (rows.length === 0) return { updated: 0 };
 
