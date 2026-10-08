@@ -885,8 +885,8 @@ export const PHONE_SEEDS: readonly PhoneSeed[] = [
   },
 ] as const;
 
-if (PHONE_SEEDS.length !== 20) {
+if (PHONE_SEEDS.length < 20) {
   // Intentional compile-time-ish guard: the smoke test also verifies this.
 
-  console.warn(`[seed] expected 20 phones, got ${PHONE_SEEDS.length}`);
+  console.warn(`[seed] expected at least 20 phones, got ${PHONE_SEEDS.length}`);
 }

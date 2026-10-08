@@ -22,6 +22,7 @@ import {
   hashJson,
   isLikelyCatalogPhoneTitle,
   stableCandidateKey,
+  syncMissingFlagships,
 } from '../src/services/catalog';
 import { getDb } from '../src/services/db/client';
 import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
@@ -54,11 +55,11 @@ function parseArgs(argv: readonly string[]): CliArgs {
     maxLlmCalls: number;
   } = {
     source: 'wikidata',
-    limit: 150,
-    sinceYears: 2,
+    limit: 300,
+    sinceYears: 4,
     dryRun: false,
     maxRequests: 200,
-    maxNew: 20,
+    maxNew: 50,
     maxLlmCalls: 0,
   };
 
@@ -172,6 +173,13 @@ async function main(): Promise<void> {
       .limit(1);
     if (sourceProfile[0]?.enabled === false) {
       throw new Error(`catalog source disabled: ${args.source}`);
+    }
+
+    const flagshipSync = await syncMissingFlagships(db);
+    if (flagshipSync.added.length > 0) {
+      console.log(
+        `[catalog:refresh] auto-synced missing mainstream flagships: ${flagshipSync.added.join(', ')}`,
+      );
     }
 
     const candidates = await discoverRecentWikidataPhones({

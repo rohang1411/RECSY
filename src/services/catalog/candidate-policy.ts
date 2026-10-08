@@ -5,7 +5,7 @@
  * mainstream devices first so incomplete or unreleased rows do not crowd out
  * useful catalog updates.
  */
-import { brandPriorityRank } from './brand-priority';
+import { brandPriorityRank, isMainstreamPriorityBrand } from './brand-priority';
 import { normalizeIdentityText } from './identity';
 
 export interface CatalogPriorityCandidate {
@@ -74,6 +74,11 @@ export function compareCatalogPriorityThenNewest(
   return catalogCandidateTitle(a).localeCompare(catalogCandidateTitle(b));
 }
 
+export function isMainstreamCatalogCandidate(candidate: CatalogPriorityCandidate): boolean {
+  const brand = candidate.brand ?? inferBrandFromTitle(candidate.title ?? '');
+  return isMainstreamPriorityBrand(brand);
+}
+
 export function isLikelyCatalogPhoneTitle(title: string): boolean {
   const trimmed = title.trim();
   return (
@@ -81,7 +86,8 @@ export function isLikelyCatalogPhoneTitle(title: string): boolean {
     trimmed.length > 0 &&
     !NON_PHONE_TITLE_RE.test(trimmed) &&
     !MULTI_PHONE_TITLE_RE.test(trimmed) &&
-    !FAMILY_TITLE_RE.test(trimmed)
+    !FAMILY_TITLE_RE.test(trimmed) &&
+    !LEGACY_MODEL_OR_FEATURE_PHONE_RE.test(trimmed)
   );
 }
 
@@ -102,6 +108,11 @@ export function startOfNextUtcDay(value: Date): Date {
 
 function catalogCandidateTitle(candidate: CatalogPriorityCandidate): string {
   return [candidate.brand, candidate.model, candidate.title].filter(Boolean).join(' ');
+}
+
+function inferBrandFromTitle(title: string): string | null {
+  const firstWord = title.trim().split(/\s+/)[0]?.toLowerCase();
+  return firstWord || null;
 }
 
 const RAW_QID_TITLE_RE = /^Q\d+$/i;
@@ -142,3 +153,5 @@ export function compareCatalogEnrichmentFairness(
     compareCatalogPriorityThenNewest(a, b)
   );
 }
+const LEGACY_MODEL_OR_FEATURE_PHONE_RE =
+  /\b(?:sgh|sch|sph|gt-[a-z0-9]+|sm-[a-z0-9]{3,}|corby|genoa|w2[0-9]|a100|s5\s+neo|stellar|j2\s+core)\b/i;

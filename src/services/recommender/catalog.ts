@@ -27,6 +27,7 @@ export interface PhoneCatalogEntry {
   readonly slug: string;
   readonly brand: string;
   readonly model: string;
+  readonly launchDate?: Date | null;
   readonly tagline: string | null;
   readonly msrpUsd: string | null;
   readonly localPrice?: string | null;
@@ -50,6 +51,7 @@ export async function loadRecommendationCatalog(
       slug: phones.slug,
       brand: phones.brand,
       model: phones.model,
+      launchDate: phones.launchDate,
       tagline: phones.tagline,
       msrpUsd: phones.msrpUsd,
       localPrice: phoneRegionalDetails.price,
@@ -81,6 +83,7 @@ export async function loadRecommendationCatalog(
       slug: string;
       brand: string;
       model: string;
+      launchDate: Date | null;
       tagline: string | null;
       msrpUsd: string | null;
       localPrice: string | null;
@@ -105,6 +108,7 @@ export async function loadRecommendationCatalog(
         slug: r.slug,
         brand: r.brand,
         model: r.model,
+        launchDate: r.launchDate ? new Date(r.launchDate) : null,
         tagline: r.tagline,
         msrpUsd: r.msrpUsd,
         localPrice: r.localPrice ?? fallbackPrice,
@@ -133,6 +137,7 @@ export async function loadRecommendationCatalog(
       slug: e.slug,
       brand: e.brand,
       model: e.model,
+      launchDate: e.launchDate,
       tagline: e.tagline,
       msrpUsd: e.msrpUsd,
       localPrice: e.localPrice,

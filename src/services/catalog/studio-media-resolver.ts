@@ -20,6 +20,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { getDb } from '../db/client';
 import { phones, phoneMediaAssets } from '../db/schema';
+import { findWikidataPhonesByName } from './adapters/wikidata';
 import { normalizeIdentityText } from './identity';
 
 export interface StudioImageCandidate {
@@ -55,9 +56,19 @@ export const KNOWN_STUDIO_IMAGES: Record<string, string> = {
   'samsung-galaxy-s25-ultra': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-ultra-sm-s938.jpg`,
   'samsung-galaxy-s25-plus': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-plus-sm-s936.jpg`,
   'samsung-galaxy-s25': `${GSM_BIGPIC_BASE}/samsung-galaxy-s25-sm-s931.jpg`,
+  'samsung-galaxy-s24-plus':
+    'https://upload.wikimedia.org/wikipedia/commons/c/cb/Samsung_Galaxy_S24%2B.jpg',
   'samsung-galaxy-z-fold-6': `${GSM_BIGPIC_BASE}/samsung-galaxy-z-fold6.jpg`,
   'samsung-galaxy-a55-5g': `${GSM_BIGPIC_BASE}/samsung-galaxy-a55.jpg`,
   'samsung-galaxy-a35-5g': `${GSM_BIGPIC_BASE}/samsung-galaxy-a35.jpg`,
+  'google-pixel-11-pro-xl': `${GSM_BIGPIC_BASE}/google-pixel-11-pro-xl.jpg`,
+  'google-pixel-11-pro': `${GSM_BIGPIC_BASE}/google-pixel-11-pro.jpg`,
+  'google-pixel-11': `${GSM_BIGPIC_BASE}/google-pixel-11.jpg`,
+  'google-pixel-11-pro-fold': `${GSM_BIGPIC_BASE}/google-pixel-11-pro-fold.jpg`,
+  'google-pixel-10-pro-xl': `${GSM_BIGPIC_BASE}/google-pixel-10-pro-xl-.jpg`,
+  'google-pixel-10-pro': `${GSM_BIGPIC_BASE}/google-pixel-10-pro-.jpg`,
+  'google-pixel-10': `${GSM_BIGPIC_BASE}/google-pixel-10-.jpg`,
+  'google-pixel-10-pro-fold': `${GSM_BIGPIC_BASE}/google-pixel-10-pro-fold-.jpg`,
   'google-pixel-9-pro-xl': `${GSM_BIGPIC_BASE}/google-pixel-9-pro-xl-.jpg`,
   'google-pixel-9-pro': `${GSM_BIGPIC_BASE}/google-pixel-9-pro-.jpg`,
   'google-pixel-9': `${GSM_BIGPIC_BASE}/google-pixel-9-.jpg`,
@@ -246,6 +257,26 @@ export async function resolveStudioImageCandidate(phone: {
       sourceKey: 'gsmarena_studio_crawled',
       notes: 'Discovered via brand page crawler',
     };
+  }
+
+  // 3b. Query Wikidata / Wikimedia Commons for official device imagery
+  try {
+    const wikidataResults = await findWikidataPhonesByName({
+      brand: phone.brand,
+      model: phone.model,
+      limit: 3,
+    });
+    for (const res of wikidataResults) {
+      if (res.imageUrl && (await testRemoteImage(res.imageUrl))) {
+        return {
+          imageUrl: res.imageUrl,
+          sourceKey: 'wikidata_commons_media',
+          notes: `Discovered via Wikidata entity ${res.externalId}`,
+        };
+      }
+    }
+  } catch {
+    // Non-blocking fallback
   }
 
   // 4. If an existing image URL is present and valid, use it

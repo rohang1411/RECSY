@@ -1,0 +1,96 @@
+# Dedicated automated pipeline to audit, resolve, and backfill clean local studio images.
+name: catalog images (backfill)
+
+on:
+  schedule:
+    # 06:17 UTC daily — checks for any missing phone images and downloads studio renders
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'Optional single phone slug to backfill image for (leave blank for all missing)'
+        required: false
+        type: string
+      limit:
+        description: 'Max phones to process'
+        required: false
+        default: '100'
+        type: string
+      force:
+        description: 'Force re-download even if image already exists'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: catalog-images
+  cancel-in-progress: false
+
+jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ] && [ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Pipeline secrets incomplete — skipping."
+          fi
+
+  backfill-images:
+    name: Backfill Studio Images
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: production
+      NODE_OPTIONS: --dns-result-order=ipv4first
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Studio Images Backfill
+        shell: bash
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.slug }}" ]; then
+            ARGS="$ARGS --slug ${{ github.event.inputs.slug }}"
+          fi
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          fi
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          pnpm exec tsx scripts/catalog-backfill-gsmarena-images.ts $ARGS

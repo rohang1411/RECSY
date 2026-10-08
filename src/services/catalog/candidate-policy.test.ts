@@ -72,6 +72,19 @@ describe('catalog candidate policy', () => {
     );
   });
 
+  it('rejects archaic feature phones and carrier model number codes', () => {
+    expect(isLikelyCatalogPhoneTitle('Samsung Corby II')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung A100')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung SGH-X608')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung SGH-X490')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung SGH-L870')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung SCH-N191')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung GT-S3500i')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung Genoa')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung W26')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Samsung W25 Flip')).toBe(false);
+  });
+
   it('sorts by mainstream brand priority before newest release date', () => {
     const sorted = [
       { brand: '8849', model: 'Tank 4 Pro', launchDate: '2026-05-30' },

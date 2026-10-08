@@ -10,6 +10,7 @@
 import { sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
+import { syncMissingFlagships } from '../../src/services/catalog/flagship-registry';
 import { aspectDefinitions, phones } from '../../src/services/db/schema';
 import { ASPECT_DEFINITION_SEEDS, validateAspectSeedWeights } from './aspect-definitions';
 import { seedCatalogSourceProfiles } from './catalog-source-profiles';
@@ -40,6 +41,7 @@ export async function runSeeds(
 ): Promise<SeedSummary> {
   const aspects = await seedAspectDefinitions(db);
   const phonesUp = await seedPhones(db);
+  await syncMissingFlagships(db);
   // Profile tables are independent; they can be run in any order.
   // `phoneAliases` MUST run after `phones` because it resolves FKs by slug.
   const creatorProfilesUp = await seedCreatorProfiles(db);

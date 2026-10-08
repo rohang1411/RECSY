@@ -93,6 +93,23 @@ export async function pickScorecardPhones(
         )
       ORDER BY
         (coalesce(cs.current_aspect_count, 0) < ${ASPECT_NAMES.length}) DESC,
+        (p.last_scorecard_at IS NULL) DESC,
+        CASE LOWER(p.brand)
+          WHEN 'apple' THEN 1
+          WHEN 'samsung' THEN 2
+          WHEN 'google' THEN 3
+          WHEN 'oneplus' THEN 4
+          WHEN 'nothing' THEN 5
+          WHEN 'xiaomi' THEN 6
+          WHEN 'motorola' THEN 7
+          WHEN 'vivo' THEN 8
+          WHEN 'oppo' THEN 9
+          WHEN 'honor' THEN 10
+          WHEN 'sony' THEN 11
+          ELSE 99
+        END ASC,
+        coalesce(p.released_at, p.launch_date, '1970-01-01'::timestamptz) DESC,
+        coalesce(ac.active_chunk_count, 0) DESC,
         coalesce(p.last_scorecard_at, '1970-01-01'::timestamptz) ASC,
         coalesce(p.next_scorecard_at, '1970-01-01'::timestamptz) ASC
     `,

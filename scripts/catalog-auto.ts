@@ -18,8 +18,8 @@ interface Step {
   readonly optional?: boolean;
 }
 
-const DEFAULT_LIMIT = '150';
-const DEFAULT_ENRICH_LIMIT = '25';
+const DEFAULT_LIMIT = '300';
+const DEFAULT_ENRICH_LIMIT = '50';
 
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
@@ -37,9 +37,14 @@ function main(): void {
       args: [],
     },
     {
+      label: 'Sync canonical mainstream flagships',
+      script: 'scripts/catalog-sync-flagships.ts',
+      args: [],
+    },
+    {
       label: 'Discover recent Wikidata candidates',
       script: 'scripts/catalog-refresh.ts',
-      args: ['--source', 'wikidata', '--since-years', '2', '--limit', DEFAULT_LIMIT],
+      args: ['--source', 'wikidata', '--since-years', '4', '--limit', DEFAULT_LIMIT],
     },
     ...(env.MOBILEAPI_API_KEY
       ? [
@@ -48,7 +53,7 @@ function main(): void {
             script: 'scripts/catalog-sync-mobileapi.ts',
             args: [
               '--since-years',
-              '2',
+              '4',
               '--limit',
               DEFAULT_LIMIT,
               '--max-requests',
@@ -94,6 +99,18 @@ function main(): void {
       label: 'Promote any ready candidates',
       script: 'scripts/catalog-promote.ts',
       args: ['--ready', '--limit', '50', '--update-existing'],
+      optional: true,
+    },
+    {
+      label: 'Download local studio images',
+      script: 'scripts/catalog-backfill-gsmarena-images.ts',
+      args: ['--limit', '50'],
+      optional: true,
+    },
+    {
+      label: 'Backfill missing spec embeddings',
+      script: 'scripts/backfill-spec-embeddings.ts',
+      args: [],
       optional: true,
     },
     {

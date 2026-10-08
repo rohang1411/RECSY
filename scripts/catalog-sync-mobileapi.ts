@@ -258,7 +258,9 @@ async function main(): Promise<void> {
       },
     });
 
-    const phoneRecords = records.filter(isLikelyMobileApiPhoneRecord);
+    const phoneRecords = records
+      .filter(isLikelyMobileApiPhoneRecord)
+      .filter((record) => isMainstreamPriorityBrand(record.brand));
     const droppedNonPhone = records.length - phoneRecords.length;
     const releasedRecords = phoneRecords.filter(isReleasedMobileApiRecord);
     const droppedUnreleased = phoneRecords.length - releasedRecords.length;
@@ -608,9 +610,7 @@ function selectPlansForLimit(
 } {
   const allPlans = records.map((record) => stagePlan(record)).sort(comparePlansForSelection);
   const blocked = allPlans.filter((item) => !item.plan.ok);
-  const selectablePlans = allPlans.filter(
-    (item) => item.plan.ok || isMainstreamPriorityBrand(item.record.brand),
-  );
+  const selectablePlans = allPlans.filter((item) => isMainstreamPriorityBrand(item.record.brand));
   const planned = selectablePlans.slice(0, limit);
   const nonPriorityIncompleteSkipped = allPlans.length - selectablePlans.length;
 

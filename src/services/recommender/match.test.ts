@@ -47,6 +47,7 @@ function entry(
     spec: null,
     specEmbedding: null,
     aspectScores: scores,
+    launchDate: null,
     ...overrides,
   };
 }
@@ -257,10 +258,10 @@ describe('match helpers', () => {
       summary: '',
     };
     const ranked: ScoredCandidate[] = [
-      { ...base, slug: 'a', brand: 'A', score: 10 },
-      { ...base, slug: 'b', brand: 'A', score: 9 },
-      { ...base, slug: 'c', brand: 'A', score: 8 },
-      { ...base, slug: 'd', brand: 'B', score: 7 },
+      { ...base, slug: 'a', brand: 'A', model: 'Alpha', score: 10 },
+      { ...base, slug: 'b', brand: 'A', model: 'Beta', score: 9 },
+      { ...base, slug: 'c', brand: 'A', model: 'Gamma', score: 8 },
+      { ...base, slug: 'd', brand: 'B', model: 'Delta', score: 7 },
     ];
     const picked = pickDiverseTop(ranked, 3, 2);
     expect(picked.map((p) => p.slug)).toEqual(['a', 'b', 'd']);
@@ -305,5 +306,159 @@ describe('match helpers', () => {
     const ranked = rankCandidates([missingPrice, overBudget], requirement, equalWeights);
     expect(ranked.picks).toEqual([]);
     expect(ranked.relaxed).toEqual([]);
+  });
+
+  it('does not compare USD fallback prices against a local-currency budget', () => {
+    const phone = entry({ slug: 'usd-only', localPrice: null, msrpUsd: '999.00' });
+    expect(
+      passesHardFilters(phone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(false);
+  });
+
+  it.each(['invalid', 'Infinity'])('rejects an unverifiable price of %s', (price) => {
+    const options = { relaxBudgetMax: false, ignoreFoldable: false };
+    expect(
+      passesHardFilters(
+        entry({ slug: 'usd', msrpUsd: price }),
+        req({ budget_usd: { max: 1000 } }),
+        options,
+      ),
+    ).toBe(false);
+    expect(
+      passesHardFilters(
+        entry({ slug: 'local', localPrice: price, localCurrency: 'INR' }),
+        req({ budget_local: { max: 50000, currency: 'INR' } }),
+        options,
+      ),
+    ).toBe(false);
+  });
+
+  it('passesHardFilters enforces 3.5 year maximum age cutoff', () => {
+    const refDate = new Date('2026-09-27T00:00:00Z');
+    // 4 years old -> rejected
+    const oldPhone = entry({ slug: 'old', launchDate: new Date('2022-09-01T00:00:00Z') });
+    // 3 years old -> allowed (< 3.5 years)
+    const threeYearOld = entry({ slug: 'three-yr', launchDate: new Date('2023-10-01T00:00:00Z') });
+    // 1 year old -> allowed
+    const recentPhone = entry({ slug: 'recent', launchDate: new Date('2025-09-01T00:00:00Z') });
+    // Undated -> allowed
+    const undatedPhone = entry({ slug: 'undated', launchDate: null });
+
+    const emptyReq = req({});
+    const opts = { relaxBudgetMax: false, ignoreFoldable: false, now: refDate };
+
+    expect(passesHardFilters(oldPhone, emptyReq, opts)).toBe(false);
+    expect(passesHardFilters(threeYearOld, emptyReq, opts)).toBe(true);
+    expect(passesHardFilters(recentPhone, emptyReq, opts)).toBe(true);
+    expect(passesHardFilters(undatedPhone, emptyReq, opts)).toBe(true);
+
+    // Can be bypassed if ignoreMaxAge is set
+    expect(passesHardFilters(oldPhone, emptyReq, { ...opts, ignoreMaxAge: true })).toBe(true);
+  });
+
+  it('rankCandidates boosts phones <= 2 years old over older phones with identical specs', () => {
+    const refDate = new Date('2026-09-27T00:00:00Z');
+    // Released 6 months ago (< 2 years)
+    const freshPhone = entry({
+      slug: 'fresh',
+      brand: 'BrandA',
+      launchDate: new Date('2026-03-01T00:00:00Z'),
+    });
+    // Released 3 years ago (> 2 years, < 3.5 years)
+    const olderPhone = entry({
+      slug: 'older',
+      brand: 'BrandB',
+      launchDate: new Date('2023-09-01T00:00:00Z'),
+    });
+
+    const result = rankCandidates([olderPhone, freshPhone], req({}), equalWeights, {
+      now: refDate,
+    });
+    expect(result.picks.length).toBe(2);
+    expect(result.picks[0]?.slug).toBe('fresh');
+    expect(result.picks[1]?.slug).toBe('older');
+    expect(result.picks[0]?.score).toBeGreaterThan(result.picks[1]?.score ?? 0);
+  });
+
+  it('pickDiverseTop prevents recommending older generation of the same phone lineage', () => {
+    const s26Ultra: ScoredCandidate = {
+      phoneId: '1',
+      slug: 'samsung-galaxy-s26-ultra',
+      brand: 'Samsung',
+      model: 'Galaxy S26 Ultra',
+      tagline: null,
+      msrpUsd: '1299.00',
+      imageUrl: null,
+      score: 9.3,
+      summary: 'Top Samsung',
+    };
+    const s25Ultra: ScoredCandidate = {
+      phoneId: '2',
+      slug: 'samsung-galaxy-s25-ultra',
+      brand: 'Samsung',
+      model: 'Galaxy S25 Ultra',
+      tagline: null,
+      msrpUsd: '1299.00',
+      imageUrl: null,
+      score: 9.25,
+      summary: 'Older Samsung',
+    };
+    const iphone18ProMax: ScoredCandidate = {
+      phoneId: '3',
+      slug: 'apple-iphone-18-pro-max',
+      brand: 'Apple',
+      model: 'iPhone 18 Pro Max',
+      tagline: null,
+      msrpUsd: '1199.00',
+      imageUrl: null,
+      score: 9.4,
+      summary: 'Top Apple',
+    };
+    const pixel10Pro: ScoredCandidate = {
+      phoneId: '4',
+      slug: 'google-pixel-10-pro',
+      brand: 'Google',
+      model: 'Pixel 10 Pro',
+      tagline: null,
+      msrpUsd: '999.00',
+      imageUrl: null,
+      score: 9.1,
+      summary: 'Top Google',
+    };
+
+    const picks = pickDiverseTop([iphone18ProMax, s26Ultra, s25Ultra, pixel10Pro], 3, 2);
+    expect(picks.map((p) => p.model)).toEqual([
+      'iPhone 18 Pro Max',
+      'Galaxy S26 Ultra',
+      'Pixel 10 Pro',
+    ]);
+    expect(picks.some((p) => p.model === 'Galaxy S25 Ultra')).toBe(false);
+  });
+
+  it('resolveAspectWeights zeroes default value weight on flagship budgets when unrequested', () => {
+    const defaultWeights = new Map<AspectName, number>([
+      ['camera', 0.18],
+      ['battery', 0.16],
+      ['performance', 0.16],
+      ['display', 0.14],
+      ['value', 0.14],
+      ['software', 0.12],
+      ['build', 0.1],
+    ]);
+
+    const flagshipReq = req({
+      budget_usd: { max: 1300 },
+      priorities: [
+        { aspect: 'camera', weight: 0.6 },
+        { aspect: 'battery', weight: 0.4 },
+      ],
+    });
+
+    const weights = resolveAspectWeights(flagshipReq, defaultWeights);
+    expect(weights.get('value')).toBe(0);
+    expect(weights.get('camera') ?? 0).toBeGreaterThan(0.3);
   });
 });

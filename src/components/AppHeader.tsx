@@ -21,7 +21,7 @@ export async function AppHeader() {
           aria-label="RECSY home"
           className="font-display text-primary text-2xl font-extrabold tracking-normal uppercase focus-visible:outline-none"
         >
-          RECSY V2
+          RECSY
         </Link>
 
         <nav aria-label="Primary" className="hidden items-center gap-7 md:flex">

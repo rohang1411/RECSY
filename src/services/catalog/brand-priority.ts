@@ -17,16 +17,16 @@ export interface BrandPriorityEntry {
 
 export const DEFAULT_MAINSTREAM_BRAND_PRIORITY: readonly BrandPriorityEntry[] = [
   { company: 'Apple', rank: 1, brands: ['Apple', 'iPhone'] },
-  { company: 'Samsung', rank: 2, brands: ['Samsung'] },
-  { company: 'Nothing', rank: 3, brands: ['Nothing', 'CMF by Nothing', 'CMF'] },
+  { company: 'Samsung', rank: 2, brands: ['Samsung', 'Galaxy'] },
+  { company: 'Google', rank: 3, brands: ['Google', 'Pixel'] },
   { company: 'OnePlus', rank: 4, brands: ['OnePlus', 'OPPO', 'Realme'] },
-  { company: 'vivo', rank: 5, brands: ['vivo', 'iQOO'] },
-  { company: 'Xiaomi', rank: 6, brands: ['Xiaomi', 'Redmi', 'Poco', 'POCO', 'HyperOS'] },
-  { company: 'Google', rank: 7, brands: ['Google', 'Pixel'] },
-  { company: 'Motorola', rank: 8, brands: ['Motorola', 'Moto'] },
-  { company: 'Transsion', rank: 9, brands: ['Tecno', 'Infinix', 'itel', 'iTel'] },
-  { company: 'Honor', rank: 10, brands: ['Honor', 'HONOR'] },
-  { company: 'Sony', rank: 11, brands: ['Sony', 'Xperia'] },
+  { company: 'Nothing', rank: 5, brands: ['Nothing', 'CMF by Nothing', 'CMF'] },
+  { company: 'Motorola', rank: 6, brands: ['Motorola', 'Moto'] },
+  { company: 'Xiaomi', rank: 7, brands: ['Xiaomi', 'Redmi', 'Poco', 'POCO', 'HyperOS'] },
+  { company: 'vivo', rank: 8, brands: ['vivo', 'iQOO'] },
+  { company: 'Honor', rank: 9, brands: ['Honor', 'HONOR'] },
+  { company: 'Sony', rank: 10, brands: ['Sony', 'Xperia'] },
+  { company: 'Transsion', rank: 11, brands: ['Tecno', 'Infinix', 'itel', 'iTel'] },
 ];
 
 const BRAND_PRIORITY_BY_NORMALIZED_BRAND = new Map(
