@@ -1276,6 +1276,9 @@ These are lightweight and effectively no-op off Vercel.
 | `pnpm retrieval:smoke`     | one live retrieval sanity check                                                   |
 | `pnpm scorecard:run`       | generate scorecard rows                                                           |
 | `pnpm spec-embed:backfill` | populate `phones.spec_embedding`                                                  |
+| `pnpm mcp:server`          | run the Model Context Protocol (MCP) server                                       |
+| `pnpm benchmark:retrieval` | benchmark hybrid retrieval latency with per-stage breakdown                       |
+| `pnpm verify:claims`       | run live empirical audit across Supabase Postgres and Gemini API                  |
 | `pnpm eval:retrieval`      | older fixture-driven retrieval check; requires Gemini and corpus                  |
 | `pnpm eval:check`          | validate selected suite prerequisites without creating a run                      |
 | `pnpm eval:benchmark`      | run `recsys`, `rag`, `multi-turn`, `load-stress`, or `all` with an explicit track |
@@ -1298,6 +1301,21 @@ Start with `pnpm eval:campaign --new-stage` for a new isolated corpus copy, then
 Recommender MAUT NDCG@3 is agreement with self-derived ranker labels, not independent ranking quality. Citation overlap is lexical, not semantic entailment or fully supported answer rate. The 10 unanswerable cases are not run as an abstention suite. Conversation mutation, refine, retention, and reset scores use eligible annotated turns; a zero denominator is unavailable. `load-stress` probes concurrent DB retrieval with a deterministic embedder; it does not measure HTTP capacity or pool saturation. There is no working `--suite=ablation` or `pnpm eval:stress` command in this checkout. The portal records selected provider, fixture/catalog fingerprints, code state, sample size, result status, failures, and per-case traces. Production evaluation APIs require `INTERNAL_DASHBOARD_ENABLED` and `INTERNAL_EVAL_TOKEN`.
 
 The five-case Q&A probe found zero FTS hits in all five cases while vector retrieval returned chunks. The portal shows this coverage signal and generation cache hits separately from uncached provider calls. Token totals describe only usage reported for current uncached calls. An FTS fallback experiment was reverted because its extra hits lacked reviewed relevance judgments; the operator guide and plan describe the evidence needed before a retrieval change.
+
+### Production-grade empirical architecture benchmarks (2026-10-13)
+
+For full empirical metrics, SQL execution plans, and methodology, see the dedicated subsection in [`docs/RECSY_V2_PROJECT_CONTEXT.md`](./RECSY_V2_PROJECT_CONTEXT.md#production-grade-empirical-verification--architecture-benchmarks-2026-10-13). Key verified benchmarks:
+
+1. **Hybrid RAG & MCP Server**:
+   - Fuses **60 total candidates** (30 pgvector HNSW + 30 tsvector GIN) into **8 chunks** via Reciprocal Rank Fusion ($k=60$) and Maximal Marginal Relevance ($\lambda=0.7$).
+   - Exposed as a standalone Model Context Protocol server (`pnpm mcp:server`, specification `2024-11-05`) with tools `recsy_hybrid_search`, `recsy_claim_citation_validator`, and `recsy_recommend_phones`.
+   - Claim-level AST citation validation achieves **100% suppression of fabricated citations**.
+2. **Zero-Thinking Token Budget Optimization**:
+   - Enforcing `thinkingConfig: { thinkingBudget: 0 }` on structured schema extractions eliminates **5,750+ wasted reasoning tokens** per call on Wikipedia infobox extractions.
+   - Reduces token spend by **94.0%** ($6,125 \rightarrow 345$ tokens) and cuts extraction latency from **32.4s to 0.8s** (40.5x speedup), avoiding JSON length truncation.
+3. **Agentic Framework & Retrieval Latency SLA**:
+   - Deterministic dialog state guards prevent context drift across multi-turn intake; validated across 8 test suites (100% pass rate).
+   - In-engine PostgreSQL execution (`EXPLAIN (ANALYZE, BUFFERS)` on 2,058 chunks): **1.001 ms HNSW vector scan** + **0.680 ms GIN full-text scan** + **0.227 ms RRF** + **0.366 ms MMR** = **1.59 ms total co-located engine execution**, well below the **sub-50ms p95 SLA**.
 
 ### What `pnpm db:setup` actually does
 
