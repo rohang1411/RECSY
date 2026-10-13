@@ -9,6 +9,7 @@ import type { AppDb } from '@/services/db/client';
 import { getPostgres } from '@/services/db/client';
 import { chunks, phones } from '@/services/db/schema';
 import { loadRecommendationCatalog } from '@/services/recommender/catalog';
+import { assertEvaluationDatabaseSafety } from './workload-guard';
 import type { GoldenBenchmarkDataset, MultiTurnTrajectoryFixture } from './types';
 
 const nonempty = z.string().trim().min(1);
@@ -269,7 +270,7 @@ export async function checkEvaluationReadiness(
           `missing ${required}; apply restored migration 0009 before session or multi-turn testing`,
         );
   }
-  const catalog = await loadRecommendationCatalog(db, 'US');
+  const catalog = await loadRecommendationCatalog(db, 'US', { withSpecEmbeddings: false });
   if (catalog.length === 0)
     throw new EvaluationPreflightError(
       'catalog',
@@ -320,6 +321,10 @@ export async function checkEvaluationReadiness(
   let loadTargetPhoneId: string | null = null;
   let loadTargetChunkCount = 0;
   if (suite === 'load-stress') {
+    assertEvaluationDatabaseSafety({
+      action: 'Load stress preflight check',
+      allowSmoke: sampleScale === 'quick',
+    });
     const candidateIds = catalog.map((p) => p.phoneId);
     const rows = await db
       .select({ phoneId: chunks.phoneId })

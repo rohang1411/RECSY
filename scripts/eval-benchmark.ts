@@ -6,13 +6,12 @@
  */
 import { getDb } from '@/services/db/client';
 import { executeBenchmarkSuite } from '@/services/eval/orchestrator';
+import { assertEvaluationDatabaseSafety } from '@/services/eval/workload-guard';
 
 async function main(): Promise<void> {
   console.log('\n======================================================');
   console.log('RECSY v2 — Evaluation Runner');
   console.log('======================================================\n');
-
-  const db = getDb();
 
   const args = process.argv.slice(2);
   const suiteArg = args.find((a) => a.startsWith('--suite='))?.split('=')[1] ?? 'recsys';
@@ -20,6 +19,15 @@ async function main(): Promise<void> {
   const trackArg = args.find((a) => a.startsWith('--track='))?.split('=')[1] ?? 'stub';
   const vusArg = args.find((a) => a.startsWith('--vus='))?.split('=')[1];
   const totalArg = args.find((a) => a.startsWith('--total='))?.split('=')[1];
+
+  if (suiteArg === 'load-stress' || suiteArg === 'all' || (vusArg && Number(vusArg) > 1)) {
+    assertEvaluationDatabaseSafety({
+      action: `Evaluation benchmark (${suiteArg})`,
+      allowSmoke: sampleArg === 'quick',
+    });
+  }
+
+  const db = getDb();
   if (!['recsys', 'rag', 'multi-turn', 'all', 'load-stress'].includes(suiteArg))
     throw new Error(`Unknown suite: ${suiteArg}`);
   if (!['quick', 'full'].includes(sampleArg)) throw new Error(`Unknown sample: ${sampleArg}`);

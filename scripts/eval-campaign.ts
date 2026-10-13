@@ -4,8 +4,14 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createServer } from 'node:net';
+import { assertEvaluationDatabaseSafety } from '../src/services/eval/workload-guard';
 
 async function main() {
+  assertEvaluationDatabaseSafety({
+    action: 'Evaluation campaign execution',
+    allowSmoke: true,
+  });
+
   const children: ChildProcess[] = [];
   const flags = new Set(process.argv.slice(2));
   const tsx = resolve('node_modules/tsx/dist/cli.mjs');

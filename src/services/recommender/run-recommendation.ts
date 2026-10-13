@@ -24,7 +24,7 @@ import type { LlmProvider } from '@/services/llm/types';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
 import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
-import { loadRecommendationCatalog } from './catalog';
+import { getCachedRecommendationCatalog } from './catalog-cache';
 import { extractUserRequirements } from './extract-requirements';
 import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
@@ -177,7 +177,7 @@ export async function runRecommendationPipeline(input: {
 
   const defRows = await input.db.select().from(aspectDefinitions);
   const defaultW = buildDefaultAspectWeights(defRows);
-  const fullCatalog = await loadRecommendationCatalog(input.db, input.regionCode ?? 'US');
+  const fullCatalog = await getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
 
   const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
   let queryEmbedding: readonly number[] | undefined;

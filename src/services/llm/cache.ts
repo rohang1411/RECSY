@@ -12,11 +12,13 @@
  *
  * Cache hits bump a `hits` counter and refresh `last_hit_at` for observability.
  */
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import { getDb } from '@/services/db/client';
 import { llmCache } from '@/services/db/schema';
 import { logger } from '@/services/logger';
+
+import { createHash } from 'node:crypto';
 
 import type {
   ChatDelta,
@@ -32,25 +34,22 @@ import type {
 
 const log = logger.child({ component: 'llm-cache' });
 
-/** sha256 of the canonicalised request. Browser-safe fallback via subtle crypto. */
-async function hashRequest(input: {
+/** sha256 of the canonicalised request. */
+function hashRequest(input: {
   model: string;
   messages: readonly { role: string; content: string }[];
   temperature?: number;
   maxOutputTokens?: number;
   extras?: Readonly<Record<string, string | number | boolean>>;
   schemaName?: string;
-}): Promise<string> {
+}): string {
   const canonical = JSON.stringify(input);
-  const bytes = new TextEncoder().encode(canonical);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 export class CachedLlmProvider implements LlmProvider {
   readonly name: string;
+  private readonly inFlight = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly inner: LlmProvider,
@@ -62,7 +61,7 @@ export class CachedLlmProvider implements LlmProvider {
   async chat(input: ChatInput): Promise<ChatResult> {
     if (!this.enabled) return this.inner.chat(input);
 
-    const key = await hashRequest({
+    const key = hashRequest({
       model: input.model,
       messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
       ...(input.temperature !== undefined && { temperature: input.temperature }),
@@ -70,15 +69,25 @@ export class CachedLlmProvider implements LlmProvider {
       ...(input.cacheKeyExtras !== undefined && { extras: input.cacheKeyExtras }),
     });
 
-    const cached = await this.readCache(key);
-    if (cached !== null) {
-      log.debug({ model: input.model, key: key.slice(0, 12) }, 'chat cache hit');
-      return { ...(cached as ChatResult), cached: true };
-    }
+    const pending = this.inFlight.get(key);
+    if (pending) return pending as Promise<ChatResult>;
 
-    const result = await this.inner.chat(input);
-    await this.writeCache(key, input.model, serialiseInput(input), result);
-    return result;
+    const promise = (async () => {
+      const cached = await this.readCache(key);
+      if (cached !== null) {
+        log.debug({ model: input.model, key: key.slice(0, 12) }, 'chat cache hit');
+        return { ...(cached as ChatResult), cached: true };
+      }
+
+      const result = await this.inner.chat(input);
+      await this.writeCache(key, input.model, serialiseInput(input), result);
+      return result;
+    })().finally(() => {
+      this.inFlight.delete(key);
+    });
+
+    this.inFlight.set(key, promise);
+    return promise;
   }
 
   chatStream(input: ChatInput): AsyncIterable<ChatDelta> {
@@ -89,7 +98,7 @@ export class CachedLlmProvider implements LlmProvider {
   async structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>> {
     if (!this.enabled) return this.inner.structured(input);
 
-    const key = await hashRequest({
+    const key = hashRequest({
       model: input.model,
       messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
       ...(input.temperature !== undefined && { temperature: input.temperature }),
@@ -98,24 +107,34 @@ export class CachedLlmProvider implements LlmProvider {
       ...(input.cacheKeyExtras !== undefined && { extras: input.cacheKeyExtras }),
     });
 
-    const cached = await this.readCache(key);
-    if (cached !== null) {
-      log.debug({ model: input.model, key: key.slice(0, 12) }, 'structured cache hit');
-      const raw = cached as StructuredResult<unknown>;
-      // Re-validate on read so a schema change invalidates the cache.
-      const parsed = input.schema.safeParse(raw.value);
-      if (parsed.success) {
-        return { ...raw, value: parsed.data, cached: true } as StructuredResult<T>;
-      }
-      log.warn(
-        { model: input.model },
-        'cached structured response failed revalidation; refetching',
-      );
-    }
+    const pending = this.inFlight.get(key);
+    if (pending) return pending as Promise<StructuredResult<T>>;
 
-    const result = await this.inner.structured(input);
-    await this.writeCache(key, input.model, serialiseStructuredInput(input), result);
-    return result;
+    const promise = (async () => {
+      const cached = await this.readCache(key);
+      if (cached !== null) {
+        log.debug({ model: input.model, key: key.slice(0, 12) }, 'structured cache hit');
+        const raw = cached as StructuredResult<unknown>;
+        // Re-validate on read so a schema change invalidates the cache.
+        const parsed = input.schema.safeParse(raw.value);
+        if (parsed.success) {
+          return { ...raw, value: parsed.data, cached: true } as StructuredResult<T>;
+        }
+        log.warn(
+          { model: input.model },
+          'cached structured response failed revalidation; refetching',
+        );
+      }
+
+      const result = await this.inner.structured(input);
+      await this.writeCache(key, input.model, serialiseStructuredInput(input), result);
+      return result;
+    })().finally(() => {
+      this.inFlight.delete(key);
+    });
+
+    this.inFlight.set(key, promise);
+    return promise;
   }
 
   embed(
@@ -135,11 +154,24 @@ export class CachedLlmProvider implements LlmProvider {
   private async readCache(promptHash: string): Promise<unknown | null> {
     try {
       const [row] = await getDb()
-        .update(llmCache)
-        .set({ hits: sql`${llmCache.hits} + 1`, lastHitAt: new Date() })
+        .select({
+          response: llmCache.response,
+          createdAt: llmCache.createdAt,
+        })
+        .from(llmCache)
         .where(eq(llmCache.promptHash, promptHash))
-        .returning({ response: llmCache.response });
-      return row?.response ?? null;
+        .limit(1);
+
+      if (!row) return null;
+
+      // 30-day TTL check
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      if (row.createdAt && Date.now() - new Date(row.createdAt).getTime() > THIRTY_DAYS_MS) {
+        log.debug({ key: promptHash.slice(0, 12) }, 'llm cache entry expired (> 30 days)');
+        return null;
+      }
+
+      return row.response;
     } catch (err) {
       // Cache reads must never break callers — degrade gracefully.
       log.warn({ err }, 'llm cache read failed');
@@ -154,10 +186,36 @@ export class CachedLlmProvider implements LlmProvider {
     response: unknown,
   ): Promise<void> {
     try {
+      const jsonStr = JSON.stringify(response);
+      // Byte size limit: bypass storage if response exceeds 1MB (1,048,576 bytes)
+      if (new TextEncoder().encode(jsonStr).length > 1_048_576) {
+        log.warn(
+          { promptHash: promptHash.slice(0, 12) },
+          'llm response exceeds 1MB; skipping cache write',
+        );
+        return;
+      }
+
+      // Truncate promptRaw to a bounded debug excerpt (max 500 chars)
+      const truncatedPrompt = promptRaw.slice(0, 500);
+
       await getDb()
         .insert(llmCache)
-        .values({ promptHash, promptRaw, model, response: response as object })
-        .onConflictDoNothing({ target: llmCache.promptHash });
+        .values({
+          promptHash,
+          promptRaw: truncatedPrompt,
+          model,
+          response: response as object,
+        })
+        .onConflictDoUpdate({
+          target: llmCache.promptHash,
+          set: {
+            response: response as object,
+            model,
+            promptRaw: truncatedPrompt,
+            createdAt: new Date(),
+          },
+        });
     } catch (err) {
       log.warn({ err }, 'llm cache write failed');
     }

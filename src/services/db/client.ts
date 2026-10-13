@@ -27,10 +27,14 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 function getClient(): ReturnType<typeof postgres> {
   if (_client === null) {
     _client = createPostgresClient(env.DATABASE_URL, {
-      max: env.NODE_ENV === 'production' ? 10 : 6,
+      max: env.NODE_ENV === 'production' ? 2 : 4,
       idle_timeout: 20,
+      connect_timeout: 10,
       prepare: false, // required for Supabase's pgbouncer transaction mode
-      connection: { search_path: `${env.DATABASE_SCHEMA}, extensions` },
+      connection: {
+        search_path: `${env.DATABASE_SCHEMA}, extensions`,
+        application_name: 'recsy_app',
+      },
     });
   }
   return _client;

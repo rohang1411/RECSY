@@ -3,8 +3,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { env } from '../src/env';
 import { createPostgresClient } from '../src/services/db/connection';
+import { assertEvaluationDatabaseSafety } from '../src/services/eval/workload-guard';
 
 async function main() {
+  assertEvaluationDatabaseSafety({
+    action: 'Staging schema creation and corpus clone',
+    databaseUrl: env.DATABASE_URL,
+  });
+
   const namespace = `eval_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}`;
   const db = createPostgresClient(env.DATABASE_URL, {
     max: 1,

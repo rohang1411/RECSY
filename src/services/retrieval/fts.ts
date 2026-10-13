@@ -132,6 +132,7 @@ export class FtsSearch implements Retriever {
         JOIN sources s ON s.id = c.source_id
        WHERE c.phone_id = ${phoneId}
          AND s.status   = 'active'
+         AND (c.text % ${normalised} OR similarity(c.text, ${normalised}) > ${TRIGRAM_MIN_SIMILARITY})
          AND similarity(c.text, ${normalised}) > ${TRIGRAM_MIN_SIMILARITY}
        ORDER BY rank DESC
        LIMIT ${k}

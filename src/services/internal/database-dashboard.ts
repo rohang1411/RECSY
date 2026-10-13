@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   activeCatalogCandidateSql,
   isArchivedCatalogCandidate,
@@ -89,6 +89,14 @@ let cachedDashboardBase: {
   readonly expiresAtMs: number;
 } | null = null;
 
+let inFlightDashboardBasePromise: Promise<{
+  readonly summary: DatabaseDashboardSummary;
+  readonly blockedReasons: readonly BlockedReasonItem[];
+  readonly devices: readonly DeviceRowItem[];
+  readonly brands: readonly string[];
+  readonly expiresAtMs: number;
+}> | null = null;
+
 const EMPTY_DASHBOARD_DATA: DatabaseDashboardSummary = {
   totalActivePhones: 0,
   totalCandidates: 0,
@@ -151,6 +159,153 @@ export async function loadDatabaseDashboardData(
   }
 }
 
+async function fetchDashboardBaseData(): Promise<{
+  readonly summary: DatabaseDashboardSummary;
+  readonly blockedReasons: readonly BlockedReasonItem[];
+  readonly devices: readonly DeviceRowItem[];
+  readonly brands: readonly string[];
+  readonly expiresAtMs: number;
+}> {
+  const db = getDb();
+  const candidateRows = await requireQuery(loadCandidates(db), 'loadCandidates');
+  const candidateIds = candidateRows.map((c) => c.id);
+  const [summary, activePhoneRows, issuesRows] = await Promise.all([
+    loadDatabaseSummary(db, true),
+    requireQuery(loadActivePhones(db), 'loadActivePhones'),
+    requireQuery(
+      loadQualityIssuesForCandidates(db, candidateIds),
+      'loadQualityIssuesForCandidates',
+    ),
+  ]);
+
+  const issuesByCandidateId = new Map<string, typeof issuesRows>();
+  for (const issue of issuesRows) {
+    if (!issue.candidateId) continue;
+    const existing = issuesByCandidateId.get(issue.candidateId) ?? [];
+    existing.push(issue);
+    issuesByCandidateId.set(issue.candidateId, existing);
+  }
+
+  const reasonCountMap = new Map<string, number>();
+  const deviceItems: DeviceRowItem[] = [];
+  const promotedSlugs = new Set<string>();
+
+  for (const candidate of candidateRows) {
+    const candidateIssues = issuesByCandidateId.get(candidate.id) ?? [];
+    const category =
+      candidate.excluded ||
+      isArchivedCatalogCandidate(candidate.issueCodes) ||
+      candidate.matchedStatus === 'archived'
+        ? 'archived'
+        : categorizeCandidate(candidate.status, candidate.decision);
+    const blockedReason = deriveBlockedReason(candidate, candidateIssues);
+    if (category === 'promoted' && candidate.matchedSlug) {
+      if (promotedSlugs.has(candidate.matchedSlug)) continue;
+      promotedSlugs.add(candidate.matchedSlug);
+    }
+
+    if (category === 'blocked' && candidate.issueCodes) {
+      const reasonCodes = new Set<string>();
+      for (const code of candidate.issueCodes) {
+        if (code) {
+          reasonCodes.add(code);
+        }
+      }
+      if (candidateIssues.length > 0) {
+        for (const issue of candidateIssues) {
+          reasonCodes.add(issue.code);
+        }
+      }
+      if (
+        candidate.lastError &&
+        candidate.issueCodes.length === 0 &&
+        candidateIssues.length === 0
+      ) {
+        const simplifiedError = simplifyError(candidate.lastError);
+        reasonCodes.add(simplifiedError);
+      }
+      for (const code of reasonCodes) reasonCountMap.set(code, (reasonCountMap.get(code) ?? 0) + 1);
+    }
+
+    deviceItems.push({
+      id: candidate.id,
+      name: candidate.candidateTitle,
+      brand: candidate.matchedBrand ?? inferBrand(candidate.candidateTitle),
+      model: candidate.matchedModel ?? null,
+      category,
+      status: candidate.status,
+      decision: candidate.decision,
+      blockedReason,
+      issueCodes: candidate.issueCodes ?? [],
+      qualityIssues: candidateIssues.map((issue) => ({
+        severity: issue.severity,
+        code: issue.code,
+        message: issue.message,
+        fieldPath: issue.fieldPath,
+      })),
+      sourceKey: candidate.sourceKey,
+      sourceUrl: candidate.sourceUrl,
+      confidence: candidate.confidence,
+      attempts: candidate.attempts,
+      retryAfter: candidate.retryAfter ? candidate.retryAfter.toISOString() : null,
+      phoneSlug: category === 'archived' ? null : candidate.matchedSlug,
+      updatedAt: candidate.updatedAt ? candidate.updatedAt.toISOString() : new Date().toISOString(),
+    });
+  }
+
+  const candidatePhoneSlugs = new Set(
+    deviceItems
+      .filter((d) => d.phoneSlug && d.category === 'promoted')
+      .map((d) => d.phoneSlug as string),
+  );
+
+  for (const phone of activePhoneRows) {
+    if (!candidatePhoneSlugs.has(phone.slug)) {
+      deviceItems.push({
+        id: phone.id,
+        name: `${phone.brand} ${phone.model}`,
+        brand: phone.brand,
+        model: phone.model,
+        category: 'promoted',
+        status: 'promoted',
+        decision: 'promote',
+        blockedReason: null,
+        issueCodes: [],
+        qualityIssues: [],
+        sourceKey: 'recsy_catalog',
+        sourceUrl: `/phones/${phone.slug}`,
+        confidence: '1.00',
+        attempts: 0,
+        retryAfter: null,
+        phoneSlug: phone.slug,
+        updatedAt: phone.updatedAt ? phone.updatedAt.toISOString() : new Date().toISOString(),
+      });
+    }
+  }
+
+  const blockedReasons: BlockedReasonItem[] = Array.from(reasonCountMap.entries())
+    .map(([code, count]) => ({
+      code,
+      label: humanizeReason(code),
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const brandSet = new Set<string>();
+  for (const item of deviceItems) {
+    if (item.brand && item.category !== 'archived') brandSet.add(item.brand);
+  }
+  const brands = Array.from(brandSet).sort();
+  const now = Date.now();
+  return {
+    summary,
+    blockedReasons,
+    devices: deviceItems,
+    brands,
+    expiresAtMs: now + 600_000,
+  };
+}
+
 async function loadDatabaseDashboardDataInternal(
   filters: DatabaseFilterParams = {},
 ): Promise<DatabaseDashboardData> {
@@ -165,143 +320,14 @@ async function loadDatabaseDashboardDataInternal(
   if (cachedDashboardBase && now < cachedDashboardBase.expiresAtMs) {
     baseData = cachedDashboardBase;
   } else {
-    const db = getDb();
-    const summary = await loadDatabaseSummary(db, true);
-    const activePhoneRows = await requireQuery(loadActivePhones(db), 'loadActivePhones');
-    const [candidateRows, issuesRows] = await Promise.all([
-      requireQuery(loadCandidates(db), 'loadCandidates'),
-      requireQuery(loadRecentQualityIssues(db), 'loadRecentQualityIssues'),
-    ]);
-
-    const issuesByCandidateId = new Map<string, typeof issuesRows>();
-    for (const issue of issuesRows) {
-      if (!issue.candidateId) continue;
-      const existing = issuesByCandidateId.get(issue.candidateId) ?? [];
-      existing.push(issue);
-      issuesByCandidateId.set(issue.candidateId, existing);
-    }
-
-    const reasonCountMap = new Map<string, number>();
-    const deviceItems: DeviceRowItem[] = [];
-    const promotedSlugs = new Set<string>();
-
-    for (const candidate of candidateRows) {
-      const candidateIssues = issuesByCandidateId.get(candidate.id) ?? [];
-      const category =
-        candidate.excluded ||
-        isArchivedCatalogCandidate(candidate.issueCodes) ||
-        candidate.matchedStatus === 'archived'
-          ? 'archived'
-          : categorizeCandidate(candidate.status, candidate.decision);
-      const blockedReason = deriveBlockedReason(candidate, candidateIssues);
-      if (category === 'promoted' && candidate.matchedSlug) {
-        if (promotedSlugs.has(candidate.matchedSlug)) continue;
-        promotedSlugs.add(candidate.matchedSlug);
-      }
-
-      if (category === 'blocked' && candidate.issueCodes) {
-        const reasonCodes = new Set<string>();
-        for (const code of candidate.issueCodes) {
-          if (code) {
-            reasonCodes.add(code);
-          }
-        }
-        if (candidateIssues.length > 0) {
-          for (const issue of candidateIssues) {
-            reasonCodes.add(issue.code);
-          }
-        }
-        if (
-          candidate.lastError &&
-          candidate.issueCodes.length === 0 &&
-          candidateIssues.length === 0
-        ) {
-          const simplifiedError = simplifyError(candidate.lastError);
-          reasonCodes.add(simplifiedError);
-        }
-        for (const code of reasonCodes)
-          reasonCountMap.set(code, (reasonCountMap.get(code) ?? 0) + 1);
-      }
-
-      deviceItems.push({
-        id: candidate.id,
-        name: candidate.candidateTitle,
-        brand: candidate.matchedBrand ?? inferBrand(candidate.candidateTitle),
-        model: candidate.matchedModel ?? null,
-        category,
-        status: candidate.status,
-        decision: candidate.decision,
-        blockedReason,
-        issueCodes: candidate.issueCodes ?? [],
-        qualityIssues: candidateIssues.map((issue) => ({
-          severity: issue.severity,
-          code: issue.code,
-          message: issue.message,
-          fieldPath: issue.fieldPath,
-        })),
-        sourceKey: candidate.sourceKey,
-        sourceUrl: candidate.sourceUrl,
-        confidence: candidate.confidence,
-        attempts: candidate.attempts,
-        retryAfter: candidate.retryAfter ? candidate.retryAfter.toISOString() : null,
-        phoneSlug: category === 'archived' ? null : candidate.matchedSlug,
-        updatedAt: candidate.updatedAt
-          ? candidate.updatedAt.toISOString()
-          : new Date().toISOString(),
+    if (!inFlightDashboardBasePromise) {
+      inFlightDashboardBasePromise = fetchDashboardBaseData().finally(() => {
+        inFlightDashboardBasePromise = null;
       });
     }
-
-    const candidatePhoneSlugs = new Set(
-      deviceItems
-        .filter((d) => d.phoneSlug && d.category === 'promoted')
-        .map((d) => d.phoneSlug as string),
-    );
-
-    for (const phone of activePhoneRows) {
-      if (!candidatePhoneSlugs.has(phone.slug)) {
-        deviceItems.push({
-          id: phone.id,
-          name: `${phone.brand} ${phone.model}`,
-          brand: phone.brand,
-          model: phone.model,
-          category: 'promoted',
-          status: 'promoted',
-          decision: 'promote',
-          blockedReason: null,
-          issueCodes: [],
-          qualityIssues: [],
-          sourceKey: 'recsy_catalog',
-          sourceUrl: `/phones/${phone.slug}`,
-          confidence: '1.00',
-          attempts: 0,
-          retryAfter: null,
-          phoneSlug: phone.slug,
-          updatedAt: phone.updatedAt ? phone.updatedAt.toISOString() : new Date().toISOString(),
-        });
-      }
-    }
-
-    const blockedReasons: BlockedReasonItem[] = Array.from(reasonCountMap.entries())
-      .map(([code, count]) => ({
-        code,
-        label: humanizeReason(code),
-        count,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    const brandSet = new Set<string>();
-    for (const item of deviceItems) {
-      if (item.brand && item.category !== 'archived') brandSet.add(item.brand);
-    }
-    const brands = Array.from(brandSet).sort();
-
-    baseData = {
-      summary,
-      blockedReasons,
-      devices: deviceItems,
-      brands,
-    };
-    cachedDashboardBase = { ...baseData, expiresAtMs: now + 60_000 };
+    const fresh = await inFlightDashboardBasePromise;
+    cachedDashboardBase = fresh;
+    baseData = fresh;
   }
 
   const { summary, blockedReasons, devices: deviceItems, brands } = baseData;
@@ -359,7 +385,10 @@ async function requireQuery<T>(promise: Promise<T>, label: string): Promise<T> {
   return result;
 }
 
-async function loadDatabaseSummary(db: AppDb, strict = false): Promise<DatabaseDashboardSummary> {
+export async function loadDatabaseSummary(
+  db: AppDb,
+  strict = false,
+): Promise<DatabaseDashboardSummary> {
   try {
     const [activePhonesCount, candidateSummary, queueSummary] = await Promise.all([
       requireQuery(
@@ -461,6 +490,8 @@ let cachedCommandCenterDb: {
   readonly expiresAtMs: number;
 } | null = null;
 
+let inFlightCommandCenterDbPromise: Promise<CommandCenterDatabaseSummary> | null = null;
+
 async function loadTopBlockedReason(db: AppDb): Promise<string> {
   const row = await safeQuery(
     db
@@ -486,24 +517,33 @@ async function loadTopBlockedReason(db: AppDb): Promise<string> {
   return row[0]?.code ? humanizeReason(row[0].code) : 'None';
 }
 
-export async function loadCommandCenterDatabaseSummary(): Promise<CommandCenterDatabaseSummary> {
-  const now = Date.now();
-  if (cachedCommandCenterDb && now < cachedCommandCenterDb.expiresAtMs) {
-    return cachedCommandCenterDb.data;
-  }
-
+async function fetchCommandCenterDatabaseSummary(): Promise<CommandCenterDatabaseSummary> {
   const db = getDb();
   const [summary, topBlockedReason] = await Promise.all([
     loadDatabaseSummary(db, true),
     loadTopBlockedReason(db),
   ]);
 
-  const result: CommandCenterDatabaseSummary = {
+  return {
     summary,
     topBlockedReason,
   };
+}
 
-  cachedCommandCenterDb = { data: result, expiresAtMs: now + 60_000 };
+export async function loadCommandCenterDatabaseSummary(): Promise<CommandCenterDatabaseSummary> {
+  const now = Date.now();
+  if (cachedCommandCenterDb && now < cachedCommandCenterDb.expiresAtMs) {
+    return cachedCommandCenterDb.data;
+  }
+
+  if (!inFlightCommandCenterDbPromise) {
+    inFlightCommandCenterDbPromise = fetchCommandCenterDatabaseSummary().finally(() => {
+      inFlightCommandCenterDbPromise = null;
+    });
+  }
+
+  const result = await inFlightCommandCenterDbPromise;
+  cachedCommandCenterDb = { data: result, expiresAtMs: now + 600_000 };
   return result;
 }
 
@@ -540,7 +580,8 @@ async function loadCandidates(db: AppDb) {
   });
 }
 
-async function loadRecentQualityIssues(db: AppDb) {
+async function loadQualityIssuesForCandidates(db: AppDb, candidateIds: readonly string[]) {
+  if (candidateIds.length === 0) return [];
   return db
     .select({
       candidateId: catalogQualityIssues.candidateId,
@@ -550,7 +591,8 @@ async function loadRecentQualityIssues(db: AppDb) {
       fieldPath: catalogQualityIssues.fieldPath,
     })
     .from(catalogQualityIssues)
-    .limit(300);
+    .where(inArray(catalogQualityIssues.candidateId, candidateIds))
+    .orderBy(desc(catalogQualityIssues.createdAt));
 }
 
 async function loadActivePhones(db: AppDb) {
