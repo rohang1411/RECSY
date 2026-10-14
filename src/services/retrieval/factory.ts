@@ -26,9 +26,10 @@ const root = logger.child({ component: 'retrieval' });
 export function createHybridRetriever(deps?: { readonly llm?: LlmProvider }): HybridRetriever {
   const sql = getPostgres();
   return new HybridRetriever({
+    sql,
     vector: new VectorSearch(
       { sql, log: root.child({ retriever: 'vector' }) },
-      { withEmbeddings: true },
+      { withEmbeddings: false },
     ),
     fts: new FtsSearch({ sql, log: root.child({ retriever: 'fts' }) }),
     llm: deps?.llm ?? getLlm(),

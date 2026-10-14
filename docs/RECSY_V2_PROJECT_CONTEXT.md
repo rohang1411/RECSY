@@ -119,7 +119,7 @@ experiences on one site:
 - **Internal Pipeline Observatory.** An internal-only, narrative-driven dashboard (`/internal/pipeline`) that visualizes the entire RECSY data lifecycle for presentations, featuring live database metrics and pre-computed pipeline replays.
 
 **Stack summary.** Next.js 16 Â· Drizzle ORM â†’ Supabase Postgres + pgvector Â·
-Gemini 2.5 Flash/Pro via Vercel AI SDK Â· TypeScript ingestion adapters
+Gemini 3 Flash Preview / 2.5 Pro via Vercel AI SDK Â· TypeScript ingestion adapters
 (`youtubei.js` Â· Reddit public JSON Â· `@mozilla/readability` + `linkedom`).
 Runs entirely on free tiers.
 
@@ -3919,3 +3919,164 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 | Non-ASCII HTTP header lint rule         | An ESLint rule banning non-ASCII characters in string literals used as HTTP header values would have caught the Phase 2 em-dash bug at commit time |
 | `getDb()` â†’ `useDb()` rename          | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
 | Recommender `session.ts` session expiry | Anonymous sessions never expire from the DB; add a `created_at < NOW() - interval '7 days'` cleanup cron or a `max_age` column                     |
+
+---
+
+## 13. Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture
+
+### 13.1 Incident Summary & Root Cause Analysis
+
+On October 7, 2026, the project's Supabase Free-Tier monthly database egress quota (5 GB) was breached, recording **6.268 GB** total network egress, with **5.135 GB** consumed in a single day. Supabase placed the organization into an overage grace period with a restriction deadline of November 6, 2026.
+
+A forensic analysis of git history, execution telemetry, query plans, and database access logs confirmed the exact multi-factor root cause:
+
+1. **Direct Hosted Staging Schema Load Testing (Primary Mechanism, ~5.1 GB)**:
+   - Automated evaluation scripts (`scripts/eval-http-load.ts`, `scripts/eval-campaign.ts`, `scripts/eval-benchmark.ts`, `scripts/eval-stage.ts`) executed 780-request benchmark and HTTP load test campaigns against staging schemas (`eval_*`) directly on the shared hosted Supabase pooler (`*.supabase.co` / `*.supabase.com`).
+   - Each evaluation turn issued full catalog queries, hybrid retrieval, vector searches, and evaluation dumps across network hops.
+
+2. **Recommendation Catalog Query Amplification (Secondary Multiplier, ~5.4 MB per cold turn)**:
+   - In `src/services/recommender/catalog.ts`, recommendation turns fetched phone candidate data via a 4-table join: `phones` JOIN `phone_regional_details` LEFT JOIN `aspects` LEFT JOIN `aspect_definitions`.
+   - The 768-dimensional float32 vector embedding (`phones.spec_embedding`, ~3,072 bytes in binary, ~4,500 bytes as JSON array) was selected on the `phones` table.
+   - Because each phone has 7 aspects across multiple schema versions, the join produced 428 rows instead of 74 distinct phones (a 5.8× row multiplication).
+   - The large semantic vector was serialized and returned across the wire **5.8 times per phone**, resulting in ~5.4 MB of raw data per catalog fetch rather than ~0.88 MB.
+   - Cold serverless instances and un-cached turns transferred this amplified payload on every recommendation turn.
+
+3. **Eager Vector Serialization in Retrieval (Stage-1 MMR Egress)**:
+   - In `src/services/retrieval/vector.ts`, stage-1 vector queries eagerly selected `chunks.embedding` for all 20–30 candidate chunks.
+   - However, embeddings are only consumed downstream by MMR (Maximal Marginal Relevance) for the top diversification prefix (`min(k * 3, candidateCount)`). Chunks eliminated by reciprocal rank fusion (RRF) never needed their 768-dim embeddings fetched.
+
+4. **Unbounded Internal Observability Dashboards**:
+   - `/internal/database` concurrently executed `loadDatabaseDashboardData()` (fetching all phones, candidates, and 300 unordered quality issues) AND `loadPhoneIngestionDashboardData()` (fetching all phones, sources, chunks, lateral crawl queue, lateral ingest runs), regardless of whether the user viewed the "Catalog" tab or "Ingestion" tab.
+   - Dashboard queries lacked in-flight request coalescing, had short 30-45s TTLs, and lacked bounded pagination.
+
+5. **Telemetry & Log Amplification**:
+   - `scripts/scorecard-auto.ts` inserted 7 redundant `scorecard_runs` rows with `status = 'skipped'` for every unchanged phone every 6 hours (560 useless rows/day).
+   - `src/services/llm/cache.ts` executed an `UPDATE ... RETURNING` on every single cache read, acquiring row locks, generating write-ahead log (WAL), and creating dead tuples. It also used `onConflictDoNothing`, permanently retaining invalid structured outputs that failed schema parsing.
+
+6. **Long-Running Database Transactions Blocking Connections**:
+   - `/api/recommend` opened a database transaction with `FOR UPDATE` on `recommendationSessions` and held it during the entire external Gemini LLM network generation, starving connection pools.
+
+7. **Trigram Fallback Query Non-Indexability**:
+   - In `src/services/retrieval/fts.ts`, the trigram fallback used a bare `similarity(c.text, query) > 0.2` predicate without the `%` operator, preventing PostgreSQL planner from utilizing the `chunks_text_trgm_idx` GIN index.
+
+---
+
+### 13.2 Optimization Architecture & Implemented Solutions
+
+To permanently resolve the quota breach, prevent regressions, and ensure the project operates comfortably within a **2 GB/month design budget** (leaving >60% headroom under the 5 GB free limit), nine phases (A–I) were implemented to the absolute depth of each issue:
+
+#### Phase A: Workload Guardrails, Access Hardening & RLS Hardening
+
+- **Hosted Workload Safety Guard** (`src/services/eval/workload-guard.ts`):
+  - Enforces `assertEvaluationDatabaseSafety(targetUrl, purpose)`.
+  - Rejects execution of load tests, HTTP benchmarks, and schema staging against hosted Supabase hostnames (`.supabase.co`, `.supabase.com`) unless explicit local database or `--smoke` mode is specified.
+  - Wired into `eval-stage.ts`, `eval-campaign.ts`, `eval-http-load.ts`, `eval-load.ts`, `eval-benchmark.ts`, and `preflight.ts`.
+- **Operator Authentication & Gating** (`src/services/internal/auth.ts`, `src/app/api/internal/auth/route.ts`, `src/app/internal/login/page.tsx`, `src/app/internal/layout.tsx`):
+  - Implemented secure HttpOnly operator session cookie (`recsy_operator_session`) with HMAC-SHA256 signature, constant-time token verification, and fail-closed security.
+  - All `/internal/*` routes are authenticated. Unauthorized requests render the login interface without executing underlying database queries.
+  - `robots.ts` disallows crawlers on `/internal/` and `/api/internal/`, and internal navigation links disable prefetching (`prefetch={false}`).
+- **Row-Level Security & Privilege Lockdown** (`drizzle/rls.sql`, `drizzle/migrations/0011_rls_security_hardening.sql`):
+  - Enabled RLS across all operational tables (`scorecard_runs`, `llm_usage_events`, `phone_regional_details`, `exchange_rates`, `benchmark_runs`, `benchmark_results`, etc.).
+  - Revoked table-level mutation privileges from `anon` and `authenticated` roles.
+  - Revoked `SELECT` privileges on vector columns (`phones.spec_embedding`, `chunks.embedding`) for anonymous roles.
+
+#### Phase B: Recommendation Catalog Projection Split & Coalescing Cache
+
+- **Projection Split** (`src/services/recommender/catalog.ts`):
+  - Decoupled the 4-table join. Phone specifications and 768-dim `specEmbedding` vectors are selected **once per phone** (74 rows instead of 428 rows).
+  - Aspect scores are fetched in a separate lightweight query and mapped in memory with deterministic latest-version resolution (`version` > `current.version`, then `updatedAt`).
+  - Added `withSpecEmbeddings: false` option for non-semantic workloads.
+- **Single-Flight Coalescing In-Memory Cache** (`src/services/recommender/catalog-cache.ts`):
+  - In-flight promise coalescing ensures concurrent requests share a single database fetch.
+  - 10-minute TTL with explicit post-commit invalidation helpers (`invalidateRecommendationCatalogCache`).
+
+#### Phase C: Deferred Vector Retrieval & MMR Parity
+
+- **Deferred Vector Fetching** (`src/services/retrieval/vector-cache.ts`, `src/services/retrieval/retriever.ts`, `src/services/retrieval/factory.ts`):
+  - Stage 1 vector search requests chunks without embeddings (`withEmbeddings: false`).
+  - RRF (Reciprocal Rank Fusion) fuses text and vector candidates without vectors in memory.
+  - Vectors are batch-fetched on-demand ONLY for the MMR diversification prefix (`min(k * 3, fused.length)`), retaining `undefined` for FTS-only chunks to preserve exact missing-vector penalties and deterministic ordering.
+  - LRU vector cache (15-min TTL, 1,000 chunks cap) prevents repeated vector egress across turns.
+
+#### Phase D: Bounded, Demand-Driven Internal Observability
+
+- **Demand-Driven View Tab Gating** (`src/app/internal/database/page.tsx`):
+  - Visiting `?view=catalog` loads only candidate dataset and queries a lightweight summary for the Ingestion badge.
+  - Visiting `?view=ingestion` loads only ingestion dataset and queries a lightweight summary for the Catalog badge.
+  - Eliminates parallel execution of 7 heavy database queries on every page view.
+- **Deterministic Candidate Quality Issues** (`src/services/internal/database-dashboard.ts`):
+  - Replaced arbitrary `LIMIT 300` unordered quality issues with `loadQualityIssuesForCandidates` using `WHERE candidate_id IN (...) ORDER BY created_at DESC`, guaranteeing exact diagnostics for displayed candidates while minimizing data egress.
+- **7-Day LLM Query Consolidation** (`src/services/internal/llm-usage-monitor.ts`):
+  - Replaced 3 separate 7-day table scans on `llm_usage_events` with a single query grouping by `(usage_area, model)`, aggregating `totals`, `topAreas`, and `modelMix` in-memory.
+- **In-Flight Coalescing & Extended TTLs**:
+  - Command Center / Ingestion metrics: 5-minute TTL (`src/services/internal/phone-ingestion-dashboard.ts`).
+  - Database dashboard / Catalog inventory: 10-minute TTL (`src/services/internal/database-dashboard.ts`).
+  - Pipeline runs monitor: 1-minute TTL (`src/services/internal/pipeline-run-monitor.ts`).
+  - Lifecycle phone direct slug lookup & 10-minute options cache (`src/app/internal/lifecycle/page.tsx`).
+
+#### Phase E: Scheduled Work Containment & Work Claims
+
+- **Scorecard Telemetry Flood Elimination** (`scripts/scorecard-auto.ts`):
+  - When chunks are unchanged, the automated runner advances `next_scorecard_at` without writing 7 redundant `scorecard_runs` skip rows, saving thousands of database writes per week.
+- **SQL Limit Pushdown** (`src/services/scorecard/scheduler.ts`):
+  - In single-shard runs (`totalShards === 1`), `LIMIT ${limit}` is pushed directly to PostgreSQL selection SQL.
+
+#### Phase F: LLM Cache Hygiene & Retention Pruning
+
+- **Standard SELECT on Cache Read** (`src/services/llm/cache.ts`):
+  - Replaced `UPDATE ... RETURNING` with a standard `SELECT`, eliminating WAL generation, row locks, and dead tuples on reads.
+  - 30-day TTL expiry check on read.
+- **Invalid Entry Replacement & Size Limits**:
+  - Replaced `onConflictDoNothing` with `onConflictDoUpdate` so revalidation failures are properly overwritten with fresh valid responses.
+  - Bounded prompt debug excerpts (max 500 characters) and 1 MB response size threshold.
+  - In-flight request coalescing for identical concurrent prompts.
+- **Retention Pruning Script** (`scripts/db-prune.ts`, `pnpm db:prune`):
+  - Bounded batch pruning (500 rows per transaction) with `--dry-run` support:
+    - Expired LLM cache (> 30 days)
+    - Expired rate limit windows (> 24 hours)
+    - Completed crawl queue (> 7 days)
+    - Scorecard runs (> 30 days success/skipped, > 90 days failed)
+    - Ingest runs (> 30 days completed, > 90 days failed)
+    - Inactive anonymous recommendation sessions (> 90 days).
+
+#### Phase G: Evaluation Schema Isolation & Safe Manifest
+
+- **Manifest-Driven Schema Lifecycle** (`scripts/eval-cleanup-manifest.ts`, `pnpm eval:cleanup:manifest`):
+  - Inventories all `eval_*` staging schemas, reporting table counts, row counts, and bytes.
+  - Strictly prohibits wildcard `DROP SCHEMA`; requires explicit confirmation (`--execute --confirm-schema=<exact_name>`).
+
+#### Phase H: Connection Pool & Transaction Scope Engineering
+
+- **Serverless Pool Optimization** (`src/services/db/client.ts`):
+  - Set production serverless connection pool `max: 2`, `idle_timeout: 20`, `connect_timeout: 10`, and static `application_name: 'recsy_app'`.
+- **Short Transaction Scope** (`src/app/api/recommend/route.ts`):
+  - Decoupled `runRecommendationPipeline` from the transaction. Context is loaded and LLM generated outside open transactions.
+  - Turns are committed in a sub-5ms final transaction (`nextTurnIndex` + `insert`), eliminating lock contention during LLM network generation.
+- **Trigram Operator Indexability** (`src/services/retrieval/fts.ts`):
+  - Added `(c.text % ${normalised} OR similarity(c.text, ${normalised}) > ${TRIGRAM_MIN_SIMILARITY})` prefilter to utilize the GIN index on `chunks.text`.
+
+#### Phase I: Public Browse, Sitemap & Health Protections
+
+- **Brand List Caching & Query Limit** (`src/app/browse/page.tsx`):
+  - In-memory 1-hour TTL caching for `allBrands` list, eliminating repeated `GROUP BY brand` table scans on `phones`.
+  - Bounded browse phone query with `LIMIT 100`.
+- **Sitemap Caching** (`src/app/sitemap.ts`):
+  - In-memory 1-hour TTL caching for active phone slugs, protecting the database from continuous crawler requests.
+- **Zero-DB Health Route** (`src/app/api/health/route.ts`):
+  - Confirmed `/api/health` returns status without touching the database.
+
+---
+
+### 13.3 Monthly Egress Budget & Headroom Target
+
+With all optimizations in place, RECSY v2 operates under an explicit **2.0 GB / month** target allocation against Supabase's 5.0 GB quota:
+
+| Allocation Category                             | Monthly Egress Target | Design Mechanism                                                        |
+| ----------------------------------------------- | --------------------: | ----------------------------------------------------------------------- |
+| Public Requests (`/browse`, `/recommend`, etc.) |                0.6 GB | Split catalog projection, 10m catalog cache, 1h brand cache, MMR prefix |
+| Scheduled Work (Ingestion & Scorecards)         |                0.6 GB | Skip-row elimination, pre-embedding dedupe, SQL limit pushdown          |
+| Operator / Internal Dashboard Reads             |                0.3 GB | Selected-tab loading, consolidated 7d queries, 5-10m in-flight caches   |
+| Bounded Hosted Functional Smoke Checks          |                0.1 GB | Local-only load tests, guarded hosted access                            |
+| Reserve & Traffic Variability                   |                0.4 GB | Buffer for traffic spikes and unplanned queries                         |
+| **Total Target**                                |            **2.0 GB** | **60% Headroom under 5.0 GB Free Quota**                                |
+| Hosted Evaluation Campaigns                     |            **0.0 GB** | Fully isolated to local PostgreSQL / pgvector                           |

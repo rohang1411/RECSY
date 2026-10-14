@@ -18,14 +18,18 @@ import {
 
 import {
   loadDatabaseDashboardData,
+  loadCommandCenterDatabaseSummary,
+  type DatabaseDashboardData,
   type DatabaseFilterParams,
   type DeviceCategory,
   type DeviceRowItem,
 } from '@/services/internal/database-dashboard';
 import {
   loadPhoneIngestionDashboardData,
+  loadCommandCenterIngestionSummary,
   type IngestionFilterParams,
   type IngestionStatusCategory,
+  type PhoneIngestionData,
   type PhoneIngestionRow,
 } from '@/services/internal/phone-ingestion-dashboard';
 
@@ -203,10 +207,42 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
     search: searchParam,
   };
 
-  const [catalogData, ingestionData] = await Promise.all([
-    loadDatabaseDashboardData(catalogFilterParams),
-    loadPhoneIngestionDashboardData(ingestionFilterParams),
-  ]);
+  let catalogData: DatabaseDashboardData;
+  let ingestionData: PhoneIngestionData;
+  let catalogBadgeCount: number;
+  let ingestionBadgeText: string;
+
+  if (viewParam === 'catalog') {
+    const [cData, iSummary] = await Promise.all([
+      loadDatabaseDashboardData(catalogFilterParams),
+      loadCommandCenterIngestionSummary(),
+    ]);
+    catalogData = cData;
+    catalogBadgeCount = cData.summary.totalCandidates;
+    ingestionBadgeText = `${iSummary.completedCount}/${iSummary.totalActivePhones}`;
+    ingestionData = {
+      summary: iSummary,
+      pendingReasons: [],
+      rows: [],
+      brands: [],
+    };
+  } else {
+    const [iData, cSummary] = await Promise.all([
+      loadPhoneIngestionDashboardData(ingestionFilterParams),
+      loadCommandCenterDatabaseSummary(),
+    ]);
+    ingestionData = iData;
+    ingestionBadgeText = `${iData.summary.completedCount}/${iData.summary.totalActivePhones}`;
+    catalogBadgeCount = cSummary.summary.totalCandidates;
+    catalogData = {
+      dataWarning: null,
+      entryCount: 0,
+      summary: cSummary.summary,
+      blockedReasons: [],
+      devices: [],
+      brands: [],
+    };
+  }
 
   const hasActiveFilters =
     statusParam !== 'all' ||
@@ -274,7 +310,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   : 'bg-surface-container text-muted-foreground'
               }`}
             >
-              {catalogData.summary.totalCandidates}
+              {catalogBadgeCount}
             </span>
           </Link>
 
@@ -295,7 +331,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   : 'bg-surface-container text-muted-foreground'
               }`}
             >
-              {ingestionData.summary.completedCount}/{ingestionData.summary.totalActivePhones}
+              {ingestionBadgeText}
             </span>
           </Link>
         </div>

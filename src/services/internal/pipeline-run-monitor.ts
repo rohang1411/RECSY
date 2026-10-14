@@ -84,12 +84,9 @@ let cachedPipelineData: {
   readonly expiresAtMs: number;
 } | null = null;
 
-export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorData> {
-  const now = Date.now();
-  if (cachedPipelineData && now < cachedPipelineData.expiresAtMs) {
-    return cachedPipelineData.data;
-  }
+let inFlightPipelineDataPromise: Promise<PipelineRunMonitorData> | null = null;
 
+async function fetchPipelineRunMonitorDataInternal(): Promise<PipelineRunMonitorData> {
   const db = getDb();
 
   const [ingestionRuns, scoreRuns, resumeRows, catalogRunRows, githubRuns] = await Promise.all([
@@ -100,15 +97,29 @@ export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorDa
     loadGithubWorkflowRuns(),
   ]);
 
-  const data: PipelineRunMonitorData = {
+  return {
     ingestionRuns,
     scorecardRuns: scoreRuns,
     resumeRows,
     catalogRefreshRuns: catalogRunRows,
     githubRuns,
   };
+}
 
-  cachedPipelineData = { data, expiresAtMs: now + 45_000 };
+export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorData> {
+  const now = Date.now();
+  if (cachedPipelineData && now < cachedPipelineData.expiresAtMs) {
+    return cachedPipelineData.data;
+  }
+
+  if (!inFlightPipelineDataPromise) {
+    inFlightPipelineDataPromise = fetchPipelineRunMonitorDataInternal().finally(() => {
+      inFlightPipelineDataPromise = null;
+    });
+  }
+
+  const data = await inFlightPipelineDataPromise;
+  cachedPipelineData = { data, expiresAtMs: now + 60_000 };
   return data;
 }
 

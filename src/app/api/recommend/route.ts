@@ -14,7 +14,6 @@
  * Used by: `src/app/recommend/RecommendClient.tsx`.
  */
 import { randomBytes } from 'node:crypto';
-import { eq } from 'drizzle-orm';
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -27,7 +26,7 @@ import { readRequestJson } from '@/lib/request-json';
 import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { getDb } from '@/services/db/client';
-import { recommendationSessions, recommendationTurns } from '@/services/db/schema';
+import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
 import { requestLogger } from '@/services/logger';
 import { consumeRecommendRateLimit } from '@/services/rate-limit';
@@ -99,24 +98,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
 
     const sessionId = session.id;
-    const result = await db.transaction(async (tx) => {
-      // Serialize context loading and turn writes for this session across processes.
-      await tx
-        .select({ id: recommendationSessions.id })
-        .from(recommendationSessions)
-        .where(eq(recommendationSessions.id, sessionId))
-        .for('update');
-      const t0 = performance.now();
-      const result = await runRecommendationPipeline({
-        db: tx,
-        llm: getLlm(),
-        sessionId,
-        userMessage: body.message,
-        regionCode,
-        log: log.child({ sessionId }),
-      });
-      const latencyMs = Math.round(performance.now() - t0);
+    const t0 = performance.now();
+    const result = await runRecommendationPipeline({
+      db,
+      llm: getLlm(),
+      sessionId,
+      userMessage: body.message,
+      regionCode,
+      log: log.child({ sessionId }),
+    });
+    const latencyMs = Math.round(performance.now() - t0);
 
+    await db.transaction(async (tx) => {
       const turnIndex = await nextTurnIndex(tx, sessionId);
 
       if (result.kind === 'clarify') {
@@ -141,7 +134,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           latencyMs,
         });
       }
-      return result;
     });
 
     const res = NextResponse.json(

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Row Level Security policies.
+-- Row Level Security policies and Grant Hardening.
 --
 -- Posture: DEFAULT-DENY. Every table has RLS enabled; any role without a
 -- matching policy sees nothing.
@@ -15,18 +15,14 @@
 -- This file is re-runnable: every CREATE POLICY is guarded by a DROP first.
 -- =============================================================================
 
--- Helper: make the file idempotent by dropping any existing policy with the
--- same name before recreating it. Postgres doesn't support `CREATE POLICY IF
--- NOT EXISTS`, so we emulate it.
 DO $$
 BEGIN
-  -- no-op; block is just a syntax anchor so psql can run this file cleanly.
-  RAISE NOTICE 'Applying RLS policies for RECSY v2';
+  RAISE NOTICE 'Applying hardened RLS policies and role revocations for RECSY v2';
 END
 $$;
 
 -- ---------------------------------------------------------------------------
--- Enable RLS on every table. `service_role` continues to bypass per Supabase.
+-- Enable RLS on every table (including newly audited operational tables).
 -- ---------------------------------------------------------------------------
 ALTER TABLE phones                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sources                  ENABLE ROW LEVEL SECURITY;
@@ -42,6 +38,15 @@ ALTER TABLE chat_queries             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE llm_cache                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest_runs              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits              ENABLE ROW LEVEL SECURITY;
+
+-- Telemetry & Regional pricing tables
+ALTER TABLE scorecard_runs           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE llm_usage_events         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE phone_regional_details   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE exchange_rates           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE benchmark_runs           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE benchmark_results        ENABLE ROW LEVEL SECURITY;
+
 -- Automated ingestion pipeline tables — all service-role-only.
 ALTER TABLE phone_aliases            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE creator_profiles         ENABLE ROW LEVEL SECURITY;
@@ -50,6 +55,7 @@ ALTER TABLE domain_profiles          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE source_phone_links       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crawl_queue              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limit_state         ENABLE ROW LEVEL SECURITY;
+
 -- Automated catalog refresh tables — all service-role-only.
 ALTER TABLE catalog_runs             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catalog_source_profiles  ENABLE ROW LEVEL SECURITY;
@@ -62,7 +68,42 @@ ALTER TABLE phone_media_assets       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catalog_quality_issues   ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
--- Public read policies — anon + authenticated can browse the corpus.
+-- Role privilege revocations:
+-- Strictly revoke ALL write privileges (INSERT, UPDATE, DELETE) on all tables
+-- from anon and authenticated.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  public_roles text[] := ARRAY['anon', 'authenticated'];
+  r text;
+BEGIN
+  FOREACH r IN ARRAY public_roles LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      -- Revoke all table-level write operations across public schema
+      EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM %I', r);
+
+      -- Revoke all access on private operational and telemetry tables
+      EXECUTE format('REVOKE ALL ON TABLE scorecard_runs, llm_usage_events, benchmark_runs, benchmark_results, llm_cache, ingest_runs, rate_limits, recommendation_sessions, recommendation_clients, recommendation_shares, recommendation_turns, recommendation_feedback, chat_queries, crawl_queue, rate_limit_state, catalog_runs, catalog_source_profiles, catalog_snapshots, catalog_candidates, phone_identities, phone_configurations, catalog_source_claims, phone_media_assets, catalog_quality_issues FROM %I', r);
+
+      -- Prevent bulk vector extraction over PostgREST on corpus tables
+      EXECUTE format('REVOKE SELECT (embedding) ON chunks FROM %I', r);
+      EXECUTE format('REVOKE SELECT (spec_embedding) ON phones FROM %I', r);
+    END IF;
+  END LOOP;
+END
+$$;
+
+-- Ensure future tables do not accidentally grant public access
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+  END IF;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Public read policies — anon + authenticated can browse public catalog.
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -81,6 +122,18 @@ BEGIN
   EXECUTE 'DROP POLICY IF EXISTS anon_select_phones ON phones';
   EXECUTE format(
     'CREATE POLICY anon_select_phones ON phones FOR SELECT TO %s USING (status = ''active'')',
+    public_read_roles
+  );
+
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_phone_regional_details ON phone_regional_details';
+  EXECUTE format(
+    'CREATE POLICY anon_select_phone_regional_details ON phone_regional_details FOR SELECT TO %s USING (is_available = true)',
+    public_read_roles
+  );
+
+  EXECUTE 'DROP POLICY IF EXISTS anon_select_exchange_rates ON exchange_rates';
+  EXECUTE format(
+    'CREATE POLICY anon_select_exchange_rates ON exchange_rates FOR SELECT TO %s USING (true)',
     public_read_roles
   );
 
@@ -115,23 +168,3 @@ BEGIN
   );
 END
 $$;
-
--- ---------------------------------------------------------------------------
--- No anon policies for the following tables — only service_role sees them:
---   recommendation_sessions, recommendation_turns, recommendation_feedback,
---   chat_queries, llm_cache, ingest_runs, rate_limits,
---   phone_aliases, creator_profiles, subreddit_profiles, domain_profiles,
---   crawl_queue, rate_limit_state, catalog_runs, catalog_source_profiles,
---   catalog_snapshots, catalog_candidates, phone_identities,
---   phone_configurations, catalog_source_claims, phone_media_assets,
---   catalog_quality_issues.
---
--- Rationale:
---   - chat/recommendation logs may contain user-provided text that we don't
---     want indexed or exposed to the browser;
---   - llm_cache and ingest_runs are operational telemetry;
---   - rate_limits is a server-enforced counter table.
---
--- When auth is added (Phase 5+), we'll add `authenticated_own_*` policies
--- keyed on a session-cookie match.
--- ---------------------------------------------------------------------------

@@ -86,11 +86,13 @@ const mockCatalog = (await import('./catalog')).loadRecommendationCatalog as Ret
   typeof vi.fn
 >;
 const { getLatestRequirementsForSession, getLatestRecommendPickIds } = await import('./session');
+const { invalidateRecommendationCatalogCache } = await import('./catalog-cache');
 
 const { runRecommendationPipeline } = await import('./run-recommendation');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  invalidateRecommendationCatalogCache();
   mockCatalog.mockReset();
   mockCatalog.mockResolvedValue([]);
   vi.mocked(getLatestRequirementsForSession).mockResolvedValue(null);

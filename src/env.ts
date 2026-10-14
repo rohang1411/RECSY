@@ -102,6 +102,16 @@ export const env = createEnv({
       .default('false')
       .transform((v) => v.toLowerCase() === 'true'),
     INTERNAL_EVAL_TOKEN: z.string().min(16).optional().or(z.literal('')),
+    INTERNAL_OPERATOR_TOKEN: z.string().min(16).optional().or(z.literal('')),
+    EVAL_ALLOW_HOSTED_LOAD: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+    EVAL_SMOKE: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+    EVAL_EXTRA_LOCAL_DB_HOSTS: z.string().optional(),
     MOBILEAPI_API_KEY: z.string().optional(),
 
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
@@ -173,6 +183,10 @@ export const env = createEnv({
     RETRIEVAL_LLM_RERANK: process.env.RETRIEVAL_LLM_RERANK ?? 'false',
     INTERNAL_DASHBOARD_ENABLED: process.env.INTERNAL_DASHBOARD_ENABLED ?? 'false',
     INTERNAL_EVAL_TOKEN: process.env.INTERNAL_EVAL_TOKEN,
+    INTERNAL_OPERATOR_TOKEN: process.env.INTERNAL_OPERATOR_TOKEN,
+    EVAL_ALLOW_HOSTED_LOAD: process.env.EVAL_ALLOW_HOSTED_LOAD ?? 'false',
+    EVAL_SMOKE: process.env.EVAL_SMOKE ?? 'false',
+    EVAL_EXTRA_LOCAL_DB_HOSTS: process.env.EVAL_EXTRA_LOCAL_DB_HOSTS,
     MOBILEAPI_API_KEY: process.env.MOBILEAPI_API_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
     SENTRY_DSN: process.env.SENTRY_DSN ?? '',

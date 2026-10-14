@@ -46,6 +46,29 @@ interface PageProps {
   readonly searchParams: Promise<Readonly<Record<string, string | string[] | undefined>>>;
 }
 
+let cachedBrands: {
+  readonly brands: readonly string[];
+  readonly expiresAtMs: number;
+} | null = null;
+
+async function getCachedBrands(): Promise<readonly string[]> {
+  const now = Date.now();
+  if (cachedBrands && now < cachedBrands.expiresAtMs) {
+    return cachedBrands.brands;
+  }
+  const db = getDb();
+  const brandRows = await db
+    .select({ brand: phones.brand })
+    .from(phones)
+    .where(eq(phones.status, 'active'))
+    .groupBy(phones.brand)
+    .orderBy(asc(phones.brand));
+
+  const brands = brandRows.map((r) => r.brand);
+  cachedBrands = { brands, expiresAtMs: now + 3_600_000 };
+  return brands;
+}
+
 export default async function BrowsePage({ searchParams }: PageProps) {
   const raw = await searchParams;
   const urlParams = appSearchParamsToURLSearchParams(raw);
@@ -55,7 +78,7 @@ export default async function BrowsePage({ searchParams }: PageProps) {
   const where = browseWhereFromState(filter, activeRegion.countryCode);
 
   const db = getDb();
-  const [rows, brandRows] = await Promise.all([
+  const [rows, allBrands] = await Promise.all([
     db
       .select({
         slug: phones.slug,
@@ -80,16 +103,10 @@ export default async function BrowsePage({ searchParams }: PageProps) {
         ),
       )
       .where(where)
-      .orderBy(...getBrowseOrderBy(filter.sort)),
-    db
-      .select({ brand: phones.brand })
-      .from(phones)
-      .where(eq(phones.status, 'active'))
-      .groupBy(phones.brand)
-      .orderBy(asc(phones.brand)),
+      .orderBy(...getBrowseOrderBy(filter.sort))
+      .limit(100),
+    getCachedBrands(),
   ]);
-
-  const allBrands = brandRows.map((r) => r.brand);
 
   return (
     <div className="grid-bg px-grid-margin py-10">

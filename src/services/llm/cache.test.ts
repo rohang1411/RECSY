@@ -15,11 +15,11 @@ import { z } from 'zod';
 import type { ChatResult, LlmProvider, StructuredResult } from './types';
 
 // Mock DB before importing cache.ts
-const mockUpdate = vi.fn();
+const mockSelect = vi.fn();
 const mockInsert = vi.fn();
 vi.mock('@/services/db/client', () => ({
   getDb: () => ({
-    update: mockUpdate,
+    select: mockSelect,
     insert: mockInsert,
   }),
 }));
@@ -60,11 +60,11 @@ function makeInner(overrides: Partial<LlmProvider> = {}): LlmProvider {
 
 function makeDbMiss() {
   const chain = {
-    set: vi.fn().mockReturnThis(),
+    from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
-    returning: vi.fn().mockResolvedValue([]),
+    limit: vi.fn().mockResolvedValue([]),
   };
-  mockUpdate.mockReturnValue(chain);
+  mockSelect.mockReturnValue(chain);
   const insertChain = {
     values: vi.fn().mockReturnThis(),
     onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
@@ -72,13 +72,13 @@ function makeDbMiss() {
   mockInsert.mockReturnValue(insertChain);
 }
 
-function makeDbHit(response: unknown) {
+function makeDbHit(response: unknown, createdAt = new Date()) {
   const chain = {
-    set: vi.fn().mockReturnThis(),
+    from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
-    returning: vi.fn().mockResolvedValue([{ response }]),
+    limit: vi.fn().mockResolvedValue([{ response, createdAt }]),
   };
-  mockUpdate.mockReturnValue(chain);
+  mockSelect.mockReturnValue(chain);
 }
 
 describe('CachedLlmProvider — chat', () => {
@@ -174,5 +174,58 @@ describe('CachedLlmProvider — structured schema revalidation', () => {
     });
     expect(inner.structured).toHaveBeenCalledOnce();
     expect((result.value as { score: number }).score).toBe(5);
+  });
+
+  it('treats cached entry as miss if older than 30 days', async () => {
+    const expiredDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    makeDbHit({ text: 'old', cached: false, usage: mockUsage, model: 'gemini-flash' }, expiredDate);
+    const insertChain = {
+      values: vi.fn().mockReturnThis(),
+      onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+    };
+    mockInsert.mockReturnValue(insertChain);
+
+    const inner = makeInner();
+    const provider = new CachedLlmProvider(inner, true);
+    const result = await provider.chat({
+      model: 'gemini',
+      messages: [{ role: 'user', content: 'test-expired' }],
+    });
+    expect(inner.chat).toHaveBeenCalledOnce();
+    expect(result.cached).toBe(false);
+  });
+
+  it('coalesces concurrent requests with identical prompts into a single call', async () => {
+    makeDbMiss();
+    let resolveInner: ((val: ChatResult) => void) | undefined;
+    const innerPromise = new Promise<ChatResult>((resolve) => {
+      resolveInner = resolve;
+    });
+
+    const inner = makeInner({
+      chat: vi.fn().mockImplementation(() => innerPromise),
+    });
+    const provider = new CachedLlmProvider(inner, true);
+
+    const call1 = provider.chat({
+      model: 'gemini',
+      messages: [{ role: 'user', content: 'coalesce-test' }],
+    });
+    const call2 = provider.chat({
+      model: 'gemini',
+      messages: [{ role: 'user', content: 'coalesce-test' }],
+    });
+
+    resolveInner!({
+      text: 'coalesced-response',
+      cached: false,
+      usage: mockUsage,
+      model: 'gemini-flash',
+    });
+
+    const [res1, res2] = await Promise.all([call1, call2]);
+    expect(inner.chat).toHaveBeenCalledOnce();
+    expect(res1.text).toBe('coalesced-response');
+    expect(res2.text).toBe('coalesced-response');
   });
 });

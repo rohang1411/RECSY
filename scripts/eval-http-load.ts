@@ -2,8 +2,14 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { assertEvaluationDatabaseSafety } from '../src/services/eval/workload-guard';
 
 async function main() {
+  assertEvaluationDatabaseSafety({
+    action: 'HTTP load testing campaign',
+    allowSmoke: true,
+  });
+
   const stage = JSON.parse(await readFile('output/eval/current-stage.json', 'utf8'));
   if (!/^eval_[a-z0-9_]+$/.test(stage.namespace)) throw new Error('Invalid isolated schema');
   const base = process.env.EVAL_HTTP_URL ?? 'http://127.0.0.1:3100';
