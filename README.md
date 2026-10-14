@@ -28,7 +28,7 @@ This is a **portfolio / learning project** demonstrating hybrid RAG, structured-
 | UI           | `next-themes` · `lucide-react` · `motion` · `sonner`                                                                                                                          |
 | Database     | Supabase Postgres 17 (`pgvector` · `pg_trgm` · `pgcrypto`)                                                                                                                    |
 | ORM / driver | Drizzle ORM · `postgres` (Porsager)                                                                                                                                           |
-| LLM SDK      | Vercel AI SDK · `@ai-sdk/google` → Gemini 2.5 Flash/Pro                                                                                                                       |
+| LLM SDK      | Vercel AI SDK · `@ai-sdk/google` → Gemini 3 Flash Preview / 2.5 Pro                                                                                                           |
 | Embeddings   | `gemini-embedding-001` · 768 dim (Matryoshka-truncated)                                                                                                                       |
 | Ingestion    | TypeScript adapters — `youtubei.js` · `@mozilla/readability` + `linkedom` · Reddit public JSON (Python `yt-dlp` / `youtube-transcript-api` optional transcript fallback only) |
 | Logging      | `pino` structured JSON · optional Sentry                                                                                                                                      |

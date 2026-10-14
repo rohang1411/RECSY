@@ -119,7 +119,7 @@ experiences on one site:
 - **Internal Pipeline Observatory.** An internal-only, narrative-driven dashboard (`/internal/pipeline`) that visualizes the entire RECSY data lifecycle for presentations, featuring live database metrics and pre-computed pipeline replays.
 
 **Stack summary.** Next.js 16 Â· Drizzle ORM â†’ Supabase Postgres + pgvector Â·
-Gemini 2.5 Flash/Pro via Vercel AI SDK Â· TypeScript ingestion adapters
+Gemini 3 Flash Preview / 2.5 Pro via Vercel AI SDK Â· TypeScript ingestion adapters
 (`youtubei.js` Â· Reddit public JSON Â· `@mozilla/readability` + `linkedom`).
 Runs entirely on free tiers.
 
