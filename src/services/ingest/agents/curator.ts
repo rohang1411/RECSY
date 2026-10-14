@@ -128,6 +128,7 @@ export class CuratorAgent {
           area: 'Ingestion',
           feature: 'Source curator',
           source: 'CuratorAgent',
+          taskClass: 'EXTRACTION',
           metadata: { sourceType: input.sourceType },
         },
       });

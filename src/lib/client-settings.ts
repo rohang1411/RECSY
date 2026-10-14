@@ -137,9 +137,23 @@ export function useClientSetting<T>(key: string, fallback: T): [T, (next: T) => 
 export const CLIENT_SETTING_KEYS = {
   /** When `true`, plain Enter submits the chat input (Shift+Enter = newline). */
   enterToSend: 'enterToSend',
+  /** AI execution mode: 'fast' (default) vs 'deep' (frontier reasoning). */
+  reasoningMode: 'reasoningMode',
+  /** Optional user-supplied API key for frontier reasoning without server limits. */
+  byokKey: 'byokKey',
+  /** Provider for the user-supplied key. */
+  byokProvider: 'byokProvider',
 } as const;
 
 /** Default values. Kept co-located with the key list to avoid drift. */
 export const CLIENT_SETTING_DEFAULTS = {
   [CLIENT_SETTING_KEYS.enterToSend]: true,
+  [CLIENT_SETTING_KEYS.reasoningMode]: 'fast' as 'fast' | 'deep',
+  [CLIENT_SETTING_KEYS.byokKey]: '',
+  [CLIENT_SETTING_KEYS.byokProvider]: 'gemini' as
+    | 'gemini'
+    | 'groq'
+    | 'nvidia'
+    | 'cerebras'
+    | 'openai',
 } as const;

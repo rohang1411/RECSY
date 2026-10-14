@@ -69,6 +69,11 @@ export async function extractUserRequirements(input: {
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
   readonly regionCode?: string;
+  readonly byok?: {
+    readonly apiKey: string;
+    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
+    readonly userMode?: 'fast' | 'deep';
+  } | null;
 }): Promise<UserRequirements> {
   const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const config = getRegionConfig(input.regionCode ?? 'US');
@@ -84,6 +89,10 @@ export async function extractUserRequirements(input: {
       area: 'Recommendation',
       feature: 'Requirement extraction',
       source: '/api/recommend',
+      taskClass: 'EXTRACTION',
+      userByokKey: input.byok?.apiKey,
+      userByokProvider: input.byok?.provider,
+      userMode: input.byok?.userMode,
     },
   });
   return mergeUserRequirements({

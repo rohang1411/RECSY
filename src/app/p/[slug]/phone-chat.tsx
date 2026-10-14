@@ -10,6 +10,7 @@ import {
   CLIENT_SETTING_KEYS,
   useClientSetting,
 } from '@/lib/client-settings';
+import { getClientByokHeaders } from '@/lib/byok-client';
 import type { ResolvedCitation } from '@/services/chat/citations';
 
 const CITATION_TAG =
@@ -130,7 +131,10 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     try {
       const res = await fetch('/api/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getClientByokHeaders(),
+        },
         body: JSON.stringify({ phoneSlug, query: q }),
       });
 

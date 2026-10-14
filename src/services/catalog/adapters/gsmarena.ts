@@ -94,6 +94,7 @@ ${JSON.stringify(specs, null, 2)}`;
         area: 'Catalog enrichment',
         feature: 'GSMArena spec extraction',
         source: 'catalog.gsmarena',
+        taskClass: 'EXTRACTION',
       },
     });
 

@@ -107,6 +107,7 @@ export class DisambiguatorAgent {
           area: 'Ingestion',
           feature: 'Source disambiguation',
           source: 'DisambiguatorAgent',
+          taskClass: 'DISAMBIGUATION',
           metadata: { sourceType: input.sourceType, candidates: input.candidates.length },
         },
       });
