@@ -5,7 +5,8 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** Phase 6 (Browse + faceted filter) **shipped (MVP)** â€” URL-driven
+**Status.** **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
+Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
 [ADR 0008](./adr/0008-browse-filters-mvp.md) and [`docs/browse/README.md`](./browse/README.md).
@@ -98,6 +99,7 @@ existing GitHub workflow files through the GitHub REST API. See
 23. [Issues Log](#23-issues-log)
 24. [Development & Documentation Rules](#24-development--documentation-rules)
 25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
+26. [Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture)
 
 ---
 
@@ -1137,14 +1139,18 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 
 ### Security
 
-- **RLS default-deny** on all tables.
+- **RLS default-deny & privilege hardening** (`drizzle/migrations/0011_rls_security_hardening.sql`) on all operational and internal tables; table mutation revoked from `anon`/`authenticated`; vector column SELECT privileges revoked for anonymous roles.
+- **Operator session authentication** (`src/services/internal/auth.ts`) protecting `/internal/*` routes and internal APIs via HttpOnly cookie `recsy_operator_session` signed with constant-time HMAC-SHA256. Unauthenticated requests render login without executing database queries.
+- **Hosted evaluation workload guard** (`src/services/eval/workload-guard.ts`) enforcing `assertEvaluationDatabaseSafety` across all evaluation scripts, rejecting hosted Supabase connections for synthetic load sweeps or schema staging.
+- **Database connection pooling & timeouts** (`src/services/db/client.ts`): Serverless pool capped at `max: 2`, `idle_timeout: 20s`, `connect_timeout: 10s`, and static `application_name: 'recsy_app'` to prevent connection pool starvation.
+- **Retention pruning & DB hygiene** (`scripts/db-prune.ts`, `pnpm db:prune`): Bounded batch pruning (500 rows per transaction) for aged events, evaluation runs, expired LLM cache entries (>30 days), and inactive anonymous recommendation sessions (>90 days).
 - **IP rate-limiting** via `rate_limits` table (Phase 3 wires this into
   route handlers).
 - **CSP & security headers** in `next.config.ts` (X-Frame-Options DENY,
   nosniff, Referrer-Policy strict-origin, Permissions-Policy locked down,
   HSTS 2y preload).
-- **No raw IPs stored** â€” sha256 hash only.
-- **No raw PII** â€” we never store emails / names (no auth in MVP).
+- **No raw IPs stored** — sha256 hash only.
+- **No raw PII** — we never store emails / names (no auth in MVP).
 - **Service-role key** never exposed to the client; only used in server
   route handlers + ingestion jobs.
 
@@ -1600,6 +1606,21 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-10-14 — Supabase Free-Tier Egress Quota Breach Resolution & Multi-Phase Database Optimization (Phases A–I)
+
+- **Comprehensive Multi-Phase Optimization Initiative (Phases A–I) Landed**:
+  - Investigated the October 7 Supabase free-tier egress breach (6.268 GB consumed vs. 2.0 GB quota; 5.135 GB in a single day). Confirmed the primary driver was 780-request HTTP load tests targeting staging schemas directly on the hosted pooler, multiplied 5.8× by catalog cross-joins repeatedly serializing uncompressed 768-dim float vectors.
+  - **Phase A (Workload Guard & Access Hardening)**: Landed `src/services/eval/workload-guard.ts` blocking hosted databases for evaluation sweeps; implemented operator HMAC-SHA256 session cookie auth (`recsy_operator_session`) gating all `/internal/*` routes; applied migration `0011_rls_security_hardening.sql` enforcing RLS across operational tables and revoking vector SELECT privileges for anonymous roles.
+  - **Phase B (Decoupled Recommendation Catalog & Coalescing Cache)**: Decoupled catalog query in `src/services/recommender/catalog.ts` into a single phone-level select (74 rows instead of 428 rows) and mapped aspect scores in memory. Added single-flight in-memory promise coalescing cache (`src/services/recommender/catalog-cache.ts`) with 10-minute TTL.
+  - **Phase C (Selective Vector Retrieval & MMR Parity)**: Omitted float vectors in Stage 1 hybrid retrieval (`retriever.ts`). Implemented LRU vector cache (`vector-cache.ts`, 1,000 vectors, 15-minute TTL) to batch-fetch embeddings on-demand strictly for the top MMR diversification candidate prefix (`min(k * 3, fused.length)`).
+  - **Phase D (Bounded Internal Observability)**: Tab-gated `/internal/database` page loading to fetch only active tab data; scoped quality issue queries strictly to visible candidate IDs with `createdAt DESC` ordering; consolidated 3 separate 7-day LLM monitor scans into a single grouped query with 5-minute TTL.
+  - **Phase E (Scheduled Task & Write Hygiene)**: Eliminated writing 7 redundant `scorecard_runs` skip rows on unchanged chunks in `scripts/scorecard-auto.ts`; pushed `LIMIT` into single-shard scheduler SQL.
+  - **Phase F (LLM Cache Hygiene & Retention Pruning)**: Replaced `UPDATE ... RETURNING` with standard `SELECT` in `src/services/llm/cache.ts` with synchronous SHA-256 hash coalescing, 30-day TTL expiry, and 1MB response size thresholds. Added `scripts/db-prune.ts` (`pnpm db:prune`) for bounded retention pruning.
+  - **Phase G (Evaluation Storage Isolation & Manifest)**: Added `scripts/eval-cleanup-manifest.ts` (`pnpm eval:cleanup:manifest`) for staging schema audits and explicit confirmation drops.
+  - **Phase H (Connection Pool & Transaction Scoping)**: Configured serverless pool limits (`max: 2`, `idle_timeout: 20s`, `connect_timeout: 10s`); decoupled recommendation pipeline from open transactions; added `%` trigram prefilter for PostgreSQL GIN index utilization in `fts.ts`.
+  - **Phase I (Public Page Caching & Budget Target)**: Added 1-hour TTL caching for browse brands and sitemap phone rows; established explicit 2.0 GB/month design budget ensuring >60% headroom under Supabase's 5.0 GB limit.
+  - **Verification**: Clean compilation (`pnpm typecheck`), clean lint (`pnpm lint`), 100% test pass rate (91 test files, 549/549 tests in `pnpm test`), clean Next.js production build (`pnpm build`).
 
 ### 2026-10-13 — Empirical architecture audit, MCP server integration & thinking budget benchmarks
 
@@ -2656,9 +2677,28 @@ dissenting_quotes)`.
 > - **MEDIUM** â€” breaks typecheck / tests / lint, or materially slows dev
 >   velocity and observability.
 > - **LOW** â€” cosmetic, dev-only annoyance, or one-time papercut.
->
-> **Each entry must answer:** what broke, where, why (root cause), how we
-> fixed it, and — where possible — how we've made it harder to recur.
+
+### Infrastructure & Database — Supabase Free-Tier Egress Quota Breach, Catalog Multiplier & Vector Wire Exhaustion (2026-10-13)
+
+#### CRITICAL
+
+- **Breach of Supabase Free-Tier 5.0 GB monthly egress quota (6.268 GB recorded, 5.135 GB in 24 hours), triggering account overage restrictions and risk of database suspension.**
+  - **Symptom:** Supabase emailed an egress quota breach notice on October 7, 2026 reporting 6.268 GB billed egress against a 5.0 GB quota with an overage restriction deadline of November 6, 2026.
+  - **Affected Components:** Evaluation runners (`scripts/eval-http-load.ts`, `scripts/eval-campaign.ts`, `scripts/eval-stage.ts`), recommendation catalog (`src/services/recommender/catalog.ts`), hybrid retrieval (`src/services/retrieval/retriever.ts`, `fts.ts`), internal monitoring dashboards (`src/services/internal/database-dashboard.ts`, `llm-usage-monitor.ts`), scorecard runner (`scripts/scorecard-auto.ts`), and LLM cache (`src/services/llm/cache.ts`).
+  - **Root Cause:**
+    1. Automated 780-request HTTP load tests targeted staging schemas (`eval_*`) directly on the hosted Supabase pooler rather than a local loopback/Docker instance, transferring 5.135 GB across network hops.
+    2. Catalog queries executed a 4-table join multiplying 74 catalog phones into 428 rows, repeatedly serializing uncompressed 768-dim float vectors (`spec_embedding`) across the network wire (5.8× amplification, ~5.4 MB payload per cold turn).
+    3. Stage 1 hybrid retrieval eagerly fetched 768-dim embeddings for all candidates, even though MMR only consumes vectors for the top diversification candidate prefix.
+    4. LLM cache reads executed `UPDATE ... RETURNING` generating WAL on every read; internal observability ran full-table scans on page load; scorecard cron inserted 7 redundant skip rows for unchanged phones.
+  - **Staff Engineer Solution:**
+    1. **Workload Safety Guard (`workload-guard.ts`):** Enforced `assertEvaluationDatabaseSafety` across all eval scripts, blocking hosted Supabase connections for synthetic sweeps and staging schemas.
+    2. **Decoupled Catalog & Coalescing Cache (`catalog.ts`, `catalog-cache.ts`):** Separated phone specs (74 rows) from aspect scores and added in-flight coalescing cache (10m TTL), reducing cold transfers from ~5.4 MB to ~0.88 MB and warm turns to 0 bytes.
+    3. **Selective MMR Vector Batching (`retriever.ts`, `vector-cache.ts`):** Omitted embeddings from Stage 1 retrieval; batch-fetched embeddings on-demand strictly for the MMR diversification prefix with a 1,000-entry LRU cache.
+    4. **Bounded Observability & Operator Auth (`auth.ts`, `database/page.tsx`):** Tab-gated queries, scoped quality issues to visible candidates, consolidated LLM usage scans into a single grouped query, and gated all `/internal/*` routes behind HMAC-SHA256 operator session cookies.
+    5. **Database Hygiene & Retention Pruning (`db-prune.ts`, `eval-cleanup-manifest.ts`):** Replaced `UPDATE ... RETURNING` with standard `SELECT` on cache reads with 30-day TTL expiry; added batch retention pruning script (`pnpm db:prune`); eliminated scorecard skip rows; added staging schema cleanup manifest; configured serverless pooler limits (`max: 2`).
+  - **Measured Outcome & Hardening:**
+    - Projected monthly database egress reduced from >6.0 GB to **<1.0 GB/month** (comfortably within the 2.0 GB design budget, >60% headroom under 5.0 GB limit).
+    - Verified by 549/549 unit & integration tests passing, clean typecheck, clean lint, and clean production build.
 
 ### Recommender & Catalog — Google Pixel 10 & 11 Series Generational Omission & Recommender Age Policy Enforcement (2026-09-27)
 
@@ -3918,13 +3958,13 @@ These require additional test infrastructure (RTL + jsdom Vitest config for comp
 | `import type` consolidation             | Several service files use `import` where `import type` is sufficient; ESLint `@typescript-eslint/consistent-type-imports` could auto-fix           |
 | Non-ASCII HTTP header lint rule         | An ESLint rule banning non-ASCII characters in string literals used as HTTP header values would have caught the Phase 2 em-dash bug at commit time |
 | `getDb()` â†’ `useDb()` rename          | `getDb` returns a singleton, not a factory; `useDb` better signals the DI pattern                                                                  |
-| Recommender `session.ts` session expiry | Anonymous sessions never expire from the DB; add a `created_at < NOW() - interval '7 days'` cleanup cron or a `max_age` column                     |
+| Recommender `session.ts` session expiry | Implemented in `scripts/db-prune.ts` (prunes inactive sessions > 90d in bounded 500-row batches)                                                   |
 
 ---
 
-## 13. Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture
+## 26. Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture
 
-### 13.1 Incident Summary & Root Cause Analysis
+### 26.1 Incident Summary & Root Cause Analysis
 
 On October 7, 2026, the project's Supabase Free-Tier monthly database egress quota (5 GB) was breached, recording **6.268 GB** total network egress, with **5.135 GB** consumed in a single day. Supabase placed the organization into an overage grace period with a restriction deadline of November 6, 2026.
 
@@ -3961,7 +4001,7 @@ A forensic analysis of git history, execution telemetry, query plans, and databa
 
 ---
 
-### 13.2 Optimization Architecture & Implemented Solutions
+### 26.2 Optimization Architecture & Implemented Solutions
 
 To permanently resolve the quota breach, prevent regressions, and ensure the project operates comfortably within a **2 GB/month design budget** (leaving >60% headroom under the 5 GB free limit), nine phases (A–I) were implemented to the absolute depth of each issue:
 
@@ -4067,7 +4107,7 @@ To permanently resolve the quota breach, prevent regressions, and ensure the pro
 
 ---
 
-### 13.3 Monthly Egress Budget & Headroom Target
+### 26.3 Monthly Egress Budget & Headroom Target
 
 With all optimizations in place, RECSY v2 operates under an explicit **2.0 GB / month** target allocation against Supabase's 5.0 GB quota:
 
