@@ -12,6 +12,27 @@ const STATIC_PATHS = ['/', '/browse', '/recommend', '/about', '/compare'] as con
  * live `DATABASE_URL` is available (e.g. production). Local `next build` in CI
  * typically has no database — static entries still publish.
  */
+let cachedPhoneEntries: {
+  readonly entries: { slug: string; updatedAt: Date | null }[];
+  readonly expiresAtMs: number;
+} | null = null;
+
+async function getCachedPhoneRows() {
+  const now = Date.now();
+  if (cachedPhoneEntries && now < cachedPhoneEntries.expiresAtMs) {
+    return cachedPhoneEntries.entries;
+  }
+  const db = getDb();
+  const rows = await db
+    .select({ slug: phones.slug, updatedAt: phones.updatedAt })
+    .from(phones)
+    .where(eq(phones.status, 'active'))
+    .orderBy(asc(phones.slug));
+
+  cachedPhoneEntries = { entries: rows, expiresAtMs: now + 3_600_000 };
+  return rows;
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = new URL(env.NEXT_PUBLIC_SITE_URL);
   const now = new Date();
@@ -27,12 +48,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   try {
-    const db = getDb();
-    const rows = await db
-      .select({ slug: phones.slug, updatedAt: phones.updatedAt })
-      .from(phones)
-      .where(eq(phones.status, 'active'))
-      .orderBy(asc(phones.slug));
+    const rows = await getCachedPhoneRows();
 
     for (const row of rows) {
       entries.push({

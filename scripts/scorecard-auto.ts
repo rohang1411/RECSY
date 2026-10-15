@@ -17,7 +17,6 @@
 import { parseArgs } from 'node:util';
 import { ASPECT_NAMES } from '../src/lib/constants';
 import { getDb } from '../src/services/db/client';
-import { scorecardRuns } from '../src/services/db/schema';
 import { findMissingPublicSchema, describeMissingSchema } from '../src/services/db/schema-guard';
 import { logger } from '../src/services/logger';
 import { getLlm } from '../src/services/llm';
@@ -131,21 +130,6 @@ Options:
         const last = await getLastScorecardFingerprint(db, phone.id);
         if (last !== null && last === fingerprint) {
           console.log(`  ${phone.slug}: skipped (chunks_unchanged)`);
-
-          const now = new Date();
-          await db.insert(scorecardRuns).values(
-            ASPECT_NAMES.map((aspect) => ({
-              phoneId: phone.id,
-              aspect,
-              status: 'skipped' as const,
-              skipReason: 'chunks_unchanged',
-              chunkFingerprint: fingerprint,
-              startedAt: now,
-              finishedAt: now,
-              durationMs: 0,
-            })),
-          );
-
           await markScorecardComplete(db, { phoneId: phone.id });
           skipped++;
           continue;

@@ -112,10 +112,12 @@ export async function pickScorecardPhones(
         coalesce(ac.active_chunk_count, 0) DESC,
         coalesce(p.last_scorecard_at, '1970-01-01'::timestamptz) ASC,
         coalesce(p.next_scorecard_at, '1970-01-01'::timestamptz) ASC
+      ${totalShards === 1 ? sql`LIMIT ${limit}` : sql``}
     `,
   );
 
-  const filtered = rows.filter((r) => shardIndex(r.id, totalShards) === shard);
+  const filtered =
+    totalShards === 1 ? rows : rows.filter((r) => shardIndex(r.id, totalShards) === shard);
 
   return filtered.slice(0, limit).map((r) => ({
     id: r.id,

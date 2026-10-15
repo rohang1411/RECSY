@@ -22,11 +22,26 @@ describe('CLIENT_SETTING_KEYS', () => {
   it('exports enterToSend key', () => {
     expect(CLIENT_SETTING_KEYS.enterToSend).toBe('enterToSend');
   });
+
+  it('exports reasoningMode, byokKey, and byokProvider keys', () => {
+    expect(CLIENT_SETTING_KEYS.reasoningMode).toBe('reasoningMode');
+    expect(CLIENT_SETTING_KEYS.byokKey).toBe('byokKey');
+    expect(CLIENT_SETTING_KEYS.byokProvider).toBe('byokProvider');
+  });
 });
 
 describe('CLIENT_SETTING_DEFAULTS', () => {
   it('enterToSend defaults to true', () => {
     expect(CLIENT_SETTING_DEFAULTS.enterToSend).toBe(true);
+  });
+
+  it('reasoningMode defaults to fast', () => {
+    expect(CLIENT_SETTING_DEFAULTS.reasoningMode).toBe('fast');
+  });
+
+  it('byokKey defaults to empty and byokProvider to gemini', () => {
+    expect(CLIENT_SETTING_DEFAULTS.byokKey).toBe('');
+    expect(CLIENT_SETTING_DEFAULTS.byokProvider).toBe('gemini');
   });
 });
 

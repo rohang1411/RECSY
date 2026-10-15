@@ -58,6 +58,12 @@ export interface PhoneQnaInput {
     readonly lastIngestAt?: Date | string | null;
     readonly nextIngestAt?: Date | string | null;
   };
+  /** Optional user-supplied BYOK key and preference mode. */
+  readonly byok?: {
+    readonly apiKey: string;
+    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
+    readonly userMode?: 'fast' | 'deep';
+  } | null;
 }
 
 export interface PhoneQnaResult {
@@ -132,13 +138,22 @@ async function chatAnswer(
   llm: LlmProvider,
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
+  byok?: PhoneQnaInput['byok'],
 ): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
     messages,
     temperature: 0.35,
     maxOutputTokens: 2048,
-    usageContext: { area: 'Phone Q&A', feature: 'Grounded answer', source: '/api/ask' },
+    usageContext: {
+      area: 'Phone Q&A',
+      feature: 'Grounded answer',
+      source: '/api/ask',
+      taskClass: 'GROUNDED_SYNTHESIS',
+      userByokKey: byok?.apiKey,
+      userByokProvider: byok?.provider,
+      userMode: byok?.userMode,
+    },
     signal,
   });
   return result;
@@ -268,7 +283,7 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
 
   let messages = buildMessages(query, retrieval, undefined);
   const generationCalls: ChatResult[] = [];
-  let answer = await chatAnswer(llm, messages, signal);
+  let answer = await chatAnswer(llm, messages, signal, input.byok);
   generationCalls.push(answer);
   let { text, usage, model } = answer;
 
@@ -276,7 +291,7 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    answer = await chatAnswer(llm, messages, signal);
+    answer = await chatAnswer(llm, messages, signal, input.byok);
     generationCalls.push(answer);
     ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);

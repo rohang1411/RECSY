@@ -306,6 +306,14 @@ let cachedIngestionData: {
   readonly expiresAtMs: number;
 } | null = null;
 
+let inFlightIngestionDataPromise: Promise<{
+  readonly summary: PhoneIngestionSummary;
+  readonly pendingReasons: readonly IngestionPendingReasonCount[];
+  readonly rows: readonly PhoneIngestionRow[];
+  readonly brands: readonly string[];
+  readonly expiresAtMs: number;
+}> | null = null;
+
 const EMPTY_INGESTION_SUMMARY: PhoneIngestionSummary = {
   totalActivePhones: 0,
   completedCount: 0,
@@ -353,6 +361,10 @@ async function safeQuery<T>(
 }
 
 export async function loadCommandCenterIngestionSummary(): Promise<PhoneIngestionSummary> {
+  const now = Date.now();
+  if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
+    return cachedIngestionData.summary;
+  }
   const data = await loadPhoneIngestionDashboardData();
   return data.summary;
 }
@@ -365,6 +377,24 @@ export async function loadPhoneIngestionDashboardData(
     return filterIngestionData(cachedIngestionData, filters);
   }
 
+  if (!inFlightIngestionDataPromise) {
+    inFlightIngestionDataPromise = fetchIngestionBaseData().finally(() => {
+      inFlightIngestionDataPromise = null;
+    });
+  }
+
+  const baseData = await inFlightIngestionDataPromise;
+  cachedIngestionData = baseData;
+  return filterIngestionData(baseData, filters);
+}
+
+async function fetchIngestionBaseData(): Promise<{
+  readonly summary: PhoneIngestionSummary;
+  readonly pendingReasons: readonly IngestionPendingReasonCount[];
+  readonly rows: readonly PhoneIngestionRow[];
+  readonly brands: readonly string[];
+  readonly expiresAtMs: number;
+}> {
   try {
     const db = getDb();
     const rows = await safeQuery(
@@ -524,15 +554,13 @@ export async function loadPhoneIngestionDashboardData(
 
     const brands = Array.from(brandSet).sort();
 
-    cachedIngestionData = {
+    return {
       summary,
       pendingReasons,
       rows: transformedRows,
       brands,
-      expiresAtMs: now + 45_000,
+      expiresAtMs: Date.now() + 300_000,
     };
-
-    return filterIngestionData(cachedIngestionData, filters);
   } catch (err) {
     console.warn('[phone-ingestion-dashboard] loadPhoneIngestionDashboardData failed:', err);
     return {
@@ -540,6 +568,7 @@ export async function loadPhoneIngestionDashboardData(
       pendingReasons: [],
       rows: [],
       brands: [],
+      expiresAtMs: Date.now() + 10_000,
     };
   }
 }

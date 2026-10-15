@@ -141,55 +141,83 @@ function selectLifecycleSources(
   }));
 }
 
+let cachedPhoneOptions: {
+  readonly options: PhoneOptionRow[];
+  readonly expiresAtMs: number;
+} | null = null;
+
 async function loadLifecycleDeviceData(selectedSlug: string | null) {
   const db = getDb();
+  const now = Date.now();
 
-  const phoneOptions = await optionalQuery(
-    db
-      .select({
-        id: phones.id,
-        slug: phones.slug,
-        brand: phones.brand,
-        model: phones.model,
-        imageUrl: phones.imageUrl,
-        lastScorecardAt: phones.lastScorecardAt,
-      })
-      .from(phones)
-      .where(eq(phones.status, 'active'))
-      .orderBy(asc(phones.brand), asc(phones.model))
-      .limit(100),
-    [],
-    8000,
-  );
+  let phoneOptions: PhoneOptionRow[];
+  if (cachedPhoneOptions && now < cachedPhoneOptions.expiresAtMs) {
+    phoneOptions = cachedPhoneOptions.options;
+  } else {
+    phoneOptions = await optionalQuery(
+      db
+        .select({
+          id: phones.id,
+          slug: phones.slug,
+          brand: phones.brand,
+          model: phones.model,
+          imageUrl: phones.imageUrl,
+          lastScorecardAt: phones.lastScorecardAt,
+        })
+        .from(phones)
+        .where(eq(phones.status, 'active'))
+        .orderBy(asc(phones.brand), asc(phones.model))
+        .limit(100),
+      [],
+      8000,
+    );
+    if (phoneOptions.length > 0) {
+      cachedPhoneOptions = { options: phoneOptions, expiresAtMs: now + 600_000 };
+    }
+  }
 
-  const selectedPhoneOption =
-    phoneOptions.find((phone) => phone.slug === selectedSlug) ?? phoneOptions[0] ?? null;
+  let selectedPhoneRows: SelectedPhoneRow[] = [];
+  if (selectedSlug) {
+    selectedPhoneRows = (await optionalQuery(
+      db
+        .select({
+          id: phones.id,
+          slug: phones.slug,
+          brand: phones.brand,
+          model: phones.model,
+          imageUrl: phones.imageUrl,
+          specJson: phones.specJson,
+          lastScorecardAt: phones.lastScorecardAt,
+        })
+        .from(phones)
+        .where(and(eq(phones.slug, selectedSlug), eq(phones.status, 'active')))
+        .limit(1),
+      [],
+      6000,
+    )) as SelectedPhoneRow[];
+  }
 
-  const selectedPhoneRows = selectedPhoneOption
-    ? await optionalQuery(
-        db
-          .select({
-            id: phones.id,
-            slug: phones.slug,
-            brand: phones.brand,
-            model: phones.model,
-            imageUrl: phones.imageUrl,
-            specJson: phones.specJson,
-            lastScorecardAt: phones.lastScorecardAt,
-          })
-          .from(phones)
-          .where(eq(phones.id, selectedPhoneOption.id))
-          .limit(1),
-        [],
-        6000,
-      )
-    : [];
+  if (selectedPhoneRows.length === 0 && phoneOptions[0]) {
+    selectedPhoneRows = (await optionalQuery(
+      db
+        .select({
+          id: phones.id,
+          slug: phones.slug,
+          brand: phones.brand,
+          model: phones.model,
+          imageUrl: phones.imageUrl,
+          specJson: phones.specJson,
+          lastScorecardAt: phones.lastScorecardAt,
+        })
+        .from(phones)
+        .where(eq(phones.id, phoneOptions[0].id))
+        .limit(1),
+      [],
+      6000,
+    )) as SelectedPhoneRow[];
+  }
 
-  const selectedPhone =
-    (selectedPhoneRows[0] as SelectedPhoneRow | undefined) ??
-    (selectedPhoneOption
-      ? ({ ...selectedPhoneOption, specJson: {} } satisfies SelectedPhoneRow)
-      : null);
+  const selectedPhone = selectedPhoneRows[0] ?? null;
 
   const [deviceSources, deviceChunks, deviceAspects, sampleTurns] = await Promise.all([
     selectedPhone

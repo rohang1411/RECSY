@@ -78,6 +78,13 @@
       "when": 1791403946597,
       "tag": "0010_archive_phone_status",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791897600000,
+      "tag": "0011_rls_security_hardening",
+      "breakpoints": true
     }
   ]
 }

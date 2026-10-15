@@ -20,6 +20,7 @@ import { ControlledProvider } from './controlled';
 import { GroqProvider } from './groq';
 import { NvidiaNimProvider } from './nvidia-nim';
 import { ModelGateway } from './model-gateway';
+import { ModelGatewayProvider } from './gateway';
 import type { LlmProvider } from './types';
 
 let _llm: LlmProvider | null = null;
@@ -39,15 +40,18 @@ export function getLlm(): LlmProvider {
   const base: LlmProvider = (() => {
     switch (env.LLM_PROVIDER) {
       case 'gemini':
+        if (env.LLM_ROUTER_ENABLED) {
+          return new ModelGatewayProvider();
+        }
         return new GeminiProvider();
+      case 'gateway':
+        return new ModelGatewayProvider();
       case 'controlled':
         return new ControlledProvider();
       case 'groq':
         return new GroqProvider();
       case 'nvidia':
         return new NvidiaNimProvider();
-      case 'gateway':
-        return getModelGateway();
       default: {
         const exhaustive: never = env.LLM_PROVIDER;
         throw new Error(`Unknown LLM_PROVIDER: ${String(exhaustive)}`);
@@ -71,3 +75,4 @@ export { GeminiProvider } from './gemini';
 export { GroqProvider } from './groq';
 export { NvidiaNimProvider } from './nvidia-nim';
 export { ModelGateway, type ReasoningEffort, type RouteDecision } from './model-gateway';
+export { ModelGatewayProvider } from './gateway';

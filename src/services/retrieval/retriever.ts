@@ -19,6 +19,7 @@
  * the merged list (LLM head + MMR tail) so the diversity floor can apply.
  */
 import type { Logger } from 'pino';
+import type postgres from 'postgres';
 
 import { toAppError, ValidationError } from '@/lib/errors';
 import type { LlmProvider } from '@/services/llm/types';
@@ -28,6 +29,7 @@ import { llmRerankChunkOrder, mergeLlmHeadWithMmrTail } from './llm-rerank';
 import { mmrRerank } from './mmr';
 import { reciprocalRankFusion } from './rrf';
 import { quarantinedChunkIds } from './source-quality';
+import { batchFetchChunkEmbeddings } from './vector-cache';
 import type {
   RetrievalDebug,
   RetrievalOptions,
@@ -43,6 +45,7 @@ export interface HybridRetrieverDeps {
   readonly fts: Retriever;
   readonly llm: LlmProvider;
   readonly log: Logger;
+  readonly sql?: postgres.Sql;
   /**
    * Embedding model name. Falls back to the provider default.
    * Exposed as a dep so tests can swap in a stub provider without
@@ -179,16 +182,38 @@ export class HybridRetriever {
     );
     const rrfMs = performance.now() - rrfStart;
 
-    // Step 4: MMR. Only the FTS retriever lacks embeddings; merging we
-    // need embeddings where available. The fused list inherits metadata
-    // from the first retriever to surface each chunk — that's the vector
-    // retriever in our pipeline, so embeddings are present for anything
-    // vector found. FTS-only chunks fall back to the penalty path, which
-    // is acceptable: they're exact-keyword matches, typically few, and
-    // distinct from each other by definition.
-    const mmrStart = performance.now();
+    // Step 4: MMR. Fetch vectors on-demand only for the bounded prefix
+    // (min(targetResults * 3, fused.length)) that came from vector search.
+    // FTS-only chunks continue to receive the missing-vector penalty, exactly preserving ranking.
     const mmrCap = Math.min(opts.targetResults * 3, fused.length);
-    const mmrRanked = mmrRerank(fused.slice(0, mmrCap), {
+    let mmrCandidates = fused.slice(0, mmrCap);
+
+    if (this.deps.sql) {
+      const vectorChunkIdSet = new Set(vectorChunks.map((c) => c.chunkId));
+      const missingEmbeddingIds = mmrCandidates
+        .filter(
+          (c) => vectorChunkIdSet.has(c.chunkId) && (!c.embedding || c.embedding.length === 0),
+        )
+        .map((c) => c.chunkId);
+
+      if (missingEmbeddingIds.length > 0) {
+        try {
+          const embeddingMap = await batchFetchChunkEmbeddings(this.deps.sql, missingEmbeddingIds);
+          mmrCandidates = mmrCandidates.map((c) => {
+            const emb = embeddingMap.get(c.chunkId);
+            return emb ? { ...c, embedding: emb } : c;
+          });
+        } catch (fetchErr) {
+          log.warn(
+            { err: fetchErr },
+            'failed to batch-fetch MMR prefix embeddings; continuing with available',
+          );
+        }
+      }
+    }
+
+    const mmrStart = performance.now();
+    const mmrRanked = mmrRerank(mmrCandidates, {
       lambda: opts.mmrLambda,
       k: opts.targetResults * 2,
     });

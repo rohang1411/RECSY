@@ -73,26 +73,6 @@ export type LlmUsageMonitorData = {
   };
 };
 
-type AreaAggRow = {
-  readonly area: string;
-  readonly calls: number;
-  readonly input_tokens: number;
-  readonly output_tokens: number;
-  readonly last_used_at: Date | string | null;
-};
-
-type ModelAggRow = {
-  readonly model: string;
-  readonly calls: number;
-  readonly tokens: number;
-};
-
-type TotalRow = {
-  readonly calls: number;
-  readonly input_tokens: number;
-  readonly output_tokens: number;
-};
-
 type KeyUsageAggRow = {
   readonly api_key_index: number | null;
   readonly calls: number;
@@ -105,20 +85,49 @@ let cachedLlmData: {
   readonly expiresAtMs: number;
 } | null = null;
 
+let inFlightLlmDataPromise: Promise<{
+  readonly data: LlmUsageMonitorData;
+  readonly expiresAtMs: number;
+}> | null = null;
+
 export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
   const nowMs = Date.now();
   if (cachedLlmData && nowMs < cachedLlmData.expiresAtMs) {
     return cachedLlmData.data;
   }
 
+  if (!inFlightLlmDataPromise) {
+    inFlightLlmDataPromise = fetchLlmUsageDataInternal().finally(() => {
+      inFlightLlmDataPromise = null;
+    });
+  }
+
+  const fresh = await inFlightLlmDataPromise;
+  cachedLlmData = fresh;
+  return fresh.data;
+}
+
+type SevenDayAggRow = {
+  readonly area: string;
+  readonly model: string;
+  readonly calls: number;
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly last_used_at: Date | string | null;
+};
+
+async function fetchLlmUsageDataInternal(): Promise<{
+  readonly data: LlmUsageMonitorData;
+  readonly expiresAtMs: number;
+}> {
+  const nowMs = Date.now();
   const db = getDb();
   const now = new Date();
-  const [googleQuota, keyUsageRows, topAreas, recentEvents, modelMix, totals, cacheStats] =
-    await Promise.all([
-      timedQuery(fetchGeminiQuotaFromGoogle(), googleQuotaTimeoutFallback(now), 3000),
-      optionalQuery(
-        timedQuery(
-          db.execute(sql`
+  const [googleQuota, keyUsageRows, sevenDayRows, recentEvents, cacheStats] = await Promise.all([
+    timedQuery(fetchGeminiQuotaFromGoogle(), googleQuotaTimeoutFallback(now), 3000),
+    optionalQuery(
+      timedQuery(
+        db.execute(sql`
           select
             api_key_index,
             count(*)::int as calls,
@@ -128,98 +137,128 @@ export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
           where created_at >= ${startOfPacificDay(now).toISOString()}
           group by api_key_index
         `) as Promise<KeyUsageAggRow[]>,
-          [],
-          5000,
-        ),
         [],
+        5000,
       ),
-      optionalQuery(
-        timedQuery(
-          db.execute(sql`
+      [],
+    ),
+    optionalQuery(
+      timedQuery(
+        db.execute(sql`
           select
             usage_area as area,
+            model,
             count(*)::int as calls,
             coalesce(sum(input_tokens), 0)::int as input_tokens,
             coalesce(sum(output_tokens), 0)::int as output_tokens,
             max(created_at) as last_used_at
           from llm_usage_events
           where created_at >= now() - interval '7 days'
-          group by usage_area
-          order by calls desc, (coalesce(sum(input_tokens), 0) + coalesce(sum(output_tokens), 0)) desc
-          limit 6
-        `) as Promise<AreaAggRow[]>,
-          [],
-        ),
+          group by usage_area, model
+        `) as Promise<SevenDayAggRow[]>,
+        [],
+        5000,
+      ),
+      [],
+    ),
+    optionalQuery(
+      timedQuery(
+        db
+          .select({
+            id: llmUsageEvents.id,
+            area: llmUsageEvents.usageArea,
+            feature: llmUsageEvents.usageFeature,
+            operation: llmUsageEvents.operation,
+            model: llmUsageEvents.model,
+            inputTokens: llmUsageEvents.inputTokens,
+            outputTokens: llmUsageEvents.outputTokens,
+            apiKeyIndex: llmUsageEvents.apiKeyIndex,
+            latencyMs: llmUsageEvents.latencyMs,
+            createdAt: llmUsageEvents.createdAt,
+          })
+          .from(llmUsageEvents)
+          .orderBy(desc(llmUsageEvents.createdAt))
+          .limit(10),
         [],
       ),
-      optionalQuery(
-        timedQuery(
-          db
-            .select({
-              id: llmUsageEvents.id,
-              area: llmUsageEvents.usageArea,
-              feature: llmUsageEvents.usageFeature,
-              operation: llmUsageEvents.operation,
-              model: llmUsageEvents.model,
-              inputTokens: llmUsageEvents.inputTokens,
-              outputTokens: llmUsageEvents.outputTokens,
-              apiKeyIndex: llmUsageEvents.apiKeyIndex,
-              latencyMs: llmUsageEvents.latencyMs,
-              createdAt: llmUsageEvents.createdAt,
-            })
-            .from(llmUsageEvents)
-            .orderBy(desc(llmUsageEvents.createdAt))
-            .limit(10),
-          [],
-        ),
-        [],
-      ),
-      optionalQuery(
-        timedQuery(
-          db.execute(sql`
-          select
-            model,
-            count(*)::int as calls,
-            coalesce(sum(input_tokens + output_tokens), 0)::int as tokens
-          from llm_usage_events
-          where created_at >= now() - interval '7 days'
-          group by model
-          order by tokens desc
-          limit 5
-        `) as Promise<ModelAggRow[]>,
-          [],
-        ),
-        [],
-      ),
-      optionalQuery(
-        timedQuery(
-          db.execute(sql`
-          select
-            count(*)::int as calls,
-            coalesce(sum(input_tokens), 0)::int as input_tokens,
-            coalesce(sum(output_tokens), 0)::int as output_tokens
-          from llm_usage_events
-          where created_at >= now() - interval '7 days'
-        `) as Promise<TotalRow[]>,
-          [],
-        ),
-        [],
-      ),
-      optionalQuery(
-        timedQuery(
-          db
-            .select({
-              entries: sql<number>`count(*)::int`.mapWith(Number),
-              hits: sql<number>`coalesce(sum(${llmCache.hits}), 0)::int`.mapWith(Number),
-            })
-            .from(llmCache),
-          [{ entries: 0, hits: 0 }],
-        ),
+      [],
+    ),
+    optionalQuery(
+      timedQuery(
+        db
+          .select({
+            entries: sql<number>`count(*)::int`.mapWith(Number),
+            hits: sql<number>`coalesce(sum(${llmCache.hits}), 0)::int`.mapWith(Number),
+          })
+          .from(llmCache),
         [{ entries: 0, hits: 0 }],
       ),
-    ]);
+      [{ entries: 0, hits: 0 }],
+    ),
+  ]);
 
-  const total = totals[0];
+  let calls7d = 0;
+  let inputTokens7d = 0;
+  let outputTokens7d = 0;
+  const areaMap = new Map<
+    string,
+    { calls: number; inputTokens: number; outputTokens: number; lastUsedAt: Date | string | null }
+  >();
+  const modelMap = new Map<string, { calls: number; tokens: number }>();
+
+  for (const row of sevenDayRows) {
+    const calls = Number(row.calls ?? 0);
+    const inTok = Number(row.input_tokens ?? 0);
+    const outTok = Number(row.output_tokens ?? 0);
+    calls7d += calls;
+    inputTokens7d += inTok;
+    outputTokens7d += outTok;
+
+    const curArea = areaMap.get(row.area) ?? {
+      calls: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      lastUsedAt: null,
+    };
+    const rowTime = row.last_used_at ? new Date(row.last_used_at).getTime() : 0;
+    const curTime = curArea.lastUsedAt ? new Date(curArea.lastUsedAt).getTime() : 0;
+    areaMap.set(row.area, {
+      calls: curArea.calls + calls,
+      inputTokens: curArea.inputTokens + inTok,
+      outputTokens: curArea.outputTokens + outTok,
+      lastUsedAt: rowTime > curTime ? row.last_used_at : curArea.lastUsedAt,
+    });
+
+    const curModel = modelMap.get(row.model) ?? { calls: 0, tokens: 0 };
+    modelMap.set(row.model, {
+      calls: curModel.calls + calls,
+      tokens: curModel.tokens + inTok + outTok,
+    });
+  }
+
+  const topAreas = Array.from(areaMap.entries())
+    .map(([area, data]) => ({
+      area,
+      calls: data.calls,
+      inputTokens: data.inputTokens,
+      outputTokens: data.outputTokens,
+      lastUsedAt: data.lastUsedAt ? new Date(data.lastUsedAt).toISOString() : null,
+    }))
+    .sort(
+      (a, b) =>
+        b.calls - a.calls || b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    )
+    .slice(0, 6);
+
+  const modelMix = Array.from(modelMap.entries())
+    .map(([model, data]) => ({
+      model,
+      calls: data.calls,
+      tokens: data.tokens,
+    }))
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 5);
+
   const cache = cacheStats[0] ?? { entries: 0, hits: 0 };
   const configuredKeyCount = Math.max(1, getConfiguredGeminiKeyCount());
   const dailyLimitPerKey =
@@ -268,33 +307,22 @@ export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
     googleQuota,
     localQuota,
     configuredKeyCount,
-    topAreas: topAreas.map((row) => ({
-      area: row.area,
-      calls: Number(row.calls),
-      inputTokens: Number(row.input_tokens),
-      outputTokens: Number(row.output_tokens),
-      lastUsedAt: row.last_used_at ? new Date(row.last_used_at).toISOString() : null,
-    })),
+    topAreas,
     recentEvents: recentEvents.map((row) => ({
       ...row,
       createdAt: row.createdAt.toISOString(),
     })),
-    modelMix: modelMix.map((row) => ({
-      model: row.model,
-      calls: Number(row.calls),
-      tokens: Number(row.tokens),
-    })),
+    modelMix,
     totals: {
-      calls7d: Number(total?.calls ?? 0),
-      inputTokens7d: Number(total?.input_tokens ?? 0),
-      outputTokens7d: Number(total?.output_tokens ?? 0),
+      calls7d,
+      inputTokens7d,
+      outputTokens7d,
       cacheEntries: cache.entries,
       cacheHits: cache.hits,
     },
   };
 
-  cachedLlmData = { data: result, expiresAtMs: nowMs + 45_000 };
-  return result;
+  return { data: result, expiresAtMs: nowMs + 300_000 };
 }
 
 async function optionalQuery<T>(promise: Promise<T>, fallback: T): Promise<T> {

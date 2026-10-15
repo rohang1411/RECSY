@@ -28,6 +28,7 @@ import { chunkTextForStream, persistChatQuery, runPhoneQna } from '@/services/ch
 import { getDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
+import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { requestLogger } from '@/services/logger';
 import { consumeAskRateLimit } from '@/services/rate-limit';
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest): Promise<Response> {
               lastIngestAt: phone.lastIngestAt,
               nextIngestAt: phone.nextIngestAt,
             },
+            byok: extractByokFromHeaders(request.headers),
           });
 
           write({

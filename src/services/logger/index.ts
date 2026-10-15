@@ -34,6 +34,10 @@ const REDACT_PATHS = [
   'cookie',
   'token',
   '*.token',
+  'userByokKey',
+  '*.userByokKey',
+  'headers.x-recsy-user-key',
+  '*.x-recsy-user-key',
 ] as const;
 
 function createLogger(): Logger {

@@ -283,6 +283,7 @@ ${infoboxWikitext}`;
         area: 'Catalog enrichment',
         feature: 'Wikipedia spec extraction',
         source: 'catalog.wikipedia',
+        taskClass: 'EXTRACTION',
       },
     });
     return value;

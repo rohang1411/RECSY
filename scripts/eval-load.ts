@@ -7,8 +7,14 @@
  */
 import { getDb } from '@/services/db/client';
 import { runLoadStressBenchmark } from '@/services/eval/runners/load-stress-runner';
+import { assertEvaluationDatabaseSafety } from '@/services/eval/workload-guard';
 
 async function main(): Promise<void> {
+  assertEvaluationDatabaseSafety({
+    action: 'Data-plane load stress benchmark',
+    allowSmoke: true,
+  });
+
   const args = process.argv.slice(2);
   const vuArg = args.find((a) => a.startsWith('--vus='));
   const totalArg = args.find((a) => a.startsWith('--total='));

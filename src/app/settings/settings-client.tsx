@@ -1,6 +1,6 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import {
   CLIENT_SETTING_DEFAULTS,
@@ -11,7 +11,20 @@ import { cn } from '@/lib/utils';
 
 export function SettingsClient() {
   return (
-    <section className="mt-8">
+    <section className="mt-8 space-y-8">
+      {/* AI Model Gateway & Reasoning Tier */}
+      <fieldset className="border-outline-variant bg-background border">
+        <legend className="meta-label text-primary ml-5 px-2">
+          AI Model Gateway & Reasoning Tier
+        </legend>
+        <div className="space-y-6 p-5">
+          <ReasoningModeSelector />
+          <hr className="border-outline-variant" />
+          <ByokKeyConfig />
+        </div>
+      </fieldset>
+
+      {/* Chat input preferences */}
       <fieldset className="border-outline-variant bg-background border">
         <legend className="meta-label text-primary ml-5 px-2">Chat input</legend>
         <div className="p-5">
@@ -19,6 +32,148 @@ export function SettingsClient() {
         </div>
       </fieldset>
     </section>
+  );
+}
+
+function ReasoningModeSelector() {
+  const [mode, setMode] = useClientSetting<'fast' | 'deep'>(
+    CLIENT_SETTING_KEYS.reasoningMode,
+    CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.reasoningMode],
+  );
+  const isDeep = mode === 'deep';
+
+  return (
+    <div className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-start">
+      <div className="min-w-0">
+        <p className="text-primary font-mono text-sm tracking-[0.12em] uppercase">
+          Reasoning Execution Mode
+        </p>
+        <p className="text-muted-foreground mt-2 max-w-2xl text-xs leading-5">
+          <strong>⚡ Fast Turbo Mode:</strong> Sub-second extraction and recommendations using
+          high-speed LPUs (Groq Llama 3.1 8B, Gemini Flash).
+          <br />
+          <strong>🧠 Deep Reasoning Mode:</strong> Multi-aspect trade-off matrix evaluation and
+          conflict reconciliation using frontier reasoning models (Gemini 2.5 Pro, NVIDIA NIM
+          DeepSeek-R1).
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setMode('fast')}
+          className={cn(
+            'border px-3 py-1.5 font-mono text-xs tracking-wider uppercase transition-colors',
+            !isDeep
+              ? 'border-primary bg-primary text-primary-foreground font-semibold'
+              : 'border-outline hover:border-primary text-muted-foreground',
+          )}
+        >
+          ⚡ Fast
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('deep')}
+          className={cn(
+            'border px-3 py-1.5 font-mono text-xs tracking-wider uppercase transition-colors',
+            isDeep
+              ? 'border-primary bg-primary text-primary-foreground font-semibold'
+              : 'border-outline hover:border-primary text-muted-foreground',
+          )}
+        >
+          🧠 Deep
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ByokKeyConfig() {
+  const [byokKey, setByokKey] = useClientSetting<string>(
+    CLIENT_SETTING_KEYS.byokKey,
+    CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.byokKey],
+  );
+  const [byokProvider, setByokProvider] = useClientSetting<
+    'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai'
+  >(CLIENT_SETTING_KEYS.byokProvider, CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.byokProvider]);
+
+  const [inputVal, setInputVal] = useState(byokKey);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setByokKey(inputVal.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleClear = () => {
+    setInputVal('');
+    setByokKey('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-primary font-mono text-sm tracking-[0.12em] uppercase">
+          Bring Your Own Key (BYOK)
+        </p>
+        <p className="text-muted-foreground mt-1 max-w-2xl text-xs leading-5">
+          RECSY runs 100% on free server tiers. Provide your own free API key to unlock unlimited
+          frontier reasoning without hitting shared server rate limits. Keys are stored locally in
+          your browser and strictly redacted from server logs.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-[160px_1fr_auto]">
+        <select
+          value={byokProvider}
+          onChange={(e) =>
+            setByokProvider(e.target.value as 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai')
+          }
+          className="border-outline bg-background text-primary focus:border-primary border px-3 py-2 font-mono text-xs tracking-wider uppercase focus:outline-none"
+        >
+          <option value="gemini">Google Gemini</option>
+          <option value="groq">Groq Cloud</option>
+          <option value="nvidia">NVIDIA NIM</option>
+          <option value="cerebras">Cerebras</option>
+          <option value="openai">OpenAI / Compatible</option>
+        </select>
+
+        <input
+          type="password"
+          placeholder={
+            byokKey ? '••••••••••••••••••••••••' : 'Enter API Key (e.g. AIzaSy... or gsk_...)'
+          }
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          className="border-outline bg-background text-primary focus:border-primary border px-3 py-2 font-mono text-xs focus:outline-none"
+        />
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            className="border-primary bg-primary text-primary-foreground px-4 py-2 font-mono text-xs tracking-wider uppercase transition-opacity hover:opacity-90"
+          >
+            {saved ? 'Saved ✓' : 'Save Key'}
+          </button>
+          {byokKey ? (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="border-outline hover:border-destructive text-muted-foreground hover:text-destructive border px-3 py-2 font-mono text-xs tracking-wider uppercase transition-colors"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {byokKey ? (
+        <p className="font-mono text-[11px] tracking-wide text-emerald-500">
+          ✓ Active BYOK key configured for {byokProvider.toUpperCase()}. All requests bypass server
+          rate limits.
+        </p>
+      ) : null}
+    </div>
   );
 }
 
