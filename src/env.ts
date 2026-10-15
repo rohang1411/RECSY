@@ -25,7 +25,7 @@ export const env = createEnv({
       .default('public'),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
-    LLM_PROVIDER: z.enum(['gemini', 'groq', 'controlled', 'gateway']).default('gemini'),
+    LLM_PROVIDER: z.enum(['gemini', 'groq', 'nvidia', 'controlled', 'gateway']).default('gemini'),
     EVAL_CONTROLLED_PROVIDER_URL: z.string().url().optional(),
     EVAL_CONTROLLED_PROVIDER_TOKEN: z.string().min(16).optional(),
     GEMINI_API_KEY: z.string().min(1),

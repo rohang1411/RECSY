@@ -9,6 +9,7 @@ import {
   computeNdcgAtK,
   computeMrr,
   computePrecisionAtK,
+  computeRecallAtK,
 } from './metrics/ranking';
 import {
   computeGiniCoefficient,
@@ -117,6 +118,20 @@ describe('Ranking Quality Metrics (NDCG & MRR)', () => {
   it('computes Precision@K correctly', () => {
     expect(computePrecisionAtK([3, 2, 0, 1], 3, 2)).toBe(0.667); // 2 out of 3
     expect(computePrecisionAtK([3, 3, 3], 3, 2)).toBe(1.0);
+  });
+
+  it('computes Recall@K against total relevant ground truth items', () => {
+    // 3 relevant retrieved out of 4 total relevant in ground truth -> 3/4 = 0.75
+    expect(computeRecallAtK([3, 0, 3, 2, 0], 5, 4, 2)).toBe(0.75);
+
+    // All 4 relevant items retrieved in top 8 -> 4/4 = 1.0
+    expect(computeRecallAtK([3, 2, 2, 2, 0, 0, 0, 0], 8, 4, 2)).toBe(1.0);
+
+    // 0 relevant items retrieved
+    expect(computeRecallAtK([0, 1, 0, 0], 4, 3, 2)).toBe(0.0);
+
+    // Edge case: totalRelevant = 0 returns 1.0
+    expect(computeRecallAtK([], 5, 0, 2)).toBe(1.0);
   });
 });
 

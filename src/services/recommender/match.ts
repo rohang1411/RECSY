@@ -253,12 +253,22 @@ export function resolveAspectWeights(
 export function weightedAspectScore(
   scores: ReadonlyMap<AspectName, number>,
   weights: ReadonlyMap<AspectName, number>,
+  confidences?: ReadonlyMap<AspectName, number>,
 ): number {
   let acc = 0;
   for (const name of ASPECT_NAMES) {
     const w = weights.get(name) ?? 0;
     const s = scores.get(name) ?? NEUTRAL_ASPECT_SCORE;
-    acc += w * s;
+    const conf = confidences?.get(name) ?? 1.0;
+    // Confidence-weighted sentiment aggregation:
+    // Calibrates review aspect scores by source sample size and consensus confidence,
+    // shrinking low-confidence scores towards neutral baseline (5.0).
+    const calibratedScore =
+      conf < 1.0
+        ? NEUTRAL_ASPECT_SCORE +
+          (s - NEUTRAL_ASPECT_SCORE) * (0.6 + 0.4 * Math.max(0, Math.min(1, conf)))
+        : s;
+    acc += w * calibratedScore;
   }
   return acc;
 }
@@ -490,7 +500,7 @@ interface ScoringContext {
 
 function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandidate {
   const haystack = buildSearchHaystack(entry);
-  let score = weightedAspectScore(entry.aspectScores, ctx.weights);
+  let score = weightedAspectScore(entry.aspectScores, ctx.weights, entry.aspectConfidences);
   const scoringMustHaves = ctx.requirements.must_haves.filter((m) => !isPlatformRequirement(m));
   const ratio = mustHaveMatchRatio(haystack, scoringMustHaves);
   score = score * (0.72 + 0.28 * ratio);

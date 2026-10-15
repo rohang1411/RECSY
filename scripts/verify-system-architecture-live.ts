@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
 /**
- * RECSY v2 - Live Production Verification & Telemetry Audit
+ * RECSY v2 - Live Production System Architecture Verification & Telemetry Audit
  *
- * Verifies all three resume claims on LIVE database and LIVE Gemini API:
+ * Verifies core platform subsystems on LIVE database and LIVE Gemini API:
  * 1. Hybrid RAG (pgvector HNSW + tsvector GIN fused via RRF to 8 chunks) + MCP server
  * 2. Zero-Thinking Token Budget optimization (live tokens and latency comparison)
  * 3. Agentic framework (state guards, 7-aspect scorecards, live EXPLAIN ANALYZE execution times)
  *
  * Usage:
- *   npx tsx --env-file=.env.local scripts/verify-all-resume-claims-live.ts
+ *   npx tsx --env-file=.env.local scripts/verify-system-architecture-live.ts
  */
 import { generateObject } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -27,13 +27,13 @@ async function main(): Promise<void> {
   const db = getDb();
 
   console.log('================================================================');
-  console.log('RECSY RESUME CLAIMS - LIVE PRODUCTION VERIFICATION AUDIT');
+  console.log('RECSY SYSTEM ARCHITECTURE - LIVE PRODUCTION VERIFICATION AUDIT');
   console.log('================================================================\n');
 
   // -------------------------------------------------------------------------
-  // BULLET 1 VERIFICATION: Database Indexing, Candidate Fusion & MCP Server
+  // SUBSYSTEM 1: Database Indexing, Candidate Fusion & MCP Server
   // -------------------------------------------------------------------------
-  console.log('>>> [BULLET 1] Verifying Hybrid RAG Architecture & Live Database Indexes...');
+  console.log('>>> [SUBSYSTEM 1] Verifying Hybrid RAG Architecture & Live Database Indexes...');
 
   // 1.1 Verify pgvector HNSW index in PostgreSQL catalog
   const hnswIndexes = await sql`
@@ -118,9 +118,9 @@ async function main(): Promise<void> {
   console.log(`        ✓ Confirmed: Hallucinations detected and flagged.\n`);
 
   // -------------------------------------------------------------------------
-  // BULLET 2 VERIFICATION: Zero-Thinking Token Budget Live Benchmark
+  // SUBSYSTEM 2: Zero-Thinking Token Budget Live Benchmark
   // -------------------------------------------------------------------------
-  console.log('>>> [BULLET 2] Measuring Live Gemini API Token Spend and Latency...');
+  console.log('>>> [SUBSYSTEM 2] Measuring Live Gemini API Token Spend and Latency...');
 
   const apiKey = process.env.GEMINI_API_KEY!;
   const google = createGoogleGenerativeAI({ apiKey });
@@ -144,7 +144,6 @@ async function main(): Promise<void> {
   | memory = 16 GB LPDDR5X
   }}`;
 
-  // Call A & B: Live Gemini Test
   try {
     const t0 = performance.now();
     const liveZeroThinking = await generateObject({
@@ -185,7 +184,7 @@ async function main(): Promise<void> {
     );
   }
   console.log(
-    `  [2.2] Documented Production Incident Telemetry (gemini-3-flash-preview on Wikipedia Infoboxes):`,
+    `  [2.2] Documented Production Telemetry (gemini-3-flash-preview on Wikipedia Infoboxes):`,
   );
   console.log(
     `        - Baseline Wasted Reasoning Tokens: 5,780 tokens (burned 96% of 6,000 ceiling, causing finishReason: 'length')`,
@@ -195,10 +194,10 @@ async function main(): Promise<void> {
   console.log(`        - Extraction Latency Drop: 32.4s -> 0.8s (40.5x speedup)\n`);
 
   // -------------------------------------------------------------------------
-  // BULLET 3 VERIFICATION: PostgreSQL Server-Side Query Execution Times
+  // SUBSYSTEM 3: PostgreSQL Server-Side Query Execution Times
   // -------------------------------------------------------------------------
   console.log(
-    '>>> [BULLET 3] Benchmarking Pure Database Engine Execution Times (EXPLAIN ANALYZE)...',
+    '>>> [SUBSYSTEM 3] Benchmarking Pure Database Engine Execution Times (EXPLAIN ANALYZE)...',
   );
 
   // Vector query explain analyze on PostgreSQL
@@ -259,13 +258,13 @@ async function main(): Promise<void> {
   );
 
   console.log('================================================================');
-  console.log('FINAL AUDIT CONCLUSION: ALL 3 RESUME CLAIMS CONFIRMED & VERIFIED');
+  console.log('FINAL AUDIT CONCLUSION: ALL SUBSYSTEMS CONFIRMED & VERIFIED');
   console.log('================================================================');
 
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error('[verify-all-resume-claims-live] Error:', err);
+  console.error('[verify-system-architecture-live] Error:', err);
   process.exit(1);
 });

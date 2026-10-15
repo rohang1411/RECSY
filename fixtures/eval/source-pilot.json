@@ -1,7 +1,7 @@
 {
   "version": "source-pilot-1",
   "status": "authored candidates awaiting independent review",
-  "purpose": "Small source-backed diagnostic pilot, not representative held-out gold and not sufficient for a resume percentage.",
+  "purpose": "Small source-backed diagnostic pilot, not representative held-out gold and not sufficient for a production quality percentage.",
   "cases": [
     {
       "id": "sp01",

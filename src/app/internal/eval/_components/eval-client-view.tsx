@@ -672,8 +672,8 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
             !selectedRunDetails.config?.preflight ||
             selectedRunDetails.config?.workingTreeDirty !== false) && (
             <p className="text-amber-600">
-              Imported, legacy, or uncommitted code provenance. These results are not suitable for a
-              resume claim.
+              Imported, legacy, or uncommitted code provenance. These results are not suitable for
+              formal evaluation certification.
             </p>
           )}
           <details>

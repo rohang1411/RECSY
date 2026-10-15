@@ -47,6 +47,7 @@ export interface PhoneCatalogEntry {
   readonly spec: PhoneSpec | null;
   readonly specEmbedding: readonly number[] | null;
   readonly aspectScores: ReadonlyMap<AspectName, number>;
+  readonly aspectConfidences?: ReadonlyMap<AspectName, number>;
 }
 
 export interface LoadCatalogOptions {
@@ -108,6 +109,7 @@ export async function loadRecommendationCatalog(
     specEmbRaw: unknown;
     aspect?: unknown;
     aspectScore?: unknown;
+    aspectConfidence?: unknown;
   }>;
 
   if (phoneRows.length === 0) {
@@ -119,7 +121,7 @@ export async function loadRecommendationCatalog(
 
   const aspectMapByPhone = new Map<
     string,
-    Map<AspectName, { score: number; version: number; updatedAtMs: number }>
+    Map<AspectName, { score: number; confidence: number; version: number; updatedAtMs: number }>
   >();
 
   if (isMockJoined) {
@@ -127,13 +129,19 @@ export async function loadRecommendationCatalog(
     for (const r of phoneRows) {
       if (r.aspect && r.aspectScore != null) {
         const n = Number.parseFloat(String(r.aspectScore));
+        const c = r.aspectConfidence != null ? Number.parseFloat(String(r.aspectConfidence)) : 0.8;
         if (!Number.isNaN(n)) {
           let phoneMap = aspectMapByPhone.get(r.phoneId);
           if (!phoneMap) {
             phoneMap = new Map();
             aspectMapByPhone.set(r.phoneId, phoneMap);
           }
-          phoneMap.set(r.aspect as AspectName, { score: n, version: 1, updatedAtMs: 0 });
+          phoneMap.set(r.aspect as AspectName, {
+            score: n,
+            confidence: Number.isNaN(c) ? 0.8 : c,
+            version: 1,
+            updatedAtMs: 0,
+          });
         }
       }
     }
@@ -146,6 +154,7 @@ export async function loadRecommendationCatalog(
           aspect: aspectDefinitions.aspect,
           version: aspectDefinitions.version,
           aspectScore: aspects.score,
+          aspectConfidence: aspects.confidence,
           updatedAt: aspects.updatedAt,
         })
         .from(aspects)
@@ -155,6 +164,8 @@ export async function loadRecommendationCatalog(
         if (!r.aspect || r.aspectScore == null) continue;
         const n = Number.parseFloat(String(r.aspectScore));
         if (Number.isNaN(n)) continue;
+        const c = r.aspectConfidence != null ? Number.parseFloat(String(r.aspectConfidence)) : 0.8;
+        const conf = Number.isNaN(c) ? 0.8 : c;
 
         const asp = r.aspect as AspectName;
         let phoneMap = aspectMapByPhone.get(r.phoneId);
@@ -174,7 +185,7 @@ export async function loadRecommendationCatalog(
           version > current.version ||
           (version === current.version && updatedAtMs > current.updatedAtMs)
         ) {
-          phoneMap.set(asp, { score: n, version, updatedAtMs });
+          phoneMap.set(asp, { score: n, confidence: conf, version, updatedAtMs });
         }
       }
     } catch {
@@ -193,10 +204,12 @@ export async function loadRecommendationCatalog(
   return [...uniquePhones.values()].map((r) => {
     const parsed = PhoneSpecSchema.safeParse(r.specJson);
     const aspectScores = new Map<AspectName, number>();
+    const aspectConfidences = new Map<AspectName, number>();
     const phoneAspects = aspectMapByPhone.get(r.phoneId);
     if (phoneAspects) {
       for (const [asp, item] of phoneAspects.entries()) {
         aspectScores.set(asp, item.score);
+        aspectConfidences.set(asp, item.confidence);
       }
     }
 
@@ -216,6 +229,7 @@ export async function loadRecommendationCatalog(
       spec: parsed.success ? parsed.data : null,
       specEmbedding: withEmbeddings ? parseVectorColumn(r.specEmbRaw) : null,
       aspectScores,
+      aspectConfidences,
     };
   });
 }

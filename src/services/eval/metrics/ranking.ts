@@ -86,6 +86,19 @@ export function computePrecisionAtK(
   return Math.round((relevantCount / topK.length) * 1000) / 1000;
 }
 
+export function computeRecallAtK(
+  grades: readonly number[],
+  k: number,
+  totalRelevant: number,
+  relevanceThreshold = 2,
+): number {
+  if (totalRelevant <= 0) return 1.0;
+  const topK = grades.slice(0, k);
+  const relevantInTopK = topK.filter((g) => g >= relevanceThreshold).length;
+  const recall = Math.min(1.0, relevantInTopK / totalRelevant);
+  return Math.round(recall * 1000) / 1000;
+}
+
 export function computeAveragePrecision(
   grades: readonly number[],
   k: number,

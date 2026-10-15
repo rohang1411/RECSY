@@ -1,7 +1,7 @@
 /**
  * Verification Suite for Retrieval Latency Tracing and Sub-50ms p95 Target.
  *
- * Verifies Resume Claim:
+ * Verifies Subsystem Architectural Performance:
  * "Instrumenting per-stage retrieval tracing to prevent conversational context drift
  *  and maintain sub-50ms p95 retrieval latency"
  */

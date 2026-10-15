@@ -1,0 +1,1775 @@
+{
+  "version": "1.0.0",
+  "description": "Golden 150+ benchmark evaluation dataset for hybrid retrieval, Recall@K, MRR, and nDCG benchmarking",
+  "totalQueries": 156,
+  "queries": [
+    {
+      "id": "rag-bm-001",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of iPhone 16 Pro?",
+      "referenceFacts": [
+        "iPhone 16 Pro battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-002",
+      "phoneSlug": "apple-iphone-16",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of iPhone 16?",
+      "referenceFacts": [
+        "iPhone 16 battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-003",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Galaxy S24 Ultra?",
+      "referenceFacts": [
+        "Galaxy S24 Ultra battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-004",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Galaxy S24?",
+      "referenceFacts": [
+        "Galaxy S24 battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-005",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Pixel 9 Pro XL?",
+      "referenceFacts": [
+        "Pixel 9 Pro XL battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-006",
+      "phoneSlug": "google-pixel-9",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Pixel 9?",
+      "referenceFacts": [
+        "Pixel 9 battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-007",
+      "phoneSlug": "google-pixel-8a",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Pixel 8a?",
+      "referenceFacts": [
+        "Pixel 8a battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-008",
+      "phoneSlug": "oneplus-12",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of OnePlus 12?",
+      "referenceFacts": [
+        "OnePlus 12 battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-009",
+      "phoneSlug": "oneplus-open",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of OnePlus Open?",
+      "referenceFacts": [
+        "OnePlus Open battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-010",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Nothing Phone 2a?",
+      "referenceFacts": [
+        "Nothing Phone 2a battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-011",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Galaxy Z Fold 6?",
+      "referenceFacts": [
+        "Galaxy Z Fold 6 battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-012",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Edge 50 Pro?",
+      "referenceFacts": [
+        "Edge 50 Pro battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-013",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "battery-charging",
+      "query": "What is the battery capacity and wired fast charging wattage of Xiaomi 14 Ultra?",
+      "referenceFacts": [
+        "Xiaomi 14 Ultra battery capacity",
+        "wired charging speed",
+        "charging time to 50 percent"
+      ],
+      "numericalEntities": ["mah", "w", "minutes", "hours"]
+    },
+    {
+      "id": "rag-bm-014",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does iPhone 16 Pro achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-015",
+      "phoneSlug": "apple-iphone-16",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does iPhone 16 achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-016",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Galaxy S24 Ultra achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-017",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Galaxy S24 achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-018",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Pixel 9 Pro XL achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-019",
+      "phoneSlug": "google-pixel-9",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Pixel 9 achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-020",
+      "phoneSlug": "google-pixel-8a",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Pixel 8a achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-021",
+      "phoneSlug": "oneplus-12",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does OnePlus 12 achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-022",
+      "phoneSlug": "oneplus-open",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does OnePlus Open achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-023",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Nothing Phone 2a achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-024",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Galaxy Z Fold 6 achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-025",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Edge 50 Pro achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-026",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "battery-endurance",
+      "query": "How many hours of screen on time does Xiaomi 14 Ultra achieve in real world battery tests?",
+      "referenceFacts": ["screen on time endurance", "all day battery life", "standby drain"],
+      "numericalEntities": ["hours", "sot", "percent"]
+    },
+    {
+      "id": "rag-bm-027",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "wireless-charging",
+      "query": "Does iPhone 16 Pro support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-028",
+      "phoneSlug": "apple-iphone-16",
+      "category": "wireless-charging",
+      "query": "Does iPhone 16 support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-029",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "wireless-charging",
+      "query": "Does Galaxy S24 Ultra support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-030",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "wireless-charging",
+      "query": "Does Galaxy S24 support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-031",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "wireless-charging",
+      "query": "Does Pixel 9 Pro XL support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-032",
+      "phoneSlug": "google-pixel-9",
+      "category": "wireless-charging",
+      "query": "Does Pixel 9 support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-033",
+      "phoneSlug": "google-pixel-8a",
+      "category": "wireless-charging",
+      "query": "Does Pixel 8a support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-034",
+      "phoneSlug": "oneplus-12",
+      "category": "wireless-charging",
+      "query": "Does OnePlus 12 support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-035",
+      "phoneSlug": "oneplus-open",
+      "category": "wireless-charging",
+      "query": "Does OnePlus Open support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-036",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "wireless-charging",
+      "query": "Does Nothing Phone 2a support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-037",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "wireless-charging",
+      "query": "Does Galaxy Z Fold 6 support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-038",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "wireless-charging",
+      "query": "Does Edge 50 Pro support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-039",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "wireless-charging",
+      "query": "Does Xiaomi 14 Ultra support wireless charging and reverse wireless power sharing?",
+      "referenceFacts": ["wireless charging support", "qi standard wattage", "reverse charging"],
+      "numericalEntities": ["w", "15w", "magnetic"]
+    },
+    {
+      "id": "rag-bm-040",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on iPhone 16 Pro?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-041",
+      "phoneSlug": "apple-iphone-16",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on iPhone 16?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-042",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Galaxy S24 Ultra?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-043",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Galaxy S24?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-044",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Pixel 9 Pro XL?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-045",
+      "phoneSlug": "google-pixel-9",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Pixel 9?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-046",
+      "phoneSlug": "google-pixel-8a",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Pixel 8a?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-047",
+      "phoneSlug": "oneplus-12",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on OnePlus 12?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-048",
+      "phoneSlug": "oneplus-open",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on OnePlus Open?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-049",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Nothing Phone 2a?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-050",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Galaxy Z Fold 6?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-051",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Edge 50 Pro?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-052",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "camera-zoom",
+      "query": "What optical zoom level does the telephoto lens provide on Xiaomi 14 Ultra?",
+      "referenceFacts": [
+        "periscope telephoto lens",
+        "optical zoom magnification",
+        "hybrid zoom digital clarity"
+      ],
+      "numericalEntities": ["3x", "5x", "10x", "focal length"]
+    },
+    {
+      "id": "rag-bm-053",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on iPhone 16 Pro?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-054",
+      "phoneSlug": "apple-iphone-16",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on iPhone 16?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-055",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Galaxy S24 Ultra?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-056",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Galaxy S24?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-057",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Pixel 9 Pro XL?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-058",
+      "phoneSlug": "google-pixel-9",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Pixel 9?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-059",
+      "phoneSlug": "google-pixel-8a",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Pixel 8a?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-060",
+      "phoneSlug": "oneplus-12",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on OnePlus 12?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-061",
+      "phoneSlug": "oneplus-open",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on OnePlus Open?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-062",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Nothing Phone 2a?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-063",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Galaxy Z Fold 6?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-064",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Edge 50 Pro?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-065",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "camera-lowlight",
+      "query": "How is the low light and night mode photography performance on Xiaomi 14 Ultra?",
+      "referenceFacts": [
+        "night mode dynamic range",
+        "low light noise reduction",
+        "sensor size and optical image stabilization"
+      ],
+      "numericalEntities": ["ois", "aperture", "f/1."]
+    },
+    {
+      "id": "rag-bm-066",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "camera-video",
+      "query": "Can iPhone 16 Pro record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-067",
+      "phoneSlug": "apple-iphone-16",
+      "category": "camera-video",
+      "query": "Can iPhone 16 record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-068",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "camera-video",
+      "query": "Can Galaxy S24 Ultra record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-069",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "camera-video",
+      "query": "Can Galaxy S24 record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-070",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "camera-video",
+      "query": "Can Pixel 9 Pro XL record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-071",
+      "phoneSlug": "google-pixel-9",
+      "category": "camera-video",
+      "query": "Can Pixel 9 record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-072",
+      "phoneSlug": "google-pixel-8a",
+      "category": "camera-video",
+      "query": "Can Pixel 8a record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-073",
+      "phoneSlug": "oneplus-12",
+      "category": "camera-video",
+      "query": "Can OnePlus 12 record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-074",
+      "phoneSlug": "oneplus-open",
+      "category": "camera-video",
+      "query": "Can OnePlus Open record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-075",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "camera-video",
+      "query": "Can Nothing Phone 2a record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-076",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "camera-video",
+      "query": "Can Galaxy Z Fold 6 record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-077",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "camera-video",
+      "query": "Can Edge 50 Pro record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-078",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "camera-video",
+      "query": "Can Xiaomi 14 Ultra record 4K 60fps video and does it have cinematic stabilization?",
+      "referenceFacts": [
+        "4k 60fps video recording",
+        "cinematic stabilization",
+        "hdr video capture"
+      ],
+      "numericalEntities": ["4k", "60fps", "bitrate", "hdr"]
+    },
+    {
+      "id": "rag-bm-079",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "display-refresh",
+      "query": "Does the display on iPhone 16 Pro support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-080",
+      "phoneSlug": "apple-iphone-16",
+      "category": "display-refresh",
+      "query": "Does the display on iPhone 16 support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-081",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "display-refresh",
+      "query": "Does the display on Galaxy S24 Ultra support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-082",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "display-refresh",
+      "query": "Does the display on Galaxy S24 support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-083",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "display-refresh",
+      "query": "Does the display on Pixel 9 Pro XL support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-084",
+      "phoneSlug": "google-pixel-9",
+      "category": "display-refresh",
+      "query": "Does the display on Pixel 9 support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-085",
+      "phoneSlug": "google-pixel-8a",
+      "category": "display-refresh",
+      "query": "Does the display on Pixel 8a support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-086",
+      "phoneSlug": "oneplus-12",
+      "category": "display-refresh",
+      "query": "Does the display on OnePlus 12 support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-087",
+      "phoneSlug": "oneplus-open",
+      "category": "display-refresh",
+      "query": "Does the display on OnePlus Open support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-088",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "display-refresh",
+      "query": "Does the display on Nothing Phone 2a support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-089",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "display-refresh",
+      "query": "Does the display on Galaxy Z Fold 6 support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-090",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "display-refresh",
+      "query": "Does the display on Edge 50 Pro support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-091",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "display-refresh",
+      "query": "Does the display on Xiaomi 14 Ultra support 120Hz LTPO adaptive refresh rate down to 1Hz?",
+      "referenceFacts": [
+        "ltpo adaptive refresh rate",
+        "1hz to 120hz scaling",
+        "smooth scrolling animation"
+      ],
+      "numericalEntities": ["120hz", "1hz", "ltpo"]
+    },
+    {
+      "id": "rag-bm-092",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the iPhone 16 Pro screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-093",
+      "phoneSlug": "apple-iphone-16",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the iPhone 16 screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-094",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Galaxy S24 Ultra screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-095",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Galaxy S24 screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-096",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Pixel 9 Pro XL screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-097",
+      "phoneSlug": "google-pixel-9",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Pixel 9 screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-098",
+      "phoneSlug": "google-pixel-8a",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Pixel 8a screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-099",
+      "phoneSlug": "oneplus-12",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the OnePlus 12 screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-100",
+      "phoneSlug": "oneplus-open",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the OnePlus Open screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-101",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Nothing Phone 2a screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-102",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Galaxy Z Fold 6 screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-103",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Edge 50 Pro screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-104",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "display-brightness",
+      "query": "What is the peak outdoor brightness in nits for the Xiaomi 14 Ultra screen?",
+      "referenceFacts": [
+        "peak brightness outdoors",
+        "high brightness mode in direct sunlight",
+        "anti-reflective coating"
+      ],
+      "numericalEntities": ["nits", "2000", "2600", "3000"]
+    },
+    {
+      "id": "rag-bm-105",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on iPhone 16 Pro for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-106",
+      "phoneSlug": "apple-iphone-16",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on iPhone 16 for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-107",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Galaxy S24 Ultra for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-108",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Galaxy S24 for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-109",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Pixel 9 Pro XL for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-110",
+      "phoneSlug": "google-pixel-9",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Pixel 9 for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-111",
+      "phoneSlug": "google-pixel-8a",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Pixel 8a for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-112",
+      "phoneSlug": "oneplus-12",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on OnePlus 12 for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-113",
+      "phoneSlug": "oneplus-open",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on OnePlus Open for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-114",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Nothing Phone 2a for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-115",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Galaxy Z Fold 6 for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-116",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Edge 50 Pro for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-117",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "display-pwm",
+      "query": "What is the PWM dimming frequency on Xiaomi 14 Ultra for eye fatigue and flicker?",
+      "referenceFacts": [
+        "pwm dimming frequency",
+        "flicker free certification",
+        "low light eye strain"
+      ],
+      "numericalEntities": ["hz", "2160hz", "3840hz"]
+    },
+    {
+      "id": "rag-bm-118",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "performance-chipset",
+      "query": "Which processor powers iPhone 16 Pro and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-119",
+      "phoneSlug": "apple-iphone-16",
+      "category": "performance-chipset",
+      "query": "Which processor powers iPhone 16 and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-120",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "performance-chipset",
+      "query": "Which processor powers Galaxy S24 Ultra and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-121",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "performance-chipset",
+      "query": "Which processor powers Galaxy S24 and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-122",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "performance-chipset",
+      "query": "Which processor powers Pixel 9 Pro XL and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-123",
+      "phoneSlug": "google-pixel-9",
+      "category": "performance-chipset",
+      "query": "Which processor powers Pixel 9 and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-124",
+      "phoneSlug": "google-pixel-8a",
+      "category": "performance-chipset",
+      "query": "Which processor powers Pixel 8a and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-125",
+      "phoneSlug": "oneplus-12",
+      "category": "performance-chipset",
+      "query": "Which processor powers OnePlus 12 and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-126",
+      "phoneSlug": "oneplus-open",
+      "category": "performance-chipset",
+      "query": "Which processor powers OnePlus Open and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-127",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "performance-chipset",
+      "query": "Which processor powers Nothing Phone 2a and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-128",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "performance-chipset",
+      "query": "Which processor powers Galaxy Z Fold 6 and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-129",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "performance-chipset",
+      "query": "Which processor powers Edge 50 Pro and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-130",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "performance-chipset",
+      "query": "Which processor powers Xiaomi 14 Ultra and what is the Geekbench single and multi core score?",
+      "referenceFacts": [
+        "processor chipset model",
+        "geekbench benchmark score",
+        "cpu architecture efficiency"
+      ],
+      "numericalEntities": ["snapdragon", "tensor", "bionic", "points"]
+    },
+    {
+      "id": "rag-bm-131",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "gaming-thermals",
+      "query": "Does iPhone 16 Pro experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-132",
+      "phoneSlug": "apple-iphone-16",
+      "category": "gaming-thermals",
+      "query": "Does iPhone 16 experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-133",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "gaming-thermals",
+      "query": "Does Galaxy S24 Ultra experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-134",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "gaming-thermals",
+      "query": "Does Galaxy S24 experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-135",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "gaming-thermals",
+      "query": "Does Pixel 9 Pro XL experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-136",
+      "phoneSlug": "google-pixel-9",
+      "category": "gaming-thermals",
+      "query": "Does Pixel 9 experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-137",
+      "phoneSlug": "google-pixel-8a",
+      "category": "gaming-thermals",
+      "query": "Does Pixel 8a experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-138",
+      "phoneSlug": "oneplus-12",
+      "category": "gaming-thermals",
+      "query": "Does OnePlus 12 experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-139",
+      "phoneSlug": "oneplus-open",
+      "category": "gaming-thermals",
+      "query": "Does OnePlus Open experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-140",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "gaming-thermals",
+      "query": "Does Nothing Phone 2a experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-141",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "gaming-thermals",
+      "query": "Does Galaxy Z Fold 6 experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-142",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "gaming-thermals",
+      "query": "Does Edge 50 Pro experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-143",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "gaming-thermals",
+      "query": "Does Xiaomi 14 Ultra experience thermal throttling during sustained heavy gaming in Genshin Impact?",
+      "referenceFacts": [
+        "thermal throttling temperature",
+        "sustained framerate fps",
+        "vapor chamber cooling"
+      ],
+      "numericalEntities": ["fps", "celsius", "degrees", "60fps"]
+    },
+    {
+      "id": "rag-bm-144",
+      "phoneSlug": "apple-iphone-16-pro",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does iPhone 16 Pro have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-145",
+      "phoneSlug": "apple-iphone-16",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does iPhone 16 have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-146",
+      "phoneSlug": "samsung-galaxy-s24-ultra",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Galaxy S24 Ultra have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-147",
+      "phoneSlug": "samsung-galaxy-s24",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Galaxy S24 have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-148",
+      "phoneSlug": "google-pixel-9-pro-xl",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Pixel 9 Pro XL have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-149",
+      "phoneSlug": "google-pixel-9",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Pixel 9 have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-150",
+      "phoneSlug": "google-pixel-8a",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Pixel 8a have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-151",
+      "phoneSlug": "oneplus-12",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does OnePlus 12 have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-152",
+      "phoneSlug": "oneplus-open",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does OnePlus Open have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-153",
+      "phoneSlug": "nothing-phone-2a",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Nothing Phone 2a have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-154",
+      "phoneSlug": "samsung-galaxy-z-fold-6",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Galaxy Z Fold 6 have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-155",
+      "phoneSlug": "motorola-edge-50-pro",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Edge 50 Pro have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    },
+    {
+      "id": "rag-bm-156",
+      "phoneSlug": "xiaomi-14-ultra",
+      "category": "build-durability",
+      "query": "What IP water resistance rating does Xiaomi 14 Ultra have and what materials are used in the frame?",
+      "referenceFacts": [
+        "ip68 water resistance rating",
+        "frame material grade",
+        "drop glass protection"
+      ],
+      "numericalEntities": ["ip68", "ip67", "meters", "titanium", "aluminum"]
+    }
+  ]
+}
