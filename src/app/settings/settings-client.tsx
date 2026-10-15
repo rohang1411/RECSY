@@ -127,9 +127,7 @@ function ByokKeyConfig() {
         <select
           value={byokProvider}
           onChange={(e) =>
-            setByokProvider(
-              e.target.value as 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai' | 'openrouter',
-            )
+            setByokProvider(e.target.value as 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai')
           }
           className="border-outline bg-background text-primary focus:border-primary border px-3 py-2 font-mono text-xs tracking-wider uppercase focus:outline-none"
         >
