@@ -1,6 +1,6 @@
 # Production evaluation evidence — 2026-10-06
 
-Verdict: **production readiness and the resume supported-answer percentage are not established**. This is an executed audit with retained failures, repairs, a controlled HTTP campaign and a quota-blocked live pilot. It is not a production certification. Plan: [campaign plan](../ImplementationPlans/21.%20production-evaluation-campaign.md).
+Verdict: **production readiness and the production supported-answer percentage are not established**. This is an executed audit with retained failures, repairs, a controlled HTTP campaign and a quota-blocked live pilot. It is not a production certification. Plan: [campaign plan](../ImplementationPlans/21.%20production-evaluation-campaign.md).
 
 ## Confirmed defects and repairs
 
@@ -63,13 +63,13 @@ Frozen candidate pilot: six source-backed questions across six phones, with vect
 
 Run `bc98cc8a-f3a6-4f96-838a-72c666179c5a`: one query embedding succeeded; one vector-only answer was generated; FTS returned zero matching chunks and produced an abstention; the hybrid generation request returned 429. The runner stopped. **3/18 variant outcomes were executed; 15 remain unexecuted.** Transport counts: two generation requests and one embedding request. One successful generation reported 3,764 input and 1,121 output tokens. Failed-call usage and monetary cost are unknown. No hybrid answer-quality percentage or improvement was measured. The exact quota subtype/reset requires AI Studio information; HTTP 429 alone does not establish a daily limit.
 
-The finalized blinded package uses randomized answer IDs, hides variant/model/score information, includes full retrieved excerpts and candidate source evidence, and exports reviewer labels locally. Its initial sequential-ID package/map is retained as `review.v1.html` / `blind-map.v1.private.json`; use the current `review.html` for the independent review. Import validates run/result/corpus hashes and exact question/answer IDs; duplicates, missing labels and unresolved judgments cannot establish a definitive score. It preserves each review. `fullySupportedAnswerRate` remains null and `resumeEligible` remains false for this small, incomplete diagnostic pilot.
+The finalized blinded package uses randomized answer IDs, hides variant/model/score information, includes full retrieved excerpts and candidate source evidence, and exports reviewer labels locally. Its initial sequential-ID package/map is retained as `review.v1.html` / `blind-map.v1.private.json`; use the current `review.html` for the independent review. Import validates run/result/corpus hashes and exact question/answer IDs; duplicates, missing labels and unresolved judgments cannot establish a definitive score. It preserves each review. `fullySupportedAnswerRate` remains null and `qualificationEligible` remains false for this small, incomplete diagnostic pilot.
 
 Update 2026-10-07: the submitted version 2 review imported successfully. All six questions were marked answerable; five candidate-fact sets accepted, sp03 rejected. The user clarified that sp03's rejection concerns changed feature behavior: historical support does not establish current behavior. Its original label/note are preserved and the clarification is recorded separately; the candidate needs a reviewed time scope. Submitted sp01 judgments: vector answer factually correct/complete but unsupported citations; FTS abstention factually incorrect/incomplete; hybrid quota failure incomplete. No recorded outcome passes the fully supported answer contract. All three belong to the same question and must not become a three-question percentage. Review method is confirmed as AI-assisted and personally verified by the user; external independent human gold is not established. See [review receipt and adjudication](REVIEW_ADJUDICATION_2026-10-07.md). Raw results and submitted labels remain unchanged.
 
 Local artifacts are under `output/eval/eval_20261007012955/`; they are ignored by Git because source extracts, test traces and review identity are private evidence. Keep the corpus, source/code archive, run manifests, raw responses, HTTP logs, blinded HTML/labels and private blind map together. Do not give the reviewer the private variant map before review.
 
-## Benchmark needed for the resume line
+## Benchmark needed for production verification
 
 ### Why phones block the old positive Q&A benchmark
 
@@ -77,7 +77,7 @@ Local artifacts are under `output/eval/eval_20261007012955/`; they are ignored b
 
 The correct resolution is independently verified, device-specific ingestion with provenance, or an explicit reviewed correction to an invalid fixture. Renaming an unrelated phone, inventing reviews, silently excluding failed cases or counting empty responses as successes would invalidate the result. Model quota is needed for embedding genuinely new evidence. Dates and regional/device attribution require review even when chunks exist.
 
-| Resume field                         | Required evidence                                                                                                                                                   | Current status                                                         |
+| Evaluation field                     | Required evidence                                                                                                                                                   | Current status                                                         |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `[X]% fully supported answers`       | Every factual claim entailed by cited excerpts, correct device/region/time attribution, sufficient answer, failures/refusals retained in the answerable denominator | Unavailable; human review pending and live hybrid execution incomplete |
 | `[N] held-out, answerable questions` | Independently validated questions/evidence, split frozen before tuning, representative product tasks and adequate device coverage                                   | No independently reviewed held-out cohort established                  |
@@ -85,9 +85,9 @@ The correct resolution is independently verified, device-specific ingestion with
 
 For a substantive final study, collect prospective questions reflecting actual intended use; review source validity, answerability, required facts, relevant chunks and conflicts before freezing. A planning target is 400 reviewed answerable questions across at least 30 covered devices, plus separate unsupported/adversarial/coverage cohorts. This is a proposed study size, not tested data or a guarantee of precision. Use question/device grouping, held-out source/question split, double review and disagreement adjudication, paired variant outcomes and device-grouped uncertainty. Report false refusal, incompleteness, unsupported claims and false answers separately. Date-sensitive pricing and updates need dated, region-matched evidence; undated excerpts cannot establish current values. Keep development data and review revisions out of the final frozen test split.
 
-### Resume wording available now
+### Architectural specification available now
 
-The mechanism portion of the proposed line is supported by code: pgvector semantic search, PostgreSQL full-text retrieval and RRF are implemented. Its `[X]` and `[N]` fields are unavailable. Do not substitute lexical proxy scores, a vector-only generated answer, the six candidate questions, historical cache outputs or unit-test counts for the fully supported held-out hybrid result. The current engineering evidence can support a precisely bounded statement about a reproducible evaluation harness, fault/persistence checks and a catalog/corpus audit. It does not yet provide the substantive live quality result a senior data scientist would expect from that resume line.
+The mechanism portion of the proposed line is supported by code: pgvector semantic search, PostgreSQL full-text retrieval and RRF are implemented. Its `[X]` and `[N]` fields are unavailable. Do not substitute lexical proxy scores, a vector-only generated answer, the six candidate questions, historical cache outputs or unit-test counts for the fully supported held-out hybrid result. The current engineering evidence can support a precisely bounded statement about a reproducible evaluation harness, fault/persistence checks and a catalog/corpus audit. It does not yet provide the substantive live quality result a senior data scientist would expect from that production specification.
 
 ## Remaining release gates
 

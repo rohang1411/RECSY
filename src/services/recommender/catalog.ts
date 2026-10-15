@@ -38,6 +38,7 @@ export interface PhoneCatalogEntry {
   readonly spec: PhoneSpec | null;
   readonly specEmbedding: readonly number[] | null;
   readonly aspectScores: ReadonlyMap<AspectName, number>;
+  readonly aspectConfidences?: ReadonlyMap<AspectName, number>;
 }
 
 /** Active phones with parsed specs and aspect scores (latest rows in `aspects`). */
@@ -63,6 +64,7 @@ export async function loadRecommendationCatalog(
       specEmbRaw: phones.specEmbedding,
       aspect: aspectDefinitions.aspect,
       aspectScore: aspects.score,
+      aspectConfidence: aspects.confidence,
     })
     .from(phones)
     .leftJoin(aspects, eq(aspects.phoneId, phones.id))
@@ -94,6 +96,7 @@ export async function loadRecommendationCatalog(
       specJson: unknown;
       specEmbedding: readonly number[] | null;
       aspectScores: Map<AspectName, number>;
+      aspectConfidences: Map<AspectName, number>;
     }
   >();
 
@@ -119,6 +122,7 @@ export async function loadRecommendationCatalog(
         specJson: r.specJson,
         specEmbedding: parseVectorColumn(r.specEmbRaw),
         aspectScores: new Map(),
+        aspectConfidences: new Map(),
       };
       byId.set(r.phoneId, e);
     }
@@ -126,6 +130,12 @@ export async function loadRecommendationCatalog(
       const n = Number.parseFloat(r.aspectScore);
       if (!Number.isNaN(n)) {
         e.aspectScores.set(r.aspect as AspectName, n);
+      }
+    }
+    if (r.aspect && r.aspectConfidence != null) {
+      const c = Number.parseFloat(r.aspectConfidence);
+      if (!Number.isNaN(c)) {
+        e.aspectConfidences.set(r.aspect as AspectName, c);
       }
     }
   }
@@ -148,6 +158,7 @@ export async function loadRecommendationCatalog(
       spec: parsed.success ? parsed.data : null,
       specEmbedding: e.specEmbedding,
       aspectScores: e.aspectScores,
+      aspectConfidences: e.aspectConfidences,
     };
   });
 }

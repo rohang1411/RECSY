@@ -192,7 +192,7 @@ export async function importBlindedReview(input: unknown) {
     unresolvedLabels: unresolved,
     reviewedOutcomes: outcomes,
     fullySupportedAnswerRate: null,
-    resumeEligible: false,
+    productionEligible: false,
     reason:
       'Diagnostic candidate pilot; insufficient sample, incomplete execution and no representative held-out gold benchmark',
   };

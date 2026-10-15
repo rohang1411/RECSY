@@ -18,7 +18,7 @@ The user confirmed the review method on 2026-10-07: AI drafted the judgments; th
 
 ## Interpretation and next gates
 
-There are no fully supported successes among these three recorded variant outcomes, all for the same first question. This is not three independent product questions, a 0% quality headline, or an established hybrid answer-quality rate. Fifteen planned outcomes remain unexecuted. `fullySupportedAnswerRate` remains null; `resumeEligible` remains false.
+There are no fully supported successes among these three recorded variant outcomes, all for the same first question. This is not three independent product questions, a 0% quality headline, or an established hybrid answer-quality rate. Fifteen planned outcomes remain unexecuted. `fullySupportedAnswerRate` remains null; `qualificationEligible` remains false.
 
 The review supplies actionable failure analysis: separate exact-device/claim entailment from citation membership, distinguish retrieval miss from missing corpus, and retain quota failure in execution reporting. Preserve this pilot before changes; use a separate reviewed development cohort for repairs and a prospectively frozen held-out cohort for the final study. The earlier source/quota/load/release gates still apply.
 

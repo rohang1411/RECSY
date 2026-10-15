@@ -2,7 +2,7 @@
 /**
  * Benchmark script measuring per-stage retrieval latency and p50, p90, p95, p99 metrics.
  *
- * Verifies Resume Claim:
+ * Verifies Subsystem Architectural Performance:
  * "Instrumenting per-stage retrieval tracing to prevent conversational context drift
  *  and maintain sub-50ms p95 retrieval latency"
  *

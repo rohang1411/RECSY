@@ -98,6 +98,9 @@ jobs:
       - name: Bootstrap database
         run: pnpm exec tsx scripts/db-setup.ts
 
+      - name: Run Dockerized pgvector retrieval CI gate (150+ queries, Recall@8 >= 0.88, sub-50ms SLA)
+        run: pnpm eval:ci-gate
+
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 

@@ -1,7 +1,7 @@
 /**
  * Verification and Benchmark Suite for Zero-Thinking Token Budget Optimization.
  *
- * Resume Claim Verified:
+ * Subsystem Performance Verified:
  * "Optimized inference runtimes by enforcing zero-thinking token budgets on structured
  *  schema extractions, eliminating 5,750+ wasted reasoning tokens per call to cut
  *  token spend by 94% and drop extraction latency from 32.4s to 0.8s"

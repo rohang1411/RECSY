@@ -45,7 +45,7 @@ export function CampaignEvidence({ summary }: { summary: CampaignSummary }) {
         </div>
       )}
       <p className="font-semibold">
-        Readiness: not established. Resume answer-quality percentage: unavailable.
+        Readiness: not established. Production answer-quality percentage: unavailable.
       </p>
       <p>
         Live pilot: {summary.executedOutcomes ?? 'Unavailable'}/

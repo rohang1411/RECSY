@@ -59,7 +59,7 @@ try {
   await results.waitFor({ state: 'visible' });
   check(
     'readiness and incomplete pilot are visible',
-    (await results.textContent()).includes('Resume answer-quality percentage: unavailable'),
+    (await results.textContent()).includes('Production answer-quality percentage: unavailable'),
   );
   check(
     'offered load and generator drops are visible',
