@@ -10,6 +10,7 @@ import { env } from '@/env';
 import { CachedLlmProvider } from './cache';
 import { GeminiProvider } from './gemini';
 import { ControlledProvider } from './controlled';
+import { ModelGatewayProvider } from './gateway';
 import type { LlmProvider } from './types';
 
 let _llm: LlmProvider | null = null;
@@ -21,13 +22,16 @@ export function getLlm(): LlmProvider {
   const base: LlmProvider = (() => {
     switch (env.LLM_PROVIDER) {
       case 'gemini':
+        if (env.LLM_ROUTER_ENABLED) {
+          return new ModelGatewayProvider();
+        }
         return new GeminiProvider();
+      case 'gateway':
+        return new ModelGatewayProvider();
       case 'controlled':
         return new ControlledProvider();
       case 'groq':
-        // Placeholder until a GroqProvider is added. Explicit failure is
-        // preferable to silently falling back to Gemini.
-        throw new Error('Groq provider not yet implemented');
+        return new ModelGatewayProvider();
       default: {
         const exhaustive: never = env.LLM_PROVIDER;
         throw new Error(`Unknown LLM_PROVIDER: ${String(exhaustive)}`);

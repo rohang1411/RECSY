@@ -25,7 +25,7 @@ export const env = createEnv({
       .default('public'),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
-    LLM_PROVIDER: z.enum(['gemini', 'groq', 'controlled']).default('gemini'),
+    LLM_PROVIDER: z.enum(['gemini', 'groq', 'controlled', 'gateway']).default('gemini'),
     EVAL_CONTROLLED_PROVIDER_URL: z.string().url().optional(),
     EVAL_CONTROLLED_PROVIDER_TOKEN: z.string().min(16).optional(),
     GEMINI_API_KEY: z.string().min(1),
@@ -49,6 +49,18 @@ export const env = createEnv({
     GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
     GOOGLE_APPLICATION_CREDENTIALS: z.string().optional(),
     GROQ_API_KEY: z.string().optional(),
+    GROQ_API_KEY_2: z.string().optional(),
+    NVIDIA_NIM_API_KEY: z.string().optional(),
+    NVIDIA_NIM_API_KEY_2: z.string().optional(),
+    CEREBRAS_API_KEY: z.string().optional(),
+    GITHUB_MODELS_TOKEN: z.string().optional(),
+    OPENROUTER_API_KEY: z.string().optional(),
+    LLM_ROUTER_ENABLED: z
+      .string()
+      .default('true')
+      .transform((v) => v.toLowerCase() !== 'false'),
+    LLM_FAST_MODEL: z.string().default('llama-3.1-8b-instant'),
+    LLM_BALANCED_MODEL: z.string().default('gemini-3-flash-preview'),
     LLM_CHAT_MODEL: z.string().default('gemini-3-flash-preview'),
     LLM_REASONING_MODEL: z.string().default('gemini-2.5-pro'),
     // `gemini-embedding-001` is Google's current GA embedding model; the
@@ -160,6 +172,15 @@ export const env = createEnv({
     GOOGLE_SERVICE_ACCOUNT_JSON: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
     GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
+    GROQ_API_KEY_2: process.env.GROQ_API_KEY_2,
+    NVIDIA_NIM_API_KEY: process.env.NVIDIA_NIM_API_KEY,
+    NVIDIA_NIM_API_KEY_2: process.env.NVIDIA_NIM_API_KEY_2,
+    CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+    GITHUB_MODELS_TOKEN: process.env.GITHUB_MODELS_TOKEN,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    LLM_ROUTER_ENABLED: process.env.LLM_ROUTER_ENABLED ?? 'true',
+    LLM_FAST_MODEL: process.env.LLM_FAST_MODEL ?? 'llama-3.1-8b-instant',
+    LLM_BALANCED_MODEL: process.env.LLM_BALANCED_MODEL ?? 'gemini-3-flash-preview',
     LLM_CHAT_MODEL: process.env.LLM_CHAT_MODEL ?? 'gemini-3-flash-preview',
     LLM_REASONING_MODEL: process.env.LLM_REASONING_MODEL ?? 'gemini-2.5-pro',
     LLM_EMBEDDING_MODEL: process.env.LLM_EMBEDDING_MODEL ?? 'gemini-embedding-001',

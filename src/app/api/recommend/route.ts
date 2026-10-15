@@ -28,6 +28,7 @@ import { getRequestClientIp } from '@/lib/request-ip';
 import { getDb } from '@/services/db/client';
 import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
+import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { requestLogger } from '@/services/logger';
 import { consumeRecommendRateLimit } from '@/services/rate-limit';
 import { hashSessionIp } from '@/services/rate-limit/ip-hash';
@@ -105,6 +106,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       sessionId,
       userMessage: body.message,
       regionCode,
+      byok: extractByokFromHeaders(request.headers),
       log: log.child({ sessionId }),
     });
     const latencyMs = Math.round(performance.now() - t0);

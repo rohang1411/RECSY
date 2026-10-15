@@ -140,6 +140,11 @@ export async function runRecommendationPipeline(input: {
   readonly sessionId: string;
   readonly userMessage: string;
   readonly regionCode?: string;
+  readonly byok?: {
+    readonly apiKey: string;
+    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
+    readonly userMode?: 'fast' | 'deep';
+  } | null;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
@@ -152,6 +157,7 @@ export async function runRecommendationPipeline(input: {
     userMessage: input.userMessage,
     previous,
     regionCode: input.regionCode ?? 'US',
+    byok: input.byok,
   });
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });

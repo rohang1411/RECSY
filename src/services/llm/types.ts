@@ -10,6 +10,17 @@ import type { z } from 'zod';
 /** Canonical role tags accepted across providers. */
 export type ChatRole = 'system' | 'user' | 'assistant';
 
+/** Semantic classification of tasks for intelligent model routing. */
+export type TaskClass =
+  | 'EXTRACTION'
+  | 'DISAMBIGUATION'
+  | 'GROUNDED_SYNTHESIS'
+  | 'DEEP_REASONING'
+  | 'EMBEDDING';
+
+/** Execution tier for routing. */
+export type ExecutionTier = 'fast' | 'balanced' | 'reasoning';
+
 export interface ChatMessage {
   readonly role: ChatRole;
   readonly content: string;
@@ -21,6 +32,10 @@ export interface ChatInput {
   /** 0..1. Lower = more deterministic. Defaults to provider default. */
   readonly temperature?: number;
   readonly maxOutputTokens?: number;
+  /** Explicit task classification for zero-overhead routing. */
+  readonly taskClass?: TaskClass;
+  /** Override preferred execution tier. */
+  readonly preferredTier?: ExecutionTier;
   /** Opaque ids used by the cache key; callers can omit. */
   readonly cacheKeyExtras?: Readonly<Record<string, string | number | boolean>>;
   readonly usageContext?: LlmUsageContext;
@@ -31,6 +46,10 @@ export interface LlmUsageContext {
   readonly area: string;
   readonly feature?: string;
   readonly source?: string;
+  readonly taskClass?: TaskClass;
+  readonly userMode?: 'fast' | 'deep';
+  readonly userByokKey?: string;
+  readonly userByokProvider?: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
   readonly metadata?: Readonly<Record<string, string | number | boolean | null>>;
 }
 

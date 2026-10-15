@@ -76,6 +76,7 @@ export async function llmRerankChunkOrder<T extends RetrievedChunk>(
         area: 'Retrieval',
         feature: 'LLM rerank',
         source: 'HybridRetriever',
+        taskClass: 'DISAMBIGUATION',
         metadata: { poolSize: cap, targetResults },
       },
       messages: [

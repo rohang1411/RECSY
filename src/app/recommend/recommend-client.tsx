@@ -18,6 +18,7 @@ import {
   writeRecommendSession,
 } from '@/lib/recommend-session';
 import { cn } from '@/lib/utils';
+import { getClientByokHeaders } from '@/lib/byok-client';
 
 type ApiPick = {
   readonly phoneId: string;
@@ -216,7 +217,10 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
     try {
       const res = await fetch('/api/recommend', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getClientByokHeaders(),
+        },
         credentials: 'include',
         body: JSON.stringify({ message }),
       });

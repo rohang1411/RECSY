@@ -164,7 +164,12 @@ async function llmExtract(
     // Gemini 3.x may allocate output budget to reasoning tokens; keep enough
     // room for JSON while avoiding very slow, overlong structured responses.
     maxOutputTokens: 4096,
-    usageContext: { area: 'Scorecard', feature: 'Aspect extraction', source: 'scorecard' },
+    usageContext: {
+      area: 'Scorecard',
+      feature: 'Aspect extraction',
+      source: 'scorecard',
+      taskClass: 'GROUNDED_SYNTHESIS',
+    },
   });
   return out.value;
 }
