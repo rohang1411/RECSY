@@ -61,14 +61,7 @@ Brand priority and latest-released ordering are enforced through `src/services/c
 
 **Ops / automation (2026-05-14â€”15).** Tiered ingest cron (`.github/workflows/ingest-tiered.yml`) now runs a **four-shard matrix with `--tier all` on schedule** so launch-age **cold** phones are eligible every day (the prior day-of-week tier matrix only ran `cold` on Sundays while `pickPhones` filtered by tier, so an allâ€“cold-tier catalog often produced **no picks** on weekdays). **Ingestion resumability** (2026-05-15): failed embed/curator steps write to `ingest_runs` with `error_code` / `stage`; hash pre-check skips redundant LLM on re-runs; `pnpm ingest:auto --resume-failed` and **`.github/workflows/ingest-resume.yml`** (03:20 UTC) retry quota failures, empty corpus, and legacy error text â€” see [Â§13](#13-ingestion-pipeline-mcp-style-adapters) and [`docs/ImplementationPlans/ingestion-resumability-and-intelligent-retry.md`](./ImplementationPlans/ingestion-resumability-and-intelligent-retry.md). Automated scorecard: **daily 02:17 UTC**, **20 phones max per run**, per-phone `next_scorecard_at` queue (+3 / +7 d reschedule, **24 h nudge** after new ingest chunks), chunk-fingerprint staleness skip â€” full detail in [Â§12](#automated-batch-scheduling-scorecardauto). Hardening: **`markScorecardComplete` only when `result.updated > 0`**; staleness skip logs **seven** `scorecard_runs` rows. See [Â§22](#22-change-log) and [`docs/ImplementationPlans/automated-scorecard-generation.md`](./ImplementationPlans/automated-scorecard-generation.md).
 
-**Optional Airflow orchestration (2026-06-10).** Airflow is now available as an
-optional local/control-plane layer under `orchestration/airflow/`. It does
-**not** replace GitHub Actions as the production scheduler. DAGs are unscheduled
-by default and either run existing `pnpm` scripts locally or dispatch the
-existing GitHub workflow files through the GitHub REST API. See
-[ADR 0018](./adr/0018-optional-airflow-orchestration.md),
-[`orchestration/airflow/README.md`](../orchestration/airflow/README.md), and
-[`docs/ImplementationPlans/airflow-integration-feasibility-and-implementation-plan.md`](./ImplementationPlans/airflow-integration-feasibility-and-implementation-plan.md).
+**Optional Airflow orchestration (2026-06-10, completed 2026-10-16).** Airflow is available as an optional local/control-plane layer under `orchestration/airflow/`. It does **not** replace GitHub Actions as the production scheduler. DAGs are unscheduled by default (`schedule=None`, `catchup=False`) and either run existing `pnpm` scripts locally or dispatch the existing GitHub workflow files through the GitHub REST API. Shipped with dedicated automated AST/unit verification (`pnpm airflow:test`, 16 tests passing), package scripts (`airflow:init`, `airflow:up`, `airflow:down`, `airflow:test`), and direct link integration in the `/internal/pipelines` dashboard. See [ADR 0018](./adr/0018-optional-airflow-orchestration.md), [`orchestration/airflow/README.md`](../orchestration/airflow/README.md), and [`docs/ImplementationPlans/15. airflow-integration-feasibility-and-implementation-plan.md`](./ImplementationPlans/15.%20airflow-integration-feasibility-and-implementation-plan.md).
 
 ---
 
@@ -1763,6 +1756,23 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-10-16 — Airflow local demo completion, test suite & internal pipeline dashboard integration
+
+- **Branch Alignment & Upstream Sync (`airflow-integration-rs`)**:
+  - Rebased and fast-forward merged upstream changes from `master`, pulling in the complete Airflow orchestration directory (`orchestration/airflow`), ADR 0018, Docker compose configs, and existing DAG definitions.
+- **Resilient Airflow Python Helpers (`orchestration/airflow/include/recsy_airflow/`)**:
+  - Enhanced `config.py` and `github_actions.py` with graceful fallback mocks for `Variable` and `BaseHook`, allowing tests and CLI utilities to run on host environments (including Windows CLI) without requiring the full `apache-airflow` Python distribution installed locally.
+- **Airflow Test Suite & DAG Integrity Gate (`orchestration/airflow/tests/test_airflow.py`)**:
+  - Shipped 16 automated unit tests validating:
+    - CLI command formatting (`pnpm`), argument quoting, and null-filtering.
+    - Bash wrapper generation (`recsy_bash`) with strict error propagation (`set -euo pipefail`).
+    - Dispatch payload construction and REST API error handling for GitHub Actions.
+    - AST parsing across all 6 DAG files ensuring safety guardrails (`schedule=None`, `catchup=False`) and asserting presence of all 8 expected DAG IDs (`recsy_catalog_refresh`, `recsy_creator_watch`, `recsy_ingest_tiered`, `recsy_ingest_resume`, `recsy_ingest_phone`, `recsy_reports`, `recsy_scorecard_auto`, `recsy_production_bootstrap`).
+- **NPM Orchestration Commands (`package.json`)**:
+  - Added developer convenience scripts: `pnpm airflow:init`, `pnpm airflow:up`, `pnpm airflow:down`, and `pnpm airflow:test`.
+- **Internal Dashboard Telemetry Integration (`src/app/internal/pipelines/page.tsx`)**:
+  - Completed Phase 8 with a direct **Airflow UI (:8080)** link and badge in the header of the Pipeline Runs & Logs workspace, allowing instant navigation from internal monitoring into the visual Airflow control plane during local demos.
 
 ### 2026-10-15 — Multi-provider model gateway, 150+ golden benchmark CI gate & evaluation suite
 

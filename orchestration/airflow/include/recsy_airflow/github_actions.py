@@ -6,7 +6,13 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 
-from airflow.hooks.base import BaseHook
+try:
+    from airflow.hooks.base import BaseHook
+except ImportError:  # pragma: no cover - fallback for testing outside Airflow container
+    class BaseHook:  # type: ignore[no-redef]
+        @staticmethod
+        def get_connection(conn_id: str):
+            raise RuntimeError(f"Airflow is not installed; cannot get connection {conn_id}")
 
 from recsy_airflow.config import get_config
 from recsy_airflow.commands import stringify_inputs
