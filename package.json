@@ -77,7 +77,11 @@
     "catalog:report": "tsx --env-file=.env.local scripts/catalog-report.ts",
     "prepare": "node scripts/prepare-husky.mjs",
     "eval:production:smoke": "node --env-file=.env.local scripts/eval-production-smoke.mjs",
-    "eval:portal:smoke": "node --env-file=.env.local scripts/eval-portal-smoke.mjs"
+    "eval:portal:smoke": "node --env-file=.env.local scripts/eval-portal-smoke.mjs",
+    "airflow:init": "docker compose -f orchestration/airflow/docker-compose.yaml up airflow-init",
+    "airflow:up": "docker compose -f orchestration/airflow/docker-compose.yaml up",
+    "airflow:down": "docker compose -f orchestration/airflow/docker-compose.yaml down",
+    "airflow:test": "python orchestration/airflow/tests/test_airflow.py"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",

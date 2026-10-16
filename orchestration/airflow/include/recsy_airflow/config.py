@@ -3,7 +3,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from airflow.models import Variable
+try:
+    from airflow.models import Variable
+except ImportError:  # pragma: no cover - fallback for testing outside Airflow container
+    class Variable:  # type: ignore[no-redef]
+        @staticmethod
+        def get(name: str, default_var: str | None = None) -> str:
+            return default_var if default_var is not None else ""
 
 
 @dataclass(frozen=True)
