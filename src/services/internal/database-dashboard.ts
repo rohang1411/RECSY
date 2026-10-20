@@ -139,9 +139,10 @@ async function safeQuery<T>(
 
 export async function loadDatabaseDashboardData(
   filters: DatabaseFilterParams = {},
+  options: { forceRefresh?: boolean } = {},
 ): Promise<DatabaseDashboardData> {
   try {
-    return await loadDatabaseDashboardDataInternal(filters);
+    return await loadDatabaseDashboardDataInternal(filters, options);
   } catch (error) {
     console.warn(
       '[database-dashboard] loadDatabaseDashboardData error:',
@@ -308,8 +309,13 @@ async function fetchDashboardBaseData(): Promise<{
 
 async function loadDatabaseDashboardDataInternal(
   filters: DatabaseFilterParams = {},
+  options: { forceRefresh?: boolean } = {},
 ): Promise<DatabaseDashboardData> {
   const now = Date.now();
+  if (options.forceRefresh) {
+    cachedDashboardBase = null;
+    cachedCommandCenterDb = null;
+  }
   let baseData: {
     readonly summary: DatabaseDashboardSummary;
     readonly blockedReasons: readonly BlockedReasonItem[];
@@ -530,9 +536,14 @@ async function fetchCommandCenterDatabaseSummary(): Promise<CommandCenterDatabas
   };
 }
 
-export async function loadCommandCenterDatabaseSummary(): Promise<CommandCenterDatabaseSummary> {
+export async function loadCommandCenterDatabaseSummary(
+  options: { forceRefresh?: boolean } = {},
+): Promise<CommandCenterDatabaseSummary> {
   const now = Date.now();
-  if (cachedCommandCenterDb && now < cachedCommandCenterDb.expiresAtMs) {
+  if (options.forceRefresh) {
+    cachedCommandCenterDb = null;
+    cachedDashboardBase = null;
+  } else if (cachedCommandCenterDb && now < cachedCommandCenterDb.expiresAtMs) {
     return cachedCommandCenterDb.data;
   }
 

@@ -98,14 +98,30 @@ export async function persistBenchmarkResults(
   await db.insert(benchmarkResults).values(rows);
 }
 
-export async function listBenchmarkRuns(db: AppDb, limit = 25): Promise<BenchmarkRunRecord[]> {
+let cachedBenchmarkRuns: {
+  readonly data: BenchmarkRunRecord[];
+  readonly expiresAtMs: number;
+} | null = null;
+
+export async function listBenchmarkRuns(
+  db: AppDb,
+  limit = 25,
+  options: { forceRefresh?: boolean } = {},
+): Promise<BenchmarkRunRecord[]> {
+  const now = Date.now();
+  if (options.forceRefresh) {
+    cachedBenchmarkRuns = null;
+  } else if (cachedBenchmarkRuns && now < cachedBenchmarkRuns.expiresAtMs) {
+    return cachedBenchmarkRuns.data.slice(0, limit);
+  }
+
   const rows = await db
     .select()
     .from(benchmarkRuns)
     .orderBy(desc(benchmarkRuns.createdAt))
     .limit(limit);
 
-  return rows.map((r) => ({
+  const result = rows.map((r) => ({
     id: r.id,
     suiteName: r.suiteName,
     tier: r.tier as BenchmarkTier,
@@ -121,6 +137,9 @@ export async function listBenchmarkRuns(db: AppDb, limit = 25): Promise<Benchmar
     config: r.config as Record<string, unknown> | null,
     createdAt: r.createdAt,
   }));
+
+  cachedBenchmarkRuns = { data: result, expiresAtMs: now + 300_000 };
+  return result;
 }
 
 export async function getBenchmarkRunById(
