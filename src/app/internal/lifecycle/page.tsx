@@ -6,7 +6,7 @@ import { ChunkWorkbench } from '@/app/internal/pipeline/_components/chunk-workbe
 import { LifecycleExplorer } from '@/app/internal/pipeline/_components/lifecycle-explorer';
 import { SectionHint } from '@/app/internal/pipeline/_components/section-hint';
 import { PhoneImage } from '@/components/phone/PhoneImage';
-import { PhoneSpecSchema } from '@/features/phones/schema';
+import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import { getDb } from '@/services/db/client';
 import {
   aspectDefinitions,
@@ -146,9 +146,49 @@ let cachedPhoneOptions: {
   readonly expiresAtMs: number;
 } | null = null;
 
-async function loadLifecycleDeviceData(selectedSlug: string | null) {
+type LifecycleDeviceData = {
+  phoneOptions: PhoneOptionRow[];
+  selectedPhone: SelectedPhoneRow | null;
+  deviceSources: SourceRow[];
+  chunksBySource: Map<string, ChunkRow[]>;
+  deviceChunks: ChunkRow[];
+  deviceAspects: Array<{
+    aspect: unknown;
+    score: unknown;
+    confidence: unknown;
+    summary: string | null;
+    nSupporting: number | null;
+    nDissenting: number | null;
+  }>;
+  sampleTurns: Array<{
+    userMessage: string;
+    candidatePhoneIds: string[];
+    picks: unknown;
+    createdAt: Date;
+    latencyMs: number | null;
+  }>;
+  spec: PhoneSpec | null;
+};
+
+const deviceDataCache = new Map<string, { data: LifecycleDeviceData; expiresAtMs: number }>();
+
+async function loadLifecycleDeviceData(
+  selectedSlug: string | null,
+  options: { forceRefresh?: boolean } = {},
+): Promise<LifecycleDeviceData> {
   const db = getDb();
   const now = Date.now();
+
+  if (options.forceRefresh) {
+    cachedPhoneOptions = null;
+    deviceDataCache.clear();
+  }
+
+  const cacheKey = selectedSlug ?? '__default__';
+  const cached = deviceDataCache.get(cacheKey);
+  if (cached && now < cached.expiresAtMs) {
+    return cached.data;
+  }
 
   let phoneOptions: PhoneOptionRow[];
   if (cachedPhoneOptions && now < cachedPhoneOptions.expiresAtMs) {
@@ -255,7 +295,7 @@ async function loadLifecycleDeviceData(selectedSlug: string | null) {
             .from(chunks)
             .where(eq(chunks.phoneId, selectedPhone.id))
             .orderBy(asc(chunks.chunkIndex))
-            .limit(48),
+            .limit(24),
           [],
         )
       : [],
@@ -302,7 +342,7 @@ async function loadLifecycleDeviceData(selectedSlug: string | null) {
   const chunksBySource = groupChunksBySource(deviceChunks as ChunkRow[]);
   const specParsed = selectedPhone ? PhoneSpecSchema.safeParse(selectedPhone.specJson) : null;
 
-  return {
+  const result: LifecycleDeviceData = {
     phoneOptions,
     selectedPhone,
     deviceSources: deviceSources as SourceRow[],
@@ -312,10 +352,14 @@ async function loadLifecycleDeviceData(selectedSlug: string | null) {
     sampleTurns,
     spec: specParsed?.success ? specParsed.data : null,
   };
+
+  deviceDataCache.set(cacheKey, { data: result, expiresAtMs: now + 300_000 });
+  return result;
 }
 
 export default async function LifecycleExplorerPage({ searchParams }: PageProps) {
   const raw = await searchParams;
+  const isRefresh = raw.refresh === 'true' || raw.refresh === '1';
   const selectedSlugParam = raw.phone;
   const selectedSlug = Array.isArray(selectedSlugParam)
     ? (selectedSlugParam[0] ?? null)
@@ -330,7 +374,7 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
     deviceAspects,
     sampleTurns,
     spec,
-  } = await loadLifecycleDeviceData(selectedSlug);
+  } = await loadLifecycleDeviceData(selectedSlug, { forceRefresh: isRefresh });
 
   const sourceMix = deviceSources.reduce<Record<string, number>>((acc, source) => {
     acc[source.type] = (acc[source.type] ?? 0) + 1;
@@ -429,11 +473,19 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
             Interactive device schematics, evidence chunks, aspect radar, and retrieval matching
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="status-dot text-accent" data-state="running" />
-          <span className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
-            Probe Active: {selectedPhoneLabel}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="status-dot text-accent" data-state="running" />
+            <span className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
+              Probe: {selectedPhoneLabel}
+            </span>
+          </div>
+          <Link
+            href={`/internal/lifecycle?refresh=true${selectedSlug ? `&phone=${encodeURIComponent(selectedSlug)}` : ''}`}
+            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
+          >
+            Refresh Probe
+          </Link>
         </div>
       </header>
 
@@ -443,29 +495,44 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
           Selects the phone whose raw sources, chunks, scorecards, and recommendation history drive
           the live schematic views below.
         </SectionHint>
-        <form action="/internal/lifecycle" className="flex items-center gap-3">
-          <label htmlFor="phone" className="meta-label">
-            Probe Phone
-          </label>
-          <select
-            id="phone"
-            name="phone"
-            defaultValue={selectedPhone?.slug}
-            className="border-outline bg-background text-primary focus:border-accent border px-3 py-2 font-mono text-xs focus:ring-0 focus:outline-none"
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="#corpus-overview"
+            className="text-muted-foreground hover:text-accent font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
           >
-            {phoneOptions.map((phone) => (
-              <option key={phone.slug} value={phone.slug}>
-                {phone.brand} {phone.model}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            className="border-outline text-primary hover:border-accent hover:text-accent border px-4 py-2 font-mono text-[11px] tracking-[0.16em] uppercase transition-colors"
+            ↓ Overview
+          </a>
+          <span className="text-muted-foreground/40 font-mono text-xs">/</span>
+          <a
+            href="#chunk-workbench"
+            className="text-muted-foreground hover:text-accent font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
           >
-            Inspect
-          </button>
-        </form>
+            ↓ Chunks
+          </a>
+          <form action="/internal/lifecycle" className="flex items-center gap-3">
+            <label htmlFor="phone" className="meta-label">
+              Probe Phone
+            </label>
+            <select
+              id="phone"
+              name="phone"
+              defaultValue={selectedPhone?.slug}
+              className="border-outline bg-background text-primary focus:border-accent border px-3 py-2 font-mono text-xs focus:ring-0 focus:outline-none"
+            >
+              {phoneOptions.map((phone) => (
+                <option key={phone.slug} value={phone.slug}>
+                  {phone.brand} {phone.model}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="border-outline text-primary hover:border-accent hover:text-accent border px-4 py-2 font-mono text-[11px] tracking-[0.16em] uppercase transition-colors"
+            >
+              Inspect
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* 3-Stage Lifecycle Explorer */}
@@ -483,7 +550,7 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
 
       {/* Corpus Overview & Chunk Workbench */}
       <section className="mt-12 grid gap-8 lg:grid-cols-12">
-        <div className="border-outline-variant bg-background border lg:col-span-5">
+        <div id="corpus-overview" className="border-outline-variant bg-background scroll-mt-20 border lg:col-span-5">
           <div className="border-outline-variant border-b p-5">
             <SectionHint label="Corpus overview">
               Summarizes the selected phone&apos;s stored evidence coverage, scorecard readiness,

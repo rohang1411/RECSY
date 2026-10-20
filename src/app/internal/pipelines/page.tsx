@@ -20,11 +20,12 @@ interface PageProps {
 
 export default async function PipelinesPage({ searchParams }: PageProps) {
   const params = await searchParams;
+  const isRefresh = params.refresh === 'true' || params.refresh === '1';
   const engineParam = typeof params.engine === 'string' ? params.engine : 'all';
   const statusParam = typeof params.status === 'string' ? params.status : 'all';
   const searchParam = typeof params.search === 'string' ? params.search : '';
 
-  const allRuns = await loadAllUnifiedPipelineRuns();
+  const allRuns = await loadAllUnifiedPipelineRuns({ forceRefresh: isRefresh });
 
   // Filter runs
   let filteredRuns = allRuns;
@@ -114,7 +115,7 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
             Airflow UI (:8080)
           </a>
           <Link
-            href="/internal/pipelines"
+            href={`/internal/pipelines?refresh=true&engine=${engineParam}&status=${statusParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}`}
             className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
           >
             Refresh Telemetry
@@ -122,19 +123,34 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
         </div>
       </header>
 
-      {/* KPI Overview */}
+      {/* KPI Overview (Clickable Filters) */}
       <section className="border-outline-variant bg-outline-variant mt-10 grid gap-px border md:grid-cols-4">
-        <div className="bg-background p-6">
-          <p className="meta-label">Total Executions</p>
+        <Link
+          href={`/internal/pipelines?status=all&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
+          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
+            statusParam === 'all' ? 'ring-1 ring-inset ring-accent' : ''
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <p className="meta-label">Total Executions</p>
+            <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+              Filter ↓
+            </span>
+          </div>
           <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
             {allRuns.length.toLocaleString('en-US')}
           </p>
           <p className="text-muted-foreground mt-2 font-mono text-xs">
             Across all 5 pipeline engines
           </p>
-        </div>
+        </Link>
 
-        <div className="bg-background p-6">
+        <Link
+          href={`/internal/pipelines?status=success&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
+          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
+            statusParam === 'success' ? 'ring-1 ring-inset ring-[#39ff88]' : ''
+          }`}
+        >
           <div className="flex items-center justify-between">
             <p className="meta-label text-[#39ff88]">Successful Runs</p>
             <CheckCircle2 className="size-4 text-[#39ff88]" aria-hidden />
@@ -145,11 +161,16 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
           <p className="text-muted-foreground mt-2 font-mono text-xs">
             Verified data outputs produced
           </p>
-        </div>
+        </Link>
 
-        <div className="bg-background p-6">
+        <Link
+          href={`/internal/pipelines?status=failed&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
+          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
+            statusParam === 'failed' ? 'ring-1 ring-inset ring-[#ff3b30]' : ''
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <p className="meta-label text-[#ff3b30]">Failed / Quarantined</p>
+            <p className="meta-label text-[#ff3b30]">Failed / Errors</p>
             <AlertCircle className="size-4 text-[#ff3b30]" aria-hidden />
           </div>
           <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold text-[#ff3b30]">
@@ -158,9 +179,14 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
           <p className="text-muted-foreground mt-2 font-mono text-xs">
             Errors with script stack traces
           </p>
-        </div>
+        </Link>
 
-        <div className="bg-background p-6">
+        <Link
+          href={`/internal/pipelines?status=running&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
+          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
+            statusParam === 'running' ? 'ring-1 ring-inset ring-accent' : ''
+          }`}
+        >
           <div className="flex items-center justify-between">
             <p className="meta-label text-accent">Active / Queued</p>
             <Clock className="text-accent size-4" aria-hidden />
@@ -171,7 +197,7 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
           <p className="text-muted-foreground mt-2 font-mono text-xs">
             In flight or awaiting next cycle
           </p>
-        </div>
+        </Link>
       </section>
 
       {/* Filter and Interactive Table */}

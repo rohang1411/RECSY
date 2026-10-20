@@ -70,7 +70,7 @@ export function PipelineRunsClientView({ runs, activeEngine, activeStatus, initi
   };
 
   return (
-    <section className="mt-10 space-y-6">
+    <section id="pipeline-runs-table" className="mt-10 scroll-mt-20 space-y-6">
       {/* Filter and Search Bar */}
       <div className="border-outline-variant bg-background border p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

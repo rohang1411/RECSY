@@ -96,13 +96,22 @@ function statusTone(status: string) {
   return 'text-[#ffe45e]';
 }
 
-export default async function CommandCenterPage() {
+interface PageProps {
+  readonly searchParams?: Promise<Readonly<Record<string, string | string[] | undefined>>>;
+}
+
+export default async function CommandCenterPage({ searchParams }: PageProps = {}) {
+  const params = searchParams ? await searchParams : {};
+  const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+
   // Give canonical inventory reads priority over optional usage and run telemetry.
-  const [dbDataResult] = await Promise.allSettled([loadCommandCenterDatabaseSummary()]);
+  const [dbDataResult] = await Promise.allSettled([
+    loadCommandCenterDatabaseSummary({ forceRefresh }),
+  ]);
   const [llmUsageResult, allRunsResult, ingestionSummaryResult] = await Promise.allSettled([
-    loadLlmUsageMonitorData(),
-    loadAllUnifiedPipelineRuns(),
-    loadCommandCenterIngestionSummary(),
+    loadLlmUsageMonitorData({ forceRefresh }),
+    loadAllUnifiedPipelineRuns({ forceRefresh }),
+    loadCommandCenterIngestionSummary({ forceRefresh }),
   ]);
 
   const dbData = dbDataResult.status === 'fulfilled' ? dbDataResult.value : FALLBACK_DB_DATA;
@@ -129,26 +138,33 @@ export default async function CommandCenterPage() {
     llmUsage.googleQuota.status !== 'ok';
   const recentRuns = allRuns.slice(0, 6);
 
-  const dailyRemaining = summarizeVerifiedDailyQuota(llmUsage.googleQuota).remaining;
+  const verified = summarizeVerifiedDailyQuota(llmUsage.googleQuota);
+  const dailyRemaining = verified.remaining ?? llmUsage.localQuota.remainingCallsToday;
+  const isQuotaVerified = verified.remaining !== null;
 
   return (
     <main className="px-grid-margin min-w-0 flex-1 py-10">
       {/* Header */}
-      <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
+      <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-5 mb-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="heading-scanline font-display text-gradient-accent-edge text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
             Command Center
           </h1>
           <p className="text-muted-foreground mt-3 font-mono text-xs tracking-[0.16em] uppercase">
-            Central executive hub / database inventory, Gemini budget rail, and pipeline
-            observability
+            Operational hub for catalog inventory, Gemini budget, and pipeline telemetry
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-primary inline-flex items-center gap-2 font-mono text-xs tracking-[0.14em] uppercase">
             <span className="status-dot text-accent" data-state="running" />
             Telemetry: {telemetryPartial ? 'Partial' : 'Available'}
           </div>
+          <Link
+            href="/internal/command-center?refresh=1"
+            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
+          >
+            {forceRefresh ? 'Refreshed' : 'Refresh'}
+          </Link>
           <span className="border-outline-variant text-muted-foreground border px-2.5 py-1 font-mono text-xs">
             v2.0.4
           </span>
@@ -162,71 +178,96 @@ export default async function CommandCenterPage() {
         </p>
       ) : null}
 
-      {/* Top High-Level Metrics */}
-      <section className="border-outline-variant bg-outline-variant mt-10 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
-        <div className="bg-background relative overflow-hidden p-6">
-          <p className="meta-label">Phones active</p>
-          <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
+      {/* Top High-Level Metrics - Clickable Drill-Down Cards */}
+      <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
+        <Link
+          href="/internal/database?view=catalog&status=promoted#catalog-table"
+          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="meta-label">Phones active</p>
+            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+          </div>
+          <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
             {activePhoneCount === null ? 'Unknown' : activePhoneCount.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm">Promoted canonical catalog devices</p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
+          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
+            Active catalog devices (click to view)
+          </p>
+          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
             []
           </span>
-        </div>
+        </Link>
 
-        <div className="bg-background relative overflow-hidden p-6">
+        <Link
+          href="/internal/database?view=catalog&status=all#catalog-table"
+          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+        >
           <div className="flex items-center justify-between">
             <p className="meta-label">Candidate queue</p>
             {summary.blockedCount > 0 ? (
               <span className="border border-[#ff3b30]/30 bg-[#ff3b30]/10 px-1.5 py-0.5 font-mono text-[10px] text-[#ff3b30]">
                 {summary.blockedCount} blocked
               </span>
-            ) : null}
+            ) : (
+              <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+            )}
           </div>
-          <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
-            {inventoryAvailable ? summary.totalCandidates.toLocaleString('en-US') : 'Unknown'}
+          <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
+            {inventoryAvailable ? summary.totalCandidates.toLocaleString('en-US') : '--'}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm">
+          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
             {inventoryAvailable
               ? `${summary.pendingCount} pending, ${summary.queuedCount} queued, ${summary.blockedCount} blocked`
               : 'Catalog query unavailable'}
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
+          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
             &#123;&#125;
           </span>
-        </div>
+        </Link>
 
-        <div className="bg-background relative overflow-hidden p-6">
-          <p className="meta-label">Verified Gemini quota left</p>
-          <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold text-[#39ff88]">
-            {dailyRemaining === null ? 'Unknown' : dailyRemaining.toLocaleString('en-US')}
+        <Link
+          href="#gemini-quota-rail"
+          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="meta-label">Gemini quota remaining</p>
+            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+          </div>
+          <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold text-[#39ff88]">
+            {dailyRemaining === null ? '--' : dailyRemaining.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {llmUsage.configuredKeyCount} active{' '}
-            {llmUsage.configuredKeyCount === 1 ? 'key' : 'keys'} in rotation
+          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
+            {llmUsage.configuredKeyCount} active {llmUsage.configuredKeyCount === 1 ? 'key' : 'keys'}{' '}
+            {isQuotaVerified ? '(verified GCP quota)' : '(ledger tracking)'}
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
+          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
             ()
           </span>
-        </div>
+        </Link>
 
-        <div className="bg-background relative overflow-hidden p-6">
-          <p className="meta-label">Automated pipeline runs</p>
-          <p className="font-display text-gradient-steel mt-4 text-6xl leading-none font-extrabold">
+        <Link
+          href="/internal/pipelines#pipeline-runs-table"
+          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <p className="meta-label">Automated pipeline runs</p>
+            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+          </div>
+          <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
             {allRuns.length.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm">
+          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
             Across 5 engines (Catalog, Ingest, Score, CI)
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none">
+          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
             ##
           </span>
-        </div>
+        </Link>
       </section>
 
       {/* Ingestion Fleet Readiness Bar */}
-      <section className="border-outline-variant bg-surface-container/20 mt-10 border p-6 backdrop-blur-md">
+      <section className="border-outline-variant bg-surface-container/20 mt-8 border p-6 backdrop-blur-md">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">
             <div className="border border-[#39ff88]/40 bg-[#39ff88]/10 p-3 text-[#39ff88]">
@@ -263,7 +304,10 @@ export default async function CommandCenterPage() {
                   {ingestionSummary.totalChunks.toLocaleString('en-US')}
                 </span>
               </div>
-              <div className="border-outline-variant bg-background border px-3 py-2">
+              <Link
+                href="/internal/database?view=ingestion&status=pending#ingestion-table"
+                className="border-outline-variant bg-background border px-3 py-2 hover:border-accent transition-colors"
+              >
                 <span className="text-muted-foreground block text-[10px] uppercase">
                   Pending Queue
                 </span>
@@ -274,11 +318,11 @@ export default async function CommandCenterPage() {
                 >
                   {ingestionSummary.pendingCount}
                 </span>
-              </div>
+              </Link>
             </div>
 
             <Link
-              href="/internal/database?view=ingestion"
+              href="/internal/database?view=ingestion#ingestion-table"
               className="flex items-center gap-2 border border-[#39ff88]/50 bg-[#39ff88]/10 px-4 py-3 font-mono text-xs font-semibold tracking-[0.14em] text-[#39ff88] uppercase transition-colors hover:bg-[#39ff88]/20"
             >
               <span>Inspect Ingestion Diagnostics</span>
@@ -297,10 +341,9 @@ export default async function CommandCenterPage() {
       </section>
 
       {/* Workspace Hub Cards */}
-      <div className="mt-12">
+      <div className="mt-8">
         <SectionHint label="Command Center Workspaces">
-          Decoupled operational views: navigate to dedicated workspaces for detailed database
-          inventory, per-device lifecycle probing, and pipeline execution telemetry.
+          Dedicated workspaces for catalog inventory, per-device inspection, and pipeline telemetry.
         </SectionHint>
         <div className="mt-4 grid gap-6 md:grid-cols-3">
           {/* Card 1: Database Dashboard */}

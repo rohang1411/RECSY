@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   Clock,
@@ -82,6 +83,19 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
 
   // Regression comparison mode
   const [compareBaselineId, setCompareBaselineId] = useState<string | null>(null);
+
+  // Active Hub Tab
+  const [activeTab, setActiveTab] = useState<'benchmarks' | 'diagnostics' | 'campaign'>('benchmarks');
+
+  const scrollToTestCases = (category?: string, status?: string) => {
+    if (category) setCategoryFilter(category);
+    if (status) setStatusFilter(status);
+    setActiveTab('benchmarks');
+    const el = document.getElementById('eval-test-cases-table');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reviewInputRef = useRef<HTMLInputElement>(null);
@@ -480,65 +494,133 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
       {/* ------------------------------------------------------------------ */}
       {/* Header & Meta                                                      */}
       {/* ------------------------------------------------------------------ */}
-      <div className="border-border/40 flex flex-col gap-4 border-b pb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-foreground flex items-center gap-2 font-mono text-2xl font-bold tracking-tight">
-              <Gauge className="text-primary h-6 w-6" />
-              Evaluation & Benchmarks Hub
-            </h1>
-            <span className="bg-primary/10 text-primary border-primary/20 rounded border px-2 py-0.5 font-mono text-xs font-semibold">
-              Measurement boundaries shown per run
-            </span>
+      <div className="border-border/40 flex flex-col gap-5 border-b pb-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/internal/command-center"
+                className="text-muted-foreground hover:text-primary font-mono text-xs tracking-[0.14em] uppercase transition-colors"
+              >
+                ← Command Center
+              </Link>
+              <span className="text-muted-foreground/40 font-mono text-xs">/</span>
+              <span className="text-primary font-mono text-xs tracking-[0.14em] uppercase">
+                Evaluation Hub
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mt-2">
+              <h1 className="text-foreground flex items-center gap-2 font-mono text-3xl font-extrabold tracking-tight uppercase sm:text-4xl">
+                <Gauge className="text-primary h-7 w-7" />
+                Evaluation & Benchmarks
+              </h1>
+              <span className="bg-primary/10 text-primary border-primary/20 rounded border px-2 py-0.5 font-mono text-xs font-semibold">
+                Boundary Verified
+              </span>
+            </div>
+            <p className="text-muted-foreground mt-2 font-mono text-xs tracking-[0.12em] uppercase">
+              Component benchmarks, conversational CRS, lexical citations, and capacity probes
+            </p>
           </div>
-          <p className="text-muted-foreground mt-1 font-mono text-sm">
-            Development fixtures and component tests. Stub and self-derived scores are not
-            product-quality evidence.
-          </p>
+
+          {/* Quick Action Toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/internal/eval?refresh=true"
+              className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Refresh Hub
+            </Link>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportFile}
+              accept=".json"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors"
+            >
+              <Upload className="h-3 w-3" />
+              Import JSON
+            </button>
+            <button
+              onClick={handleExportCsv}
+              disabled={!selectedRunDetails}
+              className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors disabled:opacity-40"
+            >
+              <FileText className="h-3 w-3" />
+              Export CSV
+            </button>
+            <button
+              onClick={handleExportJson}
+              disabled={!selectedRunDetails}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs font-medium shadow-sm transition-colors disabled:opacity-40"
+            >
+              <Download className="h-3 w-3" />
+              Export Report
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
-          <label htmlFor="eval-access-token">Evaluation access token</label>
-          <input
-            id="eval-access-token"
-            type="password"
-            autoComplete="off"
-            value={accessToken}
-            onChange={(e) => setAccessToken(e.target.value)}
-            placeholder="Production only"
-            className="border-border bg-background rounded border px-3 py-2"
-          />
-          <button
-            type="button"
-            onClick={handleLoadHistory}
-            className="border-border rounded border px-3 py-2"
-          >
-            Load run history
-          </button>
-          <label htmlFor="eval-provider-track">Provider track</label>
-          <select
-            id="eval-provider-track"
-            value={providerTrack}
-            disabled={isRunning}
-            onChange={(e) => setProviderTrack(e.target.value as 'stub' | 'live')}
-            className="border-border bg-background rounded border px-3 py-2"
-          >
-            <option value="stub">Deterministic stub (development only)</option>
-            <option value="live">Configured live provider (may incur quota/cost)</option>
-          </select>
+        {/* Compact Toolbar: Access Token, Provider Track, Preflight Check */}
+        <div className="border-border/60 bg-muted/20 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 font-mono text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="eval-access-token" className="text-muted-foreground text-[11px] uppercase">
+                Access Token:
+              </label>
+              <input
+                id="eval-access-token"
+                type="password"
+                autoComplete="off"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder="Production token"
+                className="border-border bg-background text-foreground focus:ring-primary w-40 rounded border px-2.5 py-1 text-xs focus:ring-1 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleLoadHistory}
+                className="border-border bg-background hover:bg-muted rounded border px-2.5 py-1 text-[11px] uppercase transition-colors"
+              >
+                Load Runs
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="eval-provider-track" className="text-muted-foreground text-[11px] uppercase">
+                Provider:
+              </label>
+              <select
+                id="eval-provider-track"
+                value={providerTrack}
+                disabled={isRunning}
+                onChange={(e) => setProviderTrack(e.target.value as 'stub' | 'live')}
+                className="border-border bg-background text-foreground focus:ring-primary rounded border px-2 py-1 text-xs focus:ring-1 focus:outline-none"
+              >
+                <option value="stub">Deterministic Stub (Dev)</option>
+                <option value="live">Configured Live Provider</option>
+              </select>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={handlePreflight}
             disabled={isRunning}
-            className="border-border rounded border px-3 py-2 disabled:opacity-50"
+            className="border-border bg-background hover:bg-muted rounded border px-3 py-1 text-[11px] uppercase transition-colors disabled:opacity-50"
           >
-            Check fixtures and data
+            Preflight Check
           </button>
         </div>
+
         {historyError && (
           <div
             role="alert"
-            className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-600"
+            className="rounded border border-amber-500/40 bg-amber-500/10 p-3 font-mono text-xs text-amber-600"
           >
             {historyError}
           </div>
@@ -546,231 +628,60 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
         {runError && (
           <div
             role="alert"
-            className="rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-500"
+            className="rounded border border-red-500/40 bg-red-500/10 p-3 font-mono text-xs text-red-500"
           >
             {runError}
           </div>
         )}
-        {preflightReport && (
-          <div className="border-border rounded border p-3 font-mono text-xs">
-            Ready: {String(preflightReport.catalogCount)} catalog phones. Fixture counts:{' '}
-            {JSON.stringify(preflightReport.fixtureCounts)}. Missing Q&A phones:{' '}
-            {JSON.stringify(preflightReport.qaMissingPhones)}. Missing corpus:{' '}
-            {JSON.stringify(preflightReport.qaMissingCorpus)}. Dataset hashes are retained in run
-            metadata.
-          </div>
-        )}
-        <div className="border-border space-y-3 rounded border p-3 text-sm">
-          <p>
-            Local production evaluation campaign: source-backed candidate pilot, blinded review,
-            HTTP failure checks and controlled-provider load. Answer-quality and production-capacity
-            claims remain blocked until their evidence gates pass.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={loadCampaign}
-              className="border-border rounded border px-3 py-2"
-            >
-              Load campaign evidence
-            </button>
-            <button
-              type="button"
-              onClick={downloadReview}
-              className="border-border rounded border px-3 py-2"
-            >
-              Download blinded review
-            </button>
-            <button
-              type="button"
-              onClick={() => reviewInputRef.current?.click()}
-              className="border-border rounded border px-3 py-2"
-            >
-              Import review labels
-            </button>
-            <input
-              type="file"
-              accept=".json"
-              ref={reviewInputRef}
-              onChange={importReview}
-              className="hidden"
-            />
-          </div>
-          {campaignError && (
-            <p role="alert" className="text-red-500">
-              {campaignError}
-            </p>
-          )}
-          {campaign && (
-            <>
-              <CampaignEvidence summary={campaign} />
-              <details>
-                <summary>Raw campaign evidence and failure examples</summary>
-                <pre className="max-h-96 overflow-auto text-xs whitespace-pre-wrap">
-                  {JSON.stringify(campaign, null, 2)}
-                </pre>
-              </details>
-            </>
-          )}
-        </div>
 
-        {/* Action Buttons: Export & Import */}
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImportFile}
-            accept=".json"
-            className="hidden"
-          />
+        {/* 3 Nav Tabs */}
+        <div className="flex flex-wrap gap-1 border-b border-border/40 font-mono text-xs uppercase">
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors"
+            onClick={() => setActiveTab('benchmarks')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
+              activeTab === 'benchmarks'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <Upload className="h-3.5 w-3.5" />
-            Import Report
+            <span>1. Benchmarks & Results</span>
+            <span className="rounded bg-muted/60 px-1.5 py-0.2 text-[10px]">{runs.length}</span>
           </button>
           <button
-            onClick={handleExportCsv}
-            disabled={!selectedRunDetails}
-            className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors disabled:opacity-40"
+            onClick={() => setActiveTab('diagnostics')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
+              activeTab === 'diagnostics'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <FileText className="h-3.5 w-3.5" />
-            Export CSV
+            <span>2. Telemetry & Diagnostics</span>
+            {selectedRunDetails && (
+              <span className="rounded bg-primary/10 text-primary px-1.5 py-0.2 text-[10px]">
+                {selectedRunDetails.passedTests}/{selectedRunDetails.totalTests} Pass
+              </span>
+            )}
           </button>
           <button
-            onClick={handleExportJson}
-            disabled={!selectedRunDetails}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 rounded px-3 py-1.5 font-mono text-xs font-medium shadow-sm transition-colors disabled:opacity-40"
+            onClick={() => setActiveTab('campaign')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
+              activeTab === 'campaign'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <Download className="h-3.5 w-3.5" />
-            Export JSON Report
+            <span>3. Campaign Evidence & Gates</span>
+            {campaign && (
+              <span className="rounded bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 text-[10px]">
+                Loaded
+              </span>
+            )}
           </button>
         </div>
       </div>
 
-      {selectedRunDetails && (
-        <section
-          className="border-border bg-card rounded border p-4 text-sm"
-          aria-label="Run provenance"
-        >
-          <p className="font-semibold">
-            Selected run: {selectedRunDetails.status} · {selectedRunDetails.passedTests}/
-            {selectedRunDetails.totalTests} passing · {selectedRunDetails.failedTests} non-passing
-          </p>
-          {selectedRunDetails.metricsSummary?.executionError && (
-            <p role="alert" className="mt-2 text-red-500">
-              Execution failed: {selectedRunDetails.metricsSummary.executionError}
-            </p>
-          )}
-          <p>
-            Source: {selectedRunDetails.triggerSource}. Provider track:{' '}
-            {String(selectedRunDetails.config?.providerTrack ?? 'unrecorded')}. Boundary:{' '}
-            {String(selectedRunDetails.config?.measurementBoundary ?? 'unrecorded')}.
-          </p>
-          {(selectedRunDetails.triggerSource === 'unverified-import' ||
-            !selectedRunDetails.config?.preflight ||
-            selectedRunDetails.config?.workingTreeDirty !== false) && (
-            <p className="text-amber-600">
-              Imported, legacy, or uncommitted code provenance. These results are not suitable for
-              formal evaluation certification.
-            </p>
-          )}
-          <details>
-            <summary>Fixture, catalog, model and run metadata</summary>
-            <pre className="mt-2 overflow-auto text-xs whitespace-pre-wrap">
-              {JSON.stringify(
-                { commitHash: selectedRunDetails.commitHash, config: selectedRunDetails.config },
-                null,
-                2,
-              )}
-            </pre>
-          </details>
-        </section>
-      )}
-      {selectedRunDetails?.metricsSummary?.generationProviderCalls != null && (
-        <section
-          className="border-border bg-card rounded border p-4 text-sm"
-          aria-label="Generation usage coverage"
-        >
-          <p>
-            Generation: {selectedRunDetails.metricsSummary.generationProviderCalls} uncached
-            provider calls, {selectedRunDetails.metricsSummary.generationCacheHits ?? 0} cache hits;
-            usage reported for {selectedRunDetails.metricsSummary.generationUsageCoveredCalls ?? 0}/
-            {selectedRunDetails.metricsSummary.generationProviderCalls} uncached calls.
-          </p>
-          <p>
-            {selectedRunDetails.metricsSummary.tokenUsage
-              ? `Current-run uncached generation tokens: ${selectedRunDetails.metricsSummary.tokenUsage.tokensIn} in / ${selectedRunDetails.metricsSummary.tokenUsage.tokensOut} out.`
-              : 'Current-run generation token total unavailable or no uncached generation calls.'}
-          </p>
-          <p className="text-muted-foreground">
-            Embedding usage is outside this total. Cached responses can include usage from an
-            earlier request and are excluded.
-          </p>
-        </section>
-      )}
-      {selectedRunDetails?.metricsSummary?.retrievalObservedCases != null && (
-        <section
-          className="border-border bg-card rounded border p-4 text-sm"
-          aria-label="Q&A retrieval signal coverage"
-        >
-          <p className="font-semibold">Q&A retrieval signals</p>
-          <p>
-            FTS returned zero chunks for{' '}
-            {selectedRunDetails.metricsSummary.ftsZeroCases ?? 'unrecorded'}/
-            {selectedRunDetails.metricsSummary.retrievalObservedCases} observed cases; vector
-            returned zero for {selectedRunDetails.metricsSummary.vectorZeroCases ?? 'unrecorded'}/
-            {selectedRunDetails.metricsSummary.retrievalObservedCases}.
-          </p>
-          <p className="text-muted-foreground">
-            A zero sparse branch means that case relied on vector retrieval. Review per-case counts
-            and evidence before judging answer quality.
-          </p>
-        </section>
-      )}
-      {selectedLoadTrace && (
-        <section
-          className="border-border bg-card space-y-2 rounded border p-4 text-sm"
-          aria-label="Retrieval probe diagnostics"
-        >
-          <h2 className="font-semibold">DB retrieval probe diagnostics</h2>
-          <p>
-            {selectedLoadTrace.catalogCount} catalog phones; {selectedLoadTrace.targetChunkCount}{' '}
-            chunks on the selected phone. Successful goodput:{' '}
-            {selectedRunDetails?.metricsSummary?.goodputQps ?? 'unrecorded'} requests/s;
-            completed-attempt p95: {selectedRunDetails?.metricsSummary?.latencyP95 ?? 'unrecorded'}{' '}
-            ms.
-          </p>
-          <p>
-            Stage p95 (successful attempts):{' '}
-            {loadStages.length
-              ? loadStages.map(([name, ms]) => `${name} ${ms} ms`).join(' · ')
-              : 'unrecorded'}
-            .
-          </p>
-          {loadStages[0] && (
-            <p>
-              Largest observed stage p95: {loadStages[0][0]}. Confirm the cause with database/server
-              traces before calling it a bottleneck.
-            </p>
-          )}
-          <p>
-            Errors:{' '}
-            {Object.keys(selectedLoadTrace.errorCounts).length
-              ? JSON.stringify(selectedLoadTrace.errorCounts)
-              : 'none recorded'}
-            .
-          </p>
-          {selectedLoadTrace.eventLoopLagMs != null && (
-            <p>Maximum sampled event-loop delay: {selectedLoadTrace.eventLoopLagMs} ms.</p>
-          )}
-          <p className="text-muted-foreground">
-            This short deterministic-embedder probe does not measure HTTP capacity or database pool
-            occupancy.
-          </p>
-        </section>
-      )}
+      {activeTab === 'benchmarks' && (
+      <div className="space-y-6">
 
       {/* ------------------------------------------------------------------ */}
       {/* Interactive Control Rail                                           */}
@@ -928,10 +839,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
       selectedRunDetails?.tier === 'MULTI_TURN_CRS' ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {/* Multi-Turn 1: Joint Goal Accuracy (JGA) */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Joint Goal Accuracy (JGA)
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Joint Goal Accuracy (JGA)
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.jointGoalAccuracy?.mean != null
@@ -957,10 +879,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Multi-Turn 2: Constraint Retention Rate (CRR) */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Constraint Retention (CRR)
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Constraint Retention (CRR)
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.constraintRetentionRate?.mean != null
@@ -986,10 +919,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Multi-Turn 3: Constraint Mutation Latency */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Mutation Responsiveness
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Mutation Responsiveness
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.mutationResponsiveness != null
@@ -1003,10 +947,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Multi-Turn 4: Multi-Turn Policy CSR */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Multi-Turn Policy CSR
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Multi-Turn Policy CSR
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.multiTurnCsr != null
@@ -1020,10 +975,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Multi-Turn 5: Refine Intent F1 & Reset */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Refine F1 & Reset Clean
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Refine F1 & Reset Clean
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.refineIntentF1 != null
@@ -1040,10 +1006,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Multi-Turn 6: Token Usage & Cost */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Provider-reported generation tokens
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('multi-turn')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Provider-reported generation tokens
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.tokenUsage?.totalTokens != null
@@ -1060,10 +1037,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {/* Metric 1: NDCG@3 */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              MAUT agreement NDCG@3
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('recsys')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                MAUT agreement NDCG@3
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.ndcg3?.mean != null ? currentSummary.ndcg3.mean.toFixed(3) : '--'}
@@ -1080,10 +1068,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Metric 2: lexical citation proxy */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Lexical citation support proxy
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('rag')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('rag')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Lexical citation support proxy
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.citePrec?.mean != null
@@ -1107,10 +1106,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Metric 3: Tail Latency p95 */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Tail Latency (p95)
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('all')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('all')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Tail Latency (p95)
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.latencyP95 != null ? `${currentSummary.latencyP95} ms` : '--'}
@@ -1123,10 +1133,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Metric 4: Budget & Dealbreaker CSR */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Constraint Policy CSR
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('recsys')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Constraint Policy CSR
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.budgetCsr != null
@@ -1155,10 +1176,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Metric 5: Intra-List Diversity (ILD) */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Intra-List Div (ILD@3)
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('recsys')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Intra-List Div (ILD@3)
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.ild3?.mean != null ? currentSummary.ild3.mean.toFixed(3) : '--'}
@@ -1170,10 +1202,21 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </div>
 
           {/* Metric 6: Gini Index & Coverage */}
-          <div className="border-border/60 bg-card space-y-1 rounded-lg border p-4">
-            <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-              Catalog Gini & Coverage
-            </p>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToTestCases('recsys')}
+            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                Catalog Gini & Coverage
+              </p>
+              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+                Filter ↓
+              </span>
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-foreground font-mono text-2xl font-bold">
                 {currentSummary?.giniCoefficient != null
@@ -1390,7 +1433,7 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
       {/* ------------------------------------------------------------------ */}
       {/* Granular Test Cases Explorer                                       */}
       {/* ------------------------------------------------------------------ */}
-      <div className="border-border/60 bg-card space-y-4 rounded-lg border p-5">
+      <div id="eval-test-cases-table" className="border-border/60 bg-card scroll-mt-20 space-y-4 rounded-lg border p-5">
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div className="flex items-center gap-2">
             <h3 className="text-foreground font-mono text-sm font-semibold tracking-wider uppercase">
@@ -1529,6 +1572,363 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </table>
         </div>
       </div>
+      </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Tab 2: Run Provenance & Telemetry Diagnostics                      */}
+      {/* ------------------------------------------------------------------ */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-6">
+          {/* Preflight Report */}
+          {preflightReport && (
+            <section
+              className="border-border/60 bg-card space-y-4 rounded-lg border p-5 font-mono text-xs"
+              aria-label="Preflight report"
+            >
+              <div className="border-border/40 flex items-center justify-between border-b pb-3">
+                <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
+                  Fixture & Preflight Diagnostics
+                </h3>
+                <span className="border-emerald-500/20 bg-emerald-500/10 text-emerald-500 rounded border px-2 py-0.5 text-[10px] font-bold">
+                  Catalog Verified
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Catalog Phones</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {String(preflightReport.catalogCount)}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Missing Q&A Phones</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {Array.isArray(preflightReport.qaMissingPhones)
+                      ? preflightReport.qaMissingPhones.length
+                      : 0}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Missing Corpus</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {Array.isArray(preflightReport.qaMissingCorpus)
+                      ? preflightReport.qaMissingCorpus.length
+                      : 0}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Dataset Hashes</span>
+                  <p className="mt-1 text-lg font-bold text-emerald-500">Retained</p>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-[11px] leading-relaxed">
+                Fixture counts: {JSON.stringify(preflightReport.fixtureCounts)}
+              </p>
+            </section>
+          )}
+
+          {/* Run Provenance */}
+          {selectedRunDetails ? (
+            <section
+              className="border-border/60 bg-card space-y-4 rounded-lg border p-5 font-mono text-xs"
+              aria-label="Run provenance"
+            >
+              <div className="border-border/40 flex flex-col justify-between gap-2 border-b pb-3 sm:flex-row sm:items-center">
+                <div>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Run Provenance Record
+                  </span>
+                  <h3 className="text-foreground text-base font-bold">
+                    {selectedRunDetails.suiteName} ·{' '}
+                    <span className="uppercase">{selectedRunDetails.status}</span>
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="border-emerald-500/20 bg-emerald-500/10 text-emerald-500 rounded border px-2.5 py-1 text-xs font-bold">
+                    {selectedRunDetails.passedTests} Passing
+                  </span>
+                  <span className="rounded border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-500">
+                    {selectedRunDetails.failedTests} Non-Passing
+                  </span>
+                </div>
+              </div>
+
+              {selectedRunDetails.metricsSummary?.executionError && (
+                <div
+                  role="alert"
+                  className="rounded border border-red-500/40 bg-red-500/10 p-3 text-red-500"
+                >
+                  Execution failed: {selectedRunDetails.metricsSummary.executionError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Trigger Source</span>
+                  <p className="text-foreground mt-1 font-semibold">{selectedRunDetails.triggerSource}</p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Provider Track</span>
+                  <p className="text-foreground mt-1 font-semibold">
+                    {String(selectedRunDetails.config?.providerTrack ?? 'unrecorded')}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Measurement Boundary
+                  </span>
+                  <p className="text-foreground mt-1 font-semibold">
+                    {String(selectedRunDetails.config?.measurementBoundary ?? 'unrecorded')}
+                  </p>
+                </div>
+              </div>
+
+              {(selectedRunDetails.triggerSource === 'unverified-import' ||
+                !selectedRunDetails.config?.preflight ||
+                selectedRunDetails.config?.workingTreeDirty !== false) && (
+                <p className="text-[11px] text-amber-500">
+                  Imported, legacy, or uncommitted code provenance. These results are not suitable for
+                  formal evaluation certification.
+                </p>
+              )}
+
+              <details className="border-border/40 bg-muted/10 rounded border p-3">
+                <summary className="text-muted-foreground hover:text-foreground cursor-pointer font-semibold">
+                  Fixture, catalog, model and run metadata
+                </summary>
+                <pre className="mt-2 max-h-72 overflow-auto text-[11px] whitespace-pre-wrap">
+                  {JSON.stringify(
+                    { commitHash: selectedRunDetails.commitHash, config: selectedRunDetails.config },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </details>
+            </section>
+          ) : (
+            <div className="border-border/60 bg-card text-muted-foreground rounded-lg border p-6 text-center font-mono text-xs">
+              Select a run from the history rail to inspect execution provenance.
+            </div>
+          )}
+
+          {/* Generation Usage Coverage */}
+          {selectedRunDetails?.metricsSummary?.generationProviderCalls != null && (
+            <section
+              className="border-border/60 bg-card space-y-3 rounded-lg border p-5 font-mono text-xs"
+              aria-label="Generation usage coverage"
+            >
+              <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
+                LLM Generation Usage & Quota Coverage
+              </h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Uncached Calls</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedRunDetails.metricsSummary.generationProviderCalls}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Cache Hits</span>
+                  <p className="mt-1 text-lg font-bold text-emerald-500">
+                    {selectedRunDetails.metricsSummary.generationCacheHits ?? 0}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Tokens In</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensIn?.toLocaleString() ?? '--'}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Tokens Out</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensOut?.toLocaleString() ?? '--'}
+                  </p>
+                </div>
+              </div>
+              <p className="text-muted-foreground text-[11px]">
+                Usage reported for{' '}
+                {selectedRunDetails.metricsSummary.generationUsageCoveredCalls ?? 0}/
+                {selectedRunDetails.metricsSummary.generationProviderCalls} uncached calls.
+                Embedding usage is outside this total.
+              </p>
+            </section>
+          )}
+
+          {/* Q&A Retrieval Signals */}
+          {selectedRunDetails?.metricsSummary?.retrievalObservedCases != null && (
+            <section
+              className="border-border/60 bg-card space-y-3 rounded-lg border p-5 font-mono text-xs"
+              aria-label="Q&A retrieval signal coverage"
+            >
+              <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
+                Q&A Retrieval Signal Diagnostics
+              </h3>
+              <p className="text-foreground">
+                FTS returned zero chunks for{' '}
+                <span className="font-bold text-amber-500">
+                  {selectedRunDetails.metricsSummary.ftsZeroCases ?? 'unrecorded'}
+                </span>
+                /{selectedRunDetails.metricsSummary.retrievalObservedCases} observed cases; vector
+                returned zero for{' '}
+                <span className="font-bold text-amber-500">
+                  {selectedRunDetails.metricsSummary.vectorZeroCases ?? 'unrecorded'}
+                </span>
+                /{selectedRunDetails.metricsSummary.retrievalObservedCases}.
+              </p>
+              <p className="text-muted-foreground text-[11px]">
+                A zero sparse branch indicates that case relied solely on dense vector retrieval.
+                Review per-case evidence traces before assessing quality.
+              </p>
+            </section>
+          )}
+
+          {/* DB Retrieval Probe Diagnostics */}
+          {selectedLoadTrace && (
+            <section
+              className="border-border/60 bg-card space-y-4 rounded-lg border p-5 font-mono text-xs"
+              aria-label="Retrieval probe diagnostics"
+            >
+              <div className="border-border/40 flex items-center justify-between border-b pb-3">
+                <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
+                  DB Retrieval Probe Diagnostics
+                </h3>
+                <span className="text-muted-foreground text-[11px]">
+                  {selectedLoadTrace.catalogCount} catalog phones ·{' '}
+                  {selectedLoadTrace.targetChunkCount} phone chunks
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Goodput</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedRunDetails?.metricsSummary?.goodputQps ?? 'unrecorded'} req/s
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Attempt p95</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedRunDetails?.metricsSummary?.latencyP95 ?? 'unrecorded'} ms
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Loop Lag Max</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {selectedLoadTrace.eventLoopLagMs != null
+                      ? `${selectedLoadTrace.eventLoopLagMs} ms`
+                      : 'n/a'}
+                  </p>
+                </div>
+                <div className="border-border/40 bg-muted/20 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] uppercase">Errors</span>
+                  <p className="text-foreground mt-1 text-lg font-bold">
+                    {Object.keys(selectedLoadTrace.errorCounts).length
+                      ? Object.keys(selectedLoadTrace.errorCounts).length
+                      : '0'}
+                  </p>
+                </div>
+              </div>
+              {loadStages.length > 0 && (
+                <div className="border-border/40 bg-muted/10 space-y-2 rounded border p-3">
+                  <span className="text-muted-foreground text-[10px] font-semibold uppercase">
+                    Stage Latency Breakdown (p95)
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {loadStages.map(([name, ms]) => (
+                      <span
+                        key={name}
+                        className="border-border/60 bg-background rounded border px-2.5 py-1 text-[11px]"
+                      >
+                        <span className="text-muted-foreground">{name}:</span>{' '}
+                        <span className="text-foreground font-bold">{ms}ms</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Tab 3: Production Campaign Evidence & Gates                        */}
+      {/* ------------------------------------------------------------------ */}
+      {activeTab === 'campaign' && (
+        <div className="space-y-6">
+          <section className="border-border/60 bg-card space-y-4 rounded-lg border p-5 font-mono text-xs">
+            <div className="border-border/40 flex flex-col justify-between gap-2 border-b pb-3 sm:flex-row sm:items-center">
+              <div>
+                <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
+                  Production Evaluation Campaign
+                </h3>
+                <p className="text-muted-foreground mt-1 text-[11px]">
+                  Source-backed candidate pilot, blinded review, HTTP failure checks, and controlled
+                  provider load.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadCampaign}
+                  className="border-border bg-background hover:bg-muted rounded border px-3 py-1.5 text-[11px] uppercase transition-colors"
+                >
+                  Load Campaign Evidence
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadReview}
+                  className="border-border bg-background hover:bg-muted rounded border px-3 py-1.5 text-[11px] uppercase transition-colors"
+                >
+                  Download Blinded Review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => reviewInputRef.current?.click()}
+                  className="border-border bg-background hover:bg-muted rounded border px-3 py-1.5 text-[11px] uppercase transition-colors"
+                >
+                  Import Review Labels
+                </button>
+                <input
+                  type="file"
+                  accept=".json"
+                  ref={reviewInputRef}
+                  onChange={importReview}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
+            {campaignError && (
+              <div
+                role="alert"
+                className="rounded border border-red-500/40 bg-red-500/10 p-3 text-red-500"
+              >
+                {campaignError}
+              </div>
+            )}
+
+            {campaign ? (
+              <div className="space-y-4">
+                <CampaignEvidence summary={campaign} />
+                <details className="border-border/40 bg-muted/10 rounded border p-3">
+                  <summary className="text-muted-foreground hover:text-foreground cursor-pointer font-semibold">
+                    Raw Campaign Evidence & Failure Examples
+                  </summary>
+                  <pre className="mt-2 max-h-96 overflow-auto text-[11px] whitespace-pre-wrap">
+                    {JSON.stringify(campaign, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            ) : (
+              <div className="border-border/40 bg-muted/10 text-muted-foreground rounded-lg border p-8 text-center">
+                Click &ldquo;Load Campaign Evidence&rdquo; to fetch the latest evidence gate audits.
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Slide-Over Trace Inspector Drawer                                  */}
