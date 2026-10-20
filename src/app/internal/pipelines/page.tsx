@@ -1,3 +1,4 @@
+import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Clock, ExternalLink } from 'lucide-react';
@@ -20,7 +21,7 @@ interface PageProps {
 
 export default async function PipelinesPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const isRefresh = params.refresh === 'true' || params.refresh === '1';
+  const isRefresh = Boolean(params.refresh && params.refresh !== '0' && params.refresh !== 'false');
   const engineParam = typeof params.engine === 'string' ? params.engine : 'all';
   const statusParam = typeof params.status === 'string' ? params.status : 'all';
   const searchParam = typeof params.search === 'string' ? params.search : '';
@@ -114,12 +115,7 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
             <ExternalLink className="text-accent size-3" aria-hidden />
             Airflow UI (:8080)
           </a>
-          <Link
-            href={`/internal/pipelines?refresh=true&engine=${engineParam}&status=${statusParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}`}
-            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
-          >
-            Refresh Telemetry
-          </Link>
+          <InternalRefreshButton label="Refresh Telemetry" />
         </div>
       </header>
 
