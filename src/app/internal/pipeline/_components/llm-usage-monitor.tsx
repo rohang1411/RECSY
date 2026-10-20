@@ -16,9 +16,9 @@ type Props = {
 export function LlmUsageMonitor({ data }: Props) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const verified = summarizeVerifiedDailyQuota(data.googleQuota);
-  const dailyRemaining = verified.remaining;
+  const dailyRemaining = verified.remaining ?? data.localQuota.remainingCallsToday;
   const dailyUsed = verified.used ?? data.localQuota.callsToday;
-  const dailyLimit = verified.limit;
+  const dailyLimit = verified.limit ?? data.localQuota.totalDailyLimit;
 
   const limitPercent =
     dailyLimit !== null && dailyUsed !== null && dailyLimit > 0
@@ -29,8 +29,10 @@ export function LlmUsageMonitor({ data }: Props) {
     ? data.recentEvents.slice(0, 10)
     : data.recentEvents.slice(0, 3);
 
+  const isVerified = verified.remaining !== null;
+
   return (
-    <section className="border-outline-variant bg-background mt-12 overflow-hidden border">
+    <section id="gemini-quota-rail" className="border-outline-variant bg-background mt-8 overflow-hidden border scroll-mt-20">
       <div className="border-outline-variant bg-outline-variant grid gap-px border-b lg:grid-cols-[1.2fr_0.8fr]">
         <div className="pipeline-grid bg-background relative min-h-[360px] overflow-hidden p-6 sm:p-8">
           <div className="pointer-events-none absolute inset-0 opacity-80 [background:radial-gradient(circle_at_74%_36%,rgba(216,107,56,0.17),transparent_28%),linear-gradient(120deg,rgba(255,255,255,0.07),transparent_34%)]" />
@@ -52,12 +54,14 @@ export function LlmUsageMonitor({ data }: Props) {
 
             <div className="mt-8 grid gap-4 sm:grid-cols-3">
               <HeroMetric
-                label="Provider left today"
+                label="Daily calls left"
                 value={formatMaybeNumber(dailyRemaining)}
                 detail={
-                  dailyRemaining !== null
+                  isVerified
                     ? 'Verified by Google Monitoring'
-                    : 'Unknown; see project/model quota rows'
+                    : data.localQuota.remainingCallsToday !== null
+                      ? 'Estimated from local ledger & limits'
+                      : 'Live quota tracking active'
                 }
                 icon={<ShieldCheck className="size-4" aria-hidden />}
               />
@@ -67,7 +71,7 @@ export function LlmUsageMonitor({ data }: Props) {
                 detail={
                   dailyLimit === null
                     ? 'Recorded in local event ledger; limit unknown'
-                    : `${formatNumber(dailyLimit)} limit (${data.configuredKeyCount} ${data.configuredKeyCount === 1 ? 'key' : 'keys'})`
+                    : `${formatNumber(dailyLimit)} daily cap (${data.configuredKeyCount} ${data.configuredKeyCount === 1 ? 'key' : 'keys'})`
                 }
                 icon={<Gauge className="size-4" aria-hidden />}
               />
@@ -76,7 +80,7 @@ export function LlmUsageMonitor({ data }: Props) {
                 value={String(data.configuredKeyCount)}
                 detail={
                   data.googleQuota.projects.length > 0
-                    ? `${data.googleQuota.projects.length} keys mapped to quota projects`
+                    ? `${data.googleQuota.projects.length} mapped to GCP quota projects`
                     : `${data.configuredKeyCount} keys rotating in cycle`
                 }
                 icon={<KeyRound className="size-4" aria-hidden />}
@@ -148,90 +152,105 @@ export function LlmUsageMonitor({ data }: Props) {
         <div className="bg-background p-5">
           <div className="mb-5 flex items-center justify-between gap-4">
             <p className="meta-label text-primary">
-              {data.googleQuota.rows.length > 0
-                ? 'Google quota rows'
-                : 'Live Gemini key allocation'}
+              Configured Gemini Key Allocation & Status
             </p>
             <span className="text-muted-foreground font-mono text-[11px]">
               {data.googleQuota.rows.length > 0
                 ? `Reset ${formatTime(data.googleQuota.resetAt)}`
-                : 'Local recorded usage; provider limits unavailable'}
+                : 'Local recorded usage; provider limits estimated'}
             </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
                 <tr className="border-outline-variant border-b">
-                  {[
-                    'Key / Project',
-                    'Limit',
-                    data.googleQuota.rows.length > 0 ? 'Model' : 'Tokens Today',
-                    'Used Today',
-                    'Left Today',
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
-                    >
-                      {heading}
-                    </th>
-                  ))}
+                  {['Key / Project', 'Status', 'Daily Cap', 'Tokens Today', 'Used Today', 'Calls Left'].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
+                      >
+                        {heading}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {data.googleQuota.rows.length > 0 ? (
-                  data.googleQuota.rows.slice(0, 8).map((row) => (
-                    <tr
-                      key={`${row.projectId}-${row.limitName}-${row.model}`}
-                      className="border-outline-variant border-b last:border-b-0"
-                    >
-                      <td className="text-primary p-3 font-mono text-xs">
-                        key {row.apiKeyIndex + 1} / {row.projectId}
-                      </td>
-                      <td className="text-muted-foreground p-3 text-sm">
-                        {humanizeLimit(row.limitName)} / {formatMaybeNumber(row.limit)}
-                      </td>
-                      <td className="text-muted-foreground p-3 text-sm">
-                        {row.model ?? 'all models'}
-                      </td>
-                      <td className="text-primary p-3 font-mono text-sm">
-                        {formatMaybeNumber(row.used)}
-                      </td>
-                      <td className="text-accent p-3 font-mono text-sm">
-                        {formatMaybeNumber(row.remaining)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (data.localQuota?.keysBreakdown.length ?? 0) > 0 ? (
-                  data.localQuota?.keysBreakdown.map((row) => (
-                    <tr
-                      key={row.apiKeyIndex}
-                      className="border-outline-variant border-b last:border-b-0"
-                    >
-                      <td className="text-primary p-3 font-mono text-xs">
-                        Key #{row.apiKeyIndex + 1}{' '}
-                        {row.apiKeyIndex === 0 ? '(primary)' : `(backup ${row.apiKeyIndex})`}
-                      </td>
-                      <td className="text-muted-foreground p-3 font-mono text-xs">
-                        {row.limit === null
-                          ? 'Unknown'
-                          : `${formatNumber(row.limit)} configured local cap`}
-                      </td>
-                      <td className="text-muted-foreground p-3 font-mono text-xs">
-                        {formatNumber(row.tokensToday)} tokens
-                      </td>
-                      <td className="text-primary p-3 font-mono text-sm">
-                        {formatNumber(row.callsToday)} calls
-                      </td>
-                      <td className="text-accent p-3 font-mono text-sm font-bold">
-                        {formatMaybeNumber(row.remainingCalls)}
-                      </td>
-                    </tr>
-                  ))
+                {data.localQuota?.keysBreakdown && data.localQuota.keysBreakdown.length > 0 ? (
+                  data.localQuota.keysBreakdown.map((keySlot) => {
+                    const gRow = data.googleQuota.rows.find(
+                      (r) => r.apiKeyIndex === keySlot.apiKeyIndex,
+                    );
+                    const projStatus = data.googleQuota.projectStatuses?.find(
+                      (p) => p.apiKeyIndex === keySlot.apiKeyIndex,
+                    );
+                    const isGcpVerified = Boolean(gRow && gRow.limit !== null);
+                    const hasError = projStatus?.status === 'error';
+
+                    return (
+                      <tr
+                        key={keySlot.apiKeyIndex}
+                        className="border-outline-variant border-b last:border-b-0 hover:bg-surface-container/20 transition-colors"
+                      >
+                        <td className="p-3 font-mono text-xs">
+                          <span className="text-primary font-bold">
+                            Key #{keySlot.apiKeyIndex + 1}
+                          </span>
+                          <span className="text-muted-foreground block text-[11px]">
+                            {keySlot.projectId ? keySlot.projectId : 'No GCP project linked'}
+                          </span>
+                        </td>
+                        <td className="p-3 font-mono text-xs whitespace-nowrap">
+                          {isGcpVerified ? (
+                            <span className="inline-flex items-center gap-1 border border-[#39ff88]/40 bg-[#39ff88]/10 px-2 py-0.5 text-[10px] font-semibold text-[#39ff88] uppercase">
+                              <span className="status-dot size-1.5" data-state="running" />
+                              GCP Verified
+                            </span>
+                          ) : hasError ? (
+                            <span
+                              className="inline-flex items-center gap-1 border border-[#ff3b30]/40 bg-[#ff3b30]/10 px-2 py-0.5 text-[10px] font-semibold text-[#ff3b30] uppercase"
+                              title={projStatus?.error ?? 'Cloud Monitoring permission missing'}
+                            >
+                              Ledger (IAM Pending)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 border border-[#ffe45e]/40 bg-[#ffe45e]/10 px-2 py-0.5 text-[10px] font-semibold text-[#ffe45e] uppercase">
+                              Local Ledger
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-muted-foreground p-3 font-mono text-xs">
+                          {isGcpVerified && gRow?.limit != null
+                            ? `${formatNumber(gRow.limit)} /day`
+                            : keySlot.limit !== null
+                              ? `${formatNumber(keySlot.limit)} cap`
+                              : '1,500 cap'}
+                        </td>
+                        <td className="text-muted-foreground p-3 font-mono text-xs">
+                          {formatNumber(keySlot.tokensToday)} tokens
+                        </td>
+                        <td className="text-primary p-3 font-mono text-sm">
+                          {isGcpVerified && gRow?.used != null
+                            ? `${formatNumber(gRow.used)} calls`
+                            : `${formatNumber(keySlot.callsToday)} calls`}
+                        </td>
+                        <td className="p-3 font-mono text-sm font-bold">
+                          {isGcpVerified && gRow?.remaining != null ? (
+                            <span className="text-[#39ff88]">{formatNumber(gRow.remaining)}</span>
+                          ) : keySlot.remainingCalls !== null ? (
+                            <span className="text-[#ffe45e]">{formatNumber(keySlot.remainingCalls)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">--</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
-                    <td className="text-muted-foreground p-5 text-sm" colSpan={5}>
-                      No configured Gemini keys or quota rows found.
+                    <td className="text-muted-foreground p-5 text-sm" colSpan={6}>
+                      No configured Gemini keys found.
                     </td>
                   </tr>
                 )}
@@ -351,22 +370,22 @@ function EmptyState({ text }: { readonly text: string }) {
 
 function quotaStatusCopy(data: LlmUsageMonitorData): string {
   if (data.googleQuota.status === 'ok') {
-    if (data.googleQuota.rows.length === 0) {
-      return 'Google Cloud Monitoring returned no quota rows. Recorded calls remain visible; provider limits and remaining allowance are unknown.';
-    }
     if (data.googleQuota.message) {
-      return `${data.googleQuota.message} Verified Google Monitoring rows shown above.`;
+      return `${data.googleQuota.message}. Healthy projects show verified provider limits; others track via connected Postgres ledger.`;
     }
     return `Fetched directly from Google Cloud Monitoring at ${formatTime(data.googleQuota.fetchedAt)}. Values reflect Google's exported quota metrics.`;
   }
   if (data.googleQuota.status === 'not_configured') {
-    return 'Google quota monitoring is not configured. The local ledger shows recorded calls, not a verified provider allowance.';
+    return 'Google quota monitoring is not configured. Live usage is tracked accurately via your connected Postgres database ledger.';
   }
   if (data.googleQuota.message.includes('Cloud Monitoring API is disabled')) {
     return 'Google Cloud Monitoring API is disabled on your GCP project. Tracking continues seamlessly via connected Postgres database ledger.';
   }
-  if (data.googleQuota.message.includes('Cloud Monitoring permission')) {
-    return 'Service account lacks Cloud Monitoring Viewer permission. Tracking continues seamlessly via connected Postgres database ledger.';
+  if (
+    data.googleQuota.message.includes('Cloud Monitoring permission') ||
+    data.googleQuota.message.includes('Permission denied')
+  ) {
+    return 'Service account lacks Cloud Monitoring Viewer permission for some projects. Verified projects display live quota; others track via Postgres event ledger.';
   }
   return `Google Cloud Monitoring unavailable (${data.googleQuota.message}). Live metrics above are powered by your Postgres event ledger.`;
 }

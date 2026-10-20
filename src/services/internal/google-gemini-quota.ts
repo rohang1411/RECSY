@@ -44,12 +44,21 @@ export type GeminiQuotaRow = {
   readonly remaining: number | null;
 };
 
+export type GeminiProjectQuotaStatus = {
+  readonly projectId: string;
+  readonly apiKeyIndex: number;
+  readonly status: 'ok' | 'error';
+  readonly error?: string | null;
+  readonly rowCount: number;
+};
+
 export type GeminiQuotaFetchResult =
   | {
       readonly status: 'ok';
       readonly fetchedAt: string;
       readonly resetAt: string;
       readonly projects: readonly GeminiQuotaProject[];
+      readonly projectStatuses?: readonly GeminiProjectQuotaStatus[];
       readonly message?: string;
       readonly rows: readonly GeminiQuotaRow[];
     }
@@ -58,6 +67,7 @@ export type GeminiQuotaFetchResult =
       readonly fetchedAt: string;
       readonly resetAt: string;
       readonly projects: readonly GeminiQuotaProject[];
+      readonly projectStatuses?: readonly GeminiProjectQuotaStatus[];
       readonly message: string;
       readonly rows: readonly GeminiQuotaRow[];
     };
@@ -65,6 +75,10 @@ export type GeminiQuotaFetchResult =
 let tokenCache: { readonly token: string; readonly expiresAtMs: number } | null = null;
 let quotaCache: { readonly result: GeminiQuotaFetchResult; readonly expiresAtMs: number } | null =
   null;
+
+export function clearGeminiQuotaCache(): void {
+  quotaCache = null;
+}
 
 export function getConfiguredGeminiQuotaProjects(): readonly GeminiQuotaProject[] {
   return getConfiguredGeminiKeys(env).flatMap((key) =>
@@ -123,25 +137,52 @@ export async function fetchGeminiQuotaFromGoogle(): Promise<GeminiQuotaFetchResu
     const errors = results
       .filter((result) => result.error)
       .map((result) => `${result.project.projectId}: ${briefQuotaError(result.error ?? '')}`);
+    const projectStatuses: GeminiProjectQuotaStatus[] = results.map((r) => ({
+      projectId: r.project.projectId,
+      apiKeyIndex: r.project.apiKeyIndex,
+      status: r.error ? 'error' : 'ok',
+      error: r.error ? briefQuotaError(r.error) : null,
+      rowCount: r.rows.length,
+    }));
+
     if (rows.length === 0 && errors.length > 0) {
-      throw new Error(errors.join(' | '));
+      const result: GeminiQuotaFetchResult = {
+        status: 'error',
+        fetchedAt: fetchedAt.toISOString(),
+        resetAt: resetAt.toISOString(),
+        projects,
+        projectStatuses,
+        message: errors.join(' | '),
+        rows: [],
+      };
+      quotaCache = { result, expiresAtMs: now + 90_000 };
+      return result;
     }
     const result: GeminiQuotaFetchResult = {
       status: 'ok',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
       projects,
+      projectStatuses,
       message: errors.length > 0 ? `Partial quota fetch: ${errors.join(' | ')}` : undefined,
       rows,
     };
-    quotaCache = { result, expiresAtMs: now + 120_000 };
+    quotaCache = { result, expiresAtMs: now + 300_000 };
     return result;
   } catch (err) {
+    const projectStatuses: GeminiProjectQuotaStatus[] = projects.map((p) => ({
+      projectId: p.projectId,
+      apiKeyIndex: p.apiKeyIndex,
+      status: 'error',
+      error: err instanceof Error ? briefQuotaError(err.message) : String(err),
+      rowCount: 0,
+    }));
     const result: GeminiQuotaFetchResult = {
       status: 'error',
       fetchedAt: fetchedAt.toISOString(),
       resetAt: resetAt.toISOString(),
       projects,
+      projectStatuses,
       message: err instanceof Error ? err.message : String(err),
       rows: [],
     };
