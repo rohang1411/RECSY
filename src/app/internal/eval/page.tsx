@@ -19,7 +19,7 @@ interface PageProps {
 
 export default async function EvalPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const isRefresh = params.refresh === 'true' || params.refresh === '1';
+  const isRefresh = Boolean(params.refresh && params.refresh !== '0' && params.refresh !== 'false');
   let initialRuns: BenchmarkRunRecord[] = [];
   let initialError: string | null = null;
 

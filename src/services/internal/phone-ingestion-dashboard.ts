@@ -335,7 +335,7 @@ async function safeQuery<T>(
   promise: Promise<T>,
   fallback: T,
   label: string,
-  timeoutMs = 5000,
+  timeoutMs = 12000,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -363,12 +363,6 @@ async function safeQuery<T>(
 export async function loadCommandCenterIngestionSummary(
   options: { forceRefresh?: boolean } = {},
 ): Promise<PhoneIngestionSummary> {
-  const now = Date.now();
-  if (options.forceRefresh) {
-    cachedIngestionData = null;
-  } else if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
-    return cachedIngestionData.summary;
-  }
   const data = await loadPhoneIngestionDashboardData({}, options);
   return data.summary;
 }
@@ -378,21 +372,33 @@ export async function loadPhoneIngestionDashboardData(
   options: { forceRefresh?: boolean } = {},
 ): Promise<PhoneIngestionData> {
   const now = Date.now();
-  if (options.forceRefresh) {
-    cachedIngestionData = null;
-  } else if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
+  const shouldFetchFresh =
+    options.forceRefresh || !cachedIngestionData || now >= cachedIngestionData.expiresAtMs;
+
+  if (!shouldFetchFresh && cachedIngestionData) {
     return filterIngestionData(cachedIngestionData, filters);
   }
 
-  if (!inFlightIngestionDataPromise) {
-    inFlightIngestionDataPromise = fetchIngestionBaseData().finally(() => {
-      inFlightIngestionDataPromise = null;
-    });
-  }
+  try {
+    if (!inFlightIngestionDataPromise) {
+      inFlightIngestionDataPromise = fetchIngestionBaseData().finally(() => {
+        inFlightIngestionDataPromise = null;
+      });
+    }
 
-  const baseData = await inFlightIngestionDataPromise;
-  cachedIngestionData = baseData;
-  return filterIngestionData(baseData, filters);
+    const baseData = await inFlightIngestionDataPromise;
+    cachedIngestionData = baseData;
+    return filterIngestionData(baseData, filters);
+  } catch (err) {
+    if (cachedIngestionData) {
+      console.warn(
+        '[phone-ingestion-dashboard] Failed to refresh ingestion data, falling back to cached state:',
+        err instanceof Error ? err.message : String(err),
+      );
+      return filterIngestionData(cachedIngestionData, filters);
+    }
+    throw err;
+  }
 }
 
 async function fetchIngestionBaseData(): Promise<{

@@ -112,7 +112,7 @@ async function safeQuery<T>(
   promise: Promise<T>,
   fallback: T,
   label: string,
-  timeoutMs = 5000,
+  timeoutMs = 12000,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -168,16 +168,33 @@ async function fetchDashboardBaseData(): Promise<{
   readonly expiresAtMs: number;
 }> {
   const db = getDb();
-  const candidateRows = await requireQuery(loadCandidates(db), 'loadCandidates');
-  const candidateIds = candidateRows.map((c) => c.id);
-  const [summary, activePhoneRows, issuesRows] = await Promise.all([
-    loadDatabaseSummary(db, true),
-    requireQuery(loadActivePhones(db), 'loadActivePhones'),
-    requireQuery(
-      loadQualityIssuesForCandidates(db, candidateIds),
-      'loadQualityIssuesForCandidates',
+  const [candidateRows, activePhoneRows, queueResult] = await Promise.all([
+    requireQuery(loadCandidates(db), 'loadCandidates', 15000),
+    requireQuery(loadActivePhones(db), 'loadActivePhones', 15000),
+    safeQuery(
+      db
+        .select({
+          queueCount:
+            sql<number>`count(*) filter (where ${crawlQueue.status} in ('queued', 'in_progress'))::int`.mapWith(
+              Number,
+            ),
+        })
+        .from(crawlQueue)
+        .innerJoin(phones, eq(crawlQueue.phoneId, phones.id))
+        .where(eq(phones.status, 'active')),
+      [{ queueCount: 0 }],
+      'loadQueueSummary',
+      10000,
     ),
   ]);
+
+  const candidateIds = candidateRows.map((c) => c.id);
+  const issuesRows = await safeQuery(
+    loadQualityIssuesForCandidates(db, candidateIds),
+    [],
+    'loadQualityIssuesForCandidates',
+    10000,
+  );
 
   const issuesByCandidateId = new Map<string, typeof issuesRows>();
   for (const issue of issuesRows) {
@@ -191,15 +208,34 @@ async function fetchDashboardBaseData(): Promise<{
   const deviceItems: DeviceRowItem[] = [];
   const promotedSlugs = new Set<string>();
 
+  let candBlocked = 0;
+  let candPending = 0;
+  let candQueued = 0;
+  let candPipeline = 0;
+  let candArchived = 0;
+  let candTotalActive = 0;
+
   for (const candidate of candidateRows) {
     const candidateIssues = issuesByCandidateId.get(candidate.id) ?? [];
-    const category =
+    const isArchived =
       candidate.excluded ||
       isArchivedCatalogCandidate(candidate.issueCodes) ||
-      candidate.matchedStatus === 'archived'
-        ? 'archived'
-        : categorizeCandidate(candidate.status, candidate.decision);
+      candidate.matchedStatus === 'archived';
+    const category = isArchived
+      ? 'archived'
+      : categorizeCandidate(candidate.status, candidate.decision);
     const blockedReason = deriveBlockedReason(candidate, candidateIssues);
+
+    if (isArchived) {
+      candArchived++;
+    } else {
+      candTotalActive++;
+      if (category === 'blocked') candBlocked++;
+      else if (category === 'pending') candPending++;
+      else if (category === 'queued') candQueued++;
+      else if (category === 'pipeline') candPipeline++;
+    }
+
     if (category === 'promoted' && candidate.matchedSlug) {
       if (promotedSlugs.has(candidate.matchedSlug)) continue;
       promotedSlugs.add(candidate.matchedSlug);
@@ -297,6 +333,17 @@ async function fetchDashboardBaseData(): Promise<{
     if (item.brand && item.category !== 'archived') brandSet.add(item.brand);
   }
   const brands = Array.from(brandSet).sort();
+  const queue = queueResult[0]?.queueCount ?? 0;
+  const summary: DatabaseDashboardSummary = {
+    totalActivePhones: activePhoneRows.length,
+    totalCandidates: candTotalActive,
+    promotedCount: activePhoneRows.length,
+    blockedCount: candBlocked,
+    pendingCount: candPending,
+    queuedCount: candQueued + queue,
+    inPipelineCount: candPipeline,
+    archivedCount: candArchived,
+  };
   const now = Date.now();
   return {
     summary,
@@ -312,10 +359,9 @@ async function loadDatabaseDashboardDataInternal(
   options: { forceRefresh?: boolean } = {},
 ): Promise<DatabaseDashboardData> {
   const now = Date.now();
-  if (options.forceRefresh) {
-    cachedDashboardBase = null;
-    cachedCommandCenterDb = null;
-  }
+  const shouldFetchFresh =
+    options.forceRefresh || !cachedDashboardBase || now >= cachedDashboardBase.expiresAtMs;
+
   let baseData: {
     readonly summary: DatabaseDashboardSummary;
     readonly blockedReasons: readonly BlockedReasonItem[];
@@ -323,17 +369,29 @@ async function loadDatabaseDashboardDataInternal(
     readonly brands: readonly string[];
   };
 
-  if (cachedDashboardBase && now < cachedDashboardBase.expiresAtMs) {
+  if (!shouldFetchFresh && cachedDashboardBase) {
     baseData = cachedDashboardBase;
   } else {
-    if (!inFlightDashboardBasePromise) {
-      inFlightDashboardBasePromise = fetchDashboardBaseData().finally(() => {
-        inFlightDashboardBasePromise = null;
-      });
+    try {
+      if (!inFlightDashboardBasePromise) {
+        inFlightDashboardBasePromise = fetchDashboardBaseData().finally(() => {
+          inFlightDashboardBasePromise = null;
+        });
+      }
+      const fresh = await inFlightDashboardBasePromise;
+      cachedDashboardBase = fresh;
+      baseData = fresh;
+    } catch (err) {
+      if (cachedDashboardBase) {
+        console.warn(
+          '[database-dashboard] Failed to refresh base data, falling back to cached state:',
+          err instanceof Error ? err.message : String(err),
+        );
+        baseData = cachedDashboardBase;
+      } else {
+        throw err;
+      }
     }
-    const fresh = await inFlightDashboardBasePromise;
-    cachedDashboardBase = fresh;
-    baseData = fresh;
   }
 
   const { summary, blockedReasons, devices: deviceItems, brands } = baseData;
@@ -385,8 +443,8 @@ async function loadDatabaseDashboardDataInternal(
   };
 }
 
-async function requireQuery<T>(promise: Promise<T>, label: string): Promise<T> {
-  const result = await safeQuery<T | undefined>(promise, undefined, label, 8000);
+async function requireQuery<T>(promise: Promise<T>, label: string, timeoutMs = 15000): Promise<T> {
+  const result = await safeQuery<T | undefined>(promise, undefined, label, timeoutMs);
   if (result === undefined) throw new Error(`${label}: database query unavailable`);
   return result;
 }
@@ -526,7 +584,7 @@ async function loadTopBlockedReason(db: AppDb): Promise<string> {
 async function fetchCommandCenterDatabaseSummary(): Promise<CommandCenterDatabaseSummary> {
   const db = getDb();
   const [summary, topBlockedReason] = await Promise.all([
-    loadDatabaseSummary(db, true),
+    loadDatabaseSummary(db, false),
     loadTopBlockedReason(db),
   ]);
 
@@ -540,22 +598,33 @@ export async function loadCommandCenterDatabaseSummary(
   options: { forceRefresh?: boolean } = {},
 ): Promise<CommandCenterDatabaseSummary> {
   const now = Date.now();
-  if (options.forceRefresh) {
-    cachedCommandCenterDb = null;
-    cachedDashboardBase = null;
-  } else if (cachedCommandCenterDb && now < cachedCommandCenterDb.expiresAtMs) {
+  const shouldFetchFresh =
+    options.forceRefresh || !cachedCommandCenterDb || now >= cachedCommandCenterDb.expiresAtMs;
+
+  if (!shouldFetchFresh && cachedCommandCenterDb) {
     return cachedCommandCenterDb.data;
   }
 
-  if (!inFlightCommandCenterDbPromise) {
-    inFlightCommandCenterDbPromise = fetchCommandCenterDatabaseSummary().finally(() => {
-      inFlightCommandCenterDbPromise = null;
-    });
-  }
+  try {
+    if (!inFlightCommandCenterDbPromise) {
+      inFlightCommandCenterDbPromise = fetchCommandCenterDatabaseSummary().finally(() => {
+        inFlightCommandCenterDbPromise = null;
+      });
+    }
 
-  const result = await inFlightCommandCenterDbPromise;
-  cachedCommandCenterDb = { data: result, expiresAtMs: now + 600_000 };
-  return result;
+    const result = await inFlightCommandCenterDbPromise;
+    cachedCommandCenterDb = { data: result, expiresAtMs: now + 600_000 };
+    return result;
+  } catch (err) {
+    if (cachedCommandCenterDb) {
+      console.warn(
+        '[database-dashboard] Failed to refresh command center summary, falling back to cached state:',
+        err instanceof Error ? err.message : String(err),
+      );
+      return cachedCommandCenterDb.data;
+    }
+    return { summary: EMPTY_DASHBOARD_DATA, topBlockedReason: 'None' };
+  }
 }
 
 async function loadCandidates(db: AppDb) {

@@ -1,3 +1,4 @@
+import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
@@ -207,7 +208,9 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
     search: searchParam,
   };
 
-  const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+  const forceRefresh = Boolean(
+    params.refresh && params.refresh !== '0' && params.refresh !== 'false',
+  );
 
   let catalogData: DatabaseDashboardData;
   let ingestionData: PhoneIngestionData;
@@ -217,7 +220,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
   if (viewParam === 'catalog') {
     const [cData, iSummary] = await Promise.all([
       loadDatabaseDashboardData(catalogFilterParams, { forceRefresh }),
-      loadCommandCenterIngestionSummary({ forceRefresh }),
+      loadCommandCenterIngestionSummary({ forceRefresh: false }),
     ]);
     catalogData = cData;
     catalogBadgeCount = cData.summary.totalCandidates;
@@ -231,7 +234,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
   } else {
     const [iData, cSummary] = await Promise.all([
       loadPhoneIngestionDashboardData(ingestionFilterParams, { forceRefresh }),
-      loadCommandCenterDatabaseSummary({ forceRefresh }),
+      loadCommandCenterDatabaseSummary({ forceRefresh: false }),
     ]);
     ingestionData = iData;
     ingestionBadgeText = `${iData.summary.completedCount}/${iData.summary.totalActivePhones}`;
@@ -283,12 +286,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
             <span className="status-dot text-accent" data-state="running" />
             Database: Connected
           </div>
-          <Link
-            href={`/internal/database?view=${viewParam}&refresh=1`}
-            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
-          >
-            {forceRefresh ? 'Refreshed' : 'Refresh'}
-          </Link>
+          <InternalRefreshButton label={forceRefresh ? 'Refreshed' : 'Refresh'} />
         </div>
       </header>
 

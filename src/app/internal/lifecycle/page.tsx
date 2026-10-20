@@ -1,3 +1,4 @@
+import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -359,7 +360,7 @@ async function loadLifecycleDeviceData(
 
 export default async function LifecycleExplorerPage({ searchParams }: PageProps) {
   const raw = await searchParams;
-  const isRefresh = raw.refresh === 'true' || raw.refresh === '1';
+  const isRefresh = Boolean(raw.refresh && raw.refresh !== '0' && raw.refresh !== 'false');
   const selectedSlugParam = raw.phone;
   const selectedSlug = Array.isArray(selectedSlugParam)
     ? (selectedSlugParam[0] ?? null)
@@ -480,12 +481,7 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
               Probe: {selectedPhoneLabel}
             </span>
           </div>
-          <Link
-            href={`/internal/lifecycle?refresh=true${selectedSlug ? `&phone=${encodeURIComponent(selectedSlug)}` : ''}`}
-            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
-          >
-            Refresh Probe
-          </Link>
+          <InternalRefreshButton label="Refresh Probe" />
         </div>
       </header>
 
