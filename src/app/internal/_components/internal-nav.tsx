@@ -101,7 +101,6 @@ export function InternalNav() {
               <Link
                 key={href}
                 href={href}
-                prefetch={false}
                 onClick={() => {
                   if (!active) setPendingHref(href);
                 }}
@@ -206,7 +205,6 @@ export function InternalMobileHeader() {
             <Link
               key={href}
               href={href}
-              prefetch={false}
               onClick={() => {
                 if (!active) setPendingHref(href);
               }}

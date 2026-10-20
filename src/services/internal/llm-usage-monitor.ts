@@ -5,15 +5,19 @@ import { getDb } from '@/services/db/client';
 import { llmCache, llmUsageEvents } from '@/services/db/schema';
 
 import {
+  clearGeminiQuotaCache,
   fetchGeminiQuotaFromGoogle,
   getConfiguredGeminiKeyCount,
   getConfiguredGeminiQuotaProjects,
   startOfPacificDay,
   type GeminiQuotaFetchResult,
 } from './google-gemini-quota';
+import { getConfiguredGeminiKeys } from '@/services/llm/gemini-keys';
 
 export type LocalKeyQuotaBreakdown = {
   readonly apiKeyIndex: number;
+  readonly keyName?: string;
+  readonly projectId?: string | null;
   readonly callsToday: number;
   readonly tokensToday: number;
   readonly remainingCalls: number | null;
@@ -90,9 +94,14 @@ let inFlightLlmDataPromise: Promise<{
   readonly expiresAtMs: number;
 }> | null = null;
 
-export async function loadLlmUsageMonitorData(): Promise<LlmUsageMonitorData> {
+export async function loadLlmUsageMonitorData(
+  options: { forceRefresh?: boolean } = {},
+): Promise<LlmUsageMonitorData> {
   const nowMs = Date.now();
-  if (cachedLlmData && nowMs < cachedLlmData.expiresAtMs) {
+  if (options.forceRefresh) {
+    cachedLlmData = null;
+    clearGeminiQuotaCache();
+  } else if (cachedLlmData && nowMs < cachedLlmData.expiresAtMs) {
     return cachedLlmData.data;
   }
 
@@ -124,7 +133,7 @@ async function fetchLlmUsageDataInternal(): Promise<{
   const db = getDb();
   const now = new Date();
   const [googleQuota, keyUsageRows, sevenDayRows, recentEvents, cacheStats] = await Promise.all([
-    timedQuery(fetchGeminiQuotaFromGoogle(), googleQuotaTimeoutFallback(now), 3000),
+    timedQuery(fetchGeminiQuotaFromGoogle(), googleQuotaTimeoutFallback(now), 8000),
     optionalQuery(
       timedQuery(
         db.execute(sql`
@@ -282,16 +291,25 @@ async function fetchLlmUsageDataInternal(): Promise<{
     keyUsageMap.set(kIndex, { calls: prev.calls + c, tokens: prev.tokens + inTok + outTok });
   }
 
+  const configuredKeys = getConfiguredGeminiKeys(env);
   const keysBreakdown = Array.from({ length: configuredKeyCount }, (_, idx) => {
     const stats = keyUsageMap.get(idx) ?? { calls: 0, tokens: 0 };
+    const keyConfig = configuredKeys[idx];
+    const keyLimit = dailyLimitPerKey;
+    const remainingCalls = keyLimit !== null ? Math.max(0, keyLimit - stats.calls) : null;
     return {
       apiKeyIndex: idx,
+      keyName: keyConfig?.name ?? `GEMINI_KEY_${idx + 1}`,
+      projectId: keyConfig?.projectId ?? null,
       callsToday: stats.calls,
       tokensToday: stats.tokens,
-      remainingCalls: null,
-      limit: dailyLimitPerKey,
+      remainingCalls,
+      limit: keyLimit,
     };
   });
+
+  const remainingCallsToday =
+    totalDailyLimit !== null ? Math.max(0, totalDailyLimit - callsToday) : null;
 
   const localQuota: LocalQuotaSummary = {
     callsToday,
@@ -299,7 +317,7 @@ async function fetchLlmUsageDataInternal(): Promise<{
     outputTokensToday,
     dailyLimitPerKey,
     totalDailyLimit,
-    remainingCallsToday: null,
+    remainingCallsToday,
     keysBreakdown,
   };
 

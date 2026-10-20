@@ -5,7 +5,7 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
+**Status.** **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with header on-demand refresh, interactive clickable KPI drill-downs with smooth-scroll filtering across all 5 internal workspaces, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
 Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
@@ -4247,11 +4247,19 @@ To permanently resolve the quota breach, prevent regressions, and ensure the pro
   - Replaced arbitrary `LIMIT 300` unordered quality issues with `loadQualityIssuesForCandidates` using `WHERE candidate_id IN (...) ORDER BY created_at DESC`, guaranteeing exact diagnostics for displayed candidates while minimizing data egress.
 - **7-Day LLM Query Consolidation** (`src/services/internal/llm-usage-monitor.ts`):
   - Replaced 3 separate 7-day table scans on `llm_usage_events` with a single query grouping by `(usage_area, model)`, aggregating `totals`, `topAreas`, and `modelMix` in-memory.
-- **In-Flight Coalescing & Extended TTLs**:
+- **In-Flight Coalescing, Conditional ETag & Extended TTLs**:
   - Command Center / Ingestion metrics: 5-minute TTL (`src/services/internal/phone-ingestion-dashboard.ts`).
   - Database dashboard / Catalog inventory: 10-minute TTL (`src/services/internal/database-dashboard.ts`).
-  - Pipeline runs monitor: 1-minute TTL (`src/services/internal/pipeline-run-monitor.ts`).
-  - Lifecycle phone direct slug lookup & 10-minute options cache (`src/app/internal/lifecycle/page.tsx`).
+  - Pipeline runs monitor: 5-minute TTL with GitHub conditional `If-None-Match` (`ETag`) headers to consume zero GitHub API rate limit quota on unchanged runs (`src/services/internal/pipeline-run-monitor.ts`).
+  - Benchmark evaluation runs repository: 5-minute TTL memory cache (`src/services/eval/storage/benchmark-repository.ts`).
+  - Lifecycle device probe: 5-minute per-slug cache and 24-chunk preview truncation saving Supabase egress (`src/app/internal/lifecycle/page.tsx`).
+- **Gemini Quota Fault Isolation & Unified Key Roster**:
+  - `src/services/internal/google-gemini-quota.ts` tracks per-project health (`projectStatuses: { ok | error }`) with `Promise.allSettled` and an 8s timeout, ensuring an unconfigured or errored Google Cloud project cannot crash the UI or hide healthy keys.
+  - Multi-key roster table in `src/app/internal/pipeline/_components/llm-usage-monitor.tsx` shows all configured keys side-by-side with individual status badges (`GCP Verified`, `Local Ledger`, `Ledger (IAM Pending)`), eliminating "Unknown" quota displays with graceful local ledger fallback.
+- **Universal Caching, Clickable Drill-Down KPI Cards & Decluttered Evaluation Hub**:
+  - Unified `forceRefresh` support with header "Refresh" buttons across all 5 workspace pages (`/internal/command-center`, `/internal/database`, `/internal/pipelines`, `/internal/lifecycle`, `/internal/eval`). Enabled Next.js viewport prefetching for instant tab-to-tab page transitions.
+  - All top summary KPI cards are interactive `<Link>` drill-downs with smooth-scroll and URL parameter filtering.
+  - Decluttered `/internal/eval` into 3 dedicated operational tabs (Benchmark Suite & Results, Telemetry Diagnostics, Production Campaign Evidence) with compact toolbar and zero capability regressions.
 
 #### Phase E: Scheduled Work Containment & Work Claims
 

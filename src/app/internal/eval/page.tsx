@@ -13,13 +13,19 @@ export const metadata: Metadata = {
     'RECSY component evaluation with explicit fixture, provider and measurement boundaries.',
 };
 
-export default async function EvalPage() {
+interface PageProps {
+  readonly searchParams: Promise<Readonly<Record<string, string | string[] | undefined>>>;
+}
+
+export default async function EvalPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const isRefresh = params.refresh === 'true' || params.refresh === '1';
   let initialRuns: BenchmarkRunRecord[] = [];
   let initialError: string | null = null;
 
   if (env.NODE_ENV !== 'production') {
     try {
-      initialRuns = await listBenchmarkRuns(getDb(), 30);
+      initialRuns = await listBenchmarkRuns(getDb(), 30, { forceRefresh: isRefresh });
     } catch (error) {
       initialError = `Run history unavailable: ${error instanceof Error ? error.message : String(error)}`;
     }

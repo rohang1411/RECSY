@@ -1,3 +1,4 @@
+import { env } from '@/env';
 import { and, asc, desc, eq, inArray, ne, or, isNull } from 'drizzle-orm';
 import { activeCatalogCandidateSql } from '@/services/catalog/eligibility';
 
@@ -106,9 +107,14 @@ async function fetchPipelineRunMonitorDataInternal(): Promise<PipelineRunMonitor
   };
 }
 
-export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorData> {
+export async function loadPipelineRunMonitorData(
+  options: { forceRefresh?: boolean } = {},
+): Promise<PipelineRunMonitorData> {
   const now = Date.now();
-  if (cachedPipelineData && now < cachedPipelineData.expiresAtMs) {
+  if (options.forceRefresh) {
+    cachedPipelineData = null;
+    cachedGithubRuns = null;
+  } else if (cachedPipelineData && now < cachedPipelineData.expiresAtMs) {
     return cachedPipelineData.data;
   }
 
@@ -119,7 +125,7 @@ export async function loadPipelineRunMonitorData(): Promise<PipelineRunMonitorDa
   }
 
   const data = await inFlightPipelineDataPromise;
-  cachedPipelineData = { data, expiresAtMs: now + 60_000 };
+  cachedPipelineData = { data, expiresAtMs: now + 300_000 };
   return data;
 }
 
@@ -167,16 +173,30 @@ type GithubJobsResponse = {
 };
 
 const GITHUB_REPO = 'rohang1411/RECSY';
-const GITHUB_API_HEADERS = {
-  Accept: 'application/vnd.github+json',
-  'User-Agent': 'RECSY-internal-pipeline',
-  'X-GitHub-Api-Version': '2022-11-28',
-} as const;
+
+function getGithubApiHeaders(etag?: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'RECSY-internal-pipeline',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  const token = env.GITHUB_TOKEN || env.GITHUB_PAT || env.GITHUB_MODELS_TOKEN;
+  if (token) {
+    headers.Authorization = `Bearer ${token.trim()}`;
+  }
+  if (etag) {
+    headers['If-None-Match'] = etag;
+  }
+  return headers;
+}
 
 let cachedGithubRuns: {
   readonly data: readonly PipelineRunRow[];
   readonly expiresAtMs: number;
+  readonly etag: string | null;
 } | null = null;
+
+const completedJobsCache = new Map<number, readonly GithubJob[]>();
 
 async function loadGithubWorkflowRuns(): Promise<readonly PipelineRunRow[]> {
   const now = Date.now();
@@ -186,31 +206,50 @@ async function loadGithubWorkflowRuns(): Promise<readonly PipelineRunRow[]> {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const headers = getGithubApiHeaders(cachedGithubRuns?.etag);
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=15`,
       {
-        headers: GITHUB_API_HEADERS,
+        headers,
         signal: controller.signal,
-        next: { revalidate: 120 },
+        next: { revalidate: 300 },
       },
     );
     clearTimeout(timer);
+
+    if (response.status === 304 && cachedGithubRuns) {
+      cachedGithubRuns = { ...cachedGithubRuns, expiresAtMs: now + 300_000 };
+      return cachedGithubRuns.data;
+    }
+
     if (!response.ok) {
       throw new Error(`GitHub workflow run fetch failed: ${response.status}`);
     }
+    const newEtag = response.headers.get('etag');
     const payload = (await response.json()) as GithubWorkflowRunsResponse;
     const runs = payload.workflow_runs ?? [];
 
-    // Only fetch job details for runs that actually failed or had errors (where step diagnostics are needed)
+    // Only fetch job details for runs that actually failed or had errors
     const failedRuns = runs
       .filter((run) => run.conclusion && run.conclusion !== 'success')
       .slice(0, 4);
-    const jobDetails = await Promise.all(failedRuns.map((run) => loadGithubJobs(run)));
+    const jobDetails = await Promise.all(
+      failedRuns.map(async (run) => {
+        if (completedJobsCache.has(run.id)) {
+          return { runId: run.id, jobs: completedJobsCache.get(run.id) ?? [] };
+        }
+        const loaded = await loadGithubJobs(run);
+        if (run.status === 'completed') {
+          completedJobsCache.set(run.id, loaded.jobs);
+        }
+        return loaded;
+      }),
+    );
     const jobsByRun = new Map(jobDetails.map((item) => [item.runId, item.jobs]));
 
     const result = runs.map((run) => githubRunToRow(run, jobsByRun.get(run.id) ?? []));
-    cachedGithubRuns = { data: result, expiresAtMs: now + 120_000 };
+    cachedGithubRuns = { data: result, expiresAtMs: now + 300_000, etag: newEtag };
     return result;
   } catch (error) {
     console.warn(
@@ -228,9 +267,9 @@ async function loadGithubJobs(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
     const response = await fetch(run.jobs_url, {
-      headers: GITHUB_API_HEADERS,
+      headers: getGithubApiHeaders(),
       signal: controller.signal,
-      next: { revalidate: 120 },
+      next: { revalidate: 300 },
     });
     clearTimeout(timer);
     if (!response.ok) return { runId: run.id, jobs: [] };
@@ -808,8 +847,10 @@ function isPresent<T>(value: T | null | undefined | false): value is T {
   return Boolean(value);
 }
 
-export async function loadAllUnifiedPipelineRuns(): Promise<readonly PipelineRunRow[]> {
-  const data = await loadPipelineRunMonitorData();
+export async function loadAllUnifiedPipelineRuns(
+  options: { forceRefresh?: boolean } = {},
+): Promise<readonly PipelineRunRow[]> {
+  const data = await loadPipelineRunMonitorData(options);
   const allRuns: PipelineRunRow[] = [
     ...data.catalogRefreshRuns,
     ...data.ingestionRuns,

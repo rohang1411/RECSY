@@ -54,4 +54,16 @@ describe('verified daily quota summary', () => {
       remaining: null,
     });
   });
+  it('filters by preferredModel when multi-model rows are present', () => {
+    expect(
+      summarizeVerifiedDailyQuota(
+        quota([
+          row,
+          { ...row, projectId: 'p2' },
+          { ...row, projectId: 'p1', model: 'pro', limit: 5, used: 1, remaining: 4 },
+        ]),
+        'flash',
+      ),
+    ).toEqual({ limit: 40, used: 6, remaining: 34 });
+  });
 });

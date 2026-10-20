@@ -207,6 +207,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
     search: searchParam,
   };
 
+  const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+
   let catalogData: DatabaseDashboardData;
   let ingestionData: PhoneIngestionData;
   let catalogBadgeCount: number;
@@ -214,8 +216,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
 
   if (viewParam === 'catalog') {
     const [cData, iSummary] = await Promise.all([
-      loadDatabaseDashboardData(catalogFilterParams),
-      loadCommandCenterIngestionSummary(),
+      loadDatabaseDashboardData(catalogFilterParams, { forceRefresh }),
+      loadCommandCenterIngestionSummary({ forceRefresh }),
     ]);
     catalogData = cData;
     catalogBadgeCount = cData.summary.totalCandidates;
@@ -228,8 +230,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
     };
   } else {
     const [iData, cSummary] = await Promise.all([
-      loadPhoneIngestionDashboardData(ingestionFilterParams),
-      loadCommandCenterDatabaseSummary(),
+      loadPhoneIngestionDashboardData(ingestionFilterParams, { forceRefresh }),
+      loadCommandCenterDatabaseSummary({ forceRefresh }),
     ]);
     ingestionData = iData;
     ingestionBadgeText = `${iData.summary.completedCount}/${iData.summary.totalActivePhones}`;
@@ -253,7 +255,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
   return (
     <main className="px-grid-margin min-w-0 flex-1 py-10">
       {/* Header */}
-      <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-6 lg:flex-row lg:items-end lg:justify-between">
+      <header className="accent-hairline border-outline-variant mb-6 flex flex-col gap-6 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Link
@@ -273,19 +275,19 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           <p className="text-muted-foreground mt-3 font-mono text-xs tracking-[0.16em] uppercase">
             {viewParam === 'ingestion'
               ? 'Phone review ingestion status, corpus evidence coverage, and pending root-cause diagnostics'
-              : 'Catalog phone inventory, candidate pipeline statuses, and quarantine root-cause diagnostics'}
+              : 'Catalog candidate inventory, review queue, and validation diagnostics'}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-primary inline-flex items-center gap-2 font-mono text-xs tracking-[0.14em] uppercase">
             <span className="status-dot text-accent" data-state="running" />
             Database: Connected
           </div>
           <Link
-            href={`/internal/database?view=${viewParam}`}
+            href={`/internal/database?view=${viewParam}&refresh=1`}
             className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
           >
-            Refresh
+            {forceRefresh ? 'Refreshed' : 'Refresh'}
           </Link>
         </div>
       </header>
@@ -356,9 +358,14 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               {catalogData.dataWarning}
             </p>
           )}
-          {/* KPI Overview Grid */}
+          {/* KPI Overview Grid - Clickable Drill-Down Cards */}
           <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-5">
-            <div className="bg-background p-6">
+            <Link
+              href={`/internal/database?view=catalog&status=promoted${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'promoted' ? 'bg-[#39ff88]/5 ring-2 ring-[#39ff88] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label">Promoted / Active</p>
                 <span className="size-2 rounded-full bg-[#39ff88]" />
@@ -366,12 +373,17 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.promotedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs">
-                Active in canonical phone catalog
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
+                Active canonical devices
               </p>
-            </div>
+            </Link>
 
-            <div className="bg-background p-6">
+            <Link
+              href={`/internal/database?view=catalog&status=blocked${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'blocked' ? 'bg-[#ff3b30]/5 ring-2 ring-[#ff3b30] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#ff3b30]">Blocked / Quarantined</p>
                 <span className="size-2 rounded-full bg-[#ff3b30]" />
@@ -379,12 +391,17 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold text-[#ff3b30]">
                 {catalogData.summary.blockedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Validation failures & errors
               </p>
-            </div>
+            </Link>
 
-            <div className="bg-background p-6">
+            <Link
+              href={`/internal/database?view=catalog&status=pending${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'pending' ? 'bg-[#ffe45e]/5 ring-2 ring-[#ffe45e] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#ffe45e]">Pending Review</p>
                 <span className="size-2 rounded-full bg-[#ffe45e]" />
@@ -392,12 +409,17 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.pendingCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs">
-                Awaiting manual or staged review
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
+                Pending review queue
               </p>
-            </div>
+            </Link>
 
-            <div className="bg-background p-6">
+            <Link
+              href={`/internal/database?view=catalog&status=pipeline${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'pipeline' ? 'bg-[#00d2ff]/5 ring-2 ring-[#00d2ff] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#00d2ff]">In Pipeline</p>
                 <span className="size-2 rounded-full bg-[#00d2ff]" />
@@ -405,12 +427,17 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.inPipelineCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs">
-                Discovered, fetching, or extracting
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
+                Active in pipeline
               </p>
-            </div>
+            </Link>
 
-            <div className="bg-background p-6 md:col-span-2 xl:col-span-1">
+            <Link
+              href={`/internal/database?view=catalog&status=queued${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors md:col-span-2 xl:col-span-1 ${
+                statusParam === 'queued' ? 'ring-accent bg-accent/5 ring-2 ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label">Queued</p>
                 <span className="bg-muted-foreground size-2 rounded-full" />
@@ -418,10 +445,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.queuedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Scheduled for crawl / promotion
               </p>
-            </div>
+            </Link>
           </section>
 
           {/* Blocked Reasons Breakdown Rail */}
@@ -571,7 +598,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           </section>
 
           {/* Phones and Candidates Table */}
-          <section className="border-outline-variant bg-background mt-6 border">
+          <section
+            id="catalog-table"
+            className="border-outline-variant bg-background mt-6 scroll-mt-20 border"
+          >
             <div className="border-outline-variant flex items-center justify-between border-b p-4">
               <p className="meta-label text-primary">
                 Showing {catalogData.devices.length}{' '}
@@ -622,10 +652,15 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
       ) : (
         /* CONDITIONAL PERSPECTIVE: VIEW 2 - PHONE INGESTION & CORPUS HEALTH */
         <>
-          {/* Ingestion KPI Overview Rail */}
+          {/* Ingestion KPI Overview Rail - Clickable Drill-Down Cards */}
           <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
             {/* Card 1: Ingestion Completion */}
-            <div className="bg-background relative overflow-hidden p-6">
+            <Link
+              href={`/internal/database?view=ingestion&status=complete${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'complete' ? 'bg-[#39ff88]/5 ring-2 ring-[#39ff88] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#39ff88]">Ingestion Complete</p>
                 <span className="size-2 animate-pulse rounded-full bg-[#39ff88]" />
@@ -647,13 +682,18 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   {ingestionData.summary.completionPercentage}%
                 </span>
               </div>
-              <p className="text-muted-foreground mt-2 font-mono text-[11px]">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-[11px] transition-colors">
                 {ingestionData.summary.pendingCount} active phones pending evidence
               </p>
-            </div>
+            </Link>
 
             {/* Card 2: Pending Ingestion Breakdown */}
-            <div className="bg-background relative overflow-hidden p-6">
+            <Link
+              href={`/internal/database?view=ingestion&status=pending${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'pending' ? 'bg-[#ffe45e]/5 ring-2 ring-[#ffe45e] ring-inset' : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#ffe45e]">Pending Ingestion</p>
                 <span className="size-2 rounded-full bg-[#ffe45e]" />
@@ -683,13 +723,20 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   </span>
                 ) : null}
               </div>
-              <p className="text-muted-foreground mt-2 font-mono text-[11px]">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-[11px] transition-colors">
                 Awaiting scraper, curation or quota reset
               </p>
-            </div>
+            </Link>
 
             {/* Card 3: Corpus Volume & Density */}
-            <div className="bg-background relative overflow-hidden p-6">
+            <Link
+              href={`/internal/database?view=ingestion&status=all${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'all' && reasonParam === 'all'
+                  ? 'ring-primary bg-primary/5 ring-2 ring-inset'
+                  : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-primary">Evidence Chunks</p>
                 <span className="bg-primary size-2 rounded-full" />
@@ -703,10 +750,17 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="text-primary mt-1 font-mono text-[11px]">
                 Avg {ingestionData.summary.avgChunksPerPhone} chunks / phone
               </p>
-            </div>
+            </Link>
 
             {/* Card 4: Scorecard Synthesis */}
-            <div className="bg-background relative overflow-hidden p-6">
+            <Link
+              href={`/internal/database?view=ingestion&reason=missing_scorecard${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                reasonParam === 'missing_scorecard'
+                  ? 'bg-[#00d2ff]/5 ring-2 ring-[#00d2ff] ring-inset'
+                  : ''
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <p className="meta-label text-[#00d2ff]">Scorecards Synthesized</p>
                 <span className="size-2 rounded-full bg-[#00d2ff]" />
@@ -728,7 +782,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               ) : (
                 <p className="mt-1 font-mono text-[11px] text-[#39ff88]">100% scorecard coverage</p>
               )}
-            </div>
+            </Link>
           </section>
 
           {/* "Why Ingestion is Pending" Diagnostic Grid */}
@@ -896,7 +950,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           </section>
 
           {/* Phone Ingestion Ledger Table */}
-          <section className="border-outline-variant bg-background mt-6 border">
+          <section
+            id="ingestion-table"
+            className="border-outline-variant bg-background mt-6 scroll-mt-20 border"
+          >
             <div className="border-outline-variant flex items-center justify-between border-b p-4">
               <p className="meta-label text-primary">
                 Showing {ingestionData.rows.length}{' '}

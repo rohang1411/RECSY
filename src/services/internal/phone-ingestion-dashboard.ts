@@ -360,20 +360,27 @@ async function safeQuery<T>(
   }
 }
 
-export async function loadCommandCenterIngestionSummary(): Promise<PhoneIngestionSummary> {
+export async function loadCommandCenterIngestionSummary(
+  options: { forceRefresh?: boolean } = {},
+): Promise<PhoneIngestionSummary> {
   const now = Date.now();
-  if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
+  if (options.forceRefresh) {
+    cachedIngestionData = null;
+  } else if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
     return cachedIngestionData.summary;
   }
-  const data = await loadPhoneIngestionDashboardData();
+  const data = await loadPhoneIngestionDashboardData({}, options);
   return data.summary;
 }
 
 export async function loadPhoneIngestionDashboardData(
   filters: IngestionFilterParams = {},
+  options: { forceRefresh?: boolean } = {},
 ): Promise<PhoneIngestionData> {
   const now = Date.now();
-  if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
+  if (options.forceRefresh) {
+    cachedIngestionData = null;
+  } else if (cachedIngestionData && cachedIngestionData.expiresAtMs > now) {
     return filterIngestionData(cachedIngestionData, filters);
   }
 
