@@ -35,7 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       secure: env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 12 * 60 * 60, // 12 hours
+      maxAge: 7 * 24 * 60 * 60, // 7 days
     });
 
     return res;

@@ -14,7 +14,7 @@ import { cookies, headers } from 'next/headers';
 import { env } from '@/env';
 
 export const OPERATOR_COOKIE_NAME = 'recsy_operator_session';
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface SessionPayload {
   readonly iat: number;
