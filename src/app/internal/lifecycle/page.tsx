@@ -550,7 +550,10 @@ export default async function LifecycleExplorerPage({ searchParams }: PageProps)
 
       {/* Corpus Overview & Chunk Workbench */}
       <section className="mt-12 grid gap-8 lg:grid-cols-12">
-        <div id="corpus-overview" className="border-outline-variant bg-background scroll-mt-20 border lg:col-span-5">
+        <div
+          id="corpus-overview"
+          className="border-outline-variant bg-background scroll-mt-20 border lg:col-span-5"
+        >
           <div className="border-outline-variant border-b p-5">
             <SectionHint label="Corpus overview">
               Summarizes the selected phone&apos;s stored evidence coverage, scorecard readiness,

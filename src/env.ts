@@ -54,6 +54,8 @@ export const env = createEnv({
     NVIDIA_NIM_API_KEY_2: z.string().optional(),
     CEREBRAS_API_KEY: z.string().optional(),
     GITHUB_MODELS_TOKEN: z.string().optional(),
+    GITHUB_TOKEN: z.string().optional(),
+    GITHUB_PAT: z.string().optional(),
     OPENROUTER_API_KEY: z.string().optional(),
     LLM_ROUTER_ENABLED: z
       .string()
@@ -177,6 +179,8 @@ export const env = createEnv({
     NVIDIA_NIM_API_KEY_2: process.env.NVIDIA_NIM_API_KEY_2,
     CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
     GITHUB_MODELS_TOKEN: process.env.GITHUB_MODELS_TOKEN,
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    GITHUB_PAT: process.env.GITHUB_PAT,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     LLM_ROUTER_ENABLED: process.env.LLM_ROUTER_ENABLED ?? 'true',
     LLM_FAST_MODEL: process.env.LLM_FAST_MODEL ?? 'llama-3.1-8b-instant',

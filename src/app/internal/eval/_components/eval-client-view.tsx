@@ -85,7 +85,9 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
   const [compareBaselineId, setCompareBaselineId] = useState<string | null>(null);
 
   // Active Hub Tab
-  const [activeTab, setActiveTab] = useState<'benchmarks' | 'diagnostics' | 'campaign'>('benchmarks');
+  const [activeTab, setActiveTab] = useState<'benchmarks' | 'diagnostics' | 'campaign'>(
+    'benchmarks',
+  );
 
   const scrollToTestCases = (category?: string, status?: string) => {
     if (category) setCategoryFilter(category);
@@ -509,7 +511,7 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 Evaluation Hub
               </span>
             </div>
-            <div className="flex items-center gap-3 mt-2">
+            <div className="mt-2 flex items-center gap-3">
               <h1 className="text-foreground flex items-center gap-2 font-mono text-3xl font-extrabold tracking-tight uppercase sm:text-4xl">
                 <Gauge className="text-primary h-7 w-7" />
                 Evaluation & Benchmarks
@@ -569,7 +571,10 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
         <div className="border-border/60 bg-muted/20 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 font-mono text-xs">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <label htmlFor="eval-access-token" className="text-muted-foreground text-[11px] uppercase">
+              <label
+                htmlFor="eval-access-token"
+                className="text-muted-foreground text-[11px] uppercase"
+              >
                 Access Token:
               </label>
               <input
@@ -591,7 +596,10 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
             </div>
 
             <div className="flex items-center gap-2">
-              <label htmlFor="eval-provider-track" className="text-muted-foreground text-[11px] uppercase">
+              <label
+                htmlFor="eval-provider-track"
+                className="text-muted-foreground text-[11px] uppercase"
+              >
                 Provider:
               </label>
               <select
@@ -635,29 +643,29 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
         )}
 
         {/* 3 Nav Tabs */}
-        <div className="flex flex-wrap gap-1 border-b border-border/40 font-mono text-xs uppercase">
+        <div className="border-border/40 flex flex-wrap gap-1 border-b font-mono text-xs uppercase">
           <button
             onClick={() => setActiveTab('benchmarks')}
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
               activeTab === 'benchmarks'
                 ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
             }`}
           >
             <span>1. Benchmarks & Results</span>
-            <span className="rounded bg-muted/60 px-1.5 py-0.2 text-[10px]">{runs.length}</span>
+            <span className="bg-muted/60 py-0.2 rounded px-1.5 text-[10px]">{runs.length}</span>
           </button>
           <button
             onClick={() => setActiveTab('diagnostics')}
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
               activeTab === 'diagnostics'
                 ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
             }`}
           >
             <span>2. Telemetry & Diagnostics</span>
             {selectedRunDetails && (
-              <span className="rounded bg-primary/10 text-primary px-1.5 py-0.2 text-[10px]">
+              <span className="bg-primary/10 text-primary py-0.2 rounded px-1.5 text-[10px]">
                 {selectedRunDetails.passedTests}/{selectedRunDetails.totalTests} Pass
               </span>
             )}
@@ -667,12 +675,12 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
             className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
               activeTab === 'campaign'
                 ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
             }`}
           >
             <span>3. Campaign Evidence & Gates</span>
             {campaign && (
-              <span className="rounded bg-emerald-500/10 text-emerald-500 px-1.5 py-0.2 text-[10px]">
+              <span className="py-0.2 rounded bg-emerald-500/10 px-1.5 text-[10px] text-emerald-500">
                 Loaded
               </span>
             )}
@@ -681,898 +689,921 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
       </div>
 
       {activeTab === 'benchmarks' && (
-      <div className="space-y-6">
+        <div className="space-y-6">
+          {/* ------------------------------------------------------------------ */}
+          {/* Interactive Control Rail                                           */}
+          {/* ------------------------------------------------------------------ */}
+          <div className="border-border/60 bg-card/60 space-y-4 rounded-lg border p-5 backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <h2 className="text-muted-foreground flex items-center gap-2 font-mono text-sm font-semibold tracking-wider uppercase">
+                <Sliders className="text-primary h-4 w-4" />
+                Benchmark Execution Controls
+              </h2>
+              {isRunning && (
+                <span className="text-primary flex animate-pulse items-center gap-2 font-mono text-xs font-semibold">
+                  <span className="bg-primary h-2 w-2 rounded-full" />
+                  RUNNING IN-PROGRESS
+                </span>
+              )}
+            </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Interactive Control Rail                                           */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="border-border/60 bg-card/60 space-y-4 rounded-lg border p-5 backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="text-muted-foreground flex items-center gap-2 font-mono text-sm font-semibold tracking-wider uppercase">
-            <Sliders className="text-primary h-4 w-4" />
-            Benchmark Execution Controls
-          </h2>
-          {isRunning && (
-            <span className="text-primary flex animate-pulse items-center gap-2 font-mono text-xs font-semibold">
-              <span className="bg-primary h-2 w-2 rounded-full" />
-              RUNNING IN-PROGRESS
-            </span>
-          )}
-        </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+              {/* Suite Selector */}
+              <div>
+                <label className="text-muted-foreground mb-1 block font-mono text-xs">
+                  Benchmark Suite
+                </label>
+                <select
+                  value={selectedSuite}
+                  onChange={(e) => {
+                    const s = e.target.value as
+                      | 'recsys'
+                      | 'rag'
+                      | 'load-stress'
+                      | 'multi-turn'
+                      | 'all';
+                    setSelectedSuite(s);
+                    setPreflightReport(null);
+                  }}
+                  disabled={isRunning}
+                  className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
+                >
+                  <option value="recsys">Ranker consistency and constraint checks</option>
+                  <option value="multi-turn">Multi-Turn Conversational CRS (JGA, CRR, CSR)</option>
+                  <option value="rag">Q&A citation and lexical proxy checks</option>
+                  <option value="load-stress">DB retrieval component load (1-100 workers)</option>
+                  <option value="all">Full Comprehensive Suite</option>
+                </select>
+              </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-          {/* Suite Selector */}
-          <div>
-            <label className="text-muted-foreground mb-1 block font-mono text-xs">
-              Benchmark Suite
-            </label>
-            <select
-              value={selectedSuite}
-              onChange={(e) => {
-                const s = e.target.value as 'recsys' | 'rag' | 'load-stress' | 'multi-turn' | 'all';
-                setSelectedSuite(s);
-                setPreflightReport(null);
-              }}
-              disabled={isRunning}
-              className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
-            >
-              <option value="recsys">Ranker consistency and constraint checks</option>
-              <option value="multi-turn">Multi-Turn Conversational CRS (JGA, CRR, CSR)</option>
-              <option value="rag">Q&A citation and lexical proxy checks</option>
-              <option value="load-stress">DB retrieval component load (1-100 workers)</option>
-              <option value="all">Full Comprehensive Suite</option>
-            </select>
+              {/* Concurrency Level */}
+              {selectedSuite === 'load-stress' && (
+                <div>
+                  <label className="text-muted-foreground mb-1 block font-mono text-xs">
+                    Concurrent workers (DB load probe)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 5, 10, 25, 50, 100].map((vu) => (
+                      <button
+                        key={vu}
+                        onClick={() => setConcurrencyVus(vu)}
+                        disabled={isRunning}
+                        className={`flex-1 rounded border py-1.5 font-mono text-xs font-medium transition-colors ${
+                          concurrencyVus === vu
+                            ? 'border-primary bg-primary/10 text-primary font-bold'
+                            : 'border-border/60 hover:bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {vu}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Dataset Scale */}
+              <div>
+                <label className="text-muted-foreground mb-1 block font-mono text-xs">
+                  Dataset Scale
+                </label>
+                <select
+                  value={sampleScale}
+                  onChange={(e) => setSampleScale(e.target.value as 'quick' | 'full')}
+                  disabled={isRunning}
+                  className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
+                >
+                  <option value="full">
+                    Full authored fixture set (30 personas, 20 Q&A, 15 conversations)
+                  </option>
+                  <option value="quick">Quick subset (5 personas or Q&A, 3 conversations)</option>
+                </select>
+              </div>
+              {selectedSuite === 'load-stress' && (
+                <div>
+                  <label
+                    htmlFor="eval-total-requests"
+                    className="text-muted-foreground mb-1 block font-mono text-xs"
+                  >
+                    Completed attempts (1–10,000)
+                  </label>
+                  <input
+                    id="eval-total-requests"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={totalRequests}
+                    disabled={isRunning}
+                    onChange={(e) => setTotalRequests(Number(e.target.value))}
+                    className="border-border bg-background w-full rounded border px-3 py-2 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              {/* Run Button */}
+              <div className="flex items-end">
+                <button
+                  onClick={handleExecuteBenchmark}
+                  disabled={isRunning}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded px-4 py-2.5 font-mono text-xs font-bold shadow-md transition-all disabled:opacity-50"
+                >
+                  {isRunning ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Executing...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 fill-current" />
+                      Execute Benchmark Suite
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Live Progress Banner */}
+            {isRunning && (
+              <div className="border-primary/30 bg-primary/5 space-y-2 rounded border p-3">
+                <div className="flex items-center justify-between font-mono text-xs">
+                  <span className="text-primary font-semibold">{activeTestLabel}</span>
+                  <span className="text-muted-foreground">
+                    {progressStep} / {progressTotal} (
+                    {Math.round((progressStep / (progressTotal || 1)) * 100)}%)
+                    {liveQps && (
+                      <span className="text-primary ml-2 font-bold">| QPS: {liveQps}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="bg-border/40 h-1.5 w-full overflow-hidden rounded-full">
+                  <div
+                    className="bg-primary h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, Math.round((progressStep / (progressTotal || 1)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Concurrency Level */}
-          {selectedSuite === 'load-stress' && (
-            <div>
-              <label className="text-muted-foreground mb-1 block font-mono text-xs">
-                Concurrent workers (DB load probe)
-              </label>
-              <div className="flex items-center gap-1.5">
-                {[1, 5, 10, 25, 50, 100].map((vu) => (
-                  <button
-                    key={vu}
-                    onClick={() => setConcurrencyVus(vu)}
-                    disabled={isRunning}
-                    className={`flex-1 rounded border py-1.5 font-mono text-xs font-medium transition-colors ${
-                      concurrencyVus === vu
-                        ? 'border-primary bg-primary/10 text-primary font-bold'
-                        : 'border-border/60 hover:bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {vu}
-                  </button>
-                ))}
+          {/* ------------------------------------------------------------------ */}
+          {/* Primary KPI Metric Cards (with 95% Bootstrap CIs)                   */}
+          {/* ------------------------------------------------------------------ */}
+          {currentSummary?.jointGoalAccuracy != null ||
+          selectedRunDetails?.tier === 'MULTI_TURN_CRS' ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {/* Multi-Turn 1: Joint Goal Accuracy (JGA) */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Joint Goal Accuracy (JGA)
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.jointGoalAccuracy?.mean != null
+                      ? `${(currentSummary.jointGoalAccuracy.mean * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                  {currentSummary?.jointGoalAccuracy?.ci95 && (
+                    <span className="text-muted-foreground font-mono text-[10px]">
+                      ±
+                      {(
+                        ((currentSummary.jointGoalAccuracy.ci95[1] -
+                          currentSummary.jointGoalAccuracy.ci95[0]) /
+                          2) *
+                        100
+                      ).toFixed(1)}
+                      %
+                    </span>
+                  )}
+                </div>
+                <p className="font-mono text-[10px] font-medium text-emerald-500">
+                  Exact match on annotated slots; see trace for unchecked fields
+                </p>
+              </div>
+
+              {/* Multi-Turn 2: Constraint Retention Rate (CRR) */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Constraint Retention (CRR)
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.constraintRetentionRate?.mean != null
+                      ? `${(currentSummary.constraintRetentionRate.mean * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                  {currentSummary?.constraintRetentionRate?.ci95 && (
+                    <span className="text-muted-foreground font-mono text-[10px]">
+                      ±
+                      {(
+                        ((currentSummary.constraintRetentionRate.ci95[1] -
+                          currentSummary.constraintRetentionRate.ci95[0]) /
+                          2) *
+                        100
+                      ).toFixed(1)}
+                      %
+                    </span>
+                  )}
+                </div>
+                <p className="font-mono text-[10px] font-medium text-emerald-500">
+                  Eligible annotated retention checks only
+                </p>
+              </div>
+
+              {/* Multi-Turn 3: Constraint Mutation Latency */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Mutation Responsiveness
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.mutationResponsiveness != null
+                      ? `${(currentSummary.mutationResponsiveness * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  0-Turn Latency (Immediate Pivot)
+                </p>
+              </div>
+
+              {/* Multi-Turn 4: Multi-Turn Policy CSR */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Multi-Turn Policy CSR
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.multiTurnCsr != null
+                      ? `${(currentSummary.multiTurnCsr * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                </div>
+                <p className="font-mono text-[10px] font-medium text-emerald-500">
+                  Hard Constraint Pass Rate
+                </p>
+              </div>
+
+              {/* Multi-Turn 5: Refine Intent F1 & Reset */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Refine F1 & Reset Clean
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.refineIntentF1 != null
+                      ? `${(currentSummary.refineIntentF1 * 100).toFixed(0)}%`
+                      : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Reset Clean:{' '}
+                  {currentSummary?.resetCleanliness != null
+                    ? `${(currentSummary.resetCleanliness * 100).toFixed(0)}%`
+                    : '--'}
+                </p>
+              </div>
+
+              {/* Multi-Turn 6: Token Usage & Cost */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('multi-turn')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Provider-reported generation tokens
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.tokenUsage?.totalTokens != null
+                      ? currentSummary.tokenUsage.totalTokens.toLocaleString()
+                      : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  In: {currentSummary?.tokenUsage?.tokensIn?.toLocaleString() ?? '--'}; retrieval
+                  tokens not included
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {/* Metric 1: NDCG@3 */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('recsys')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    MAUT agreement NDCG@3
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.ndcg3?.mean != null
+                      ? currentSummary.ndcg3.mean.toFixed(3)
+                      : '--'}
+                  </p>
+                  {currentSummary?.ndcg3?.ci95 && (
+                    <span className="text-muted-foreground font-mono text-[10px]">
+                      ±
+                      {((currentSummary.ndcg3.ci95[1] - currentSummary.ndcg3.ci95[0]) / 2).toFixed(
+                        3,
+                      )}
+                    </span>
+                  )}
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Labels derive from ranker rules; not independent relevance
+                </p>
+              </div>
+
+              {/* Metric 2: lexical citation proxy */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('rag')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('rag')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Lexical citation support proxy
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.citePrec?.mean != null
+                      ? `${(currentSummary.citePrec.mean * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                  {currentSummary?.citePrec?.ci95 && (
+                    <span className="text-muted-foreground font-mono text-[10px]">
+                      ±
+                      {(
+                        ((currentSummary.citePrec.ci95[1] - currentSummary.citePrec.ci95[0]) / 2) *
+                        100
+                      ).toFixed(1)}
+                      %
+                    </span>
+                  )}
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Word overlap is not semantic entailment
+                </p>
+              </div>
+
+              {/* Metric 3: Tail Latency p95 */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('all')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('all')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Tail Latency (p95)
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.latencyP95 != null ? `${currentSummary.latencyP95} ms` : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  p50: {currentSummary?.latencyP50 ?? '--'}ms | p99:{' '}
+                  {currentSummary?.latencyP99 ?? '--'}ms
+                </p>
+              </div>
+
+              {/* Metric 4: Budget & Dealbreaker CSR */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('recsys')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Constraint Policy CSR
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.budgetCsr != null
+                      ? `${(currentSummary.budgetCsr * 100).toFixed(1)}%`
+                      : '--'}
+                  </p>
+                </div>
+                <p className="font-mono text-[10px] font-medium text-emerald-500">
+                  Dealbreaker keyword checks:{' '}
+                  {currentSummary?.dealbreakerCsr != null
+                    ? `${(currentSummary.dealbreakerCsr * 100).toFixed(1)}%`
+                    : '--'}
+                </p>
+                {currentSummary?.constraintPolicyCases != null && (
+                  <p className="text-muted-foreground font-mono text-[10px]">
+                    Answerable policy cases: {currentSummary.constraintPolicyCases}
+                  </p>
+                )}
+                {currentSummary?.noResultPolicyCases != null &&
+                  currentSummary.noResultPolicyCases > 0 && (
+                    <p className="text-muted-foreground font-mono text-[10px]">
+                      Expected no-result cases: {currentSummary.noResultPolicyPassed ?? 0}/
+                      {currentSummary.noResultPolicyCases}
+                    </p>
+                  )}
+              </div>
+
+              {/* Metric 5: Intra-List Diversity (ILD) */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('recsys')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Intra-List Div (ILD@3)
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.ild3?.mean != null
+                      ? currentSummary.ild3.mean.toFixed(3)
+                      : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Embedding coverage: {currentSummary?.ildCoverageCases ?? '--'} cases
+                </p>
+              </div>
+
+              {/* Metric 6: Gini Index & Coverage */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => scrollToTestCases('recsys')}
+                onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
+                className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 group cursor-pointer space-y-1 rounded-lg border p-4 transition-all"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    Catalog Gini & Coverage
+                  </p>
+                  <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
+                    Filter ↓
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-foreground font-mono text-2xl font-bold">
+                    {currentSummary?.giniCoefficient != null
+                      ? currentSummary.giniCoefficient.toFixed(3)
+                      : '--'}
+                  </p>
+                </div>
+                <p className="text-muted-foreground font-mono text-[10px]">
+                  Coverage:{' '}
+                  {currentSummary?.catalogCoverage != null
+                    ? `${(currentSummary.catalogCoverage * 100).toFixed(1)}%`
+                    : '--'}
+                </p>
               </div>
             </div>
           )}
 
-          {/* Dataset Scale */}
-          <div>
-            <label className="text-muted-foreground mb-1 block font-mono text-xs">
-              Dataset Scale
-            </label>
-            <select
-              value={sampleScale}
-              onChange={(e) => setSampleScale(e.target.value as 'quick' | 'full')}
-              disabled={isRunning}
-              className="border-border bg-background text-foreground focus:ring-primary w-full rounded border px-3 py-2 font-mono text-xs focus:ring-1 focus:outline-none"
-            >
-              <option value="full">
-                Full authored fixture set (30 personas, 20 Q&A, 15 conversations)
-              </option>
-              <option value="quick">Quick subset (5 personas or Q&A, 3 conversations)</option>
-            </select>
-          </div>
-          {selectedSuite === 'load-stress' && (
-            <div>
-              <label
-                htmlFor="eval-total-requests"
-                className="text-muted-foreground mb-1 block font-mono text-xs"
-              >
-                Completed attempts (1–10,000)
-              </label>
-              <input
-                id="eval-total-requests"
-                type="number"
-                min={1}
-                max={10000}
-                value={totalRequests}
-                disabled={isRunning}
-                onChange={(e) => setTotalRequests(Number(e.target.value))}
-                className="border-border bg-background w-full rounded border px-3 py-2 font-mono text-xs"
-              />
-            </div>
-          )}
+          {/* ------------------------------------------------------------------ */}
+          {/* Historical Runs & Regression Comparison Rail                       */}
+          {/* ------------------------------------------------------------------ */}
+          <div className="border-border/60 bg-card/60 space-y-3 rounded-lg border p-4">
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <Clock className="text-primary h-4 w-4" />
+                <h3 className="text-muted-foreground font-mono text-xs font-semibold tracking-wider uppercase">
+                  Historical Benchmark Runs ({runs.length})
+                </h3>
+              </div>
 
-          {/* Run Button */}
-          <div className="flex items-end">
-            <button
-              onClick={handleExecuteBenchmark}
-              disabled={isRunning}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded px-4 py-2.5 font-mono text-xs font-bold shadow-md transition-all disabled:opacity-50"
-            >
-              {isRunning ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Executing...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 fill-current" />
-                  Execute Benchmark Suite
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Live Progress Banner */}
-        {isRunning && (
-          <div className="border-primary/30 bg-primary/5 space-y-2 rounded border p-3">
-            <div className="flex items-center justify-between font-mono text-xs">
-              <span className="text-primary font-semibold">{activeTestLabel}</span>
-              <span className="text-muted-foreground">
-                {progressStep} / {progressTotal} (
-                {Math.round((progressStep / (progressTotal || 1)) * 100)}%)
-                {liveQps && <span className="text-primary ml-2 font-bold">| QPS: {liveQps}</span>}
-              </span>
-            </div>
-            <div className="bg-border/40 h-1.5 w-full overflow-hidden rounded-full">
-              <div
-                className="bg-primary h-full transition-all duration-300"
-                style={{
-                  width: `${Math.min(100, Math.round((progressStep / (progressTotal || 1)) * 100))}%`,
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Primary KPI Metric Cards (with 95% Bootstrap CIs)                   */}
-      {/* ------------------------------------------------------------------ */}
-      {currentSummary?.jointGoalAccuracy != null ||
-      selectedRunDetails?.tier === 'MULTI_TURN_CRS' ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {/* Multi-Turn 1: Joint Goal Accuracy (JGA) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Joint Goal Accuracy (JGA)
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.jointGoalAccuracy?.mean != null
-                  ? `${(currentSummary.jointGoalAccuracy.mean * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-              {currentSummary?.jointGoalAccuracy?.ci95 && (
-                <span className="text-muted-foreground font-mono text-[10px]">
-                  ±
-                  {(
-                    ((currentSummary.jointGoalAccuracy.ci95[1] -
-                      currentSummary.jointGoalAccuracy.ci95[0]) /
-                      2) *
-                    100
-                  ).toFixed(1)}
-                  %
+              {/* Regression Diff Selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground font-mono text-xs">
+                  Compare with Baseline:
                 </span>
-              )}
+                <select
+                  value={compareBaselineId ?? ''}
+                  onChange={(e) => setCompareBaselineId(e.target.value || null)}
+                  className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1 font-mono text-xs focus:ring-1 focus:outline-none"
+                >
+                  <option value="">(None - View Single Run)</option>
+                  {runs
+                    .filter((r) => r.id !== selectedRunId)
+                    .map((r) => (
+                      <option key={r.id} value={r.id} suppressHydrationWarning>
+                        {r.suiteName} ({formatBenchmarkDate(r.createdAt)})
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Exact match on annotated slots; see trace for unchecked fields
-            </p>
-          </div>
 
-          {/* Multi-Turn 2: Constraint Retention Rate (CRR) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Constraint Retention (CRR)
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
+            {/* Runs Horizontal Selector Pill Rail */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {runs.map((r) => {
+                const isSelected = r.id === selectedRunId;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => handleSelectRun(r.id)}
+                    className={`flex flex-shrink-0 items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs transition-colors ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary font-bold'
+                        : 'border-border/60 bg-background/50 hover:bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    <span className="font-semibold">{r.suiteName}</span>
+                    <span className="text-muted-foreground text-[10px]" suppressHydrationWarning>
+                      {formatBenchmarkTime(r.createdAt)}
+                    </span>
+                    <span className="bg-muted/60 rounded px-1 text-[10px]">
+                      {r.passedTests}/{r.totalTests}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.constraintRetentionRate?.mean != null
-                  ? `${(currentSummary.constraintRetentionRate.mean * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-              {currentSummary?.constraintRetentionRate?.ci95 && (
-                <span className="text-muted-foreground font-mono text-[10px]">
-                  ±
-                  {(
-                    ((currentSummary.constraintRetentionRate.ci95[1] -
-                      currentSummary.constraintRetentionRate.ci95[0]) /
-                      2) *
-                    100
-                  ).toFixed(1)}
-                  %
-                </span>
-              )}
-            </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Eligible annotated retention checks only
-            </p>
-          </div>
 
-          {/* Multi-Turn 3: Constraint Mutation Latency */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Mutation Responsiveness
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.mutationResponsiveness != null
-                  ? `${(currentSummary.mutationResponsiveness * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              0-Turn Latency (Immediate Pivot)
-            </p>
-          </div>
-
-          {/* Multi-Turn 4: Multi-Turn Policy CSR */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Multi-Turn Policy CSR
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.multiTurnCsr != null
-                  ? `${(currentSummary.multiTurnCsr * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-            </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Hard Constraint Pass Rate
-            </p>
-          </div>
-
-          {/* Multi-Turn 5: Refine Intent F1 & Reset */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Refine F1 & Reset Clean
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.refineIntentF1 != null
-                  ? `${(currentSummary.refineIntentF1 * 100).toFixed(0)}%`
-                  : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              Reset Clean:{' '}
-              {currentSummary?.resetCleanliness != null
-                ? `${(currentSummary.resetCleanliness * 100).toFixed(0)}%`
-                : '--'}
-            </p>
-          </div>
-
-          {/* Multi-Turn 6: Token Usage & Cost */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('multi-turn')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('multi-turn')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Provider-reported generation tokens
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.tokenUsage?.totalTokens != null
-                  ? currentSummary.tokenUsage.totalTokens.toLocaleString()
-                  : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              In: {currentSummary?.tokenUsage?.tokensIn?.toLocaleString() ?? '--'}; retrieval tokens
-              not included
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {/* Metric 1: NDCG@3 */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('recsys')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                MAUT agreement NDCG@3
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.ndcg3?.mean != null ? currentSummary.ndcg3.mean.toFixed(3) : '--'}
-              </p>
-              {currentSummary?.ndcg3?.ci95 && (
-                <span className="text-muted-foreground font-mono text-[10px]">
-                  ±{((currentSummary.ndcg3.ci95[1] - currentSummary.ndcg3.ci95[0]) / 2).toFixed(3)}
-                </span>
-              )}
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              Labels derive from ranker rules; not independent relevance
-            </p>
-          </div>
-
-          {/* Metric 2: lexical citation proxy */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('rag')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('rag')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Lexical citation support proxy
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.citePrec?.mean != null
-                  ? `${(currentSummary.citePrec.mean * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-              {currentSummary?.citePrec?.ci95 && (
-                <span className="text-muted-foreground font-mono text-[10px]">
-                  ±
-                  {(
-                    ((currentSummary.citePrec.ci95[1] - currentSummary.citePrec.ci95[0]) / 2) *
-                    100
-                  ).toFixed(1)}
-                  %
-                </span>
-              )}
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              Word overlap is not semantic entailment
-            </p>
-          </div>
-
-          {/* Metric 3: Tail Latency p95 */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('all')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('all')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Tail Latency (p95)
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.latencyP95 != null ? `${currentSummary.latencyP95} ms` : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              p50: {currentSummary?.latencyP50 ?? '--'}ms | p99:{' '}
-              {currentSummary?.latencyP99 ?? '--'}ms
-            </p>
-          </div>
-
-          {/* Metric 4: Budget & Dealbreaker CSR */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('recsys')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Constraint Policy CSR
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.budgetCsr != null
-                  ? `${(currentSummary.budgetCsr * 100).toFixed(1)}%`
-                  : '--'}
-              </p>
-            </div>
-            <p className="font-mono text-[10px] font-medium text-emerald-500">
-              Dealbreaker keyword checks:{' '}
-              {currentSummary?.dealbreakerCsr != null
-                ? `${(currentSummary.dealbreakerCsr * 100).toFixed(1)}%`
-                : '--'}
-            </p>
-            {currentSummary?.constraintPolicyCases != null && (
-              <p className="text-muted-foreground font-mono text-[10px]">
-                Answerable policy cases: {currentSummary.constraintPolicyCases}
+            {/* Side-by-Side Regression Diff Table (When Baseline Selected) */}
+            {baselineRun && selectedRunDetails && !baselineComparable && (
+              <p className="font-mono text-xs text-amber-500">
+                Comparison unavailable: suite, provider, fixture hashes, or catalog snapshot differ
+                or are missing.
               </p>
             )}
-            {currentSummary?.noResultPolicyCases != null &&
-              currentSummary.noResultPolicyCases > 0 && (
-                <p className="text-muted-foreground font-mono text-[10px]">
-                  Expected no-result cases: {currentSummary.noResultPolicyPassed ?? 0}/
-                  {currentSummary.noResultPolicyCases}
-                </p>
-              )}
-          </div>
-
-          {/* Metric 5: Intra-List Diversity (ILD) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('recsys')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Intra-List Div (ILD@3)
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.ild3?.mean != null ? currentSummary.ild3.mean.toFixed(3) : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              Embedding coverage: {currentSummary?.ildCoverageCases ?? '--'} cases
-            </p>
-          </div>
-
-          {/* Metric 6: Gini Index & Coverage */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToTestCases('recsys')}
-            onKeyDown={(e) => e.key === 'Enter' && scrollToTestCases('recsys')}
-            className="border-border/60 bg-card hover:border-primary/80 hover:bg-muted/20 cursor-pointer space-y-1 rounded-lg border p-4 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-muted-foreground font-mono text-[11px] font-semibold tracking-wider uppercase">
-                Catalog Gini & Coverage
-              </p>
-              <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
-                Filter ↓
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-foreground font-mono text-2xl font-bold">
-                {currentSummary?.giniCoefficient != null
-                  ? currentSummary.giniCoefficient.toFixed(3)
-                  : '--'}
-              </p>
-            </div>
-            <p className="text-muted-foreground font-mono text-[10px]">
-              Coverage:{' '}
-              {currentSummary?.catalogCoverage != null
-                ? `${(currentSummary.catalogCoverage * 100).toFixed(1)}%`
-                : '--'}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Historical Runs & Regression Comparison Rail                       */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="border-border/60 bg-card/60 space-y-3 rounded-lg border p-4">
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2">
-            <Clock className="text-primary h-4 w-4" />
-            <h3 className="text-muted-foreground font-mono text-xs font-semibold tracking-wider uppercase">
-              Historical Benchmark Runs ({runs.length})
-            </h3>
-          </div>
-
-          {/* Regression Diff Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground font-mono text-xs">Compare with Baseline:</span>
-            <select
-              value={compareBaselineId ?? ''}
-              onChange={(e) => setCompareBaselineId(e.target.value || null)}
-              className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1 font-mono text-xs focus:ring-1 focus:outline-none"
-            >
-              <option value="">(None - View Single Run)</option>
-              {runs
-                .filter((r) => r.id !== selectedRunId)
-                .map((r) => (
-                  <option key={r.id} value={r.id} suppressHydrationWarning>
-                    {r.suiteName} ({formatBenchmarkDate(r.createdAt)})
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Runs Horizontal Selector Pill Rail */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {runs.map((r) => {
-            const isSelected = r.id === selectedRunId;
-            return (
-              <button
-                key={r.id}
-                onClick={() => handleSelectRun(r.id)}
-                className={`flex flex-shrink-0 items-center gap-2 rounded border px-3 py-1.5 font-mono text-xs transition-colors ${
-                  isSelected
-                    ? 'border-primary bg-primary/10 text-primary font-bold'
-                    : 'border-border/60 bg-background/50 hover:bg-muted text-muted-foreground'
-                }`}
-              >
-                <span className="font-semibold">{r.suiteName}</span>
-                <span className="text-muted-foreground text-[10px]" suppressHydrationWarning>
-                  {formatBenchmarkTime(r.createdAt)}
-                </span>
-                <span className="bg-muted/60 rounded px-1 text-[10px]">
-                  {r.passedTests}/{r.totalTests}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Side-by-Side Regression Diff Table (When Baseline Selected) */}
-        {baselineRun && selectedRunDetails && !baselineComparable && (
-          <p className="font-mono text-xs text-amber-500">
-            Comparison unavailable: suite, provider, fixture hashes, or catalog snapshot differ or
-            are missing.
-          </p>
-        )}
-        {baselineRun && selectedRunDetails && baselineComparable && (
-          <div className="border-border/80 bg-background/80 mt-3 overflow-x-auto rounded border p-3">
-            <table className="w-full text-left font-mono text-xs">
-              <thead>
-                <tr className="border-border/60 text-muted-foreground border-b">
-                  <th className="pb-2">Metric Dimension</th>
-                  <th className="pb-2">Baseline ({baselineRun.suiteName})</th>
-                  <th className="pb-2">Selected ({selectedRunDetails.suiteName})</th>
-                  <th className="pb-2">Delta</th>
-                  <th className="pb-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-border/30 divide-y">
-                {/* NDCG Diff */}
-                <tr>
-                  <td className="py-1.5 font-medium">MAUT agreement NDCG@3</td>
-                  <td className="py-1.5">
-                    {baselineRun.metricsSummary?.ndcg3?.mean?.toFixed(3) ?? '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {selectedRunDetails.metricsSummary?.ndcg3?.mean?.toFixed(3) ?? '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {(() => {
-                      const b = baselineRun.metricsSummary?.ndcg3?.mean;
-                      const c = selectedRunDetails.metricsSummary?.ndcg3?.mean;
-                      if (b != null && c != null) {
-                        const d = c - b;
-                        return (
-                          <span
-                            className={
-                              d >= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
-                            }
-                          >
-                            {d >= 0 ? `+${d.toFixed(3)}` : d.toFixed(3)}
-                          </span>
-                        );
-                      }
-                      return '--';
-                    })()}
-                  </td>
-                  <td className="py-1.5">
-                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      Descriptive
-                    </span>
-                  </td>
-                </tr>
-
-                {/* CitePrec Diff */}
-                <tr>
-                  <td className="py-1.5 font-medium">Lexical citation support proxy</td>
-                  <td className="py-1.5">
-                    {baselineRun.metricsSummary?.citePrec?.mean
-                      ? `${(baselineRun.metricsSummary.citePrec.mean * 100).toFixed(1)}%`
-                      : '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {selectedRunDetails.metricsSummary?.citePrec?.mean
-                      ? `${(selectedRunDetails.metricsSummary.citePrec.mean * 100).toFixed(1)}%`
-                      : '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {(() => {
-                      const b = baselineRun.metricsSummary?.citePrec?.mean;
-                      const c = selectedRunDetails.metricsSummary?.citePrec?.mean;
-                      if (b != null && c != null) {
-                        const d = (c - b) * 100;
-                        return (
-                          <span
-                            className={
-                              d >= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
-                            }
-                          >
-                            {d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`}
-                          </span>
-                        );
-                      }
-                      return '--';
-                    })()}
-                  </td>
-                  <td className="py-1.5">
-                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      Descriptive
-                    </span>
-                  </td>
-                </tr>
-
-                {/* Latency Diff */}
-                <tr>
-                  <td className="py-1.5 font-medium">Tail Latency (p95)</td>
-                  <td className="py-1.5">
-                    {baselineRun.metricsSummary?.latencyP95
-                      ? `${baselineRun.metricsSummary.latencyP95}ms`
-                      : '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {selectedRunDetails.metricsSummary?.latencyP95
-                      ? `${selectedRunDetails.metricsSummary.latencyP95}ms`
-                      : '--'}
-                  </td>
-                  <td className="py-1.5">
-                    {(() => {
-                      const b = baselineRun.metricsSummary?.latencyP95;
-                      const c = selectedRunDetails.metricsSummary?.latencyP95;
-                      if (b != null && c != null) {
-                        const d = c - b;
-                        return (
-                          <span
-                            className={
-                              d <= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
-                            }
-                          >
-                            {d <= 0 ? `${d}ms` : `+${d}ms`}
-                          </span>
-                        );
-                      }
-                      return '--';
-                    })()}
-                  </td>
-                  <td className="py-1.5">
-                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
-                      Component only
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Granular Test Cases Explorer                                       */}
-      {/* ------------------------------------------------------------------ */}
-      <div id="eval-test-cases-table" className="border-border/60 bg-card scroll-mt-20 space-y-4 rounded-lg border p-5">
-        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
-          <div className="flex items-center gap-2">
-            <h3 className="text-foreground font-mono text-sm font-semibold tracking-wider uppercase">
-              Granular Test Execution Explorer ({filteredResults.length})
-            </h3>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter by persona, query..."
-                className="border-border bg-background text-foreground focus:ring-primary w-56 rounded border py-1.5 pr-3 pl-8 font-mono text-xs focus:ring-1 focus:outline-none"
-              />
-            </div>
-
-            {/* Category Filter */}
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1.5 font-mono text-xs focus:ring-1 focus:outline-none"
-            >
-              <option value="all">All Categories</option>
-              <option value="recsys">Recommender</option>
-              <option value="multi-turn">Multi-Turn CRS</option>
-              <option value="rag">Attributed Q&A</option>
-              <option value="stress">Load Stress</option>
-            </select>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1.5 font-mono text-xs focus:ring-1 focus:outline-none"
-            >
-              <option value="all">All Statuses</option>
-              <option value="pass">Passed Only</option>
-              <option value="warn">Warnings</option>
-              <option value="fail">Failed Only</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Table of Results */}
-        <div className="border-border/40 overflow-x-auto rounded border">
-          <table className="w-full text-left font-mono text-xs">
-            <thead className="bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5">Test Case ID</th>
-                <th className="px-3 py-2.5">Category</th>
-                <th className="px-3 py-2.5">Input Query / Persona</th>
-                <th className="px-3 py-2.5">Latency</th>
-                <th className="px-3 py-2.5">Key Scores</th>
-                <th className="px-3 py-2.5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-border/20 divide-y">
-              {filteredResults.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-muted-foreground py-8 text-center">
-                    No benchmark test results found matching current filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredResults.map((r) => {
-                  const isPass = r.status === 'pass';
-                  const isWarn = r.status === 'warn';
-                  return (
-                    <tr key={r.id || r.testCaseId} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-3 py-2.5">
-                        {isPass ? (
-                          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
-                            <CheckCircle2 className="h-3 w-3" /> PASS
-                          </span>
-                        ) : isWarn ? (
-                          <span className="inline-flex items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500">
-                            <AlertTriangle className="h-3 w-3" /> WARN
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500">
-                            <XCircle className="h-3 w-3" /> FAIL
-                          </span>
-                        )}
+            {baselineRun && selectedRunDetails && baselineComparable && (
+              <div className="border-border/80 bg-background/80 mt-3 overflow-x-auto rounded border p-3">
+                <table className="w-full text-left font-mono text-xs">
+                  <thead>
+                    <tr className="border-border/60 text-muted-foreground border-b">
+                      <th className="pb-2">Metric Dimension</th>
+                      <th className="pb-2">Baseline ({baselineRun.suiteName})</th>
+                      <th className="pb-2">Selected ({selectedRunDetails.suiteName})</th>
+                      <th className="pb-2">Delta</th>
+                      <th className="pb-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-border/30 divide-y">
+                    {/* NDCG Diff */}
+                    <tr>
+                      <td className="py-1.5 font-medium">MAUT agreement NDCG@3</td>
+                      <td className="py-1.5">
+                        {baselineRun.metricsSummary?.ndcg3?.mean?.toFixed(3) ?? '--'}
                       </td>
-                      <td className="text-foreground px-3 py-2.5 font-semibold">{r.testCaseId}</td>
-                      <td className="text-muted-foreground px-3 py-2.5 text-[10px] uppercase">
-                        {r.category}
+                      <td className="py-1.5">
+                        {selectedRunDetails.metricsSummary?.ndcg3?.mean?.toFixed(3) ?? '--'}
                       </td>
-                      <td
-                        className="text-foreground max-w-xs truncate px-3 py-2.5"
-                        title={r.inputQuery}
-                      >
-                        {r.inputQuery}
+                      <td className="py-1.5">
+                        {(() => {
+                          const b = baselineRun.metricsSummary?.ndcg3?.mean;
+                          const c = selectedRunDetails.metricsSummary?.ndcg3?.mean;
+                          if (b != null && c != null) {
+                            const d = c - b;
+                            return (
+                              <span
+                                className={
+                                  d >= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
+                                }
+                              >
+                                {d >= 0 ? `+${d.toFixed(3)}` : d.toFixed(3)}
+                              </span>
+                            );
+                          }
+                          return '--';
+                        })()}
                       </td>
-                      <td className="text-muted-foreground px-3 py-2.5">{r.latencyMs} ms</td>
-                      <td className="space-x-2 px-3 py-2.5">
-                        {r.scores.jga != null && (
-                          <span className="text-primary font-bold">
-                            JGA: {(r.scores.jga * 100).toFixed(0)}%
-                          </span>
-                        )}
-                        {r.scores.crr != null && (
-                          <span className="font-bold text-emerald-500">
-                            CRR: {(r.scores.crr * 100).toFixed(0)}%
-                          </span>
-                        )}
-                        {r.scores.ndcg3 != null && (
-                          <span className="text-primary font-bold">
-                            MAUT agreement: {r.scores.ndcg3.toFixed(2)}
-                          </span>
-                        )}
-                        {r.scores.citePrec != null && (
-                          <span className="font-bold text-emerald-500">
-                            Lexical citation proxy: {(r.scores.citePrec * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <button
-                          onClick={() => setInspectItem(r)}
-                          className="border-border/80 bg-background hover:bg-muted inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-semibold transition-colors"
-                        >
-                          Trace <ChevronRight className="h-3 w-3" />
-                        </button>
+                      <td className="py-1.5">
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
+                          Descriptive
+                        </span>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+
+                    {/* CitePrec Diff */}
+                    <tr>
+                      <td className="py-1.5 font-medium">Lexical citation support proxy</td>
+                      <td className="py-1.5">
+                        {baselineRun.metricsSummary?.citePrec?.mean
+                          ? `${(baselineRun.metricsSummary.citePrec.mean * 100).toFixed(1)}%`
+                          : '--'}
+                      </td>
+                      <td className="py-1.5">
+                        {selectedRunDetails.metricsSummary?.citePrec?.mean
+                          ? `${(selectedRunDetails.metricsSummary.citePrec.mean * 100).toFixed(1)}%`
+                          : '--'}
+                      </td>
+                      <td className="py-1.5">
+                        {(() => {
+                          const b = baselineRun.metricsSummary?.citePrec?.mean;
+                          const c = selectedRunDetails.metricsSummary?.citePrec?.mean;
+                          if (b != null && c != null) {
+                            const d = (c - b) * 100;
+                            return (
+                              <span
+                                className={
+                                  d >= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
+                                }
+                              >
+                                {d >= 0 ? `+${d.toFixed(1)}%` : `${d.toFixed(1)}%`}
+                              </span>
+                            );
+                          }
+                          return '--';
+                        })()}
+                      </td>
+                      <td className="py-1.5">
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
+                          Descriptive
+                        </span>
+                      </td>
+                    </tr>
+
+                    {/* Latency Diff */}
+                    <tr>
+                      <td className="py-1.5 font-medium">Tail Latency (p95)</td>
+                      <td className="py-1.5">
+                        {baselineRun.metricsSummary?.latencyP95
+                          ? `${baselineRun.metricsSummary.latencyP95}ms`
+                          : '--'}
+                      </td>
+                      <td className="py-1.5">
+                        {selectedRunDetails.metricsSummary?.latencyP95
+                          ? `${selectedRunDetails.metricsSummary.latencyP95}ms`
+                          : '--'}
+                      </td>
+                      <td className="py-1.5">
+                        {(() => {
+                          const b = baselineRun.metricsSummary?.latencyP95;
+                          const c = selectedRunDetails.metricsSummary?.latencyP95;
+                          if (b != null && c != null) {
+                            const d = c - b;
+                            return (
+                              <span
+                                className={
+                                  d <= 0 ? 'font-bold text-emerald-500' : 'font-bold text-red-500'
+                                }
+                              >
+                                {d <= 0 ? `${d}ms` : `+${d}ms`}
+                              </span>
+                            );
+                          }
+                          return '--';
+                        })()}
+                      </td>
+                      <td className="py-1.5">
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-500">
+                          Component only
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ------------------------------------------------------------------ */}
+          {/* Granular Test Cases Explorer                                       */}
+          {/* ------------------------------------------------------------------ */}
+          <div
+            id="eval-test-cases-table"
+            className="border-border/60 bg-card scroll-mt-20 space-y-4 rounded-lg border p-5"
+          >
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div className="flex items-center gap-2">
+                <h3 className="text-foreground font-mono text-sm font-semibold tracking-wider uppercase">
+                  Granular Test Execution Explorer ({filteredResults.length})
+                </h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search Input */}
+                <div className="relative">
+                  <Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Filter by persona, query..."
+                    className="border-border bg-background text-foreground focus:ring-primary w-56 rounded border py-1.5 pr-3 pl-8 font-mono text-xs focus:ring-1 focus:outline-none"
+                  />
+                </div>
+
+                {/* Category Filter */}
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1.5 font-mono text-xs focus:ring-1 focus:outline-none"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="recsys">Recommender</option>
+                  <option value="multi-turn">Multi-Turn CRS</option>
+                  <option value="rag">Attributed Q&A</option>
+                  <option value="stress">Load Stress</option>
+                </select>
+
+                {/* Status Filter */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="border-border bg-background text-foreground focus:ring-primary rounded border px-2.5 py-1.5 font-mono text-xs focus:ring-1 focus:outline-none"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pass">Passed Only</option>
+                  <option value="warn">Warnings</option>
+                  <option value="fail">Failed Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Table of Results */}
+            <div className="border-border/40 overflow-x-auto rounded border">
+              <table className="w-full text-left font-mono text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5">Test Case ID</th>
+                    <th className="px-3 py-2.5">Category</th>
+                    <th className="px-3 py-2.5">Input Query / Persona</th>
+                    <th className="px-3 py-2.5">Latency</th>
+                    <th className="px-3 py-2.5">Key Scores</th>
+                    <th className="px-3 py-2.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-border/20 divide-y">
+                  {filteredResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-muted-foreground py-8 text-center">
+                        No benchmark test results found matching current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredResults.map((r) => {
+                      const isPass = r.status === 'pass';
+                      const isWarn = r.status === 'warn';
+                      return (
+                        <tr
+                          key={r.id || r.testCaseId}
+                          className="hover:bg-muted/20 transition-colors"
+                        >
+                          <td className="px-3 py-2.5">
+                            {isPass ? (
+                              <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
+                                <CheckCircle2 className="h-3 w-3" /> PASS
+                              </span>
+                            ) : isWarn ? (
+                              <span className="inline-flex items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500">
+                                <AlertTriangle className="h-3 w-3" /> WARN
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded border border-red-500/20 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-500">
+                                <XCircle className="h-3 w-3" /> FAIL
+                              </span>
+                            )}
+                          </td>
+                          <td className="text-foreground px-3 py-2.5 font-semibold">
+                            {r.testCaseId}
+                          </td>
+                          <td className="text-muted-foreground px-3 py-2.5 text-[10px] uppercase">
+                            {r.category}
+                          </td>
+                          <td
+                            className="text-foreground max-w-xs truncate px-3 py-2.5"
+                            title={r.inputQuery}
+                          >
+                            {r.inputQuery}
+                          </td>
+                          <td className="text-muted-foreground px-3 py-2.5">{r.latencyMs} ms</td>
+                          <td className="space-x-2 px-3 py-2.5">
+                            {r.scores.jga != null && (
+                              <span className="text-primary font-bold">
+                                JGA: {(r.scores.jga * 100).toFixed(0)}%
+                              </span>
+                            )}
+                            {r.scores.crr != null && (
+                              <span className="font-bold text-emerald-500">
+                                CRR: {(r.scores.crr * 100).toFixed(0)}%
+                              </span>
+                            )}
+                            {r.scores.ndcg3 != null && (
+                              <span className="text-primary font-bold">
+                                MAUT agreement: {r.scores.ndcg3.toFixed(2)}
+                              </span>
+                            )}
+                            {r.scores.citePrec != null && (
+                              <span className="font-bold text-emerald-500">
+                                Lexical citation proxy: {(r.scores.citePrec * 100).toFixed(0)}%
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              onClick={() => setInspectItem(r)}
+                              className="border-border/80 bg-background hover:bg-muted inline-flex items-center gap-1 rounded border px-2.5 py-1 text-[11px] font-semibold transition-colors"
+                            >
+                              Trace <ChevronRight className="h-3 w-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
-      </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
@@ -1590,19 +1621,23 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 <h3 className="text-foreground text-sm font-semibold tracking-wider uppercase">
                   Fixture & Preflight Diagnostics
                 </h3>
-                <span className="border-emerald-500/20 bg-emerald-500/10 text-emerald-500 rounded border px-2 py-0.5 text-[10px] font-bold">
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">
                   Catalog Verified
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Catalog Phones</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Catalog Phones
+                  </span>
                   <p className="text-foreground mt-1 text-lg font-bold">
                     {String(preflightReport.catalogCount)}
                   </p>
                 </div>
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Missing Q&A Phones</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Missing Q&A Phones
+                  </span>
                   <p className="text-foreground mt-1 text-lg font-bold">
                     {Array.isArray(preflightReport.qaMissingPhones)
                       ? preflightReport.qaMissingPhones.length
@@ -1610,7 +1645,9 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                   </p>
                 </div>
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Missing Corpus</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Missing Corpus
+                  </span>
                   <p className="text-foreground mt-1 text-lg font-bold">
                     {Array.isArray(preflightReport.qaMissingCorpus)
                       ? preflightReport.qaMissingCorpus.length
@@ -1618,7 +1655,9 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                   </p>
                 </div>
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Dataset Hashes</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Dataset Hashes
+                  </span>
                   <p className="mt-1 text-lg font-bold text-emerald-500">Retained</p>
                 </div>
               </div>
@@ -1645,7 +1684,7 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                   </h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="border-emerald-500/20 bg-emerald-500/10 text-emerald-500 rounded border px-2.5 py-1 text-xs font-bold">
+                  <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-500">
                     {selectedRunDetails.passedTests} Passing
                   </span>
                   <span className="rounded border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-500">
@@ -1665,11 +1704,17 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Trigger Source</span>
-                  <p className="text-foreground mt-1 font-semibold">{selectedRunDetails.triggerSource}</p>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Trigger Source
+                  </span>
+                  <p className="text-foreground mt-1 font-semibold">
+                    {selectedRunDetails.triggerSource}
+                  </p>
                 </div>
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Provider Track</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Provider Track
+                  </span>
                   <p className="text-foreground mt-1 font-semibold">
                     {String(selectedRunDetails.config?.providerTrack ?? 'unrecorded')}
                   </p>
@@ -1688,8 +1733,8 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 !selectedRunDetails.config?.preflight ||
                 selectedRunDetails.config?.workingTreeDirty !== false) && (
                 <p className="text-[11px] text-amber-500">
-                  Imported, legacy, or uncommitted code provenance. These results are not suitable for
-                  formal evaluation certification.
+                  Imported, legacy, or uncommitted code provenance. These results are not suitable
+                  for formal evaluation certification.
                 </p>
               )}
 
@@ -1699,7 +1744,10 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 </summary>
                 <pre className="mt-2 max-h-72 overflow-auto text-[11px] whitespace-pre-wrap">
                   {JSON.stringify(
-                    { commitHash: selectedRunDetails.commitHash, config: selectedRunDetails.config },
+                    {
+                      commitHash: selectedRunDetails.commitHash,
+                      config: selectedRunDetails.config,
+                    },
                     null,
                     2,
                   )}
@@ -1723,7 +1771,9 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
-                  <span className="text-muted-foreground text-[10px] uppercase">Uncached Calls</span>
+                  <span className="text-muted-foreground text-[10px] uppercase">
+                    Uncached Calls
+                  </span>
                   <p className="text-foreground mt-1 text-lg font-bold">
                     {selectedRunDetails.metricsSummary.generationProviderCalls}
                   </p>
@@ -1737,13 +1787,15 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
                   <span className="text-muted-foreground text-[10px] uppercase">Tokens In</span>
                   <p className="text-foreground mt-1 text-lg font-bold">
-                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensIn?.toLocaleString() ?? '--'}
+                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensIn?.toLocaleString() ??
+                      '--'}
                   </p>
                 </div>
                 <div className="border-border/40 bg-muted/20 rounded border p-3">
                   <span className="text-muted-foreground text-[10px] uppercase">Tokens Out</span>
                   <p className="text-foreground mt-1 text-lg font-bold">
-                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensOut?.toLocaleString() ?? '--'}
+                    {selectedRunDetails.metricsSummary.tokenUsage?.tokensOut?.toLocaleString() ??
+                      '--'}
                   </p>
                 </div>
               </div>

@@ -145,7 +145,7 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
   return (
     <main className="px-grid-margin min-w-0 flex-1 py-10">
       {/* Header */}
-      <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-5 mb-6 lg:flex-row lg:items-end lg:justify-between">
+      <header className="accent-hairline border-outline-variant mb-6 flex flex-col gap-6 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="heading-scanline font-display text-gradient-accent-edge text-5xl leading-none font-extrabold tracking-normal uppercase sm:text-7xl">
             Command Center
@@ -182,26 +182,29 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
       <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-4">
         <Link
           href="/internal/database?view=catalog&status=promoted#catalog-table"
-          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+          className="group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors"
         >
           <div className="flex items-center justify-between">
             <p className="meta-label">Phones active</p>
-            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+            <ArrowRight
+              className="text-muted-foreground group-hover:text-accent size-3.5 transition-all group-hover:translate-x-0.5"
+              aria-hidden
+            />
           </div>
           <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
             {activePhoneCount === null ? 'Unknown' : activePhoneCount.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
+          <p className="text-muted-foreground group-hover:text-primary mt-2 text-sm transition-colors">
             Active catalog devices (click to view)
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
+          <span className="font-display text-primary/5 pointer-events-none absolute -right-2 bottom-1 text-[112px] leading-none">
             []
           </span>
         </Link>
 
         <Link
           href="/internal/database?view=catalog&status=all#catalog-table"
-          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+          className="group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors"
         >
           <div className="flex items-center justify-between">
             <p className="meta-label">Candidate queue</p>
@@ -210,57 +213,67 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
                 {summary.blockedCount} blocked
               </span>
             ) : (
-              <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+              <ArrowRight
+                className="text-muted-foreground group-hover:text-accent size-3.5 transition-all group-hover:translate-x-0.5"
+                aria-hidden
+              />
             )}
           </div>
           <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
             {inventoryAvailable ? summary.totalCandidates.toLocaleString('en-US') : '--'}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
+          <p className="text-muted-foreground group-hover:text-primary mt-2 text-sm transition-colors">
             {inventoryAvailable
               ? `${summary.pendingCount} pending, ${summary.queuedCount} queued, ${summary.blockedCount} blocked`
               : 'Catalog query unavailable'}
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
+          <span className="font-display text-primary/5 pointer-events-none absolute -right-2 bottom-1 text-[112px] leading-none">
             &#123;&#125;
           </span>
         </Link>
 
         <Link
           href="#gemini-quota-rail"
-          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+          className="group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors"
         >
           <div className="flex items-center justify-between">
             <p className="meta-label">Gemini quota remaining</p>
-            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+            <ArrowRight
+              className="text-muted-foreground group-hover:text-accent size-3.5 transition-all group-hover:translate-x-0.5"
+              aria-hidden
+            />
           </div>
           <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold text-[#39ff88]">
             {dailyRemaining === null ? '--' : dailyRemaining.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
-            {llmUsage.configuredKeyCount} active {llmUsage.configuredKeyCount === 1 ? 'key' : 'keys'}{' '}
+          <p className="text-muted-foreground group-hover:text-primary mt-2 text-sm transition-colors">
+            {llmUsage.configuredKeyCount} active{' '}
+            {llmUsage.configuredKeyCount === 1 ? 'key' : 'keys'}{' '}
             {isQuotaVerified ? '(verified GCP quota)' : '(ledger tracking)'}
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
+          <span className="font-display text-primary/5 pointer-events-none absolute -right-2 bottom-1 text-[112px] leading-none">
             ()
           </span>
         </Link>
 
         <Link
           href="/internal/pipelines#pipeline-runs-table"
-          className="group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer"
+          className="group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors"
         >
           <div className="flex items-center justify-between">
             <p className="meta-label">Automated pipeline runs</p>
-            <ArrowRight className="size-3.5 text-muted-foreground group-hover:text-accent group-hover:translate-x-0.5 transition-all" aria-hidden />
+            <ArrowRight
+              className="text-muted-foreground group-hover:text-accent size-3.5 transition-all group-hover:translate-x-0.5"
+              aria-hidden
+            />
           </div>
           <p className="font-display text-gradient-steel mt-4 text-5xl leading-none font-extrabold">
             {allRuns.length.toLocaleString('en-US')}
           </p>
-          <p className="text-muted-foreground mt-2 text-sm group-hover:text-primary transition-colors">
+          <p className="text-muted-foreground group-hover:text-primary mt-2 text-sm transition-colors">
             Across 5 engines (Catalog, Ingest, Score, CI)
           </p>
-          <span className="font-display text-primary/5 absolute -right-2 bottom-1 text-[112px] leading-none pointer-events-none">
+          <span className="font-display text-primary/5 pointer-events-none absolute -right-2 bottom-1 text-[112px] leading-none">
             ##
           </span>
         </Link>
@@ -306,7 +319,7 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
               </div>
               <Link
                 href="/internal/database?view=ingestion&status=pending#ingestion-table"
-                className="border-outline-variant bg-background border px-3 py-2 hover:border-accent transition-colors"
+                className="border-outline-variant bg-background hover:border-accent border px-3 py-2 transition-colors"
               >
                 <span className="text-muted-foreground block text-[10px] uppercase">
                   Pending Queue

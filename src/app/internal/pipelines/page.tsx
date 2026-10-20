@@ -127,13 +127,13 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
       <section className="border-outline-variant bg-outline-variant mt-10 grid gap-px border md:grid-cols-4">
         <Link
           href={`/internal/pipelines?status=all&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
-          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
-            statusParam === 'all' ? 'ring-1 ring-inset ring-accent' : ''
+          className={`group bg-background hover:bg-surface-container/20 block p-6 transition-all ${
+            statusParam === 'all' ? 'ring-accent ring-1 ring-inset' : ''
           }`}
         >
           <div className="flex items-center justify-between">
             <p className="meta-label">Total Executions</p>
-            <span className="text-[10px] font-mono text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100 uppercase">
+            <span className="text-muted-foreground/60 font-mono text-[10px] uppercase opacity-0 transition-opacity group-hover:opacity-100">
               Filter ↓
             </span>
           </div>
@@ -147,8 +147,8 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
 
         <Link
           href={`/internal/pipelines?status=success&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
-          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
-            statusParam === 'success' ? 'ring-1 ring-inset ring-[#39ff88]' : ''
+          className={`group bg-background hover:bg-surface-container/20 block p-6 transition-all ${
+            statusParam === 'success' ? 'ring-1 ring-[#39ff88] ring-inset' : ''
           }`}
         >
           <div className="flex items-center justify-between">
@@ -165,8 +165,8 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
 
         <Link
           href={`/internal/pipelines?status=failed&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
-          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
-            statusParam === 'failed' ? 'ring-1 ring-inset ring-[#ff3b30]' : ''
+          className={`group bg-background hover:bg-surface-container/20 block p-6 transition-all ${
+            statusParam === 'failed' ? 'ring-1 ring-[#ff3b30] ring-inset' : ''
           }`}
         >
           <div className="flex items-center justify-between">
@@ -183,8 +183,8 @@ export default async function PipelinesPage({ searchParams }: PageProps) {
 
         <Link
           href={`/internal/pipelines?status=running&engine=${engineParam}${searchParam ? `&search=${encodeURIComponent(searchParam)}` : ''}#pipeline-runs-table`}
-          className={`group block bg-background p-6 transition-all hover:bg-surface-container/20 ${
-            statusParam === 'running' ? 'ring-1 ring-inset ring-accent' : ''
+          className={`group bg-background hover:bg-surface-container/20 block p-6 transition-all ${
+            statusParam === 'running' ? 'ring-accent ring-1 ring-inset' : ''
           }`}
         >
           <div className="flex items-center justify-between">

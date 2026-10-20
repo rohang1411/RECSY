@@ -1,3 +1,4 @@
+import { env } from '@/env';
 import { and, asc, desc, eq, inArray, ne, or, isNull } from 'drizzle-orm';
 import { activeCatalogCandidateSql } from '@/services/catalog/eligibility';
 
@@ -179,9 +180,7 @@ function getGithubApiHeaders(etag?: string | null): Record<string, string> {
     'User-Agent': 'RECSY-internal-pipeline',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  const token =
-    (typeof process !== 'undefined' && process.env?.GITHUB_TOKEN) ||
-    (typeof process !== 'undefined' && process.env?.GITHUB_PAT);
+  const token = env.GITHUB_TOKEN || env.GITHUB_PAT || env.GITHUB_MODELS_TOKEN;
   if (token) {
     headers.Authorization = `Bearer ${token.trim()}`;
   }

@@ -32,7 +32,10 @@ export function LlmUsageMonitor({ data }: Props) {
   const isVerified = verified.remaining !== null;
 
   return (
-    <section id="gemini-quota-rail" className="border-outline-variant bg-background mt-8 overflow-hidden border scroll-mt-20">
+    <section
+      id="gemini-quota-rail"
+      className="border-outline-variant bg-background mt-8 scroll-mt-20 overflow-hidden border"
+    >
       <div className="border-outline-variant bg-outline-variant grid gap-px border-b lg:grid-cols-[1.2fr_0.8fr]">
         <div className="pipeline-grid bg-background relative min-h-[360px] overflow-hidden p-6 sm:p-8">
           <div className="pointer-events-none absolute inset-0 opacity-80 [background:radial-gradient(circle_at_74%_36%,rgba(216,107,56,0.17),transparent_28%),linear-gradient(120deg,rgba(255,255,255,0.07),transparent_34%)]" />
@@ -151,9 +154,7 @@ export function LlmUsageMonitor({ data }: Props) {
 
         <div className="bg-background p-5">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <p className="meta-label text-primary">
-              Configured Gemini Key Allocation & Status
-            </p>
+            <p className="meta-label text-primary">Configured Gemini Key Allocation & Status</p>
             <span className="text-muted-foreground font-mono text-[11px]">
               {data.googleQuota.rows.length > 0
                 ? `Reset ${formatTime(data.googleQuota.resetAt)}`
@@ -164,16 +165,21 @@ export function LlmUsageMonitor({ data }: Props) {
             <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
                 <tr className="border-outline-variant border-b">
-                  {['Key / Project', 'Status', 'Daily Cap', 'Tokens Today', 'Used Today', 'Calls Left'].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
-                      >
-                        {heading}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    'Key / Project',
+                    'Status',
+                    'Daily Cap',
+                    'Tokens Today',
+                    'Used Today',
+                    'Calls Left',
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      className="text-muted-foreground p-3 font-mono text-[11px] font-normal tracking-[0.16em] uppercase"
+                    >
+                      {heading}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -191,7 +197,7 @@ export function LlmUsageMonitor({ data }: Props) {
                     return (
                       <tr
                         key={keySlot.apiKeyIndex}
-                        className="border-outline-variant border-b last:border-b-0 hover:bg-surface-container/20 transition-colors"
+                        className="border-outline-variant hover:bg-surface-container/20 border-b transition-colors last:border-b-0"
                       >
                         <td className="p-3 font-mono text-xs">
                           <span className="text-primary font-bold">
@@ -239,7 +245,9 @@ export function LlmUsageMonitor({ data }: Props) {
                           {isGcpVerified && gRow?.remaining != null ? (
                             <span className="text-[#39ff88]">{formatNumber(gRow.remaining)}</span>
                           ) : keySlot.remainingCalls !== null ? (
-                            <span className="text-[#ffe45e]">{formatNumber(keySlot.remainingCalls)}</span>
+                            <span className="text-[#ffe45e]">
+                              {formatNumber(keySlot.remainingCalls)}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground">--</span>
                           )}
@@ -415,11 +423,4 @@ function formatTime(value: string): string {
     minute: '2-digit',
     timeZoneName: 'short',
   }).format(new Date(value));
-}
-
-function humanizeLimit(value: string): string {
-  return value
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
 }

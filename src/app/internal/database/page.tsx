@@ -255,7 +255,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
   return (
     <main className="px-grid-margin min-w-0 flex-1 py-10">
       {/* Header */}
-      <header className="accent-hairline border-outline-variant flex flex-col gap-6 border-b pb-5 mb-6 lg:flex-row lg:items-end lg:justify-between">
+      <header className="accent-hairline border-outline-variant mb-6 flex flex-col gap-6 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Link
@@ -362,8 +362,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           <section className="border-outline-variant bg-outline-variant mt-8 grid gap-px border md:grid-cols-2 xl:grid-cols-5">
             <Link
               href={`/internal/database?view=catalog&status=promoted${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
-              className={`group bg-background block p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'promoted' ? 'ring-2 ring-inset ring-[#39ff88] bg-[#39ff88]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'promoted' ? 'bg-[#39ff88]/5 ring-2 ring-[#39ff88] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -373,15 +373,15 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.promotedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Active canonical devices
               </p>
             </Link>
 
             <Link
               href={`/internal/database?view=catalog&status=blocked${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
-              className={`group bg-background block p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'blocked' ? 'ring-2 ring-inset ring-[#ff3b30] bg-[#ff3b30]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'blocked' ? 'bg-[#ff3b30]/5 ring-2 ring-[#ff3b30] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -391,15 +391,15 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold text-[#ff3b30]">
                 {catalogData.summary.blockedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Validation failures & errors
               </p>
             </Link>
 
             <Link
               href={`/internal/database?view=catalog&status=pending${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
-              className={`group bg-background block p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'pending' ? 'ring-2 ring-inset ring-[#ffe45e] bg-[#ffe45e]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'pending' ? 'bg-[#ffe45e]/5 ring-2 ring-[#ffe45e] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -409,15 +409,15 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.pendingCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Pending review queue
               </p>
             </Link>
 
             <Link
               href={`/internal/database?view=catalog&status=pipeline${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
-              className={`group bg-background block p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'pipeline' ? 'ring-2 ring-inset ring-[#00d2ff] bg-[#00d2ff]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors ${
+                statusParam === 'pipeline' ? 'bg-[#00d2ff]/5 ring-2 ring-[#00d2ff] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -427,15 +427,15 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.inPipelineCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Active in pipeline
               </p>
             </Link>
 
             <Link
               href={`/internal/database?view=catalog&status=queued${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#catalog-table`}
-              className={`group bg-background block p-6 md:col-span-2 xl:col-span-1 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'queued' ? 'ring-2 ring-inset ring-accent bg-accent/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 block cursor-pointer p-6 transition-colors md:col-span-2 xl:col-span-1 ${
+                statusParam === 'queued' ? 'ring-accent bg-accent/5 ring-2 ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -445,7 +445,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
               <p className="font-display text-gradient-steel mt-3 text-5xl leading-none font-extrabold">
                 {catalogData.summary.queuedCount.toLocaleString('en-US')}
               </p>
-              <p className="text-muted-foreground mt-2 font-mono text-xs group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-xs transition-colors">
                 Scheduled for crawl / promotion
               </p>
             </Link>
@@ -598,7 +598,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           </section>
 
           {/* Phones and Candidates Table */}
-          <section id="catalog-table" className="border-outline-variant bg-background mt-6 border scroll-mt-20">
+          <section
+            id="catalog-table"
+            className="border-outline-variant bg-background mt-6 scroll-mt-20 border"
+          >
             <div className="border-outline-variant flex items-center justify-between border-b p-4">
               <p className="meta-label text-primary">
                 Showing {catalogData.devices.length}{' '}
@@ -654,8 +657,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
             {/* Card 1: Ingestion Completion */}
             <Link
               href={`/internal/database?view=ingestion&status=complete${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
-              className={`group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'complete' ? 'ring-2 ring-inset ring-[#39ff88] bg-[#39ff88]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'complete' ? 'bg-[#39ff88]/5 ring-2 ring-[#39ff88] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -679,7 +682,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   {ingestionData.summary.completionPercentage}%
                 </span>
               </div>
-              <p className="text-muted-foreground mt-2 font-mono text-[11px] group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-[11px] transition-colors">
                 {ingestionData.summary.pendingCount} active phones pending evidence
               </p>
             </Link>
@@ -687,8 +690,8 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
             {/* Card 2: Pending Ingestion Breakdown */}
             <Link
               href={`/internal/database?view=ingestion&status=pending${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
-              className={`group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'pending' ? 'ring-2 ring-inset ring-[#ffe45e] bg-[#ffe45e]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'pending' ? 'bg-[#ffe45e]/5 ring-2 ring-[#ffe45e] ring-inset' : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -720,7 +723,7 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
                   </span>
                 ) : null}
               </div>
-              <p className="text-muted-foreground mt-2 font-mono text-[11px] group-hover:text-primary transition-colors">
+              <p className="text-muted-foreground group-hover:text-primary mt-2 font-mono text-[11px] transition-colors">
                 Awaiting scraper, curation or quota reset
               </p>
             </Link>
@@ -728,8 +731,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
             {/* Card 3: Corpus Volume & Density */}
             <Link
               href={`/internal/database?view=ingestion&status=all${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
-              className={`group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                statusParam === 'all' && reasonParam === 'all' ? 'ring-2 ring-inset ring-primary bg-primary/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                statusParam === 'all' && reasonParam === 'all'
+                  ? 'ring-primary bg-primary/5 ring-2 ring-inset'
+                  : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -750,8 +755,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
             {/* Card 4: Scorecard Synthesis */}
             <Link
               href={`/internal/database?view=ingestion&reason=missing_scorecard${brandParam !== 'all' ? `&brand=${brandParam}` : ''}#ingestion-table`}
-              className={`group bg-background relative block overflow-hidden p-6 transition-colors hover:bg-surface-container/30 cursor-pointer ${
-                reasonParam === 'missing_scorecard' ? 'ring-2 ring-inset ring-[#00d2ff] bg-[#00d2ff]/5' : ''
+              className={`group bg-background hover:bg-surface-container/30 relative block cursor-pointer overflow-hidden p-6 transition-colors ${
+                reasonParam === 'missing_scorecard'
+                  ? 'bg-[#00d2ff]/5 ring-2 ring-[#00d2ff] ring-inset'
+                  : ''
               }`}
             >
               <div className="flex items-center justify-between">
@@ -943,7 +950,10 @@ export default async function DatabaseDashboardPage({ searchParams }: PageProps)
           </section>
 
           {/* Phone Ingestion Ledger Table */}
-          <section id="ingestion-table" className="border-outline-variant bg-background mt-6 border scroll-mt-20">
+          <section
+            id="ingestion-table"
+            className="border-outline-variant bg-background mt-6 scroll-mt-20 border"
+          >
             <div className="border-outline-variant flex items-center justify-between border-b p-4">
               <p className="meta-label text-primary">
                 Showing {ingestionData.rows.length}{' '}

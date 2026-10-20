@@ -50,7 +50,10 @@ export function ChunkWorkbench({ sources, chunks, aspectLabels }: ChunkWorkbench
     : null;
 
   return (
-    <section id="chunk-workbench" className="border-outline-variant bg-background scroll-mt-20 border lg:col-span-7">
+    <section
+      id="chunk-workbench"
+      className="border-outline-variant bg-background scroll-mt-20 border lg:col-span-7"
+    >
       <div className="border-outline-variant border-b p-5">
         <SectionHint label="Chunk workbench">
           Opens the actual retrievable chunks behind the selected phone so evidence quality can be
