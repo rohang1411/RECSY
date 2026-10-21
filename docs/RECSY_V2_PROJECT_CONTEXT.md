@@ -93,6 +93,7 @@ Brand priority and latest-released ordering are enforced through `src/services/c
 24. [Development & Documentation Rules](#24-development--documentation-rules)
 25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
 26. [Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture)
+27. [Multi-User Platform (Planned)](#27-multi-user-platform-planned) - accounts, per-user query limits, billing; source of truth is [plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md)
 
 ---
 
@@ -1102,19 +1103,16 @@ Tasks are classified dynamically by semantic complexity into three execution tie
 
 See [ADR 0002](./adr/0002-design-tokens.md).
 
-- **OKLCH everywhere** for perceptual uniformity.
-- **Semantic tokens only** (`primary`, `muted-foreground`, â€¦) â€” no hex in
-  feature code.
-- **Dark default**, `next-themes` toggles `data-theme="dark|light"`.
-- **Brand palette.** Primary = orange (OKLCH `0.78 0.17 62` dark / `0.70 0.19
-55` light); Accent = cyan (OKLCH `0.80 0.14 195` dark / `0.65 0.14 195`
-  light).
-- **WCAG AA** contrast on all foreground/background pairs.
-- **`prefers-reduced-motion: reduce`** collapses animations.
-- **Tailwind v4** `@theme inline` aliases semantic vars to utility color
-  names, so `bg-primary` / `text-muted-foreground` resolve from tokens.
-- **Typography.** Inter (sans), JetBrains Mono (code/data), both via
-  `next/font`.
+- **Tokens are hex, not OKLCH.** Source of truth: `src/styles/theme.css` (aliased into Tailwind v4 by `@theme inline` in `src/app/globals.css`). Corrected 2026-10-21; earlier text here claimed OKLCH tokens and a light/dark toggle, which the code does not implement.
+- **Forced dark.** `ThemeProvider forcedTheme="dark"`; `data-theme='light'` and `'dark'` resolve to the same values, so there is **no light theme**. `ThemeToggle.tsx` exists but must not be surfaced in new UI.
+- **Palette.** Background `#000000`, foreground `#e2e2e2`, primary `#ffffff`, **accent `#d86b38` (burnt orange; 6.1:1 on black)**, warning `#ffd166`, success `#a7f3d0`, destructive `#ffb4ab`, control border `outline #8e9192`, decorative divider `outline-variant`/`border #444748` (2.2:1, decorative only), surfaces `#0e0e0e / #131313 / #1b1b1b / #1f1f1f / #2a2a2a / #353535`.
+- **Sharp corners everywhere.** `* { border-radius: 0 !important }`; `--radius: 0px`.
+- **Semantic tokens only** (`bg-background`, `text-primary`, `border-outline-variant`, `text-accent`, ...): no hex in feature code.
+- **Motion tokens.** `--motion-fast 150ms`, `--motion-medium 260ms`, `--motion-slow 520ms`, `--ease-editorial`, `--ease-schematic`; `prefers-reduced-motion: reduce` collapses animations globally. Library: `motion` (`motion/react`), currently used only in `/internal/pipeline`.
+- **Vocabulary.** `.meta-label` (mono 11px uppercase), `.display-heading`, `.interactive-panel`, `.accent-hairline`, `.heading-scanline`, `.scan-beam`, `BrutalistButton`/`BrutalistLinkButton`, `SideNav`, 40px 1px grid body background.
+- **Typography.** Inter (body), Hanken Grotesk 700/800 (display, uppercase), JetBrains Mono (labels, telemetry, buttons), all via `next/font/google`.
+- **WCAG AA** for text pairs; control boundaries use `outline` (not `outline-variant`).
+- Multi-user UI additions (quota HUD, auth sheet, pricing, account) are specified in plan 25, Section 12, using exactly these tokens.
 
 ---
 
@@ -1167,13 +1165,11 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 - **Retention pruning & DB hygiene** (`scripts/db-prune.ts`, `pnpm db:prune`): Bounded batch pruning (500 rows per transaction) for aged events, evaluation runs, expired LLM cache entries (>30 days), and inactive anonymous recommendation sessions (>90 days).
 - **IP rate-limiting** via `rate_limits` table (Phase 3 wires this into
   route handlers).
-- **CSP & security headers** in `next.config.ts` (X-Frame-Options DENY,
-  nosniff, Referrer-Policy strict-origin, Permissions-Policy locked down,
-  HSTS 2y preload).
+- **Security headers** in `next.config.ts` (X-Frame-Options DENY, nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy locked down, HSTS 2y preload). **There is no Content-Security-Policy configured** (corrected 2026-10-21: the comment in `next.config.ts` and earlier text here claimed one). A staged CSP rollout (report-only first) is specified in plan 25, Section 10.3.
 - **No raw IPs stored** — sha256 hash only.
-- **No raw PII** — we never store emails / names (no auth in MVP).
-- **Service-role key** never exposed to the client; only used in server
-  route handlers + ingestion jobs.
+- **No raw PII today** - no emails or names are stored because there is no authentication yet. Plan 25 introduces accounts; its privacy model (HMAC'd device and IP-prefix keys, no raw cookies, retention, export and deletion) is in Sections 6 and 10 of that plan. Note: `recommendation_sessions.session_cookie` and `chat_queries.session_cookie` store the raw anonymous session token (a bearer secret); hashing them is a tracked follow-up.
+- **Service-role key** (`SUPABASE_SERVICE_ROLE_KEY`) is a required server env var but, as of 2026-10-21, no application code reads it (verified by search). It is never `NEXT_PUBLIC_`. Plan 25 gives it a single job (deleting the auth user at account deletion) in one lint-restricted module.
+- **Row-level security does not protect the app's own queries**: the runtime connects as a role that bypasses RLS, so authorisation is enforced in application code. New tables in plan 25 are default-deny for `anon`/`authenticated` and no browser-side database access is used.
 
 ---
 
@@ -1756,6 +1752,13 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-10-21 - Multi-user platform plan v2 (implementation plan 25) and documentation corrections
+
+- **Plan 25 rewritten as v2** (`docs/ImplementationPlans/25. multi-user-platform-quotas-billing-and-artful-experience-plan.md`): ready-for-delegation plan for making RECSY multi-user and monetisable. Covers rules (2 free billable queries per UTC day; a "query" is a delivered result; clarify/empty/error/abort are not billed; BYOK exempt but capped), Supabase Auth with server-side flows, device/IP-prefix identity, atomic in-database quota engine (`recsy_reserve_query` and friends, executed and load-tested on PostgreSQL 16), billing via hosted Stripe Checkout with an idempotent webhook inbox and reconciliation, security/privacy/compliance, capacity model and FMEA, a full UI/UX spec on the real tokens, observability, testing, 22 work packages, staged rollout, risk register. v1 findings (31, four of them blockers) are itemised in Section 2 of the plan.
+- **Corrections to this document** found while grounding the plan: Section 15 claimed OKLCH tokens and a light/dark toggle (the code uses hex tokens and a forced dark theme); Section 16 claimed a CSP in `next.config.ts` (none exists) and that the service-role key is used in server routes (no code reads it); added the multi-user section (27) and pending-task entries.
+- **Code facts discovered that affect the plan** (not yet fixed): BYOK headers currently run Gemini requests on the platform key and unsupported providers fall through to the platform pool (`cascade-executor.ts`), so "BYOK = unmetered" would be a platform-funded loophole until the BYOK repair work package lands; `src/middleware.ts` excludes `/api` from its matcher; `userMode` (Deep reasoning) is only reachable with a BYOK header; the raw anonymous session token is stored in two tables.
+- No application code changed in this entry.
 
 ### 2026-10-21 — Self-healing candidate reconciliation, e-commerce & feature phone filtering, flagship registry expansion (91 active phones, 0 blocked, 0 pending)
 
@@ -4105,6 +4108,20 @@ Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
 
 > This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
 
+### P0 - Multi-user platform (plan 25), requires owner decisions first
+
+Source of truth: [plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md). Work is delegated by work package (WP-00 to WP-21, plan Section 16). Hard external prerequisites before any paid traffic: hosting plan with commercial use (D2), paid database plan (D3), paid LLM capacity (D4), payment provider and tax approach (D5).
+
+| Item | Acceptance criteria | Difficulty |
+| ---- | ------------------- | ---------- |
+| BYOK repair (WP-03) | A request carrying a user key never touches a platform key (generation, structured, stream, embeddings); unsupported/invalid keys return typed errors; tests prove zero platform adapter calls | Medium |
+| Metering schema + SQL core + DB test suite (WP-01, WP-02) | Reference SQL (plan 6.4) migrated; `pnpm test:db` green including concurrency, privileges, time-zone and eval-schema replay tests | Large |
+| Metering services + route integration (WP-04, 08, 09) | `QUOTA_MODE` off/shadow/enforce; `/api/recommend` and `/api/ask` follow the lease contract; off mode is byte-identical to today | Large |
+| Auth, device identity, abuse defence (WP-05, 06, 07) | Google + email OTP via server routes; anonymous-to-account graduation; no `supabase-js` in client bundles | Large |
+| Billing (WP-14) | Stripe test-mode matrix passes; webhook inbox + reconciliation heal seeded faults | Large |
+| UI foundation, quota HUD, auth/pricing/account UI (WP-15, 17) | All states in plan Section 12 exist in the UI lab; axe clean; bundle budgets met | Large |
+| Launch readiness (WP-21) | Go/no-go checklist (plan 17.2) complete with evidence | Medium |
+
 ### P1 â€” Actionable (high value, next sprint)
 
 #### Catalog auto-promotion
@@ -4374,3 +4391,41 @@ With all optimizations in place, RECSY v2 operates under an explicit **2.0 GB / 
 | Reserve & Traffic Variability                   |                0.4 GB | Buffer for traffic spikes and unplanned queries                         |
 | **Total Target**                                |            **2.0 GB** | **60% Headroom under 5.0 GB Free Quota**                                |
 | Hosted Evaluation Campaigns                     |            **0.0 GB** | Fully isolated to local PostgreSQL / pgvector                           |
+
+---
+
+## 27. Multi-User Platform (Planned)
+
+> **Status: planned, not implemented.** Source of truth: [plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md) (v2, 2026-10-21). This section is a summary so this document stays accurate; the plan holds the detail and wins on any conflict. Update this section as work packages land.
+
+### 27.1 Why
+
+RECSY is anonymous and single-tenant by accident: no authentication, identity is a random cookie, abuse control is a per-IP counter, and cost control is free-tier keys with a per-instance governor. To open it to the public, each person needs a bounded, auditable allowance, a way to pay for more, and protection of the platform's LLM budget.
+
+### 27.2 Product rules (plan Section 1.2)
+
+- 2 free billable queries per UTC day per person (configurable); a billable query is one *delivered* recommendation or answer. Clarifying questions, empty results, errors and client aborts are not billed.
+- After free: subscription allowance, then purchased credits (packs never expire at launch). Pro is monthly with an included query volume, server-enforced Deep reasoning, higher concurrency and cross-device history.
+- BYOK requests run only on the user's key (no platform fallback), are not billed by RECSY, and are capped (default 100/day).
+- Anonymous visitors get the same allowance per device; sign-in is required to continue; usage carries over on sign-in.
+- Fail safe for the user (platform faults are never charged), fail closed for the budget (no entitlement check, no model call).
+
+### 27.3 Architecture in brief
+
+- Supabase Auth (Google + email code), all flows through server route handlers; device cookie `__Host-recsy_did` (stored only as HMAC); IP-prefix keys.
+- Quota engine in SQL (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_sweep_expired_leases`, `recsy_link_device_to_user`, `recsy_apply_credit_delta`): atomic, per-subject serialised, lease with TTL, idempotent settlement. Executed and load-tested on PostgreSQL 16 while writing the plan.
+- Admission control: kill switch, global daily platform cap, priority shedding (anonymous, then free).
+- Billing: hosted Stripe Checkout and Billing Portal behind a `BillingProvider` interface; webhook inbox with re-fetch handlers; credit ledger idempotency keys; reconciliation job.
+- UI: quota HUD (pips + reset countdown), Auth Sheet, Quota Sheet, `/pricing`, `/account`, checkout return, using the real tokens in Section 15.
+
+### 27.4 Decisions awaiting the owner (plan 1.4)
+
+D1 identity provider (Supabase Auth); D2 hosting plan with commercial use; D3 paid database plan; D4 paid LLM capacity; D5 payment provider and tax approach (Stripe or merchant of record); D6 price points; D7 anonymous allowance; D8 UTC reset; D9 credit expiry law; D10 Pro benefits that really exist; D11 currency; D12 transactional email provider; D13 captcha; D14 staged rollout flags; D15 log drain; D16 error reporting. D2 to D5 are hard prerequisites for paid traffic.
+
+### 27.5 Rollout
+
+S0 groundwork (flags off) -> S1 shadow metering in production -> S2 accounts -> S3 enforce free quotas -> S4 billing test mode -> S5 live billing for an allowlist -> S6 general availability. Every stage is reversible by flags (plan 17.1).
+
+### 27.6 Rules for agents working on this (repo rules still apply, Section 24)
+
+Follow the plan's work-package ownership and the shared-hotspot protocol (plan 16.1); add every new table to `drizzle/rls.sql` and `scripts/db-smoke.ts`; read env only in `src/env.ts`; use `[VERIFY]`-tagged items as research tasks, not facts; if the plan contradicts the code, fix the plan in the same PR.
