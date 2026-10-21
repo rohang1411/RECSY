@@ -341,6 +341,9 @@ export async function persistChatQuery(input: {
   readonly tokensIn: number;
   readonly tokensOut: number;
   readonly model: string;
+  readonly userId?: string | null;
+  readonly leaseId?: string | null;
+  readonly sessionCookie?: string | null;
 }): Promise<void> {
   const db = getDb();
   await db.insert(chatQueries).values({
@@ -353,5 +356,8 @@ export async function persistChatQuery(input: {
     tokensIn: input.tokensIn,
     tokensOut: input.tokensOut,
     model: input.model,
+    userId: input.userId ?? undefined,
+    leaseId: input.leaseId ?? undefined,
+    sessionCookie: input.sessionCookie ?? undefined,
   });
 }

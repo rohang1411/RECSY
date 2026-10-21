@@ -12,6 +12,7 @@ import {
 } from '@/lib/client-settings';
 import { getClientByokHeaders } from '@/lib/byok-client';
 import type { ResolvedCitation } from '@/services/chat/citations';
+import type { QuotaSnapshotLite } from '@/services/metering/types';
 
 const CITATION_TAG =
   /\[c:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]/gi;
@@ -25,8 +26,10 @@ type StreamEvent =
       model: string;
       retrievalMs: number;
       retrievalTrace?: AskRetrievalTrace;
+      quota?: QuotaSnapshotLite;
     }
-  | { type: 'error'; code: string; message: string };
+  | { type: 'error'; code: string; message: string; quota?: QuotaSnapshotLite }
+  | { type: 'quota'; quota: QuotaSnapshotLite };
 
 function AnswerBody({ text, citations }: { text: string; citations: ResolvedCitation[] }) {
   const { byId, order } = useMemo(() => {

@@ -4,37 +4,65 @@
  * Accepts `{ phoneSlug, query, sessionId? }`. Runs hybrid retrieval
  * (vector + FTS + RRF + MMR) scoped to the requested phone, validates
  * retrieved citations, then streams Gemini's grounded answer back as
- * NDJSON. A terminal `done` chunk includes the optional `retrievalTrace`
- * for the in-UI collapsible trace panel (controlled by `traceId`).
+ * NDJSON.
  *
- * Rate-limited by IP hash (server-side rate_limits table). Logs every
- * request with a `traceId` so ops can correlate NDJSON stream events.
+ * Implements stream-aware metering & quota reservation:
+ * 1. Quota reservation happens BEFORE the stream exists so denials return clean JSON (402/429/503).
+ * 2. Grounded answer persisted with userId and leaseId before settling.
+ * 3. Commits lease on success, no_charge on empty corpus or client abort, refunds on error.
+ * 4. Terminal `done` and `error` chunks contain `quota: QuotaSnapshotLite`.
  *
- * Used by: `src/app/p/[slug]/page.tsx` (phone detail chat panel).
+ * Normative reference: Section 7.3.2, 7.5, 7.7, 8.7 of plan 25.
  */
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { ZodError, z } from 'zod';
 
 import { env } from '@/env';
 import { MAX_CHAT_MESSAGE_BYTES } from '@/lib/constants';
-import { publicErrorMessage, toAppError } from '@/lib/errors';
+import {
+  AccountRestrictedError,
+  AppError,
+  ByokError,
+  QuotaDeniedError,
+  RateLimitError,
+  publicErrorMessage,
+  toAppError,
+} from '@/lib/errors';
 import { readRequestJson } from '@/lib/request-json';
 import { getRequestClientIp } from '@/lib/request-ip';
+import { parseRequestId } from '@/lib/request-id';
 import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
-import { chunkTextForStream, persistChatQuery, runPhoneQna } from '@/services/chat/answer';
-import { getDb } from '@/services/db/client';
+import {
+  NO_CONTEXT_MODEL,
+  chunkTextForStream,
+  persistChatQuery,
+  runPhoneQna,
+} from '@/services/chat/answer';
+import { getDb, type AppQueryDb } from '@/services/db/client';
 import { phones } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
 import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { requestLogger } from '@/services/logger';
 import { consumeAskRateLimit } from '@/services/rate-limit';
+import { resolveRequestIdentity, type RequestIdentity } from '@/services/auth/identity';
+import { consumeUserRateLimit } from '@/services/metering/rate-limit-user';
+import { consumeDeviceRateLimit } from '@/services/abuse/rate-limit-device';
+import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/turnstile';
+import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
+import { getMeteringConfig } from '@/services/metering/config';
+import { reserveQuery } from '@/services/metering/reserve';
+import { emitMeteredRequestSummary } from '@/services/metering/summary';
+import type { QueryLease } from '@/services/metering/lease';
+import type { MeteredRequestOutcome } from '@/services/metering/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const askBodySchema = z.object({
   phoneSlug: z.string().trim().min(1).max(200),
@@ -51,18 +79,108 @@ function getHybrid(): ReturnType<typeof createHybridRetriever> {
   return hybridSingleton;
 }
 
+async function assertCaptchaIfRiskFlagged(
+  db: AppQueryDb,
+  identity: RequestIdentity,
+  anonIpCap: number,
+  turnstileToken: string | null | undefined,
+  clientIp?: string,
+): Promise<void> {
+  if (identity.userId !== null || !identity.ipKey || anonIpCap <= 0 || !env.TURNSTILE_SECRET_KEY) {
+    return;
+  }
+  try {
+    const res = await db.execute<{ queries_used: number }>(sql`
+      SELECT queries_used FROM usage_counters
+       WHERE subject_type = 'ip_prefix'
+         AND subject_id = ${identity.ipKey}
+         AND usage_date = (now() AT TIME ZONE 'UTC')::date
+       LIMIT 1;
+    `);
+    const ipAnonUsedToday = res[0]?.queries_used ?? 0;
+    if (isTrafficRiskFlagged({ ipKey: identity.ipKey, ipAnonUsedToday, anonIpCap })) {
+      if (!turnstileToken) {
+        throw new AppError('CAPTCHA_REQUIRED', 'Security verification required', {
+          status: 428,
+        });
+      }
+      const result = await verifyTurnstileToken(turnstileToken, clientIp);
+      if (!result.success) {
+        throw new AppError('CAPTCHA_REQUIRED', 'Security verification failed. Please try again.', {
+          status: 428,
+          context: { errorCodes: result.errorCodes },
+        });
+      }
+    }
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'CAPTCHA_REQUIRED') throw err;
+    // Fail-open on transient database counter lookup error
+  }
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
+  const t0 = performance.now();
   const traceId = randomUUID();
   const log = requestLogger({ traceId, route: 'POST /api/ask' });
+  const config = getMeteringConfig();
+
+  let lease: QueryLease | null = null;
+  let identity: RequestIdentity | null = null;
+  let isByok = false;
+  let reserveMs = 0;
 
   try {
+    // 1. IP rate limit (cheap abuse shield first)
     const ip = getRequestClientIp(request);
     await consumeAskRateLimit(ip);
 
+    // 2. Request body & request id parsing
     const json = await readRequestJson(request, 24_576);
     const body = askBodySchema.parse(json);
+    const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
+    // 3. Identity and abuse checks
     const db = getDb();
+    identity = await resolveRequestIdentity(request, { db });
+
+    if (identity.isSuspended) {
+      throw new AccountRestrictedError();
+    }
+
+    if (identity.userId) {
+      await consumeUserRateLimit(identity.userId, 'ask', db);
+    }
+    await consumeDeviceRateLimit(db, identity.deviceId, 'POST /api/ask');
+
+    await assertCaptchaIfRiskFlagged(
+      db,
+      identity,
+      config.anonIpDailyCap,
+      request.headers.get('x-turnstile-token'),
+      ip,
+    );
+
+    // 4. Platform admission & BYOK
+    const platform = await getPlatformState(db);
+    const byok = extractByokFromHeaders(request.headers);
+    isByok = byok != null;
+    assertPlatformAcceptsRequest(platform, identity, isByok);
+
+    // 5. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
+    const tReserveStart = performance.now();
+    lease = await reserveQuery({
+      db,
+      identity,
+      requestId,
+      route: 'POST /api/ask',
+      traceId,
+      byok: isByok,
+      shedFree: platform.shedFreeFor(identity),
+      config,
+    });
+    reserveMs = Math.round(performance.now() - tReserveStart);
+
+    // 6. Check phone target
     const [phone] = await db
       .select({
         id: phones.id,
@@ -77,14 +195,34 @@ export async function POST(request: NextRequest): Promise<Response> {
       .limit(1);
 
     if (!phone || phone.status !== 'active') {
+      await lease.refund('not_found').catch(() => undefined);
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity.userId,
+        deviceId: identity.deviceId,
+        chargeSource: lease.chargeSource,
+        outcome: 'refunded',
+        denial: 'NOT_FOUND',
+        reserveMs,
+        settleMs: 0,
+        totalMs: Math.round(performance.now() - t0),
+        httpStatus: 404,
+      });
       return Response.json(
         { code: 'NOT_FOUND', message: 'Phone not found' },
         { status: 404, headers: { 'X-Trace-Id': traceId } },
       );
     }
 
+    // 7. Stream-aware Q&A execution
     const enc = new TextEncoder();
     let cancelled = false;
+    let streamOutcome: MeteredRequestOutcome = 'committed';
+    let settleMs = 0;
+
     const stream = new ReadableStream<Uint8Array>({
       cancel() {
         cancelled = true;
@@ -95,7 +233,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
         };
 
-        const t0 = performance.now();
+        const tStreamStart = performance.now();
         try {
           const result = await runPhoneQna({
             phoneId: phone.id,
@@ -113,20 +251,12 @@ export async function POST(request: NextRequest): Promise<Response> {
               lastIngestAt: phone.lastIngestAt,
               nextIngestAt: phone.nextIngestAt,
             },
-            byok: extractByokFromHeaders(request.headers),
+            byok,
           });
 
-          write({
-            type: 'meta',
-            phoneId: phone.id,
-            retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
-          });
+          const latencyMs = Math.round(performance.now() - tStreamStart);
+          const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
 
-          for (const piece of chunkTextForStream(result.text)) {
-            write({ type: 'delta', text: piece });
-          }
-
-          const latencyMs = Math.round(performance.now() - t0);
           const persistenceStart = performance.now();
           await persistChatQuery({
             phoneId: phone.id,
@@ -138,24 +268,108 @@ export async function POST(request: NextRequest): Promise<Response> {
             tokensIn: result.generationAccounting.tokensIn,
             tokensOut: result.generationAccounting.tokensOut,
             model: result.model,
+            userId: identity!.userId,
+            leaseId: leaseIdForDb,
           });
+          const persistenceMs = performance.now() - persistenceStart;
+
+          const meta = {
+            model: result.model,
+            tokensIn: result.generationAccounting.tokensIn,
+            tokensOut: result.generationAccounting.tokensOut,
+            latencyMs,
+            cacheHit: result.generationAccounting.cacheHits > 0,
+          };
+
+          const tSettleStart = performance.now();
+          let outcome: 'commit' | 'no_charge';
+          if (result.model === NO_CONTEXT_MODEL) {
+            await lease!.noCharge('no_context');
+            outcome = 'no_charge';
+            streamOutcome = 'no_charge';
+          } else if (cancelled || request.signal.aborted) {
+            await lease!.noCharge('client_abort');
+            outcome = 'no_charge';
+            streamOutcome = 'no_charge';
+          } else {
+            await lease!.commit(meta);
+            outcome = 'commit';
+            streamOutcome = 'committed';
+          }
+          settleMs = Math.round(performance.now() - tSettleStart);
+
+          write({
+            type: 'meta',
+            phoneId: phone.id,
+            retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
+          });
+
+          for (const piece of chunkTextForStream(result.text)) {
+            write({ type: 'delta', text: piece });
+          }
+
           write({
             type: 'done',
             citations: result.citations,
             usage: result.usage,
             generationAccounting: result.generationAccounting,
             model: result.model,
-            persistenceMs: performance.now() - persistenceStart,
+            persistenceMs,
             retrievalMs: result.retrieval.debug.totalMs,
             retrievalTrace: buildAskRetrievalTrace(result.retrieval),
+            quota: lease!.projectedQuota(outcome),
+          });
+
+          const totalMs = Math.round(performance.now() - t0);
+          emitMeteredRequestSummary({
+            traceId,
+            route: 'POST /api/ask',
+            quotaMode: config.mode,
+            byok: isByok,
+            userId: identity!.userId,
+            deviceId: identity!.deviceId,
+            chargeSource: lease!.chargeSource,
+            outcome: streamOutcome,
+            reserveMs,
+            settleMs,
+            totalMs,
+            model: result.model,
+            tokensIn: result.generationAccounting.tokensIn,
+            tokensOut: result.generationAccounting.tokensOut,
+            cacheHit: result.generationAccounting.cacheHits > 0,
+            httpStatus: 200,
           });
         } catch (err) {
           const app = toAppError(err);
           log.error({ err, code: app.code }, 'Q&A request failed');
+
+          const tRefundStart = performance.now();
+          await lease!.refund(app.code).catch(() => undefined);
+          settleMs = Math.round(performance.now() - tRefundStart);
+          streamOutcome = 'refunded';
+
           write({
             type: 'error',
             code: app.code,
             message: publicErrorMessage(app),
+            quota: lease!.projectedQuota('refund'),
+          });
+
+          const totalMs = Math.round(performance.now() - t0);
+          emitMeteredRequestSummary({
+            traceId,
+            route: 'POST /api/ask',
+            quotaMode: config.mode,
+            byok: isByok,
+            userId: identity!.userId,
+            deviceId: identity!.deviceId,
+            chargeSource: lease!.chargeSource,
+            outcome: 'refunded',
+            denial: app.code,
+            reserveMs,
+            settleMs,
+            totalMs,
+            httpStatus: app.status,
           });
         } finally {
           if (!cancelled) controller.close();
@@ -171,18 +385,192 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
     });
   } catch (err) {
+    const totalMs = Math.round(performance.now() - t0);
+    if (lease && !lease.settled) {
+      const refundCode = err instanceof AppError ? err.code : 'internal_error';
+      await lease.refund(refundCode).catch(() => undefined);
+    }
+
     if (err instanceof ZodError) {
       const msg = err.issues[0]?.message ?? 'Invalid request body';
-      return Response.json(
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity?.userId,
+        deviceId: identity?.deviceId,
+        chargeSource: lease?.chargeSource,
+        outcome: 'denied',
+        denial: 'VALIDATION',
+        reserveMs,
+        settleMs: 0,
+        totalMs,
+        httpStatus: 400,
+      });
+      return NextResponse.json(
         { code: 'VALIDATION', message: msg },
         { status: 400, headers: { 'X-Trace-Id': traceId } },
       );
     }
+
+    if (err instanceof QuotaDeniedError) {
+      const retryAfter =
+        err.code === 'TOO_MANY_INFLIGHT' || err.code === 'DUPLICATE_REQUEST'
+          ? '2'
+          : err.code === 'CAPACITY_BUSY'
+            ? '30'
+            : err.code === 'METERING_UNAVAILABLE'
+              ? '10'
+              : undefined;
+
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (retryAfter) headers['Retry-After'] = retryAfter;
+
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity?.userId,
+        deviceId: identity?.deviceId,
+        chargeSource: lease?.chargeSource,
+        outcome: 'denied',
+        denial: err.code,
+        reserveMs,
+        settleMs: 0,
+        totalMs,
+        httpStatus: err.status,
+      });
+
+      return NextResponse.json(
+        {
+          code: err.code,
+          message: publicErrorMessage(err),
+          quota: err.quota,
+          actions: err.actions,
+        },
+        { status: err.status, headers },
+      );
+    }
+
+    if (err instanceof RateLimitError) {
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity?.userId,
+        deviceId: identity?.deviceId,
+        chargeSource: lease?.chargeSource,
+        outcome: 'denied',
+        denial: 'RATE_LIMITED',
+        reserveMs,
+        settleMs: 0,
+        totalMs,
+        httpStatus: 429,
+      });
+      return NextResponse.json(
+        {
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Please wait a moment.',
+        },
+        {
+          status: 429,
+          headers: {
+            'X-Trace-Id': traceId,
+            'Retry-After': '60',
+          },
+        },
+      );
+    }
+
+    if (err instanceof AccountRestrictedError) {
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity?.userId,
+        deviceId: identity?.deviceId,
+        chargeSource: lease?.chargeSource,
+        outcome: 'denied',
+        denial: 'ACCOUNT_RESTRICTED',
+        reserveMs,
+        settleMs: 0,
+        totalMs,
+        httpStatus: 403,
+      });
+      return NextResponse.json(
+        {
+          code: 'ACCOUNT_RESTRICTED',
+          message: err.message,
+        },
+        { status: 403, headers: { 'X-Trace-Id': traceId } },
+      );
+    }
+
+    if (err instanceof ByokError) {
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (err.code === 'BYOK_RATE_LIMITED') {
+        headers['Retry-After'] = '60';
+      }
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity?.userId,
+        deviceId: identity?.deviceId,
+        chargeSource: lease?.chargeSource,
+        outcome: 'error',
+        denial: err.code,
+        reserveMs,
+        settleMs: 0,
+        totalMs,
+        httpStatus: err.status,
+      });
+      return NextResponse.json(
+        {
+          code: err.code,
+          message: publicErrorMessage(err),
+        },
+        { status: err.status, headers },
+      );
+    }
+
     const app = toAppError(err);
     log.error({ err, code: app.code }, 'Q&A request setup failed');
-    return Response.json(
-      { code: app.code, message: publicErrorMessage(app) },
-      { status: app.status, headers: { 'X-Trace-Id': traceId } },
+
+    const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+    if (app.code === 'METERING_UNAVAILABLE' || app.code === 'AUTH_UNAVAILABLE') {
+      headers['Retry-After'] = '10';
+    } else if (app.code === 'CAPACITY_BUSY') {
+      headers['Retry-After'] = '30';
+    }
+
+    emitMeteredRequestSummary({
+      traceId,
+      route: 'POST /api/ask',
+      quotaMode: config.mode,
+      byok: isByok,
+      userId: identity?.userId,
+      deviceId: identity?.deviceId,
+      chargeSource: lease?.chargeSource,
+      outcome: lease?.settleOutcome === 'refunded' ? 'refunded' : 'error',
+      denial: app.code,
+      reserveMs,
+      settleMs: 0,
+      totalMs,
+      httpStatus: app.status,
+    });
+
+    return NextResponse.json(
+      {
+        code: app.code,
+        message: publicErrorMessage(app),
+      },
+      { status: app.status, headers },
     );
   }
 }

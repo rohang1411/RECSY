@@ -131,11 +131,14 @@ const formFactorSchema = z.preprocess((v) => {
   return o;
 }, formFactorObjectSchema.optional());
 
-const stringArray = z.preprocess((v) => (Array.isArray(v) ? v : []), z.array(z.string()));
+const stringArray: z.ZodType<string[]> = z.preprocess(
+  (v: unknown) => (Array.isArray(v) ? v : []),
+  z.array(z.string()),
+);
 
-const brandPreferenceSchema = z.object({
-  liked: z.preprocess((v) => (Array.isArray(v) ? v : []), z.array(z.string())),
-  disliked: z.preprocess((v) => (Array.isArray(v) ? v : []), z.array(z.string())),
+const brandPreferenceSchema: z.ZodType<{ liked: string[]; disliked: string[] }> = z.object({
+  liked: z.preprocess((v: unknown) => (Array.isArray(v) ? v : []), z.array(z.string())),
+  disliked: z.preprocess((v: unknown) => (Array.isArray(v) ? v : []), z.array(z.string())),
 });
 
 const confidenceFromLlm = z.preprocess((v) => {

@@ -30,6 +30,7 @@ import { extractUserRequirements } from './extract-requirements';
 import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
+export type { UserRequirements };
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 import { unsupportedHardFeatures } from './hard-features';
