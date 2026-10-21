@@ -387,6 +387,8 @@ const CONTRACT_MANUFACTURERS = new Set([
   'pegatron',
   'wistron',
   'compal electronics',
+  'hi-p international',
+  'hi-p',
 ]);
 
 function cleanTitle(value: string): string {

@@ -107,8 +107,10 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err) => {
-  console.error('[spec-embed:backfill] FAILED');
-  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('[spec-embed:backfill] FAILED');
+    console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+    process.exit(1);
+  });

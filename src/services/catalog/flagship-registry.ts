@@ -6,7 +6,7 @@
  * flagships and mid-range devices from Apple, Samsung, Google, OnePlus, Nothing,
  * etc., without relying solely on serendipitous web scrapers or manual requests.
  */
-import { sql } from 'drizzle-orm';
+import { and, eq, ilike, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { PhoneSpecSchema, type PhoneSpec } from '@/features/phones/schema';
 import { phones, phoneAliases, catalogCandidates } from '@/services/db/schema';
@@ -694,6 +694,116 @@ export const CANONICAL_FLAGSHIPS: readonly CanonicalFlagshipEntry[] = [
         'comfortable wide cover screen',
         '5x optical telephoto',
         'fluid multitasking',
+      ],
+    }),
+  },
+
+  // ---------------------------------------------------------------------------
+  // Samsung Galaxy S23 Series (2023 Flagships)
+  // ---------------------------------------------------------------------------
+  {
+    slug: 'samsung-galaxy-s23-plus',
+    brand: 'Samsung',
+    model: 'Galaxy S23+',
+    variant: 'Plus',
+    tagline:
+      'Balanced Samsung flagship with 6.6-inch Dynamic AMOLED 2X, Snapdragon 8 Gen 2, and 45W fast charging.',
+    launchDate: '2023-02-17',
+    msrpUsd: '999.00',
+    regionAvailability: ['US', 'GB', 'IN', 'EU', 'AU', 'CA', 'JP'],
+    aliases: [
+      { alias: 'Samsung Galaxy S23+', priority: 100 },
+      { alias: 'Samsung Galaxy S23 Plus', priority: 100 },
+      { alias: 'Galaxy S23+', priority: 95 },
+      { alias: 'Galaxy S23 Plus', priority: 95 },
+      { alias: 'S23+', priority: 80 },
+      { alias: 'S23 Plus', priority: 80 },
+    ],
+    spec: P({
+      display: {
+        size_in: 6.6,
+        resolution: '2340x1080',
+        refresh_rate_hz: 120,
+        panel_type: 'Dynamic AMOLED 2X',
+        peak_brightness_nits: 1750,
+        features: ['HDR10+', '120Hz', 'Gorilla Glass Victus 2'],
+      },
+      chipset: 'Qualcomm Snapdragon 8 Gen 2 for Galaxy',
+      process_nm: 4,
+      ram_gb: 8,
+      storage_options_gb: [256, 512],
+      rear_cameras: [
+        { type: 'main', mp: 50, aperture_f: 1.8, ois: true },
+        { type: 'ultrawide', mp: 12, aperture_f: 2.2 },
+        { type: 'telephoto', mp: 10, aperture_f: 2.4, zoom: '3x optical', ois: true },
+      ],
+      front_camera: { mp: 12, aperture_f: 2.2 },
+      battery_mah: 4700,
+      charging: { wired_w: 45, wireless_w: 15 },
+      weight_g: 196,
+      os: 'Android 13',
+      update_policy: '4 years of OS upgrades, 5 years of security updates',
+      connectivity: { wifi: 'Wi-Fi 6E', bluetooth: '5.3', nfc: true, usb: 'USB-C 3.2' },
+      ip_rating: 'IP68',
+      colors: ['Phantom Black', 'Cream', 'Green', 'Lavender'],
+      foldable: false,
+      highlights: [
+        'bright 1750-nit display',
+        'Snapdragon 8 Gen 2 efficiency',
+        '45W fast charging',
+        'solid 50MP triple camera',
+      ],
+    }),
+  },
+  {
+    slug: 'samsung-galaxy-s23-ultra',
+    brand: 'Samsung',
+    model: 'Galaxy S23 Ultra',
+    tagline:
+      'Ultra powerhouse with embedded S Pen, 200MP main camera, and dual 3x/10x optical zoom periscopes.',
+    launchDate: '2023-02-17',
+    msrpUsd: '1199.00',
+    regionAvailability: ['US', 'GB', 'IN', 'EU', 'AU', 'CA', 'JP'],
+    aliases: [
+      { alias: 'Samsung Galaxy S23 Ultra', priority: 100 },
+      { alias: 'Galaxy S23 Ultra', priority: 95 },
+      { alias: 'S23 Ultra', priority: 90 },
+      { alias: 'S23U', priority: 60 },
+    ],
+    spec: P({
+      display: {
+        size_in: 6.8,
+        resolution: '3088x1440',
+        refresh_rate_hz: 120,
+        panel_type: 'Dynamic LTPO AMOLED 2X',
+        peak_brightness_nits: 1750,
+        features: ['LTPO 1-120Hz', 'QHD+', 'S Pen support', 'HDR10+', 'Gorilla Glass Victus 2'],
+      },
+      chipset: 'Qualcomm Snapdragon 8 Gen 2 for Galaxy',
+      process_nm: 4,
+      ram_gb: 8,
+      storage_options_gb: [256, 512, 1024],
+      rear_cameras: [
+        { type: 'main', mp: 200, aperture_f: 1.7, ois: true },
+        { type: 'periscope', mp: 10, aperture_f: 4.9, zoom: '10x optical', ois: true },
+        { type: 'telephoto', mp: 10, aperture_f: 2.4, zoom: '3x optical', ois: true },
+        { type: 'ultrawide', mp: 12, aperture_f: 2.2 },
+      ],
+      front_camera: { mp: 12, aperture_f: 2.2 },
+      battery_mah: 5000,
+      charging: { wired_w: 45, wireless_w: 15 },
+      weight_g: 234,
+      os: 'Android 13',
+      update_policy: '4 years of OS upgrades, 5 years of security updates',
+      connectivity: { wifi: 'Wi-Fi 6E', bluetooth: '5.3', nfc: true, usb: 'USB-C 3.2' },
+      ip_rating: 'IP68',
+      colors: ['Phantom Black', 'Cream', 'Green', 'Lavender'],
+      foldable: false,
+      highlights: [
+        '200MP detail camera',
+        '10x optical periscope zoom',
+        'integrated S Pen stylus',
+        '5000mAh all-day battery',
       ],
     }),
   },
@@ -1527,6 +1637,37 @@ export async function syncMissingFlagships<
           updatedAt: sql`now()`,
         },
       });
+
+    // Also reconcile any pre-existing candidate rows for this phone from other sources
+    await db
+      .update(catalogCandidates)
+      .set({
+        matchedPhoneId: upsertedPhone.id,
+        status: 'promoted',
+        decision: 'matched_existing',
+        issueCodes: ['matched_existing'],
+        retryAfter: null,
+        lastDecisionAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          or(
+            eq(catalogCandidates.matchedPhoneId, upsertedPhone.id),
+            ilike(catalogCandidates.candidateTitle, `${entry.brand} ${entry.model}`),
+            ilike(catalogCandidates.candidateTitle, entry.model),
+            eq(
+              catalogCandidates.canonicalKey,
+              buildCanonicalKey({
+                brand: entry.brand,
+                model: entry.model,
+                launchDate: entry.launchDate,
+              }),
+            ),
+          ),
+          ne(catalogCandidates.sourceKey, 'canonical_flagship_registry'),
+        ),
+      );
   }
 
   return { added, updated };

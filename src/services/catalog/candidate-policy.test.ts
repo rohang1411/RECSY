@@ -72,6 +72,13 @@ describe('catalog candidate policy', () => {
     );
   });
 
+  it('rejects shop URLs, generic category titles, and feature phones', () => {
+    expect(isLikelyCatalogPhoneTitle('Jolla Shop Jolla Phone Pre-order')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Hi-P International Fairphone Shop')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Huawei 智能手机')).toBe(false);
+    expect(isLikelyCatalogPhoneTitle('Nokia 2780 Flip')).toBe(false);
+  });
+
   it('rejects archaic feature phones and carrier model number codes', () => {
     expect(isLikelyCatalogPhoneTitle('Samsung Corby II')).toBe(false);
     expect(isLikelyCatalogPhoneTitle('Samsung A100')).toBe(false);
