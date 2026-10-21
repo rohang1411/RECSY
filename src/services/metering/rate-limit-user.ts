@@ -6,21 +6,25 @@ import { rateLimits } from '@/services/db/schema';
 export const USER_RATE_LIMIT_WINDOW_MS = 60_000;
 export const USER_RECOMMEND_RATE_LIMIT_MAX = 12;
 export const USER_ASK_RATE_LIMIT_MAX = 20;
+export const USER_READ_RATE_LIMIT_MAX = 60;
 
-export function userRateLimitKey(route: 'recommend' | 'ask', userId: string): string {
+export type UserRateLimitRoute = 'recommend' | 'ask' | 'read';
+
+export function userRateLimitKey(route: UserRateLimitRoute, userId: string): string {
   return `${route}:user:v1:${userId}`;
 }
 
 /**
  * Per-user rate limiter to prevent flooding across multiple IPs.
- * Normative reference: Section 7.5 of plan 25.
+ * Normative reference: Section 7.5 and 7.8 of plan 25.
  *
  * Recommend: 12 requests / 60 seconds.
  * Ask: 20 requests / 60 seconds.
+ * Read: 60 requests / 60 seconds.
  */
 export async function consumeUserRateLimit(
   userId: string | null | undefined,
-  route: 'recommend' | 'ask',
+  route: UserRateLimitRoute,
   customDb?: AppQueryDb,
 ): Promise<void> {
   if (!userId) return;
@@ -28,7 +32,11 @@ export async function consumeUserRateLimit(
   const db = customDb ?? getDb();
   const windowMs = USER_RATE_LIMIT_WINDOW_MS;
   const maxAllowed =
-    route === 'recommend' ? USER_RECOMMEND_RATE_LIMIT_MAX : USER_ASK_RATE_LIMIT_MAX;
+    route === 'recommend'
+      ? USER_RECOMMEND_RATE_LIMIT_MAX
+      : route === 'ask'
+        ? USER_ASK_RATE_LIMIT_MAX
+        : USER_READ_RATE_LIMIT_MAX;
 
   const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
   const key = userRateLimitKey(route, userId);

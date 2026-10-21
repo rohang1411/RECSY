@@ -4,12 +4,13 @@ import type { AppQueryDb } from '@/services/db/client';
 
 export const DEVICE_RECOMMEND_RATE_LIMIT_MAX = 15; // 15 calls per minute
 export const DEVICE_ASK_RATE_LIMIT_MAX = 25; // 25 calls per minute
+export const DEVICE_READ_RATE_LIMIT_MAX = 60; // 60 calls per minute
 
-export function deviceRateLimitKey(
-  deviceId: string,
-  route: 'POST /api/recommend' | 'POST /api/ask',
-): string {
-  const shortRoute = route === 'POST /api/recommend' ? 'rec' : 'ask';
+export type DeviceRateLimitRoute = 'POST /api/recommend' | 'POST /api/ask' | 'GET /api/me';
+
+export function deviceRateLimitKey(deviceId: string, route: DeviceRateLimitRoute): string {
+  const shortRoute =
+    route === 'POST /api/recommend' ? 'rec' : route === 'POST /api/ask' ? 'ask' : 'me';
   return `dev_rl:${shortRoute}:${deviceId.trim()}`;
 }
 
@@ -21,14 +22,18 @@ export function deviceRateLimitKey(
 export async function consumeDeviceRateLimit(
   db: AppQueryDb,
   deviceId: string | null | undefined,
-  route: 'POST /api/recommend' | 'POST /api/ask',
+  route: DeviceRateLimitRoute,
 ): Promise<void> {
   if (!deviceId || !deviceId.trim()) {
     return;
   }
 
   const maxAllowed =
-    route === 'POST /api/recommend' ? DEVICE_RECOMMEND_RATE_LIMIT_MAX : DEVICE_ASK_RATE_LIMIT_MAX;
+    route === 'POST /api/recommend'
+      ? DEVICE_RECOMMEND_RATE_LIMIT_MAX
+      : route === 'POST /api/ask'
+        ? DEVICE_ASK_RATE_LIMIT_MAX
+        : DEVICE_READ_RATE_LIMIT_MAX;
 
   const key = deviceRateLimitKey(deviceId, route);
 
