@@ -84,6 +84,7 @@ export function isLikelyCatalogPhoneTitle(title: string): boolean {
   return (
     !RAW_QID_TITLE_RE.test(trimmed) &&
     trimmed.length > 0 &&
+    !SHOP_OR_COMMERCE_TITLE_RE.test(trimmed) &&
     !NON_PHONE_TITLE_RE.test(trimmed) &&
     !MULTI_PHONE_TITLE_RE.test(trimmed) &&
     !FAMILY_TITLE_RE.test(trimmed) &&
@@ -123,7 +124,9 @@ const NON_PHONE_TITLE_RE =
 const MULTI_PHONE_TITLE_RE = /\s(?:and|&)\s/i;
 
 const FAMILY_TITLE_RE =
-  /\bseries\b|^(?:apple\s+)?iphone$|^(?:samsung\s+)?galaxy(?:\s+[aszmf])?$|^(?:google\s+)?pixel$|^(?:sony\s+)?xperia$|\b(?:smartphones|phones)\s*$/i;
+  /\bseries\b|^(?:apple\s+)?iphone$|^(?:samsung\s+)?galaxy(?:\s+[aszmf])?$|^(?:google\s+)?pixel$|^(?:sony\s+)?xperia$|\b(?:smartphones|phones)\s*$|智能手机|手机/i;
+
+const SHOP_OR_COMMERCE_TITLE_RE = /\b(?:shop|store|pre-?order|commerce|buy\s+now|cart|checkout)\b/i;
 
 export function isCatalogRetryDue(retryAfter: Date | null | undefined, now = new Date()): boolean {
   return !retryAfter || retryAfter <= now;
@@ -154,4 +157,4 @@ export function compareCatalogEnrichmentFairness(
   );
 }
 const LEGACY_MODEL_OR_FEATURE_PHONE_RE =
-  /\b(?:sgh|sch|sph|gt-[a-z0-9]+|sm-[a-z0-9]{3,}|corby|genoa|w2[0-9]|a100|s5\s+neo|stellar|j2\s+core)\b/i;
+  /\b(?:sgh|sch|sph|gt-[a-z0-9]+|sm-[a-z0-9]{3,}|corby|genoa|w2[0-9]|a100|s5\s+neo|stellar|j2\s+core|\d{4}\s*flip|kaios|feature\s*phone)\b/i;

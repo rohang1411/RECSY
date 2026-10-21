@@ -193,7 +193,9 @@ async function main(): Promise<void> {
   console.log(`  Failed / Missing : ${failedCount}`);
 }
 
-main().catch((err) => {
-  console.error('[catalog:backfill-images] Fatal error:', err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error('[catalog:backfill-images] Fatal error:', err);
+    process.exit(1);
+  });

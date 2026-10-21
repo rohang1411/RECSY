@@ -572,12 +572,19 @@ function officialUrlScore(url: string): number {
 // that Wikidata/MobileAPI sourced `officialWebsite` values that point to
 // third-party sites don't result in unintended fetches.
 const NON_OFFICIAL_HOST_PATTERNS =
-  /gsmarena\.com|gsm\.com|phonearena\.com|kimovil\.com|notebookcheck|\bgsm\b|reddit\.com|youtube\.com|youtu\.be|twitter\.com|x\.com|instagram\.com|facebook\.com|tiktok\.com|amazon\.com|bestbuy\.com|walmart\.com|ebay\.com|flipkart\.com|wikidata\.org|wikipedia\.org|api\.mobileapi\.dev|commons\.wikimedia\.org/i;
+  /gsmarena\.com|gsm\.com|phonearena\.com|kimovil\.com|notebookcheck|\bgsm\b|reddit\.com|youtube\.com|youtu\.be|twitter\.com|x\.com|instagram\.com|facebook\.com|tiktok\.com|amazon\.com|bestbuy\.com|walmart\.com|ebay\.com|flipkart\.com|wikidata\.org|wikipedia\.org|api\.mobileapi\.dev|commons\.wikimedia\.org|\b(?:shop|commerce|cart|checkout)\./i;
+
+const NON_OFFICIAL_PATH_PATTERNS =
+  /\/(?:shop|store|cart|checkout|pre-?order|category|collections)\b/i;
 
 function isLikelyOfficialPage(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && !NON_OFFICIAL_HOST_PATTERNS.test(parsed.hostname);
+    return (
+      parsed.protocol === 'https:' &&
+      !NON_OFFICIAL_HOST_PATTERNS.test(parsed.hostname) &&
+      !NON_OFFICIAL_PATH_PATTERNS.test(parsed.pathname)
+    );
   } catch {
     return false;
   }
