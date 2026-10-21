@@ -22,10 +22,49 @@ const eslintConfig = defineConfig([
           selector: "MemberExpression[object.name='process'][property.name='env']",
           message: 'Import typed values from "@/env" instead of touching process.env directly.',
         },
+        {
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: 'dangerouslySetInnerHTML is forbidden to prevent XSS vulnerabilities.',
+        },
       ],
       '@typescript-eslint/consistent-type-imports': [
         'warn',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+      ],
+    },
+  },
+  {
+    // Prevent client bundles from importing server SDKs like Supabase direct client or Stripe
+    files: ['src/components/**/*.{ts,tsx}', 'src/app/**/*client*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@supabase/*', 'stripe'],
+              message: 'Server SDKs (@supabase/*, stripe) cannot be imported in client components.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Restrict admin-client.ts to account lifecycle services only
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/services/account/**/*.{ts,tsx}', 'src/services/auth/admin-client.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@/services/auth/admin-client',
+              message: 'admin-client.ts may only be imported by account lifecycle services.',
+            },
+          ],
+        },
       ],
     },
   },
