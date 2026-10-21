@@ -32,6 +32,7 @@ import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
 import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/types';
 
@@ -59,11 +60,7 @@ export interface PhoneQnaInput {
     readonly nextIngestAt?: Date | string | null;
   };
   /** Optional user-supplied BYOK key and preference mode. */
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
 }
 
 export interface PhoneQnaResult {

@@ -21,6 +21,7 @@ import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/
 import type { AppQueryDb } from '@/services/db/client';
 import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
 import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
@@ -140,11 +141,7 @@ export async function runRecommendationPipeline(input: {
   readonly sessionId: string;
   readonly userMessage: string;
   readonly regionCode?: string;
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
