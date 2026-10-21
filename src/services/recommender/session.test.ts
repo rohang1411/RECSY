@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AppDb } from '@/services/db/client';
 
-import { getLatestRequirementsForSession } from './session';
+import { findSessionByCookie, getLatestRequirementsForSession } from './session';
 
 function makeMockDb(rows: readonly { extractedRequirements: unknown }[]): AppDb {
   const chain = {
@@ -76,5 +76,97 @@ describe('getLatestRequirementsForSession', () => {
 
     expect(requirements?.budget_usd?.max).toBe(700);
     expect(requirements?.priorities[0]?.aspect).toBe('battery');
+  });
+});
+
+describe('findSessionByCookie ownership', () => {
+  it('returns unowned session for anonymous caller', async () => {
+    const mockSession = { id: 's1', sessionCookie: 'c1' };
+    const db = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ session: mockSession, clientUserId: null, clientId: 'cl-1' }]),
+    } as unknown as AppDb;
+
+    const res = await findSessionByCookie(db, 'c1', { userId: null });
+    expect(res).toBe(mockSession);
+  });
+
+  it('rejects access to registered user session by anonymous caller', async () => {
+    const mockSession = { id: 's1', sessionCookie: 'c1' };
+    const db = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ session: mockSession, clientUserId: 'user-999', clientId: 'cl-1' }]),
+    } as unknown as AppDb;
+
+    const res = await findSessionByCookie(db, 'c1', { userId: null });
+    expect(res).toBeNull();
+  });
+
+  it('allows access to session owned by the authenticated caller', async () => {
+    const mockSession = { id: 's1', sessionCookie: 'c1' };
+    const db = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ session: mockSession, clientUserId: 'user-123', clientId: 'cl-1' }]),
+    } as unknown as AppDb;
+
+    const res = await findSessionByCookie(db, 'c1', { userId: 'user-123' });
+    expect(res).toBe(mockSession);
+  });
+
+  it('claims unowned session when accessed by authenticated caller', async () => {
+    const mockSession = { id: 's1', sessionCookie: 'c1' };
+    const updateWhere = vi.fn().mockResolvedValue([]);
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
+    const db = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ session: mockSession, clientUserId: null, clientId: 'cl-1' }]),
+      update: vi.fn().mockReturnValue({ set: updateSet }),
+    } as unknown as AppDb;
+
+    const res = await findSessionByCookie(db, 'c1', { userId: 'user-123' });
+    expect(res).toBe(mockSession);
+    expect(db.update).toHaveBeenCalled();
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-123' }));
+  });
+
+  it('never steals another user session when accessed by different authenticated caller', async () => {
+    const mockSession = { id: 's1', sessionCookie: 'c1' };
+    const updateFn = vi.fn();
+    const db = {
+      select: vi.fn().mockReturnThis(),
+      from: vi.fn().mockReturnThis(),
+      innerJoin: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([
+          { session: mockSession, clientUserId: 'user-OTHER', clientId: 'cl-1' },
+        ]),
+      update: updateFn,
+    } as unknown as AppDb;
+
+    const res = await findSessionByCookie(db, 'c1', { userId: 'user-123' });
+    expect(res).toBeNull();
+    expect(updateFn).not.toHaveBeenCalled();
   });
 });
