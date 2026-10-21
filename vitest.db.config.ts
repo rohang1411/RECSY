@@ -1,5 +1,15 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+
+// Load local environment variables if present (CI environment injects them directly).
+if (typeof process.loadEnvFile === 'function') {
+  if (existsSync('.env.local')) {
+    process.loadEnvFile('.env.local');
+  } else if (existsSync('.env')) {
+    process.loadEnvFile('.env');
+  }
+}
 
 /**
  * Vitest configuration for live PostgreSQL integration tests.
@@ -17,6 +27,7 @@ export default defineConfig({
     pool: 'forks',
     testTimeout: 30000,
     hookTimeout: 30000,
+    setupFiles: ['test/db/setup.ts'],
   },
   resolve: {
     alias: {

@@ -395,32 +395,32 @@ async function checkMeteringFunctionsAndPrivileges(client: postgres.Sql): Promis
         const throwawayDev = '__smoke_device__';
         const reserve = await client<
           {
-            admitted: boolean;
+            allowed: boolean;
             lease_id: string;
-            source: string;
+            charge_source: string;
           }[]
         >`
-          select admitted, lease_id, source
+          select allowed, lease_id, charge_source
             from recsy_reserve_query(
-              gen_random_uuid(),
-              ${throwawayReq},
-              'recommend',
-              null,
+              null::uuid,
               ${throwawayDev},
-              null,
+              null::text,
+              ${throwawayReq}::uuid,
+              'POST /api/recommend',
+              'smoke_trace',
               false,
               2,
               2,
               30,
+              3,
               100,
               1,
               75,
-              0,
               false
             )
         `;
         const leaseId = reserve[0]?.lease_id;
-        if (reserve[0]?.admitted && leaseId) {
+        if (reserve[0]?.allowed && leaseId) {
           const settle = await client<{ recsy_settle_lease: string }[]>`
             select recsy_settle_lease(${leaseId}::uuid, 'no_charge', 'smoke_test')
           `;

@@ -16,7 +16,7 @@ export const env = createEnv({
    * Accessible in route handlers, server components, and server actions.
    */
   server: {
-    NODE_ENV: z.enum(['development', 'preview', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'preview', 'production', 'test']).default('development'),
 
     DATABASE_URL: z.string().url(),
     DATABASE_SCHEMA: z
