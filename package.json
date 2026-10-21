@@ -22,6 +22,7 @@
     "test:coverage": "vitest run --coverage",
     "test:db": "vitest run --config vitest.db.config.ts",
     "metering:maintain": "tsx --env-file=.env.local scripts/metering-maintenance.ts",
+    "abuse:detect": "tsx --env-file=.env.local scripts/abuse-detect.ts",
     "billing:reconcile": "tsx --env-file=.env.local scripts/billing-reconcile.ts",
     "ops:alerts": "tsx --env-file=.env.local scripts/ops-alerts.ts",
     "capacity:report": "tsx --env-file=.env.local scripts/capacity-report.ts",
