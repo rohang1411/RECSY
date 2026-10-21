@@ -85,6 +85,13 @@
       "when": 1791897600000,
       "tag": "0011_rls_security_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792609919791,
+      "tag": "0012_multi_user_tables",
+      "breakpoints": true
     }
   ]
 }
