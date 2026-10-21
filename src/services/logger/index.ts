@@ -15,6 +15,7 @@
  *   const log = logger.child({ traceId, route: 'GET /api/ask' });
  *   log.info({ latencyMs }, 'answered query');
  */
+import { createHmac } from 'node:crypto';
 import pino, { type Logger } from 'pino';
 
 import { env } from '@/env';
@@ -38,6 +39,20 @@ const REDACT_PATHS = [
   '*.userByokKey',
   'headers.x-recsy-user-key',
   '*.x-recsy-user-key',
+  'stripe-signature',
+  '*.stripe-signature',
+  'headers.stripe-signature',
+  'x-turnstile-token',
+  '*.x-turnstile-token',
+  'headers.x-turnstile-token',
+  'email',
+  '*.email',
+  'clientSecret',
+  '*.clientSecret',
+  'secret',
+  '*.secret',
+  'sb-*',
+  '*.sb-*',
 ] as const;
 
 function createLogger(): Logger {
@@ -80,4 +95,14 @@ export function requestLogger(bindings: {
   sessionId?: string;
 }): Logger {
   return logger.child(bindings);
+}
+
+/**
+ * Creates a salted 8-character hex digest of an email for privacy-preserving logging.
+ * Normative reference: Section 10.7 of plan 25.
+ */
+export function emailRef(email?: string | null): string {
+  if (!email?.trim()) return 'none';
+  const salt = env.IP_HASH_SECRET || 'recsy-dev-salt';
+  return createHmac('sha256', salt).update(email.toLowerCase().trim()).digest('hex').slice(0, 8);
 }
