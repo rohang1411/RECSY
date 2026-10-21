@@ -34,7 +34,9 @@ export type ErrorCode =
   | 'AUTH_UNAVAILABLE'
   | 'BYOK_REJECTED'
   | 'BYOK_UNSUPPORTED'
-  | 'BYOK_RATE_LIMITED';
+  | 'BYOK_RATE_LIMITED'
+  | 'ACCOUNT_RESTRICTED'
+  | 'CAPTCHA_REQUIRED';
 
 const DEFAULT_STATUS: Record<ErrorCode, number> = {
   VALIDATION: 400,
@@ -62,6 +64,8 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   BYOK_REJECTED: 400,
   BYOK_UNSUPPORTED: 400,
   BYOK_RATE_LIMITED: 429,
+  ACCOUNT_RESTRICTED: 403,
+  CAPTCHA_REQUIRED: 428,
 };
 
 export class AppError extends Error {
@@ -93,6 +97,20 @@ export class NotFoundError extends AppError {
   constructor(resource: string, context?: Record<string, unknown>) {
     super('NOT_FOUND', `${resource} not found`, { context });
     this.name = 'NotFoundError';
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required', context?: Record<string, unknown>) {
+    super('UNAUTHORIZED', message, { context });
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export class AccountRestrictedError extends AppError {
+  constructor(message = 'Your account has been restricted', context?: Record<string, unknown>) {
+    super('ACCOUNT_RESTRICTED', message, { context });
+    this.name = 'AccountRestrictedError';
   }
 }
 
