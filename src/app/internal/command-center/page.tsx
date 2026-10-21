@@ -1,3 +1,4 @@
+import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, Database, GitBranch, Layers } from 'lucide-react';
@@ -102,7 +103,9 @@ interface PageProps {
 
 export default async function CommandCenterPage({ searchParams }: PageProps = {}) {
   const params = searchParams ? await searchParams : {};
-  const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+  const forceRefresh = Boolean(
+    params.refresh && params.refresh !== '0' && params.refresh !== 'false',
+  );
 
   // Give canonical inventory reads priority over optional usage and run telemetry.
   const [dbDataResult] = await Promise.allSettled([
@@ -159,12 +162,7 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
             <span className="status-dot text-accent" data-state="running" />
             Telemetry: {telemetryPartial ? 'Partial' : 'Available'}
           </div>
-          <Link
-            href="/internal/command-center?refresh=1"
-            className="border-outline text-primary hover:border-accent hover:text-accent border px-3 py-1.5 font-mono text-[11px] tracking-[0.14em] uppercase transition-colors"
-          >
-            {forceRefresh ? 'Refreshed' : 'Refresh'}
-          </Link>
+          <InternalRefreshButton label={forceRefresh ? 'Refreshed' : 'Refresh'} />
           <span className="border-outline-variant text-muted-foreground border px-2.5 py-1 font-mono text-xs">
             v2.0.4
           </span>

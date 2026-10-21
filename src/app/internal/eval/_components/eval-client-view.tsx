@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import {
   CheckCircle2,
   Clock,
@@ -527,13 +528,10 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
 
           {/* Quick Action Toolbar */}
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/internal/eval?refresh=true"
-              className="border-border/80 bg-background/60 hover:bg-muted flex items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Refresh Hub
-            </Link>
+            <InternalRefreshButton
+              label="Refresh Hub"
+              className="border-border/80 bg-background/60 hover:bg-muted flex cursor-pointer items-center gap-1.5 rounded border px-3 py-1.5 font-mono text-xs font-medium transition-colors"
+            />
             <input
               type="file"
               ref={fileInputRef}
