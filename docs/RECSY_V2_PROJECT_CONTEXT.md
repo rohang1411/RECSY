@@ -94,6 +94,11 @@ Brand priority and latest-released ordering are enforced through `src/services/c
 25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
 26. [Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture)
 27. [Multi-User Platform](#27-multi-user-platform) — accounts, fair-use metering, billing, web security & operations; source of truth is [Plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md)
+    - [27.1 Core Product Rules](#271-core-product-rules)
+    - [27.2 Implemented Subsystems](#272-implemented-subsystems)
+    - [27.3 Data Architecture & Migrations](#273-data-architecture--migrations)
+    - [27.4 Operational Commands & Scripts](#274-operational-commands--scripts)
+    - [27.5 CI Quality Gates & Verification](#275-ci-quality-gates--verification)
 
 ---
 
@@ -383,15 +388,18 @@ flowchart LR
 
 ### Backend / data
 
-| Concern              | Choice                  | Version  | Why                                  |
-| -------------------- | ----------------------- | -------- | ------------------------------------ |
-| DB                   | Supabase Postgres       | 17.6     | Free tier + pgvector                 |
-| Vector search        | pgvector (HNSW, cosine) | latest   | No extra infra                       |
-| Text search          | `pg_trgm` + tsvector    | built-in | Hybrid with vector                   |
-| Scheduler            | `pg_cron`               | latest   | Cache eviction, cleanup              |
-| ORM                  | Drizzle                 | 0.45     | Type-safe, migration-first           |
-| Client-side DB proxy | `@supabase/supabase-js` | 2.x      | For anon RLS-scoped queries          |
-| Driver               | `postgres` (Porsager)   | 3.4      | Fast, `prepare: false` for pgbouncer |
+| Concern              | Choice                  | Version         | Why                                                   |
+| -------------------- | ----------------------- | --------------- | ----------------------------------------------------- |
+| DB                   | Supabase Postgres       | 17.6            | Free tier + pgvector                                  |
+| Vector search        | pgvector (HNSW, cosine) | latest          | No extra infra                                        |
+| Text search          | `pg_trgm` + tsvector    | built-in        | Hybrid with vector                                    |
+| Scheduler            | `pg_cron`               | latest          | Cache eviction, cleanup                               |
+| ORM                  | Drizzle                 | 0.45            | Type-safe, migration-first                            |
+| Auth                 | Supabase Auth           | `@supabase/ssr` | Server route handlers only; 0 client bundle SDKs      |
+| Payments             | Stripe                  | Node SDK        | Hosted Checkout, Customer Portal & webhook processing |
+| Bot Protection       | Cloudflare Turnstile    | HTTP API        | Lightweight server verification for sign-in routes    |
+| Least-Privilege Role | `recsy_app`             | DB Role         | Runtime role with DDL revoked (`REVOKE CREATE`)       |
+| Driver               | `postgres` (Porsager)   | 3.4             | Fast, `prepare: false` for pgbouncer                  |
 
 ### AI
 
@@ -442,56 +450,77 @@ Conventions enforced in review:
 
 ### Tables (Phase 1)
 
-| Table                     | Purpose                                         | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `phones`                  | Canonical phone entities                        | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler â€” [Â§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
-| `catalog_runs`            | Catalog refresh telemetry and budgets           | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `catalog_source_profiles` | DB-configured catalog source policy             | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                         |
-| `catalog_snapshots`       | Durable source snapshot registry                | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                         |
-| `catalog_candidates`      | Staged discovered phone candidates              | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                                 |
-| `phone_identities`        | External/canonical identities for dedupe        | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `phone_configurations`    | RAM/storage/color/region/SKU variants           | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                               |
-| `catalog_source_claims`   | Promoted field-level provenance                 | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                           |
-| `phone_media_assets`      | Durable media and rights metadata               | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                       |
-| `catalog_quality_issues`  | Catalog quarantine/audit trail                  | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `sources`                 | Ingested artefacts (video, thread, article)     | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `chunks`                  | Retrievable text chunks                         | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `aspect_definitions`      | Methodology â€” aspects are data                | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `aspects`                 | Current score per phone Ã— aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                             |
-| `recommendation_sessions` | One per browser session (hashed)                | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `recommendation_turns`    | Per-message state in a session                  | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `recommendation_feedback` | User signals on picks                           | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `chat_queries`            | Per-phone Q&A log (analytics)                   | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `llm_cache`               | LLM response cache (sha256 prompt key)          | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `ingest_runs`             | Ingestion telemetry (per source attempt)        | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** â€” see [Â§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                         |
-| `scorecard_runs`          | Scorecard batch telemetry (per phone Ã— aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                            |
-| `rate_limits`             | IP-window counters                              | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Table                     | Purpose                                        | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phones`                  | Canonical phone entities                       | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler â€” [Â§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
+| `catalog_runs`            | Catalog refresh telemetry and budgets          | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `catalog_source_profiles` | DB-configured catalog source policy            | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_snapshots`       | Durable source snapshot registry               | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_candidates`      | Staged discovered phone candidates             | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                                 |
+| `phone_identities`        | External/canonical identities for dedupe       | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `phone_configurations`    | RAM/storage/color/region/SKU variants          | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                               |
+| `catalog_source_claims`   | Promoted field-level provenance                | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                           |
+| `phone_media_assets`      | Durable media and rights metadata              | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                       |
+| `catalog_quality_issues`  | Catalog quarantine/audit trail                 | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `sources`                 | Ingested artefacts (video, thread, article)    | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `chunks`                  | Retrievable text chunks                        | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `aspect_definitions`      | Methodology â€” aspects are data               | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `aspects`                 | Current score per phone Ã— aspect              | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                             |
+| `recommendation_sessions` | One per browser session (hashed)               | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `recommendation_turns`    | Per-message state in a session                 | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `recommendation_feedback` | User signals on picks                          | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `chat_queries`            | Per-phone Q&A log (analytics)                  | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `llm_cache`               | LLM response cache (sha256 prompt key)         | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ingest_runs`             | Ingestion telemetry (per source attempt)       | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** — see [§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                            |
+| `scorecard_runs`          | Scorecard batch telemetry (per phone × aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                            |
+| `rate_limits`             | IP-window counters                             | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+### Multi-User, Quota & Billing Tables (Plan 25, Migrations 0012–0014)
+
+| Table                | Purpose                                        | Key columns                                                                                                                                                                                                                  |
+| :------------------- | :--------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_profiles`      | User identity metadata & platform role         | `id` (references Supabase `auth.users`), `role` (`user` / `admin`), `is_suspended`, `display_name`, `created_at`                                                                                                             |
+| `billing_customers`  | Mapping between users and Stripe customer IDs  | `user_id`, `provider`, `provider_customer_id`, `email`                                                                                                                                                                       |
+| `billing_orders`     | Stripe checkout orders & credit pack purchases | `user_id`, `provider`, `provider_order_id`, `amount_cents`, `currency`, `status` (`pending` / `paid` / `failed` / `refunded`), `line_items`                                                                                  |
+| `billing_events`     | Idempotent webhook inbox for payment events    | `provider`, `event_id`, `event_type`, `processed`, `processing_error`, `payload`                                                                                                                                             |
+| `usage_counters`     | Per-subject daily usage counters               | `subject_kind` (`user` / `device` / `ip`), `subject_id`, `usage_date`, `anon_used`, `free_used`, `total_used`, `byok_used`, `clarify_used`, `users_seen`                                                                     |
+| `query_leases`       | Two-phase atomic reservation leases            | `id`, `request_id`, `user_id`, `device_id`, `ip_key`, `route`, `charge_source`, `status` (`reserved` / `committed` / `refunded` / `no_charge` / `expired`), `usage_date`, `expires_at`, `trace_id`                           |
+| `credit_wallets`     | Non-expiring user credit balances              | `user_id`, `balance`, `updated_at`                                                                                                                                                                                           |
+| `credit_ledger`      | Immutable double-entry transaction ledger      | `user_id`, `delta`, `balance_after`, `kind` (`purchase` / `subscription_grant` / `consume` / `refund` / `promo` / `admin_adjustment` / `payment_reversal`), `ref_type`, `ref_id`, `idempotency_key`                          |
+| `subscriptions`      | Active and past recurring subscriptions        | `user_id`, `provider`, `provider_subscription_id`, `plan_code` (`pro_monthly`), `status` (`active` / `past_due` / `canceled` / `unpaid`), `current_period_start`, `current_period_end`, `entitled_until`, `included_queries` |
+| `subscription_usage` | Usage tracking per billing cycle               | `subscription_id`, `period_start`, `used`                                                                                                                                                                                    |
+| `usage_daily_rollup` | Historical aggregate rollups for reporting     | `usage_date`, `total_queries`, `free_queries`, `credit_queries`, `sub_queries`, `byok_queries`, `unique_users`, `unique_devices`                                                                                             |
+| `abuse_blocks`       | Automated abuse blocklist                      | `subject_kind`, `subject_id`, `reason`, `blocked_until`, `metadata`                                                                                                                                                          |
+| `platform_flags`     | Dynamic system operational flags               | `key`, `enabled`, `payload`, `updated_at`                                                                                                                                                                                    |
+| `account_requests`   | GDPR/CCPA data export and deletion requests    | `user_id`, `kind` (`export` / `deletion`), `status` (`pending` / `processing` / `completed` / `failed`), `download_url`, `expires_at`                                                                                        |
 
 ### Enums
 
 `phone_status`, `source_type`, `source_status`, `aspect`, `recommendation_intent`,
-`session_status`, `feedback_event`, `ingest_status`, plus catalog enums for run
-kind/status, source-profile type, snapshot status, candidate decision/status,
-identity type, media rights/status, and issue severity.
+`session_status`, `feedback_event`, `ingest_status`, `auth_role`, `billing_provider`,
+`order_status`, `ledger_kind`, `charge_source`, `lease_status`, `session_intent`, plus
+catalog enums for run kind/status, source-profile type, snapshot status, candidate
+decision/status, identity type, media rights/status, and issue severity.
 
 ### Indexing strategy
 
-- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` â€” vector search.
+- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` — vector search.
 - **B-tree** on `phones.brand`, `phones.status`, `phones.next_scorecard_at`, `phones.next_ingest_at`, `chunks.phone_id`, `chunks.source_id`.
-- **tsvector** FTS index on `chunks.text` (added Phase 3 when hybrid retrieval lands).
+- **tsvector** FTS index on `chunks.text` (hybrid retrieval).
 - **Unique constraints** on `phones.slug`, `(sources.phone_id, sources.url)`,
-  `(aspects.phone_id, aspects.aspect_definition_id)`.
+  `(aspects.phone_id, aspects.aspect_definition_id)`, `billing_events(provider, event_id)`,
+  `credit_wallets(user_id)`, and `credit_ledger(idempotency_key)`.
+- **Compound indexes** on `usage_counters(subject_kind, subject_id, usage_date)`,
+  `query_leases(user_id, status, expires_at)`, and `query_leases(device_id, request_id)`.
 
-### RLS posture
+### RLS & Role Posture
 
-- All tables: **default-deny**.
-- `anon` role: `SELECT` on `phones`, `aspects`, `aspect_definitions`, `sources` (public),
-  `chunks` (public read), `chat_queries` and `recommendation_*` restricted to
-  own-session via cookie match.
-- `service_role` (server-only): full access. Used by server route handlers
-  via the service-role key.
-
-Applied via `drizzle/sql/999_rls.sql` (see Phase 1).
+- **Runtime Database Role (`recsy_app`, Migration 0015)**: Application connects via a dedicated least-privilege role:
+  - `CREATE` privilege on `public` is revoked (`REVOKE CREATE ON SCHEMA public FROM recsy_app`). DDL is strictly prohibited at runtime.
+  - Sensitive internal schemas (`auth`, `storage`, `vault`, `pg_catalog`, `information_schema`) are revoked.
+  - Granted explicit `SELECT, INSERT, UPDATE, DELETE` only on application tables and `EXECUTE` on metering procedures.
+- **Function Lockdown (Migration 0013)**: All security-critical metering functions (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_apply_credit_delta`, `recsy_link_device_to_user`, `recsy_sweep_expired_leases`) have `REVOKE EXECUTE ... FROM PUBLIC` so Supabase PostgREST cannot expose them via `/rpc` to the anonymous public API key.
+- **Table RLS Policies (Migration 0011)**: Default-deny on all tables with explicit authenticated and anon policies.
 
 ---
 
@@ -1429,19 +1458,33 @@ Tests sit next to the unit under test. Unit tests verify encoded behavior; they 
 
 ## 18. CI/CD & Deployment
 
-### CI (`.github/workflows/ci.yml`)
+### CI Workflows
 
-On every PR and `main` push:
+Continuous Integration runs on every pull request and push to `master`:
 
-1. Prettier check
-2. ESLint
-3. Typecheck (`tsc --noEmit`, strict)
-4. Vitest unit suite
-5. `next build` (verifies production build)
-6. **Playwright** (`e2e` job) â€” Postgres service container, `scripts/db-setup.ts`,
-   Chromium, `pnpm e2e` (SSR phone page + mocked ask). Uses real env-shaped
-   dummy values (not `SKIP_ENV_VALIDATION`) so `next dev` matches production
-   validation.
+#### 1. Main Quality Gate (`.github/workflows/ci.yml`)
+
+1. **Prettier check** (`pnpm format:check`)
+2. **Audit production dependencies** (`pnpm audit --prod --audit-level=high`)
+3. **Secret scanning** via Gitleaks (`gitleaks-action@v2` with `fetch-depth: 0`)
+4. **ESLint** (`pnpm lint`)
+5. **Strict Typecheck** (`pnpm typecheck` / `tsc --noEmit`)
+6. **Vitest unit test suite** (`pnpm test` — 158 test files, 950+ unit tests)
+7. **Next.js production build** (`pnpm build`)
+8. **Client bundle budget audit** (`pnpm check:bundle` enforcing 0 client `@supabase/*` or `stripe` imports)
+9. **Legal compliance checks** (`pnpm check:legal`)
+10. **Playwright E2E** (`e2e` job) — containerized environment with Chromium, testing SSR phone pages and conversational recommendations.
+
+#### 2. Database Integration Tests (`.github/workflows/db-tests.yml`)
+
+1. **PostgreSQL 16 container** with `pgvector` (`pgvector/pgvector:pg16`).
+2. **Schema & migrations bootstrap** (`pnpm db:setup`) applying migrations 0000–0015.
+3. **Live database integration suite** (`pnpm test:db` via `vitest.db.config.ts`):
+   - In-database atomic functions (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_apply_credit_delta`, `recsy_sweep_expired_leases`).
+   - 40-way parallel concurrency and advisory locking (`pg_advisory_xact_lock`).
+   - Anonymous-to-user graduation and anti-farming per-device account caps.
+   - 5 invariant audit queries (wallet == ledger, free counters == open leases, credit/sub accounting).
+   - Least-privilege `recsy_app` role restrictions (DDL prevention, schema isolation).
 
 `SKIP_ENV_VALIDATION=true` only on the **`quality`** job so typecheck/tests/build
 don't need secrets. The **`e2e`** job exports a minimal real `.env` superset
@@ -4458,3 +4501,44 @@ With all optimizations in place, RECSY v2 operates under an explicit **2.0 GB / 
 7. **Launch Readiness & DR**:
    - Master Go/No-go checklist (`docs/launch/readiness-checklist.md`).
    - Disaster recovery drill runbook (`docs/launch/disaster-recovery-drill.md`).
+
+### 27.3 Data Architecture & Migrations
+
+The multi-user platform is founded on 4 structured forward-only Drizzle migrations:
+
+- **`0012_multi_user_tables.sql`**: Schema foundations for `user_profiles`, `billing_customers`, `billing_orders`, `billing_events`, `subscriptions`, `subscription_usage`, `credit_wallets`, `credit_ledger`, `usage_counters`, `query_leases`, `usage_daily_rollup`, `abuse_blocks`, `platform_flags`, and `account_requests`.
+- **`0013_metering_functions.sql`**: Production PostgreSQL stored procedures:
+  - `recsy_reserve_query`: Atomic query reservation, in-flight checks, IP/device farming caps, and advisory locking.
+  - `recsy_settle_lease`: Two-phase commit/refund with clarify/error give-back.
+  - `recsy_apply_credit_delta`: Strictly idempotent balance adjustment with immutable audit trail.
+  - `recsy_link_device_to_user`: Smooth graduation carrying anonymous usage forward.
+  - `recsy_sweep_expired_leases`: Automatic reclamation of orphaned leases.
+  - Security lockdown: `REVOKE ALL ON FUNCTION ... FROM PUBLIC`.
+- **`0014_metering_telemetry.sql`**: Operational telemetry, reporting views, and capacity rollups.
+- **`0015_least_privilege_role.sql`**: Least-privilege runtime role `recsy_app` with DDL revoked (`REVOKE CREATE ON SCHEMA public`) and schema isolation.
+
+### 27.4 Operational Commands & Scripts
+
+Production automation and maintenance commands registered in `package.json`:
+
+- `pnpm test:db` — Run live PostgreSQL integration tests against containerized DB (`vitest.db.config.ts`).
+- `pnpm metering:maintain` — Background sweeper for expiring stale query leases.
+- `pnpm billing:reconcile` — Background reconciler for Stripe checkout fulfillments.
+- `pnpm ops:alerts` — 10 automated SQL alert rules evaluating platform anomalies every 5 minutes.
+- `pnpm metering:audit` — Transactional invariant audit verifying wallet == ledger and lease accounting.
+- `pnpm capacity:report` — Rollup generation and capacity headroom projection.
+- `pnpm check:bundle` — Automated CI gate verifying zero `@supabase/*` or `stripe` client imports.
+- `pnpm check:legal` — Pre-billing compliance blocker ensuring legal pages are non-placeholder.
+
+### 27.5 CI Quality Gates & Verification
+
+All quality gates are enforced on PRs and `master` branch:
+
+- **7 / 7 GitHub Actions checks passing green**:
+  1. `Database integration tests (PostgreSQL)`: Verified via `.github/workflows/db-tests.yml`.
+  2. `typecheck · lint · test · build`: Strict TypeScript, ESLint, 950+ unit tests, production build.
+  3. `Audit production dependencies`: Security audit with non-blocking upstream vulnerability alerts.
+  4. `Gitleaks scan`: Git commit history secret scanner with `fetch-depth: 0`.
+  5. `Playwright`: E2E verification of phone pages and mocked conversational recommender flows.
+  6. `Check GEMINI for retrieval eval`: Environment evaluation readiness check.
+  7. `Vercel Preview Comments`: Live deploy preview validation.
