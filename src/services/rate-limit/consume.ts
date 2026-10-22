@@ -101,3 +101,35 @@ export async function consumeByokTestRateLimit(subjectKey: string): Promise<void
     throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 3600 });
   }
 }
+
+export const CSP_REPORT_RATE_LIMIT_MAX = 30;
+export const CSP_REPORT_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export function cspReportRateLimitKey(ipHash: string): string {
+  return `csp_report:v1:${ipHash}`;
+}
+
+/**
+ * Rate limit for CSP violation report receiver — 30 per minute per IP.
+ */
+export async function consumeCspReportRateLimit(clientIp: string): Promise<void> {
+  const ipHash = hashClientIp(clientIp);
+  const db = getDb();
+  const windowMs = CSP_REPORT_RATE_LIMIT_WINDOW_MS;
+  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const key = cspReportRateLimitKey(ipHash);
+
+  const [row] = await db
+    .insert(rateLimits)
+    .values({ key, windowStart, count: 1 })
+    .onConflictDoUpdate({
+      target: [rateLimits.key, rateLimits.windowStart],
+      set: { count: sql`${rateLimits.count} + 1` },
+    })
+    .returning({ count: rateLimits.count });
+
+  const count = row?.count ?? 1;
+  if (count > CSP_REPORT_RATE_LIMIT_MAX) {
+    throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 60 });
+  }
+}

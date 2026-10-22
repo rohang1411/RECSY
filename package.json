@@ -27,6 +27,7 @@
     "ops:alerts": "tsx --env-file=.env.local scripts/ops-alerts.ts",
     "capacity:report": "tsx --env-file=.env.local scripts/capacity-report.ts",
     "check:bundle": "tsx scripts/check-bundle-budget.ts",
+    "check:legal": "tsx scripts/check-legal-placeholders.ts",
     "db:ping": "tsx --env-file=.env.local scripts/db-ping.ts",
     "db:generate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",

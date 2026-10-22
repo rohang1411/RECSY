@@ -30,7 +30,12 @@ describe('safeReturnTo', () => {
       '//google.com/test',
       'https://evil.com',
       'http://attacker.com',
+      'https:evil.com',
+      'http:evil.com',
+      '%2f%2fevil.com',
+      '/%2f%2fevil.com',
       'javascript:alert(1)',
+      'javascript:void(0)',
       'data:text/html,<script>alert(1)</script>',
       'vbscript:msgbox',
       '/\\evil.com',
@@ -49,9 +54,13 @@ describe('safeReturnTo', () => {
     }
   });
 
-  it('rejects control characters, newlines, and carriage returns', () => {
+  it('rejects control characters, newlines, tabs, and carriage returns', () => {
     expect(safeReturnTo('/test\r\nHeader: Injection')).toBe('/');
     expect(safeReturnTo('/test\nSet-Cookie: evil')).toBe('/');
+    expect(safeReturnTo('/test\tevil')).toBe('/');
     expect(safeReturnTo('/test\0nullbyte')).toBe('/');
+    expect(safeReturnTo('/test%09evil')).toBe('/');
+    expect(safeReturnTo('/test%0aevil')).toBe('/');
+    expect(safeReturnTo('/test%0devil')).toBe('/');
   });
 });

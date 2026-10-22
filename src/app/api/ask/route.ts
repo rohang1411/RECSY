@@ -35,6 +35,7 @@ import {
 import { readRequestJson } from '@/lib/request-json';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { parseRequestId } from '@/lib/request-id';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
 import {
   NO_CONTEXT_MODEL,
@@ -132,6 +133,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   try {
     // 1. IP rate limit (cheap abuse shield first)
+    assertSameOrigin(request);
     const ip = getRequestClientIp(request);
     await consumeAskRateLimit(ip);
 

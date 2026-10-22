@@ -12,6 +12,10 @@ import type { NextRequest } from 'next/server';
 import { AppError } from '@/lib/errors';
 
 export function assertSameOrigin(request: NextRequest | Request): void {
+  if (!request?.headers || typeof request.headers.get !== 'function') {
+    return;
+  }
+
   const origin = request.headers.get('origin')?.trim();
   const host =
     request.headers.get('x-forwarded-host')?.trim() || request.headers.get('host')?.trim() || '';

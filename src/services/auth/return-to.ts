@@ -26,7 +26,12 @@ export function safeReturnTo(next: string | null | undefined, fallback = '/'): s
   // Check URL encoded attempts like %2f, %5c
   try {
     const decoded = decodeURIComponent(trimmed);
-    if (decoded.startsWith('//') || decoded.startsWith('/\\') || /[\r\n\t\0\\]/.test(decoded)) {
+    if (
+      decoded.startsWith('//') ||
+      decoded.startsWith('/\\') ||
+      /[\r\n\t\0\\]/.test(decoded) ||
+      /^\/[a-z0-9+.-]+:/i.test(decoded)
+    ) {
       return fallback;
     }
   } catch {

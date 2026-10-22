@@ -5,6 +5,7 @@ import { ensureUserProfile } from '@/services/auth/profile';
 import { claimAnonymousState } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { safeReturnTo } from '@/services/auth/return-to';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { getDb } from '@/services/db/client';
 import { logger } from '@/services/logger';
 
@@ -110,6 +111,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
     const formData = await request.formData();
     const tokenHash = decodeURIComponent(String(formData.get('token_hash') || ''));
     const type = decodeURIComponent(String(formData.get('type') || 'email')) as EmailOtpType;

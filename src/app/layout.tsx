@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Link from 'next/link';
 import { Hanken_Grotesk, Inter, JetBrains_Mono } from 'next/font/google';
 
 import { AnalyticsClient } from '@/components/AnalyticsClient';
@@ -73,8 +74,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <AppHeader />
               <main className="flex-1">{children}</main>
               <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
-                <div className="px-grid-margin mx-auto max-w-7xl">
-                  © {new Date().getFullYear()} RECSY
+                <div className="px-grid-margin mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+                  <div>© {new Date().getFullYear()} RECSY</div>
+                  <nav className="flex flex-wrap items-center gap-4 text-[10px]">
+                    <Link href="/pricing" className="hover:text-foreground transition-colors">
+                      Pricing
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/terms" className="hover:text-foreground transition-colors">
+                      Terms
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/privacy" className="hover:text-foreground transition-colors">
+                      Privacy
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/refunds" className="hover:text-foreground transition-colors">
+                      Refunds
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/contact" className="hover:text-foreground transition-colors">
+                      Contact
+                    </Link>
+                  </nav>
                 </div>
               </footer>
             </div>

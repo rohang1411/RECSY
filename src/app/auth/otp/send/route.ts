@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthDriver } from '@/services/auth/driver';
 import { isDisposableEmail } from '@/services/auth/email';
 import { safeReturnTo } from '@/services/auth/return-to';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { readRequestJson } from '@/lib/request-json';
 import { ValidationError } from '@/lib/errors';
 import { getDb } from '@/services/db/client';
@@ -13,6 +14,7 @@ const log = logger.child({ route: 'POST /auth/otp/send' });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
     const body = (await readRequestJson(request, 4096)) as Record<string, unknown>;
     const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
 

@@ -6,6 +6,7 @@ import { resolveRequestIdentity } from '@/services/auth/identity';
 import { readRequestJson } from '@/lib/request-json';
 import { ValidationError } from '@/lib/errors';
 import { getDb } from '@/services/db/client';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { logger } from '@/services/logger';
 
 export const runtime = 'nodejs';
@@ -14,6 +15,7 @@ const log = logger.child({ route: 'POST /auth/otp/verify' });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
     const body = (await readRequestJson(request, 4096)) as Record<string, unknown>;
     const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
     const token = typeof body.token === 'string' ? body.token.trim() : '';

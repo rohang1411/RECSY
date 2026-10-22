@@ -29,6 +29,7 @@ import {
 import { readRequestJson } from '@/lib/request-json';
 import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { getDb, type AppQueryDb } from '@/services/db/client';
 import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
@@ -151,6 +152,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   let settleMs = 0;
 
   try {
+    assertSameOrigin(request);
     const ip = getRequestClientIp(request);
     await consumeRecommendRateLimit(ip);
 

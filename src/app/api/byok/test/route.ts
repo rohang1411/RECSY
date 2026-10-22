@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { AppError, ByokError, mapByokError, RateLimitError } from '@/lib/errors';
 import { getRequestClientIp } from '@/lib/request-ip';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { readRequestJson } from '@/lib/request-json';
 import {
   extractByokFromHeaders,
@@ -32,6 +33,7 @@ const TEST_MODEL_MAP: Record<ByokProviderId, string> = {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
     const ip = getRequestClientIp(request);
     const did =
       request.cookies.get('__Host-recsy_did')?.value ||
