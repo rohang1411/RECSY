@@ -35,15 +35,19 @@ if (!dbUrl) {
     await sql`
       DO $$
       BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        PERFORM pg_advisory_xact_lock(88991122);
+        BEGIN
           CREATE ROLE anon NOLOGIN;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END;
+        BEGIN
           CREATE ROLE authenticated NOLOGIN;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'recsy_app') THEN
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END;
+        BEGIN
           CREATE ROLE recsy_app WITH LOGIN NOINHERIT;
-        END IF;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END;
         -- Grant the test runner user permission to SET ROLE to anon/authenticated/recsy_app
         EXECUTE format('GRANT anon TO %I', CURRENT_USER);
         EXECUTE format('GRANT authenticated TO %I', CURRENT_USER);

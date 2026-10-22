@@ -6,7 +6,10 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'recsy_app') THEN
-    CREATE ROLE recsy_app WITH LOGIN NOINHERIT;
+    BEGIN
+      CREATE ROLE recsy_app WITH LOGIN NOINHERIT;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
   END IF;
 END
 $$;

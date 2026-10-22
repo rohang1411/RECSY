@@ -32,7 +32,7 @@ export async function claimAnonymousState(
     const linkRes = await db.execute<{ recsy_link_device_to_user: number }>(sql`
       SELECT recsy_link_device_to_user(${userId}::uuid, ${deviceId});
     `);
-    const freeUsedMerged = linkRes[0]?.recsy_link_device_to_user ?? 0;
+    const freeUsedMerged = linkRes?.[0]?.recsy_link_device_to_user ?? 0;
 
     // 2. Claim unowned recommendation client if present
     let clientClaimed = false;

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { GET, PATCH } from './route';
 import * as dbModule from '@/services/db/client';
 import * as identityModule from '@/services/auth/identity';
+import type { RequestIdentity } from '@/services/auth/identity';
 import * as profileModule from '@/services/auth/profile';
 
 describe('/api/me/profile', () => {
@@ -21,7 +22,7 @@ describe('/api/me/profile', () => {
         userId: null,
         deviceId: 'dev-1',
         isSuspended: false,
-      } as unknown as ReturnType<typeof identityModule.resolveRequestIdentity>);
+      } as unknown as RequestIdentity);
 
       const req = {} as NextRequest;
       const res = await GET(req);
@@ -33,7 +34,7 @@ describe('/api/me/profile', () => {
         userId: 'u1',
         deviceId: 'dev-1',
         isSuspended: false,
-      } as unknown as ReturnType<typeof identityModule.resolveRequestIdentity>);
+      } as unknown as RequestIdentity);
 
       vi.spyOn(profileModule, 'getUserProfile').mockResolvedValue({
         id: 'u1',
@@ -73,7 +74,7 @@ describe('/api/me/profile', () => {
         userId: 'u1',
         deviceId: 'dev-1',
         isSuspended: false,
-      } as unknown as ReturnType<typeof identityModule.resolveRequestIdentity>);
+      } as unknown as RequestIdentity);
 
       const req = {
         json: vi.fn().mockResolvedValue({ dateOfBirth: 'invalid-date' }),
@@ -88,7 +89,7 @@ describe('/api/me/profile', () => {
         userId: 'u1',
         deviceId: 'dev-1',
         isSuspended: false,
-      } as unknown as ReturnType<typeof identityModule.resolveRequestIdentity>);
+      } as unknown as RequestIdentity);
 
       vi.spyOn(profileModule, 'updateUserProfile').mockResolvedValue({
         id: 'u1',

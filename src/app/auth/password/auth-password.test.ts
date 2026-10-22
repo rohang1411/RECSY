@@ -5,11 +5,13 @@ import { POST as signUp } from './signup/route';
 import * as serverModule from '@/services/auth/supabase-server';
 import * as dbModule from '@/services/db/client';
 import * as identityModule from '@/services/auth/identity';
+import type { RequestIdentity } from '@/services/auth/identity';
 import * as profileModule from '@/services/auth/profile';
 
 describe('Password Authentication Routes', () => {
+  const mockExecute = vi.fn();
   const mockDb = {
-    execute: vi.fn(),
+    execute: mockExecute,
   } as unknown as ReturnType<typeof dbModule.getDb>;
 
   beforeEach(() => {
@@ -19,7 +21,7 @@ describe('Password Authentication Routes', () => {
       userId: 'test-user-id',
       deviceId: 'dev-1',
       isSuspended: false,
-    } as unknown as ReturnType<typeof identityModule.resolveRequestIdentity>);
+    } as unknown as RequestIdentity);
     vi.spyOn(profileModule, 'ensureUserProfile').mockResolvedValue({
       id: 'test-user-id',
       email: 'test@example.com',
@@ -52,7 +54,7 @@ describe('Password Authentication Routes', () => {
       vi.spyOn(serverModule, 'createSupabaseServerClient').mockResolvedValue(
         mockClient as unknown as ReturnType<typeof serverModule.createSupabaseServerClient>,
       );
-      vi.mocked(mockDb.execute).mockResolvedValueOnce([]); // No user in user_profiles
+      mockExecute.mockResolvedValueOnce([]); // No user in user_profiles
 
       const req = {
         json: vi.fn().mockResolvedValue({ email: 'unknown@example.com', password: 'password123' }),
@@ -99,7 +101,7 @@ describe('Password Authentication Routes', () => {
 
   describe('POST /auth/password/signup', () => {
     it('returns 409 when user email already exists', async () => {
-      vi.mocked(mockDb.execute).mockResolvedValueOnce([{ id: 'existing-id' }]);
+      mockExecute.mockResolvedValueOnce([{ id: 'existing-id' }]);
 
       const req = {
         json: vi.fn().mockResolvedValue({
@@ -117,7 +119,7 @@ describe('Password Authentication Routes', () => {
     });
 
     it('creates account and returns 200 on valid signup', async () => {
-      vi.mocked(mockDb.execute).mockResolvedValueOnce([]); // No existing user
+      mockExecute.mockResolvedValueOnce([]); // No existing user
       const mockClient = {
         auth: {
           signUp: vi.fn().mockResolvedValue({
