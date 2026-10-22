@@ -141,7 +141,7 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     const dev = newDeviceId();
 
     // Seed 5 credits
-    await callApplyCreditDelta(sql, uid, 5, 'grant', 'order', 'ord_conc', `grant:${uid}`);
+    await callApplyCreditDelta(sql, uid, 5, 'purchase', 'order', 'ord_conc', `grant:${uid}`);
 
     const tasks = Array.from({ length: 50 }, () =>
       callReserve(sql, {
@@ -331,11 +331,27 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     const uid = newUserId();
 
     // Idempotent grant
-    const g1 = await callApplyCreditDelta(sql, uid, 10, 'grant', 'order', 'ord_1', `key_${uid}_1`);
+    const g1 = await callApplyCreditDelta(
+      sql,
+      uid,
+      10,
+      'purchase',
+      'order',
+      'ord_1',
+      `key_${uid}_1`,
+    );
     expect(g1.applied).toBe(true);
     expect(g1.balance).toBe(10);
 
-    const g2 = await callApplyCreditDelta(sql, uid, 10, 'grant', 'order', 'ord_1', `key_${uid}_1`);
+    const g2 = await callApplyCreditDelta(
+      sql,
+      uid,
+      10,
+      'purchase',
+      'order',
+      'ord_1',
+      `key_${uid}_1`,
+    );
     expect(g2.applied).toBe(false);
     expect(g2.balance).toBe(10);
 
@@ -350,7 +366,7 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     let expectedBalance = 10;
     for (let i = 0; i < 20; i++) {
       const delta = i % 2 === 0 ? 3 : -1;
-      const kind = delta > 0 ? 'grant' : 'consume';
+      const kind = delta > 0 ? 'purchase' : 'consume';
       const res = await callApplyCreditDelta(
         sql,
         uid,
@@ -380,7 +396,7 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
       sql,
       uid,
       -expectedBalance - 5,
-      'adjustment',
+      'admin_adjustment',
       'chargeback',
       'cb_1',
       `adj_${uid}`,

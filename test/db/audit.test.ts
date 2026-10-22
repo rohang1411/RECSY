@@ -42,7 +42,7 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
   it('Check 1: wallet balance == sum of ledger deltas', async () => {
     const uid = newUserId();
 
-    await callApplyCreditDelta(sql, uid, 20, 'grant', 'order', 'ord_aud_1', `aud_g_${uid}`);
+    await callApplyCreditDelta(sql, uid, 20, 'purchase', 'order', 'ord_aud_1', `aud_g_${uid}`);
     await callApplyCreditDelta(sql, uid, -5, 'consume', 'lease', 'l_aud_1', `aud_c_${uid}`);
     await callApplyCreditDelta(sql, uid, 1, 'refund', 'lease', 'l_aud_1', `aud_r_${uid}`);
 
@@ -107,7 +107,7 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
     const dev = newDeviceId();
 
     // Grant 10 credits
-    await callApplyCreditDelta(sql, uid, 10, 'grant', 'order', 'ord_c3', `grant_${uid}`);
+    await callApplyCreditDelta(sql, uid, 10, 'purchase', 'order', 'ord_c3', `grant_${uid}`);
 
     // Reserve 2 credit queries (freeAllowance = 0)
     const r1 = await callReserve(sql, {
@@ -205,15 +205,21 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
     expect(ungroundedBefore.length).toBe(1);
 
     // Now link to a recommendation session & turn
+    const clientId = randomUUID();
     const sessId = randomUUID();
     await sql`
-      INSERT INTO recommendation_sessions (id, session_cookie)
-      VALUES (${sessId}::uuid, ${`cook_${uid}`})
+      INSERT INTO recommendation_clients (id, user_id, session_token)
+      VALUES (${clientId}::uuid, ${uid}::uuid, ${`token_${uid}`})
       ON CONFLICT DO NOTHING
     `;
     await sql`
-      INSERT INTO recommendation_turns (id, session_id, turn_index, user_message, lease_id)
-      VALUES (${randomUUID()}::uuid, ${sessId}::uuid, 1, 'Recommend me a phone', ${r1.lease_id}::uuid)
+      INSERT INTO recommendation_sessions (id, client_id)
+      VALUES (${sessId}::uuid, ${clientId}::uuid)
+      ON CONFLICT DO NOTHING
+    `;
+    await sql`
+      INSERT INTO recommendation_turns (id, session_id, turn_index, user_message, lease_id, intent)
+      VALUES (${randomUUID()}::uuid, ${sessId}::uuid, 1, 'Recommend me a phone', ${r1.lease_id}::uuid, 'recommend')
     `;
 
     // Now audit query shows 0 ungrounded
@@ -229,8 +235,9 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
     `;
     expect(ungroundedAfter.length).toBe(0);
 
-    // Clean up test turn & session
+    // Clean up test turn, session & client
     await sql`DELETE FROM recommendation_turns WHERE lease_id = ${r1.lease_id}::uuid`;
     await sql`DELETE FROM recommendation_sessions WHERE id = ${sessId}::uuid`;
+    await sql`DELETE FROM recommendation_clients WHERE id = ${clientId}::uuid`;
   });
 });

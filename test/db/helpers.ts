@@ -71,7 +71,7 @@ export async function callReserve(
         ${params.anonIpCap ?? 30},
         ${params.deviceUserCap ?? 3},
         ${params.byokDailyCap ?? 100},
-        ${params.maxInflight ?? 1},
+        ${params.maxInflight ?? 10},
         ${params.leaseTtlSecs ?? 75},
         ${params.shedFree ?? false}
       )
@@ -103,7 +103,14 @@ export async function callApplyCreditDelta(
   sql: postgres.Sql,
   userId: string,
   delta: number,
-  kind: 'grant' | 'consume' | 'refund' | 'adjustment' | 'expiry',
+  kind:
+    | 'purchase'
+    | 'subscription_grant'
+    | 'consume'
+    | 'refund'
+    | 'promo'
+    | 'admin_adjustment'
+    | 'payment_reversal',
   refType: string,
   refId: string,
   idemKey: string,
