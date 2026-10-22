@@ -61,6 +61,10 @@ export interface PhoneQnaInput {
   };
   /** Optional user-supplied BYOK key and preference mode. */
   readonly byok?: UserByokConfig | null;
+  /** Server-resolved reasoning mode (WP-13). */
+  readonly serverMode?: 'fast' | 'deep';
+  /** True when user is confirmed subscriber entitled to reasoning tier. */
+  readonly isSubscriber?: boolean;
 }
 
 export interface PhoneQnaResult {
@@ -136,6 +140,8 @@ async function chatAnswer(
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
   byok?: PhoneQnaInput['byok'],
+  serverMode?: 'fast' | 'deep',
+  isSubscriber?: boolean,
 ): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
@@ -149,7 +155,8 @@ async function chatAnswer(
       taskClass: 'GROUNDED_SYNTHESIS',
       userByokKey: byok?.apiKey,
       userByokProvider: byok?.provider,
-      userMode: byok?.userMode,
+      userMode: serverMode ?? byok?.userMode,
+      isSubscriber,
     },
     signal,
   });
@@ -280,7 +287,14 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
 
   let messages = buildMessages(query, retrieval, undefined);
   const generationCalls: ChatResult[] = [];
-  let answer = await chatAnswer(llm, messages, signal, input.byok);
+  let answer = await chatAnswer(
+    llm,
+    messages,
+    signal,
+    input.byok,
+    input.serverMode,
+    input.isSubscriber,
+  );
   generationCalls.push(answer);
   let { text, usage, model } = answer;
 
@@ -288,7 +302,14 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    answer = await chatAnswer(llm, messages, signal, input.byok);
+    answer = await chatAnswer(
+      llm,
+      messages,
+      signal,
+      input.byok,
+      input.serverMode,
+      input.isSubscriber,
+    );
     generationCalls.push(answer);
     ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);

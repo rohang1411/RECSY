@@ -143,6 +143,13 @@ export class ModelRouter {
     const messages = params.messages ?? [];
     const taskClass = resolveTaskClass(params.explicitTaskClass, params.usageContext);
 
+    const isByok = Boolean(params.usageContext?.userByokKey);
+    const isSubscriber = Boolean(params.usageContext?.isSubscriber);
+    const isEntitledToDeep = isByok || isSubscriber;
+    const requestedMode = params.usageContext?.userMode;
+    const effectiveUserMode =
+      requestedMode === 'deep' ? (isEntitledToDeep ? 'deep' : 'fast') : requestedMode;
+
     let targetTier: ExecutionTier;
     if (params.explicitTier) {
       targetTier = params.explicitTier;
@@ -150,9 +157,14 @@ export class ModelRouter {
       const analysis = analyzeComplexity({
         taskClass,
         messages,
-        userMode: params.usageContext?.userMode,
+        userMode: effectiveUserMode,
       });
       targetTier = analysis.resolvedTier;
+
+      // Acceptance requirement (WP-13): non-entitled callers never reach Deep reasoning tier
+      if (!isEntitledToDeep && targetTier === 'reasoning' && taskClass !== 'DEEP_REASONING') {
+        targetTier = 'balanced';
+      }
     }
 
     // Estimate tokens conservatively (~3.5 chars per token across English/code/multilingual)
@@ -163,7 +175,6 @@ export class ModelRouter {
     }
     const estimatedTokens = Math.ceil(totalChars / 3.5);
 
-    const isByok = Boolean(params.usageContext?.userByokKey);
     const byokProvider = params.usageContext?.userByokProvider ?? 'gemini';
 
     const pool = TIER_MODEL_POOLS[targetTier];

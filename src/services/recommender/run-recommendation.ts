@@ -143,6 +143,9 @@ export async function runRecommendationPipeline(input: {
   readonly userMessage: string;
   readonly regionCode?: string;
   readonly byok?: UserByokConfig | null;
+  readonly serverMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
+  readonly leaseId?: string | null;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
@@ -156,6 +159,8 @@ export async function runRecommendationPipeline(input: {
     previous,
     regionCode: input.regionCode ?? 'US',
     byok: input.byok,
+    serverMode: input.serverMode,
+    isSubscriber: input.isSubscriber,
   });
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });

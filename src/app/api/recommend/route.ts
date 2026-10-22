@@ -55,6 +55,7 @@ import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/meter
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
+import { resolveReasoningMode } from '@/services/metering/mode';
 import type { QueryLease } from '@/services/metering/lease';
 
 import { parseRequestId } from '@/lib/request-id';
@@ -217,6 +218,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
     const sessionId = session.id;
 
+    const rawRequestedMode = request.headers.get('x-recsy-user-mode')?.trim().toLowerCase() as
+      | 'fast'
+      | 'deep'
+      | undefined;
+    const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
+    const serverMode = await resolveReasoningMode(identity, lease, requestedMode, db);
+    const isSubscriber = lease.chargeSource === 'subscription' || serverMode === 'deep';
+
     const tPipelineStart = performance.now();
     const result = await runRecommendationPipeline({
       db,
@@ -225,6 +234,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       userMessage: body.message,
       regionCode,
       byok,
+      serverMode,
+      isSubscriber,
+      leaseId: lease.isNoop || lease.id === 'off' ? null : lease.id,
       log: log.child({ sessionId }),
     });
     const latencyMs = Math.round(performance.now() - tPipelineStart);

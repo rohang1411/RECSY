@@ -71,6 +71,8 @@ export async function extractUserRequirements(input: {
   readonly previous: UserRequirements | null;
   readonly regionCode?: string;
   readonly byok?: UserByokConfig | null;
+  readonly serverMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
 }): Promise<UserRequirements> {
   const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const config = getRegionConfig(input.regionCode ?? 'US');
@@ -89,7 +91,8 @@ export async function extractUserRequirements(input: {
       taskClass: 'EXTRACTION',
       userByokKey: input.byok?.apiKey,
       userByokProvider: input.byok?.provider,
-      userMode: input.byok?.userMode,
+      userMode: input.serverMode ?? input.byok?.userMode,
+      isSubscriber: input.isSubscriber,
     },
   });
   return mergeUserRequirements({

@@ -57,6 +57,7 @@ import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/meter
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
+import { resolveReasoningMode } from '@/services/metering/mode';
 import type { QueryLease } from '@/services/metering/lease';
 import type { MeteredRequestOutcome } from '@/services/metering/types';
 
@@ -235,6 +236,19 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const tStreamStart = performance.now();
         try {
+          const rawRequestedMode = request.headers
+            .get('x-recsy-user-mode')
+            ?.trim()
+            .toLowerCase() as 'fast' | 'deep' | undefined;
+          const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
+          const serverMode = await resolveReasoningMode(
+            identity ?? { userId: null },
+            lease!,
+            requestedMode,
+            db,
+          );
+          const isSubscriber = lease!.chargeSource === 'subscription' || serverMode === 'deep';
+
           const result = await runPhoneQna({
             phoneId: phone.id,
             query: body.query,
@@ -252,6 +266,8 @@ export async function POST(request: NextRequest): Promise<Response> {
               nextIngestAt: phone.nextIngestAt,
             },
             byok,
+            serverMode,
+            isSubscriber,
           });
 
           const latencyMs = Math.round(performance.now() - tStreamStart);
