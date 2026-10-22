@@ -17,7 +17,34 @@ export type ErrorCode =
   | 'LLM_TIMEOUT'
   | 'LLM_SCHEMA_VIOLATION'
   | 'INTEGRATION_ERROR'
-  | 'INTERNAL';
+  | 'INTERNAL'
+  // plan25 metering, auth, billing codes
+  | 'QUOTA_EXHAUSTED'
+  | 'SUBSCRIPTION_EXHAUSTED'
+  | 'ANON_QUOTA_EXHAUSTED'
+  | 'ANON_IP_CAP'
+  | 'SIGNIN_REQUIRED'
+  | 'DEVICE_ACCOUNT_CAP'
+  | 'BYOK_DAILY_CAP'
+  | 'TOO_MANY_INFLIGHT'
+  | 'DUPLICATE_REQUEST'
+  | 'CAPACITY_BUSY'
+  | 'PLATFORM_PAUSED'
+  | 'METERING_UNAVAILABLE'
+  | 'AUTH_UNAVAILABLE'
+  | 'BYOK_REJECTED'
+  | 'BYOK_UNSUPPORTED'
+  | 'BYOK_RATE_LIMITED'
+  | 'ACCOUNT_RESTRICTED'
+  | 'CAPTCHA_REQUIRED'
+  | 'BAD_ORIGIN'
+  | 'BILLING_HOLD'
+  | 'BILLING_NOT_AVAILABLE'
+  | 'ALREADY_SUBSCRIBED'
+  | 'NO_BILLING_ACCOUNT'
+  | 'BILLING_UNAVAILABLE'
+  | 'REAUTH_REQUIRED'
+  | 'INVALID_CODE';
 
 const DEFAULT_STATUS: Record<ErrorCode, number> = {
   VALIDATION: 400,
@@ -29,6 +56,32 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   LLM_SCHEMA_VIOLATION: 502,
   INTEGRATION_ERROR: 502,
   INTERNAL: 500,
+  QUOTA_EXHAUSTED: 402,
+  SUBSCRIPTION_EXHAUSTED: 402,
+  ANON_QUOTA_EXHAUSTED: 402,
+  ANON_IP_CAP: 402,
+  SIGNIN_REQUIRED: 402,
+  DEVICE_ACCOUNT_CAP: 402,
+  BYOK_DAILY_CAP: 402,
+  TOO_MANY_INFLIGHT: 429,
+  DUPLICATE_REQUEST: 409,
+  CAPACITY_BUSY: 503,
+  PLATFORM_PAUSED: 503,
+  METERING_UNAVAILABLE: 503,
+  AUTH_UNAVAILABLE: 503,
+  BYOK_REJECTED: 400,
+  BYOK_UNSUPPORTED: 400,
+  BYOK_RATE_LIMITED: 429,
+  ACCOUNT_RESTRICTED: 403,
+  CAPTCHA_REQUIRED: 428,
+  BAD_ORIGIN: 403,
+  BILLING_HOLD: 409,
+  BILLING_NOT_AVAILABLE: 403,
+  ALREADY_SUBSCRIBED: 409,
+  NO_BILLING_ACCOUNT: 404,
+  BILLING_UNAVAILABLE: 503,
+  REAUTH_REQUIRED: 401,
+  INVALID_CODE: 400,
 };
 
 export class AppError extends Error {
@@ -63,6 +116,20 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required', context?: Record<string, unknown>) {
+    super('UNAUTHORIZED', message, { context });
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export class AccountRestrictedError extends AppError {
+  constructor(message = 'Your account has been restricted', context?: Record<string, unknown>) {
+    super('ACCOUNT_RESTRICTED', message, { context });
+    this.name = 'AccountRestrictedError';
+  }
+}
+
 export class RateLimitError extends AppError {
   constructor(context?: Record<string, unknown>) {
     super('RATE_LIMITED', 'Too many requests', { context });
@@ -88,6 +155,88 @@ export class IntegrationError extends AppError {
   constructor(message: string, context?: Record<string, unknown>, cause?: unknown) {
     super('INTEGRATION_ERROR', message, { context, cause });
     this.name = 'IntegrationError';
+  }
+}
+
+export class ByokError extends AppError {
+  constructor(
+    code: 'BYOK_REJECTED' | 'BYOK_UNSUPPORTED' | 'BYOK_RATE_LIMITED',
+    message: string,
+    options?: { context?: Record<string, unknown>; cause?: unknown; status?: number },
+  ) {
+    super(code, message, options);
+    this.name = 'ByokError';
+  }
+}
+
+/**
+ * Maps underlying provider errors to typed BYOK application errors (Section 7.6).
+ * 401/403 -> BYOK_REJECTED (400)
+ * 429 -> BYOK_RATE_LIMITED (429)
+ */
+export function mapByokError(err: unknown): never {
+  if (
+    err instanceof AppError &&
+    (err.code === 'BYOK_REJECTED' ||
+      err.code === 'BYOK_UNSUPPORTED' ||
+      err.code === 'BYOK_RATE_LIMITED')
+  ) {
+    throw err;
+  }
+  const status =
+    (err as { status?: number })?.status ??
+    (err as { statusCode?: number })?.statusCode ??
+    (err as { context?: { status?: number } })?.context?.status;
+
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    /API_KEY_INVALID|INVALID_ARGUMENT|unauthenticated|unauthorized|forbidden|invalid.*key|authentication.*failed|401|403/i.test(
+      msg,
+    )
+  ) {
+    throw new AppError('BYOK_REJECTED', 'Your API key was rejected by the provider', {
+      cause: err,
+      status: 400,
+    });
+  }
+
+  if (status === 429 || /RESOURCE_EXHAUSTED|rate.*limit|quota.*exceeded|429/i.test(msg)) {
+    throw new AppError('BYOK_RATE_LIMITED', 'Your API key was rate limited by the provider', {
+      cause: err,
+      status: 429,
+    });
+  }
+
+  if (err instanceof AppError) throw err;
+  throw new LlmError(`BYOK provider call failed: ${msg}`, {}, err);
+}
+
+export class QuotaDeniedError extends AppError {
+  readonly quota: Readonly<Record<string, unknown>>;
+  readonly actions: readonly string[];
+
+  constructor(
+    code: ErrorCode,
+    message: string,
+    options: {
+      status?: number;
+      quota: Record<string, unknown>;
+      actions?: readonly string[];
+      context?: Record<string, unknown>;
+      cause?: unknown;
+    },
+  ) {
+    super(code, message, {
+      status: options.status ?? DEFAULT_STATUS[code],
+      context: options.context,
+      cause: options.cause,
+    });
+    this.name = 'QuotaDeniedError';
+    this.quota = Object.freeze({ ...options.quota });
+    this.actions = Object.freeze([...(options.actions ?? [])]);
   }
 }
 

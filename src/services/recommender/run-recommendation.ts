@@ -21,6 +21,7 @@ import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/
 import type { AppQueryDb } from '@/services/db/client';
 import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
 import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
@@ -29,6 +30,7 @@ import { extractUserRequirements } from './extract-requirements';
 import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
+export type { UserRequirements };
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 import { unsupportedHardFeatures } from './hard-features';
@@ -140,11 +142,10 @@ export async function runRecommendationPipeline(input: {
   readonly sessionId: string;
   readonly userMessage: string;
   readonly regionCode?: string;
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
+  readonly serverMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
+  readonly leaseId?: string | null;
   readonly log: Logger;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
@@ -158,6 +159,8 @@ export async function runRecommendationPipeline(input: {
     previous,
     regionCode: input.regionCode ?? 'US',
     byok: input.byok,
+    serverMode: input.serverMode,
+    isSubscriber: input.isSubscriber,
   });
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });

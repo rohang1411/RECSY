@@ -1,0 +1,63 @@
+name: Database Tests
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+concurrency:
+  group: db-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  db-tests:
+    name: Database integration tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: recsy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/recsy
+      SUPABASE_SERVICE_ROLE_KEY: e2e-ci-service-role
+      GEMINI_API_KEY: e2e-ci-gemini-placeholder
+      LLM_PROVIDER: gemini
+      NEXT_PUBLIC_SUPABASE_URL: https://example.com
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: e2e-ci-anon
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_COMMIT_SHA: ${{ github.sha }}
+      NODE_ENV: development
+      CI: 'true'
+      # --- plan25: metering, auth, billing ---
+      QUOTA_MODE: 'off'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bootstrap database schema and migrations
+        run: pnpm exec tsx scripts/db-setup.ts
+
+      - name: Run database integration tests
+        run: pnpm test:db

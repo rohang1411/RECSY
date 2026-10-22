@@ -85,6 +85,41 @@
       "when": 1791897600000,
       "tag": "0011_rls_security_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792609919791,
+      "tag": "0012_multi_user_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792609920000,
+      "tag": "0013_metering_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792610000000,
+      "tag": "0014_history_sync_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792610100000,
+      "tag": "0015_recsy_app_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792655000000,
+      "tag": "0016_user_profile_dob",
+      "breakpoints": true
     }
   ]
 }

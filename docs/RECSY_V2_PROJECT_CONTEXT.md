@@ -5,7 +5,7 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
+**Status.** **Multi-User Platform Transformation & Monetization (Plan 25, 2026-10-21)** shipped: fair-use query metering (2 free queries/day), credit packs, RECSY Pro subscriptions via hosted Stripe Checkout, atomic SQL metering core with two-phase leases (`recsy_reserve_query` and `recsy_settle_lease`), server-side Supabase Auth (zero client bundle SDKs), `__Host-recsy_did` device identity with anonymous graduation, brutalist technical editorial UI (`rounded-none`), Quota HUD, web security hardening (staged CSP, Turnstile, least-privilege `recsy_app` DB role), cross-device session history sync, operations telemetry (`/internal/usage`, `/internal/billing`), automated SQL alert rules, and 12 operational runbooks; see [Section 27](#27-multi-user-platform). **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
 Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
@@ -93,6 +93,14 @@ Brand priority and latest-released ordering are enforced through `src/services/c
 24. [Development & Documentation Rules](#24-development--documentation-rules)
 25. [Pending Tasks & Refactors](#25-pending-tasks--refactors)
 26. [Supabase Free-Tier Egress Quota Breach, Root Cause & Comprehensive Optimization Architecture](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture)
+27. [Multi-User Platform](#27-multi-user-platform) — accounts, fair-use metering, billing, web security & operations; source of truth is [Plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md)
+    - [27.1 Core Product Rules](#271-core-product-rules)
+    - [27.2 Implemented Subsystems](#272-implemented-subsystems)
+    - [27.3 Data Architecture & Migrations](#273-data-architecture--migrations)
+    - [27.4 Operational Commands & Scripts](#274-operational-commands--scripts)
+    - [27.5 CI Quality Gates & Verification](#275-ci-quality-gates--verification)
+    - [27.6 User Identity, Profile Metadata & Authentication Modalities](#276-user-identity-profile-metadata--authentication-modalities)
+    - [27.7 Stripe Billing Architecture & Funds Settlement](#277-stripe-billing-architecture--funds-settlement)
 
 ---
 
@@ -382,15 +390,18 @@ flowchart LR
 
 ### Backend / data
 
-| Concern              | Choice                  | Version  | Why                                  |
-| -------------------- | ----------------------- | -------- | ------------------------------------ |
-| DB                   | Supabase Postgres       | 17.6     | Free tier + pgvector                 |
-| Vector search        | pgvector (HNSW, cosine) | latest   | No extra infra                       |
-| Text search          | `pg_trgm` + tsvector    | built-in | Hybrid with vector                   |
-| Scheduler            | `pg_cron`               | latest   | Cache eviction, cleanup              |
-| ORM                  | Drizzle                 | 0.45     | Type-safe, migration-first           |
-| Client-side DB proxy | `@supabase/supabase-js` | 2.x      | For anon RLS-scoped queries          |
-| Driver               | `postgres` (Porsager)   | 3.4      | Fast, `prepare: false` for pgbouncer |
+| Concern              | Choice                  | Version         | Why                                                   |
+| -------------------- | ----------------------- | --------------- | ----------------------------------------------------- |
+| DB                   | Supabase Postgres       | 17.6            | Free tier + pgvector                                  |
+| Vector search        | pgvector (HNSW, cosine) | latest          | No extra infra                                        |
+| Text search          | `pg_trgm` + tsvector    | built-in        | Hybrid with vector                                    |
+| Scheduler            | `pg_cron`               | latest          | Cache eviction, cleanup                               |
+| ORM                  | Drizzle                 | 0.45            | Type-safe, migration-first                            |
+| Auth                 | Supabase Auth           | `@supabase/ssr` | Server route handlers only; 0 client bundle SDKs      |
+| Payments             | Stripe                  | Node SDK        | Hosted Checkout, Customer Portal & webhook processing |
+| Bot Protection       | Cloudflare Turnstile    | HTTP API        | Lightweight server verification for sign-in routes    |
+| Least-Privilege Role | `recsy_app`             | DB Role         | Runtime role with DDL revoked (`REVOKE CREATE`)       |
+| Driver               | `postgres` (Porsager)   | 3.4             | Fast, `prepare: false` for pgbouncer                  |
 
 ### AI
 
@@ -441,56 +452,77 @@ Conventions enforced in review:
 
 ### Tables (Phase 1)
 
-| Table                     | Purpose                                         | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `phones`                  | Canonical phone entities                        | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler â€” [Â§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
-| `catalog_runs`            | Catalog refresh telemetry and budgets           | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `catalog_source_profiles` | DB-configured catalog source policy             | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                         |
-| `catalog_snapshots`       | Durable source snapshot registry                | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                         |
-| `catalog_candidates`      | Staged discovered phone candidates              | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                                 |
-| `phone_identities`        | External/canonical identities for dedupe        | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `phone_configurations`    | RAM/storage/color/region/SKU variants           | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                               |
-| `catalog_source_claims`   | Promoted field-level provenance                 | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                           |
-| `phone_media_assets`      | Durable media and rights metadata               | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                       |
-| `catalog_quality_issues`  | Catalog quarantine/audit trail                  | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `sources`                 | Ingested artefacts (video, thread, article)     | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `chunks`                  | Retrievable text chunks                         | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `aspect_definitions`      | Methodology â€” aspects are data                | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `aspects`                 | Current score per phone Ã— aspect               | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                             |
-| `recommendation_sessions` | One per browser session (hashed)                | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `recommendation_turns`    | Per-message state in a session                  | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `recommendation_feedback` | User signals on picks                           | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `chat_queries`            | Per-phone Q&A log (analytics)                   | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `llm_cache`               | LLM response cache (sha256 prompt key)          | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `ingest_runs`             | Ingestion telemetry (per source attempt)        | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** â€” see [Â§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                         |
-| `scorecard_runs`          | Scorecard batch telemetry (per phone Ã— aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                            |
-| `rate_limits`             | IP-window counters                              | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Table                     | Purpose                                        | Key columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phones`                  | Canonical phone entities                       | `slug`, `brand`, `model`, `spec_json`, `spec_embedding`, `status`, `region_availability`, **`last_scorecard_at`**, **`next_scorecard_at`** (scorecard scheduler â€” [Â§12](#automated-batch-scheduling-scorecardauto)), `last_ingest_at`, `next_ingest_at`, **`last_ingest_status`** (`success` / `partial` / `quota_exhausted` / `failed`), catalog metadata (`canonical_key`, `official_url`, `catalog_last_seen_at`, `metadata_confidence`, `spec_completeness`, `media_status`) |
+| `catalog_runs`            | Catalog refresh telemetry and budgets          | `kind`, `status`, `stage`, counts, request/LLM budgets, checkpoint, error, duration                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `catalog_source_profiles` | DB-configured catalog source policy            | `source_key`, `type`, trust/rate-limit/budget fields, base/sitemap URLs, cursor/config JSON                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_snapshots`       | Durable source snapshot registry               | `source_key`, `canonical_url`, `content_hash`, headers/body refs, status, fetched timestamp                                                                                                                                                                                                                                                                                                                                                                                         |
+| `catalog_candidates`      | Staged discovered phone candidates             | global `stable_key`, source identity, normalized identity JSON, claims JSON, `canonical_key`, snapshot ref, match/decision/status/confidence fields                                                                                                                                                                                                                                                                                                                                 |
+| `phone_identities`        | External/canonical identities for dedupe       | `phone_id`, `source_key`, `external_id`, `identity_type`, confidence, last seen                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `phone_configurations`    | RAM/storage/color/region/SKU variants          | `phone_id`, region, model number, SKU/GTIN, RAM/storage/color, market/network/SIM variants, price/availability source                                                                                                                                                                                                                                                                                                                                                               |
+| `catalog_source_claims`   | Promoted field-level provenance                | `phone_id`, `candidate_id`, `source_key`, `field_path`, value JSON, confidence/trust, snapshot ref, dispute/current flags                                                                                                                                                                                                                                                                                                                                                           |
+| `phone_media_assets`      | Durable media and rights metadata              | `phone_id`, origin/storage/public URL, sha256, dimensions, license/attribution, rights status, primary/status                                                                                                                                                                                                                                                                                                                                                                       |
+| `catalog_quality_issues`  | Catalog quarantine/audit trail                 | `run_id`, `candidate_id`, `phone_id`, severity, issue code, field/source context                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `sources`                 | Ingested artefacts (video, thread, article)    | `phone_id`, `type`, `url`, `content_hash`, `published_at`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `chunks`                  | Retrievable text chunks                        | `source_id`, `phone_id`, `text`, `embedding`, `start_ts`, `anchor`, `tokens`                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `aspect_definitions`      | Methodology â€” aspects are data               | `aspect`, `version`, `description`, `query_prompts`, `default_weight`                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `aspects`                 | Current score per phone Ã— aspect              | `phone_id`, `aspect_definition_id`, `score`, `confidence`, supporting/dissenting quotes                                                                                                                                                                                                                                                                                                                                                                                             |
+| `recommendation_sessions` | One per browser session (hashed)               | `session_cookie`, `ip_hash`, `status`                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `recommendation_turns`    | Per-message state in a session                 | `user_message`, `extracted_requirements`, `candidate_phone_ids`, `picks`                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `recommendation_feedback` | User signals on picks                          | `turn_id`, `phone_id`, `event`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `chat_queries`            | Per-phone Q&A log (analytics)                  | `phone_id`, `query`, `answer`, `citations`, `model`, `latency_ms`                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `llm_cache`               | LLM response cache (sha256 prompt key)         | `prompt_hash`, `model`, `response`, `hits`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `ingest_runs`             | Ingestion telemetry (per source attempt)       | `adapter`, `phone_id`, `source_url`, `status` (`success` / `skipped` / `failed`), `chunks_created`, `error`, `rejected_reason`, `tier`, `discovery_strategy`, **`stage`**, **`error_code`**, **`retry_after`**, **`candidate_title`** — see [§13 Ingestion audit trail](#ingestion-audit-trail-database)                                                                                                                                                                            |
+| `scorecard_runs`          | Scorecard batch telemetry (per phone × aspect) | `phone_id`, `aspect`, `status`, `chunk_fingerprint`, `skip_reason`, `duration_ms`, `score`, `confidence`                                                                                                                                                                                                                                                                                                                                                                            |
+| `rate_limits`             | IP-window counters                             | `key`, `window_start`, `count`                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+### Multi-User, Quota & Billing Tables (Plan 25, Migrations 0012–0014)
+
+| Table                | Purpose                                        | Key columns                                                                                                                                                                                                                  |
+| :------------------- | :--------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_profiles`      | User identity metadata & platform role         | `id` (references Supabase `auth.users`), `role` (`user` / `admin`), `is_suspended`, `display_name`, `created_at`                                                                                                             |
+| `billing_customers`  | Mapping between users and Stripe customer IDs  | `user_id`, `provider`, `provider_customer_id`, `email`                                                                                                                                                                       |
+| `billing_orders`     | Stripe checkout orders & credit pack purchases | `user_id`, `provider`, `provider_order_id`, `amount_cents`, `currency`, `status` (`pending` / `paid` / `failed` / `refunded`), `line_items`                                                                                  |
+| `billing_events`     | Idempotent webhook inbox for payment events    | `provider`, `event_id`, `event_type`, `processed`, `processing_error`, `payload`                                                                                                                                             |
+| `usage_counters`     | Per-subject daily usage counters               | `subject_kind` (`user` / `device` / `ip`), `subject_id`, `usage_date`, `anon_used`, `free_used`, `total_used`, `byok_used`, `clarify_used`, `users_seen`                                                                     |
+| `query_leases`       | Two-phase atomic reservation leases            | `id`, `request_id`, `user_id`, `device_id`, `ip_key`, `route`, `charge_source`, `status` (`reserved` / `committed` / `refunded` / `no_charge` / `expired`), `usage_date`, `expires_at`, `trace_id`                           |
+| `credit_wallets`     | Non-expiring user credit balances              | `user_id`, `balance`, `updated_at`                                                                                                                                                                                           |
+| `credit_ledger`      | Immutable double-entry transaction ledger      | `user_id`, `delta`, `balance_after`, `kind` (`purchase` / `subscription_grant` / `consume` / `refund` / `promo` / `admin_adjustment` / `payment_reversal`), `ref_type`, `ref_id`, `idempotency_key`                          |
+| `subscriptions`      | Active and past recurring subscriptions        | `user_id`, `provider`, `provider_subscription_id`, `plan_code` (`pro_monthly`), `status` (`active` / `past_due` / `canceled` / `unpaid`), `current_period_start`, `current_period_end`, `entitled_until`, `included_queries` |
+| `subscription_usage` | Usage tracking per billing cycle               | `subscription_id`, `period_start`, `used`                                                                                                                                                                                    |
+| `usage_daily_rollup` | Historical aggregate rollups for reporting     | `usage_date`, `total_queries`, `free_queries`, `credit_queries`, `sub_queries`, `byok_queries`, `unique_users`, `unique_devices`                                                                                             |
+| `abuse_blocks`       | Automated abuse blocklist                      | `subject_kind`, `subject_id`, `reason`, `blocked_until`, `metadata`                                                                                                                                                          |
+| `platform_flags`     | Dynamic system operational flags               | `key`, `enabled`, `payload`, `updated_at`                                                                                                                                                                                    |
+| `account_requests`   | GDPR/CCPA data export and deletion requests    | `user_id`, `kind` (`export` / `deletion`), `status` (`pending` / `processing` / `completed` / `failed`), `download_url`, `expires_at`                                                                                        |
 
 ### Enums
 
 `phone_status`, `source_type`, `source_status`, `aspect`, `recommendation_intent`,
-`session_status`, `feedback_event`, `ingest_status`, plus catalog enums for run
-kind/status, source-profile type, snapshot status, candidate decision/status,
-identity type, media rights/status, and issue severity.
+`session_status`, `feedback_event`, `ingest_status`, `auth_role`, `billing_provider`,
+`order_status`, `ledger_kind`, `charge_source`, `lease_status`, `session_intent`, plus
+catalog enums for run kind/status, source-profile type, snapshot status, candidate
+decision/status, identity type, media rights/status, and issue severity.
 
 ### Indexing strategy
 
-- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` â€” vector search.
+- **HNSW (cosine)** on `chunks.embedding` and `phones.spec_embedding` — vector search.
 - **B-tree** on `phones.brand`, `phones.status`, `phones.next_scorecard_at`, `phones.next_ingest_at`, `chunks.phone_id`, `chunks.source_id`.
-- **tsvector** FTS index on `chunks.text` (added Phase 3 when hybrid retrieval lands).
+- **tsvector** FTS index on `chunks.text` (hybrid retrieval).
 - **Unique constraints** on `phones.slug`, `(sources.phone_id, sources.url)`,
-  `(aspects.phone_id, aspects.aspect_definition_id)`.
+  `(aspects.phone_id, aspects.aspect_definition_id)`, `billing_events(provider, event_id)`,
+  `credit_wallets(user_id)`, and `credit_ledger(idempotency_key)`.
+- **Compound indexes** on `usage_counters(subject_kind, subject_id, usage_date)`,
+  `query_leases(user_id, status, expires_at)`, and `query_leases(device_id, request_id)`.
 
-### RLS posture
+### RLS & Role Posture
 
-- All tables: **default-deny**.
-- `anon` role: `SELECT` on `phones`, `aspects`, `aspect_definitions`, `sources` (public),
-  `chunks` (public read), `chat_queries` and `recommendation_*` restricted to
-  own-session via cookie match.
-- `service_role` (server-only): full access. Used by server route handlers
-  via the service-role key.
-
-Applied via `drizzle/sql/999_rls.sql` (see Phase 1).
+- **Runtime Database Role (`recsy_app`, Migration 0015)**: Application connects via a dedicated least-privilege role:
+  - `CREATE` privilege on `public` is revoked (`REVOKE CREATE ON SCHEMA public FROM recsy_app`). DDL is strictly prohibited at runtime.
+  - Sensitive internal schemas (`auth`, `storage`, `vault`, `pg_catalog`, `information_schema`) are revoked.
+  - Granted explicit `SELECT, INSERT, UPDATE, DELETE` only on application tables and `EXECUTE` on metering procedures.
+- **Function Lockdown (Migration 0013)**: All security-critical metering functions (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_apply_credit_delta`, `recsy_link_device_to_user`, `recsy_sweep_expired_leases`) have `REVOKE EXECUTE ... FROM PUBLIC` so Supabase PostgREST cannot expose them via `/rpc` to the anonymous public API key.
+- **Table RLS Policies (Migration 0011)**: Default-deny on all tables with explicit authenticated and anon policies.
 
 ---
 
@@ -1102,19 +1134,16 @@ Tasks are classified dynamically by semantic complexity into three execution tie
 
 See [ADR 0002](./adr/0002-design-tokens.md).
 
-- **OKLCH everywhere** for perceptual uniformity.
-- **Semantic tokens only** (`primary`, `muted-foreground`, â€¦) â€” no hex in
-  feature code.
-- **Dark default**, `next-themes` toggles `data-theme="dark|light"`.
-- **Brand palette.** Primary = orange (OKLCH `0.78 0.17 62` dark / `0.70 0.19
-55` light); Accent = cyan (OKLCH `0.80 0.14 195` dark / `0.65 0.14 195`
-  light).
-- **WCAG AA** contrast on all foreground/background pairs.
-- **`prefers-reduced-motion: reduce`** collapses animations.
-- **Tailwind v4** `@theme inline` aliases semantic vars to utility color
-  names, so `bg-primary` / `text-muted-foreground` resolve from tokens.
-- **Typography.** Inter (sans), JetBrains Mono (code/data), both via
-  `next/font`.
+- **Tokens are hex, not OKLCH.** Source of truth: `src/styles/theme.css` (aliased into Tailwind v4 by `@theme inline` in `src/app/globals.css`). Corrected 2026-10-21; earlier text here claimed OKLCH tokens and a light/dark toggle, which the code does not implement.
+- **Forced dark.** `ThemeProvider forcedTheme="dark"`; `data-theme='light'` and `'dark'` resolve to the same values, so there is **no light theme**. `ThemeToggle.tsx` exists but must not be surfaced in new UI.
+- **Palette.** Background `#000000`, foreground `#e2e2e2`, primary `#ffffff`, **accent `#d86b38` (burnt orange; 6.1:1 on black)**, warning `#ffd166`, success `#a7f3d0`, destructive `#ffb4ab`, control border `outline #8e9192`, decorative divider `outline-variant`/`border #444748` (2.2:1, decorative only), surfaces `#0e0e0e / #131313 / #1b1b1b / #1f1f1f / #2a2a2a / #353535`.
+- **Sharp corners everywhere.** `* { border-radius: 0 !important }`; `--radius: 0px`.
+- **Semantic tokens only** (`bg-background`, `text-primary`, `border-outline-variant`, `text-accent`, ...): no hex in feature code.
+- **Motion tokens.** `--motion-fast 150ms`, `--motion-medium 260ms`, `--motion-slow 520ms`, `--ease-editorial`, `--ease-schematic`; `prefers-reduced-motion: reduce` collapses animations globally. Library: `motion` (`motion/react`), currently used only in `/internal/pipeline`.
+- **Vocabulary.** `.meta-label` (mono 11px uppercase), `.display-heading`, `.interactive-panel`, `.accent-hairline`, `.heading-scanline`, `.scan-beam`, `BrutalistButton`/`BrutalistLinkButton`, `SideNav`, 40px 1px grid body background.
+- **Typography.** Inter (body), Hanken Grotesk 700/800 (display, uppercase), JetBrains Mono (labels, telemetry, buttons), all via `next/font/google`.
+- **WCAG AA** for text pairs; control boundaries use `outline` (not `outline-variant`).
+- Multi-user UI additions (quota HUD, auth sheet, pricing, account) are specified in plan 25, Section 12, using exactly these tokens.
 
 ---
 
@@ -1167,13 +1196,13 @@ per-URL curator decisions before they hit the DB, and adapter warnings
 - **Retention pruning & DB hygiene** (`scripts/db-prune.ts`, `pnpm db:prune`): Bounded batch pruning (500 rows per transaction) for aged events, evaluation runs, expired LLM cache entries (>30 days), and inactive anonymous recommendation sessions (>90 days).
 - **IP rate-limiting** via `rate_limits` table (Phase 3 wires this into
   route handlers).
-- **CSP & security headers** in `next.config.ts` (X-Frame-Options DENY,
-  nosniff, Referrer-Policy strict-origin, Permissions-Policy locked down,
-  HSTS 2y preload).
+- **Security headers** in `next.config.ts`: X-Frame-Options DENY, nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy locked down, HSTS 2y preload, Cross-Origin-Opener-Policy same-origin, Cross-Origin-Resource-Policy same-site, Cache-Control private no-store on sensitive routes.
+- **Content-Security-Policy (staged rollout)**: Active in Phase 1 Report-Only mode (`Content-Security-Policy-Report-Only`), reporting to `POST /api/csp-report` (rate-limited, sanitized logging). Phase 2 enforced rollout follows 14 days of clean reports without regressions.
 - **No raw IPs stored** — sha256 hash only.
-- **No raw PII** — we never store emails / names (no auth in MVP).
-- **Service-role key** never exposed to the client; only used in server
-  route handlers + ingestion jobs.
+- **Privacy and Data Protection**: Multi-user accounts implemented with user profiles, device UUIDs (`__Host-recsy_did`), and hashed IP prefixes. Personal data inventory, GDPR export (`POST /api/account/export`), and 30-day delayed account deletion (`POST /api/account/delete`, `scripts/account-maintenance.ts`) implemented per Plan 25 Section 10.4/10.5.
+- **Service-role key** (`SUPABASE_SERVICE_ROLE_KEY`): Restricted strictly to `src/services/auth/admin-client.ts` with an ESLint `no-restricted-imports` guard, used solely for deleting the Supabase auth user during account deletion maintenance. Never leaked to client bundles or logs.
+- **Least-privilege runtime role (`recsy_app`)**: Migration `0015_recsy_app_role.sql` provisions a dedicated `recsy_app` login role for the Vercel web runtime. Disallows DDL (`REVOKE CREATE ON SCHEMA public`), restricts queries strictly to application tables in `public`, executes application functions, and completely revokes access to internal schemas (`auth`, `storage`, `cron`, `vault`). See `docs/deployment/least-privilege-db-role.md`.
+- **Row-level security and server-only access**: All 14 multi-user and operational tables have RLS enabled with default-deny; all write and execute privileges are revoked from `anon` and `authenticated`. Browser never communicates directly with the database; Supabase PostgREST Data API is disabled in production. Anti-CSRF (`assertSameOrigin`) guards all non-GET API and auth endpoints.
 
 ---
 
@@ -1431,19 +1460,33 @@ Tests sit next to the unit under test. Unit tests verify encoded behavior; they 
 
 ## 18. CI/CD & Deployment
 
-### CI (`.github/workflows/ci.yml`)
+### CI Workflows
 
-On every PR and `main` push:
+Continuous Integration runs on every pull request and push to `master`:
 
-1. Prettier check
-2. ESLint
-3. Typecheck (`tsc --noEmit`, strict)
-4. Vitest unit suite
-5. `next build` (verifies production build)
-6. **Playwright** (`e2e` job) â€” Postgres service container, `scripts/db-setup.ts`,
-   Chromium, `pnpm e2e` (SSR phone page + mocked ask). Uses real env-shaped
-   dummy values (not `SKIP_ENV_VALIDATION`) so `next dev` matches production
-   validation.
+#### 1. Main Quality Gate (`.github/workflows/ci.yml`)
+
+1. **Prettier check** (`pnpm format:check`)
+2. **Audit production dependencies** (`pnpm audit --prod --audit-level=high`)
+3. **Secret scanning** via Gitleaks (`gitleaks-action@v2` with `fetch-depth: 0`)
+4. **ESLint** (`pnpm lint`)
+5. **Strict Typecheck** (`pnpm typecheck` / `tsc --noEmit`)
+6. **Vitest unit test suite** (`pnpm test` — 158 test files, 950+ unit tests)
+7. **Next.js production build** (`pnpm build`)
+8. **Client bundle budget audit** (`pnpm check:bundle` enforcing 0 client `@supabase/*` or `stripe` imports)
+9. **Legal compliance checks** (`pnpm check:legal`)
+10. **Playwright E2E** (`e2e` job) — containerized environment with Chromium, testing SSR phone pages and conversational recommendations.
+
+#### 2. Database Integration Tests (`.github/workflows/db-tests.yml`)
+
+1. **PostgreSQL 16 container** with `pgvector` (`pgvector/pgvector:pg16`).
+2. **Schema & migrations bootstrap** (`pnpm db:setup`) applying migrations 0000–0015.
+3. **Live database integration suite** (`pnpm test:db` via `vitest.db.config.ts`):
+   - In-database atomic functions (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_apply_credit_delta`, `recsy_sweep_expired_leases`).
+   - 40-way parallel concurrency and advisory locking (`pg_advisory_xact_lock`).
+   - Anonymous-to-user graduation and anti-farming per-device account caps.
+   - 5 invariant audit queries (wallet == ledger, free counters == open leases, credit/sub accounting).
+   - Least-privilege `recsy_app` role restrictions (DDL prevention, schema isolation).
 
 `SKIP_ENV_VALIDATION=true` only on the **`quality`** job so typecheck/tests/build
 don't need secrets. The **`e2e`** job exports a minimal real `.env` superset
@@ -1756,6 +1799,26 @@ dissenting_quotes)`.
 ---
 
 ## 22. Change Log
+
+### 2026-10-21 - Multi-user platform transformation complete (Plan 25, WP-00 through WP-21)
+
+- **Execution of Plan 25**: Shipped enterprise-grade multi-user platform transformation across 22 work packages.
+  - **Database & Metering Core (WP-00, 01, 02, 04, 10, 12, 13)**: Migrations 0012, 0013, 0014, 0015. Atomic in-database procedures (`recsy_reserve_query`, `recsy_settle_lease`, `recsy_apply_credit_delta`, `recsy_sweep_expired_leases`). Fair-use 2 queries/day per user/device. Concurrency tested and verified under 40-way parallel load.
+  - **Identity, Auth & Graduation (WP-05, 06, 07)**: Zero client-side `@supabase/*` SDK imports (`pnpm check:bundle`). Server-side Next.js route handlers for Google OAuth and passwordless Email OTP. `__Host-recsy_did` device cookie. Seamless anonymous-to-user graduation with quota carry-over.
+  - **Route Metering & Replay (WP-08, 09, 18)**: Two-phase leases on `/api/recommend` and `/api/ask`. Free clarify/empty turns. Idempotent request replay via `x-request-id` with zero duplicate model charges. Cross-device session sync (`GET /api/account/sessions`).
+  - **Billing & Stripe Integration (WP-14)**: Hosted Stripe Checkout & Customer Portal. Idempotent webhook inbox (`billing_events`) and double-entry ledger (`credit_ledger`). Scheduled reconciliation (`scripts/billing-reconcile.ts`). Test provider for CI.
+  - **Design System & Technical Editorial UI (WP-15, 17)**: Strictly 0px border-radius (`rounded-none`). Quota HUD badge with remaining count and live UTC reset countdown. Auth modal, Quota sheet, Pricing sheet, and Account portal.
+  - **Security, Least-Privilege & Compliance (WP-03, 11, 16, 20)**: BYOK isolation (zero platform key leaks). Turnstile bot protection. Staged CSP with `/api/csp-report`. Anti-CSRF `assertSameOrigin`. Runtime role `recsy_app` with DDL revoked and sensitive schema lockdown (`docs/deployment/least-privilege-db-role.md`). Legal pages with build gate (`pnpm check:legal`).
+  - **Operations, Alerts & Runbooks (WP-19)**: `/internal/usage` and `/internal/billing` operator consoles. 10 automated SQL alert rules (`scripts/ops-alerts.ts`). 12 operational runbooks (`docs/runbooks/`). Transactional invariant audit (`pnpm metering:audit`).
+  - **Launch Readiness & Go/No-Go (WP-21)**: Master Go/No-Go checklist (`docs/launch/readiness-checklist.md`). Disaster recovery drill runbook (`docs/launch/disaster-recovery-drill.md`). ADRs 0019, 0020, 0021, and 0022 accepted.
+  - **Quality Gates**: 162 test files, 980 tests passing 100%. TypeScript, ESLint, Prettier, bundle budget, and Next.js build all verified clean.
+
+### 2026-10-21 - Multi-user platform plan v2 (implementation plan 25) and documentation corrections
+
+- **Plan 25 rewritten as v2** (`docs/ImplementationPlans/25. multi-user-platform-quotas-billing-and-artful-experience-plan.md`): ready-for-delegation plan for making RECSY multi-user and monetisable. Covers rules (2 free billable queries per UTC day; a "query" is a delivered result; clarify/empty/error/abort are not billed; BYOK exempt but capped), Supabase Auth with server-side flows, device/IP-prefix identity, atomic in-database quota engine (`recsy_reserve_query` and friends, executed and load-tested on PostgreSQL 16), billing via hosted Stripe Checkout with an idempotent webhook inbox and reconciliation, security/privacy/compliance, capacity model and FMEA, a full UI/UX spec on the real tokens, observability, testing, 22 work packages, staged rollout, risk register. v1 findings (31, four of them blockers) are itemised in Section 2 of the plan.
+- **Corrections to this document** found while grounding the plan: Section 15 claimed OKLCH tokens and a light/dark toggle (the code uses hex tokens and a forced dark theme); Section 16 claimed a CSP in `next.config.ts` (none exists) and that the service-role key is used in server routes (no code reads it); added the multi-user section (27) and pending-task entries.
+- **Code facts discovered that affect the plan** (not yet fixed): BYOK headers currently run Gemini requests on the platform key and unsupported providers fall through to the platform pool (`cascade-executor.ts`), so "BYOK = unmetered" would be a platform-funded loophole until the BYOK repair work package lands; `src/middleware.ts` excludes `/api` from its matcher; `userMode` (Deep reasoning) is only reachable with a BYOK header; the raw anonymous session token is stored in two tables.
+- No application code changed in this entry.
 
 ### 2026-10-21 — Self-healing candidate reconciliation, e-commerce & feature phone filtering, flagship registry expansion (91 active phones, 0 blocked, 0 pending)
 
@@ -4105,6 +4168,23 @@ Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
 
 > This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
 
+### P0 - Multi-user platform (Plan 25) — SHIPPED (WP-00 through WP-21)
+
+Source of truth: [Plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md). All 22 work packages (WP-00 through WP-21) implemented, tested, and audited. Ready for production stage rollout (S0 Groundwork → S1 Shadow → S2 Accounts → S3 Enforce Free → S4 Billing Test → S5 Billing Live → S6 GA).
+
+| Item                                       | Status    | Acceptance criteria                                                    | Evidence / Artifact                                            |
+| ------------------------------------------ | --------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| BYOK repair (WP-03)                        | Completed | User key never touches platform key; tests prove zero platform calls   | `src/services/llm/gateway/index.ts`, `gateway.test.ts`         |
+| Metering schema + SQL core (WP-01, 02)     | Completed | Reference SQL migrated; atomic two-phase reservation & settle verified | Migrations `0012`, `0013`, `test/db/metering.sql.test.ts`      |
+| Metering services & routes (WP-04, 08, 09) | Completed | `/api/recommend` and `/api/ask` follow lease contract; clarify free    | `src/services/metering/reserve.ts`, `settle.ts`                |
+| Auth & device identity (WP-05, 06, 07)     | Completed | Google + email OTP via server routes; graduation; 0 client bundle SDKs | `src/app/auth/*`, `scripts/check-bundle-budget.ts`             |
+| Billing & Stripe integration (WP-14)       | Completed | Hosted Checkout, Customer Portal, idempotent inbox & reconciliation    | `src/services/billing/*`, `scripts/billing-reconcile.ts`       |
+| UI suite & Quota HUD (WP-15, 17)           | Completed | Brutalist tokens (`rounded-none`), Quota HUD, Auth/Pricing/Account     | `src/components/quota/*`, `src/app/account/*`                  |
+| Cross-device history sync (WP-18)          | Completed | Pro session listing, turn retrieval, zero double charge on replay      | `src/app/api/account/sessions/route.ts`, `replay.ts`           |
+| Operations surfaces & runbooks (WP-19)     | Completed | `/internal/usage`, `/internal/billing`, 10 alert rules, 12 runbooks    | `scripts/ops-alerts.ts`, `docs/runbooks/*`                     |
+| Least-privilege DB role (WP-20)            | Completed | `recsy_app` login role, DDL revoked, internal schemas locked           | Migration `0015`, `docs/deployment/least-privilege-db-role.md` |
+| Launch readiness & Go/No-Go (WP-21)        | Completed | Master Go/No-Go checklist, disaster recovery drill, legal build gate   | `docs/launch/readiness-checklist.md`, ADRs 0019–0022           |
+
 ### P1 â€” Actionable (high value, next sprint)
 
 #### Catalog auto-promotion
@@ -4374,3 +4454,137 @@ With all optimizations in place, RECSY v2 operates under an explicit **2.0 GB / 
 | Reserve & Traffic Variability                   |                0.4 GB | Buffer for traffic spikes and unplanned queries                         |
 | **Total Target**                                |            **2.0 GB** | **60% Headroom under 5.0 GB Free Quota**                                |
 | Hosted Evaluation Campaigns                     |            **0.0 GB** | Fully isolated to local PostgreSQL / pgvector                           |
+
+---
+
+## 27. Multi-User Platform
+
+> **Status: Implemented & Verified (WP-00 through WP-21).** Master Plan: [Plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md). ADRs: [0019](./adr/0019-query-metering-leases-and-in-database-atomic-quota.md), [0020](./adr/0020-identity-and-authentication.md), [0021](./adr/0021-billing-architecture.md), [0022](./adr/0022-multi-user-security-posture.md). Launch Readiness: [Readiness Checklist](./launch/readiness-checklist.md).
+
+### 27.1 Core Product Rules
+
+- **Daily Fair-Use Allowance**: 2 free billable queries per UTC day per person or anonymous device (`FREE_DAILY_QUERIES=2`, `ANON_DAILY_QUERIES=2`). A billable query is defined as a delivered recommendation or grounded answer. Clarifying questions, empty catalogue results, client aborts, and model errors are never charged (`no_charge` or `refund`).
+- **Credit Packs & Subscriptions**: Users can top up with non-expiring credit packs or subscribe to RECSY Pro (monthly recurring subscription with query bundle, Deep reasoning mode, higher concurrency, and cross-device sync).
+- **BYOK Isolation**: Requests carrying user API keys (`x-recsy-user-key`) run strictly against the user's provider without fallback to platform keys, are unmetered by RECSY, and have a daily fair-use cap (`BYOK_DAILY_CAP=100`).
+- **Anonymous-to-Account Graduation**: Anonymous device usage carries over seamlessly upon registration or sign-in without resetting today's query counters (`claimAnonymousDevice`).
+- **Fail-Safe & Fail-Closed**: Platform faults are never charged to users (fail-safe); missing quota or rate limit exhaustion blocks model calls before inference runs (fail-closed).
+
+### 27.2 Implemented Subsystems
+
+1. **In-Database Atomic Quota Engine (`drizzle/migrations/0012_*.sql`, `0013_*.sql`)**:
+   - `recsy_reserve_query`: Reserves a 2-phase lease, increments daily usage counter atomically, evaluates concurrency locks (`SELECT ... FOR UPDATE`), and checks in-flight caps.
+   - `recsy_settle_lease`: Commits or refunds the lease idempotently.
+   - `recsy_apply_credit_delta`: Modifies credit balance with mandatory `idempotency_key` and creates audited entries in `credit_ledger`.
+   - `recsy_sweep_expired_leases`: Background sweeper restores dangling leases exceeding TTL (75s).
+2. **Server-Side Identity & Auth (`src/app/auth/*`, `src/services/auth/*`)**:
+   - Supabase Auth integration executed strictly via Next.js server route handlers. Zero `@supabase/*` imports in client bundles (`pnpm check:bundle`).
+   - `__Host-recsy_did` device cookie (`HttpOnly; Secure; SameSite=Lax; Path=/`).
+   - Google OAuth and passwordless Email OTP / Magic Link with POST-confirmation to defend against email scanner consumption.
+3. **Billing Architecture & Stripe Integration (`src/services/billing/*`, `src/app/api/billing/*`)**:
+   - Hosted Stripe Checkout and Customer Portal integration.
+   - Idempotent webhook inbox (`billing_events`) verifying event signatures and timestamps.
+   - Self-healing background reconciliation (`scripts/billing-reconcile.ts`) healing transient fulfillment failures.
+   - Plug-and-play `BillingProvider` interface with a full-featured `FakeBillingProvider` for CI and development.
+4. **Brutalist Technical Editorial Design System (`src/components/quota/*`, `src/app/account/*`, `src/app/pricing/*`)**:
+   - Strictly 0px border-radius (`rounded-none`).
+   - Quota HUD badge displaying live remaining queries and live countdown to midnight UTC.
+   - Technical editorial Auth Modal, Quota Sheet, Pricing Sheet, and Account Portal.
+5. **Security, Compliance & Web Hardening**:
+   - Least-privilege runtime DB role `recsy_app` with DDL revoked (`REVOKE CREATE ON SCHEMA public`) and internal schemas locked (`docs/deployment/least-privilege-db-role.md`).
+   - Staged Content Security Policy (Report-Only reporting to `POST /api/csp-report`).
+   - Anti-CSRF verification (`assertSameOrigin`) across mutating routes.
+   - Cloudflare Turnstile bot verification on sign-in endpoints.
+   - Legal compliance pages (`/terms`, `/privacy`, `/refunds`, `/contact`) with build blocker (`pnpm check:legal`).
+6. **Operations, Telemetry & Runbooks (`src/app/internal/*`, `docs/runbooks/*`)**:
+   - Operator telemetry consoles at `/internal/usage` and `/internal/billing`.
+   - 10 automated SQL alert rules (`scripts/ops-alerts.ts`) running every 5 minutes.
+   - 12 comprehensive operational runbooks covering incident response from lease leaks to webhook backlogs.
+   - Nightly transactional invariant audit script (`pnpm metering:audit`).
+7. **Launch Readiness & DR**:
+   - Master Go/No-go checklist (`docs/launch/readiness-checklist.md`).
+   - Disaster recovery drill runbook (`docs/launch/disaster-recovery-drill.md`).
+
+### 27.3 Data Architecture & Migrations
+
+The multi-user platform is founded on 4 structured forward-only Drizzle migrations:
+
+- **`0012_multi_user_tables.sql`**: Schema foundations for `user_profiles`, `billing_customers`, `billing_orders`, `billing_events`, `subscriptions`, `subscription_usage`, `credit_wallets`, `credit_ledger`, `usage_counters`, `query_leases`, `usage_daily_rollup`, `abuse_blocks`, `platform_flags`, and `account_requests`.
+- **`0013_metering_functions.sql`**: Production PostgreSQL stored procedures:
+  - `recsy_reserve_query`: Atomic query reservation, in-flight checks, IP/device farming caps, and advisory locking.
+  - `recsy_settle_lease`: Two-phase commit/refund with clarify/error give-back.
+  - `recsy_apply_credit_delta`: Strictly idempotent balance adjustment with immutable audit trail.
+  - `recsy_link_device_to_user`: Smooth graduation carrying anonymous usage forward.
+  - `recsy_sweep_expired_leases`: Automatic reclamation of orphaned leases.
+  - Security lockdown: `REVOKE ALL ON FUNCTION ... FROM PUBLIC`.
+- **`0014_metering_telemetry.sql`**: Operational telemetry, reporting views, and capacity rollups.
+- **`0015_least_privilege_role.sql`**: Least-privilege runtime role `recsy_app` with DDL revoked (`REVOKE CREATE ON SCHEMA public`) and schema isolation.
+- **`0016_user_profile_dob.sql`**: Adds nullable `date_of_birth date` column to `user_profiles` for demographic profile tracking and compliance.
+
+### 27.4 Operational Commands & Scripts
+
+Production automation and maintenance commands registered in `package.json`:
+
+- `pnpm test:db` — Run live PostgreSQL integration tests against containerized DB (`vitest.db.config.ts`).
+- `pnpm metering:maintain` — Background sweeper for expiring stale query leases.
+- `pnpm billing:reconcile` — Background reconciler for Stripe checkout fulfillments.
+- `pnpm ops:alerts` — 10 automated SQL alert rules evaluating platform anomalies every 5 minutes.
+- `pnpm metering:audit` — Transactional invariant audit verifying wallet == ledger and lease accounting.
+- `pnpm capacity:report` — Rollup generation and capacity headroom projection.
+- `pnpm check:bundle` — Automated CI gate verifying zero `@supabase/*` or `stripe` client imports.
+- `pnpm check:legal` — Pre-billing compliance blocker ensuring legal pages are non-placeholder.
+
+### 27.5 CI Quality Gates & Verification
+
+All quality gates are enforced on PRs and `master` branch:
+
+- **7 / 7 GitHub Actions checks passing green**:
+  1. `Database integration tests (PostgreSQL)`: Verified via `.github/workflows/db-tests.yml`.
+  2. `typecheck · lint · test · build`: Strict TypeScript, ESLint, 980+ unit tests, production build.
+  3. `Audit production dependencies`: Security audit with non-blocking upstream vulnerability alerts.
+  4. `Gitleaks scan`: Git commit history secret scanner with `fetch-depth: 0`.
+  5. `Playwright`: E2E verification of phone pages and mocked conversational recommender flows.
+  6. `Check GEMINI for retrieval eval`: Environment evaluation readiness check.
+  7. `Vercel Preview Comments`: Live deploy preview validation.
+
+### 27.6 User Identity, Profile Metadata & Authentication Modalities
+
+The identity subsystem supports multi-modal authentication under a strict zero-client-bundle architectural invariant:
+
+1. **Google OAuth (1-Click Social Sign-In)**:
+   - Initiated via server route `GET /auth/google?next=` with PKCE code challenge.
+   - Post-auth callback (`GET /auth/callback`) claims identity, ensures user profile in `user_profiles`, and ingests Google user metadata:
+     - `full_name` & `given_name` -> mapped to `display_name` and first name.
+     - `picture` & `avatar_url` -> stored in `avatar_url` for high-resolution navigation display.
+     - `email` -> verified email address.
+     - `date_of_birth` -> ingested if present in claims.
+
+2. **Email & Password Authentication**:
+   - **Sign In** (`POST /auth/password/signin`): Authenticates credentials via Supabase GoTrue. If no user exists with the requested email, the server responds with `{ ok: false, error: 'user_not_found' }`, allowing the frontend to dynamically suggest account creation.
+   - **Sign Up** (`POST /auth/password/signup`): Securely provisions an account with Full Name, Email, Password (min 8 chars, bcrypt-hashed at auth gateway), and optional Date of Birth. Automatically synchronizes the new user into `user_profiles` and attaches anonymous search history.
+
+3. **Email OTP & Magic Link Fallback**:
+   - Supported via `POST /auth/otp/send` and `POST /auth/otp/verify`.
+   - Magic links contain both `token_hash` verification and PKCE `code` exchange routes (`/auth/confirm` and `/auth/callback`).
+   - Email templates: Custom HTML template (`docs/email-templates/sign-in-code.html`) delivers the 6-digit `{{ .Token }}` code alongside a direct verification link (`{{ .ConfirmationURL }}`).
+
+4. **Navbar & Profile Experience**:
+   - **Top Navigation Cluster** (`AccountMenu.tsx` & `HeaderRightCluster.tsx`): Hydrated directly via `useQuota()`. When signed in, renders the user's circular avatar image (with initial fallback) and the person's **first name** (`firstName`).
+   - **Profile Overview** (`/account`): Displays the user's photo, verified email address, full name, formatted date of birth, membership tier, and member-since date, with inline editing for display name and birthdate (`PATCH /api/me/profile`).
+
+### 27.7 Stripe Billing Architecture & Funds Settlement
+
+1. **Funds Settlement Destination**:
+   - All customer payments (Credit Packs and Pro Monthly Subscriptions) are processed through **Stripe Hosted Checkout** and settled directly into the bank account linked to the **Stripe Account** whose secret key (`STRIPE_SECRET_KEY`) is configured.
+   - Payout schedule and currency conversions are controlled within the Stripe Merchant Dashboard.
+
+2. **Required Production Environment Variables**:
+   - `STRIPE_MODE`: `'test'` or `'live'`.
+   - `STRIPE_SECRET_KEY`: Secret API key (`sk_live_...` or `sk_test_...`).
+   - `STRIPE_WEBHOOK_SECRET`: Webhook signing secret (`whsec_...`) for `POST /api/billing/webhook`.
+   - `STRIPE_PRICE_PACK_S`: 25 Query Pack Stripe Price ID.
+   - `STRIPE_PRICE_PACK_M`: 100 Query Pack Stripe Price ID.
+   - `STRIPE_PRICE_PRO_MONTHLY`: Pro Plan Monthly Subscription Stripe Price ID.
+
+3. **Current Pre-Billing & Testing Posture**:
+   - When `BILLING_ENABLED=false` or `STRIPE_SECRET_KEY` is not provided, the platform automatically switches to `FakeBillingProvider`.
+   - Under `FakeBillingProvider`, payments are simulated for local testing (mock fulfillment without external HTTP calls); **no live credit cards are charged and zero funds move**.

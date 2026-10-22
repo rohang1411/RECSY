@@ -67,6 +67,22 @@ ALTER TABLE catalog_source_claims    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE phone_media_assets       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catalog_quality_issues   ENABLE ROW LEVEL SECURITY;
 
+-- Plan 25 multi-user, metering, and billing tables (all service-role-only).
+ALTER TABLE usage_counters          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_wallets          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_ledger           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscription_usage      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE query_leases            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage_daily_rollup      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_customers       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_orders          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_events          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE abuse_blocks            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_flags          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE account_requests        ENABLE ROW LEVEL SECURITY;
+
 -- ---------------------------------------------------------------------------
 -- Role privilege revocations:
 -- Strictly revoke ALL write privileges (INSERT, UPDATE, DELETE) on all tables
@@ -76,6 +92,7 @@ DO $$
 DECLARE
   public_roles text[] := ARRAY['anon', 'authenticated'];
   r text;
+  f text;
 BEGIN
   FOREACH r IN ARRAY public_roles LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
@@ -83,21 +100,36 @@ BEGIN
       EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM %I', r);
 
       -- Revoke all access on private operational and telemetry tables
-      EXECUTE format('REVOKE ALL ON TABLE scorecard_runs, llm_usage_events, benchmark_runs, benchmark_results, llm_cache, ingest_runs, rate_limits, recommendation_sessions, recommendation_clients, recommendation_shares, recommendation_turns, recommendation_feedback, chat_queries, crawl_queue, rate_limit_state, catalog_runs, catalog_source_profiles, catalog_snapshots, catalog_candidates, phone_identities, phone_configurations, catalog_source_claims, phone_media_assets, catalog_quality_issues FROM %I', r);
+      EXECUTE format('REVOKE ALL ON TABLE scorecard_runs, llm_usage_events, benchmark_runs, benchmark_results, llm_cache, ingest_runs, rate_limits, recommendation_sessions, recommendation_clients, recommendation_shares, recommendation_turns, recommendation_feedback, chat_queries, crawl_queue, rate_limit_state, catalog_runs, catalog_source_profiles, catalog_snapshots, catalog_candidates, phone_identities, phone_configurations, catalog_source_claims, phone_media_assets, catalog_quality_issues, usage_counters, credit_wallets, credit_ledger, subscriptions, subscription_usage, query_leases, usage_daily_rollup, user_profiles, billing_customers, billing_orders, billing_events, abuse_blocks, platform_flags, account_requests FROM %I', r);
 
       -- Prevent bulk vector extraction over PostgREST on corpus tables
       EXECUTE format('REVOKE SELECT (embedding) ON chunks FROM %I', r);
       EXECUTE format('REVOKE SELECT (spec_embedding) ON phones FROM %I', r);
+
+      -- Revoke execution on metering functions (when functions exist)
+      FOREACH f IN ARRAY ARRAY[
+        'recsy_apply_credit_delta(uuid,integer,ledger_kind,text,text,text,jsonb)',
+        'recsy_reserve_query(uuid,text,text,uuid,text,text,boolean,integer,integer,integer,integer,integer,integer,integer,boolean)',
+        'recsy_settle_lease(uuid,text,text,text,integer,integer,integer,boolean,integer,integer)',
+        'recsy_sweep_expired_leases(integer)',
+        'recsy_link_device_to_user(uuid,text)',
+        'recsy_undo_lease_charge(query_leases)'
+      ] LOOP
+        IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = split_part(f, '(', 1)) THEN
+          EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %I', f, r);
+        END IF;
+      END LOOP;
     END IF;
   END LOOP;
 END
 $$;
 
--- Ensure future tables do not accidentally grant public access
+-- Ensure future tables and functions do not accidentally grant public access
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
   END IF;
 END
 $$;

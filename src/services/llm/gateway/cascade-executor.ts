@@ -1,4 +1,4 @@
-import { LlmError } from '@/lib/errors';
+import { ByokError, LlmError, mapByokError } from '@/lib/errors';
 import { logger } from '@/services/logger';
 import type {
   ChatDelta,
@@ -16,7 +16,7 @@ import type { KeyPoolRegistry } from '../keys/key-pool';
 import type { ModelCandidate } from './task-profiles';
 import type { ModelAdapter } from '../adapters/base-adapter';
 import { OpenAiCompatibleAdapter } from '../adapters/openai-compatible';
-import type { GeminiProvider } from '../gemini';
+import { GeminiProvider } from '../gemini';
 
 const log = logger.child({ component: 'llm-cascade-executor' });
 
@@ -55,6 +55,13 @@ export class CascadeExecutor {
       }),
     );
     this.openAiAdapters.set(
+      'openai',
+      new OpenAiCompatibleAdapter({
+        providerId: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+      }),
+    );
+    this.openAiAdapters.set(
       'github',
       new OpenAiCompatibleAdapter({
         providerId: 'github',
@@ -74,21 +81,79 @@ export class CascadeExecutor {
     return this.openAiAdapters.get(providerId) ?? null;
   }
 
+  private async runChatOnByok(
+    input: ChatInput,
+    byokKey: string,
+    byokProvider: string,
+  ): Promise<ChatResult> {
+    if (byokProvider === 'gemini') {
+      return GeminiProvider.withKey(byokKey).chat(input);
+    }
+    const adapter = this.getAdapter(byokProvider);
+    if (!adapter) {
+      throw new ByokError('BYOK_UNSUPPORTED', `BYOK provider '${byokProvider}' not supported`, {
+        status: 400,
+      });
+    }
+    try {
+      return await adapter.chat(input, input.model, byokKey);
+    } catch (err) {
+      mapByokError(err);
+    }
+  }
+
+  private async runStructuredOnByok<T>(
+    input: StructuredInput<T>,
+    byokKey: string,
+    byokProvider: string,
+  ): Promise<StructuredResult<T>> {
+    if (byokProvider === 'gemini') {
+      return GeminiProvider.withKey(byokKey).structured(input);
+    }
+    const adapter = this.getAdapter(byokProvider);
+    if (!adapter) {
+      throw new ByokError('BYOK_UNSUPPORTED', `BYOK provider '${byokProvider}' not supported`, {
+        status: 400,
+      });
+    }
+    try {
+      return await adapter.structured(input, input.model, byokKey);
+    } catch (err) {
+      mapByokError(err);
+    }
+  }
+
+  private async *runStreamOnByok(
+    input: ChatInput,
+    byokKey: string,
+    byokProvider: string,
+  ): AsyncIterable<ChatDelta> {
+    if (byokProvider === 'gemini') {
+      yield* GeminiProvider.withKey(byokKey).chatStream(input);
+      return;
+    }
+    const adapter = this.getAdapter(byokProvider);
+    if (!adapter) {
+      throw new ByokError('BYOK_UNSUPPORTED', `BYOK provider '${byokProvider}' not supported`, {
+        status: 400,
+      });
+    }
+    try {
+      yield* adapter.chatStream(input, input.model, byokKey);
+    } catch (err) {
+      mapByokError(err);
+    }
+  }
+
   async executeChat(
     input: ChatInput,
     candidates: readonly ModelCandidate[],
     byokKey?: string,
     byokProvider?: string,
   ): Promise<ChatResult> {
-    // 1. If user supplied BYOK, execute exclusively on their key
-    if (byokKey && byokProvider) {
-      if (byokProvider === 'gemini') {
-        return this.geminiProvider.chat(input);
-      }
-      const adapter = this.getAdapter(byokProvider);
-      if (adapter) {
-        return adapter.chat(input, input.model, byokKey);
-      }
+    // 1. If user supplied BYOK, execute exclusively on their key (never falls through to platform keys)
+    if (byokKey) {
+      return this.runChatOnByok(input, byokKey, byokProvider ?? 'gemini');
     }
 
     let lastError: unknown;
@@ -180,15 +245,9 @@ export class CascadeExecutor {
     byokKey?: string,
     byokProvider?: string,
   ): Promise<StructuredResult<T>> {
-    // 1. If user supplied BYOK, execute directly
-    if (byokKey && byokProvider) {
-      if (byokProvider === 'gemini') {
-        return this.geminiProvider.structured(input);
-      }
-      const adapter = this.getAdapter(byokProvider);
-      if (adapter) {
-        return adapter.structured(input, input.model, byokKey);
-      }
+    // 1. If user supplied BYOK, execute directly on their key (never falls through to platform keys)
+    if (byokKey) {
+      return this.runStructuredOnByok(input, byokKey, byokProvider ?? 'gemini');
     }
 
     let lastError: unknown;
@@ -297,12 +356,9 @@ export class CascadeExecutor {
     byokKey?: string,
     byokProvider?: string,
   ): AsyncIterable<ChatDelta> {
-    if (byokKey && byokProvider && byokProvider !== 'gemini') {
-      const adapter = this.getAdapter(byokProvider);
-      if (adapter) {
-        yield* adapter.chatStream(input, input.model, byokKey);
-        return;
-      }
+    if (byokKey) {
+      yield* this.runStreamOnByok(input, byokKey, byokProvider ?? 'gemini');
+      return;
     }
 
     // Streaming is best handled by Gemini or top candidate
@@ -345,6 +401,17 @@ export class CascadeExecutor {
     usageContext?: LlmUsageContext,
     options?: EmbedOptions,
   ): Promise<EmbedResult> {
+    if (
+      usageContext?.userByokKey &&
+      (usageContext.userByokProvider === 'gemini' || !usageContext.userByokProvider)
+    ) {
+      return GeminiProvider.withKey(usageContext.userByokKey).embed(
+        texts,
+        model,
+        usageContext,
+        options,
+      );
+    }
     // Embeddings are locked to Google Generative AI gemini-embedding-001 (768-dim pgvector)
     return this.geminiProvider.embed(texts, model, usageContext, options);
   }

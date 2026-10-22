@@ -32,6 +32,7 @@ import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
 import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/types';
 
@@ -59,11 +60,11 @@ export interface PhoneQnaInput {
     readonly nextIngestAt?: Date | string | null;
   };
   /** Optional user-supplied BYOK key and preference mode. */
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
+  /** Server-resolved reasoning mode (WP-13). */
+  readonly serverMode?: 'fast' | 'deep';
+  /** True when user is confirmed subscriber entitled to reasoning tier. */
+  readonly isSubscriber?: boolean;
 }
 
 export interface PhoneQnaResult {
@@ -139,6 +140,8 @@ async function chatAnswer(
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
   byok?: PhoneQnaInput['byok'],
+  serverMode?: 'fast' | 'deep',
+  isSubscriber?: boolean,
 ): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
@@ -152,7 +155,8 @@ async function chatAnswer(
       taskClass: 'GROUNDED_SYNTHESIS',
       userByokKey: byok?.apiKey,
       userByokProvider: byok?.provider,
-      userMode: byok?.userMode,
+      userMode: serverMode ?? byok?.userMode,
+      isSubscriber,
     },
     signal,
   });
@@ -283,7 +287,14 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
 
   let messages = buildMessages(query, retrieval, undefined);
   const generationCalls: ChatResult[] = [];
-  let answer = await chatAnswer(llm, messages, signal, input.byok);
+  let answer = await chatAnswer(
+    llm,
+    messages,
+    signal,
+    input.byok,
+    input.serverMode,
+    input.isSubscriber,
+  );
   generationCalls.push(answer);
   let { text, usage, model } = answer;
 
@@ -291,7 +302,14 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    answer = await chatAnswer(llm, messages, signal, input.byok);
+    answer = await chatAnswer(
+      llm,
+      messages,
+      signal,
+      input.byok,
+      input.serverMode,
+      input.isSubscriber,
+    );
     generationCalls.push(answer);
     ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);
@@ -344,6 +362,9 @@ export async function persistChatQuery(input: {
   readonly tokensIn: number;
   readonly tokensOut: number;
   readonly model: string;
+  readonly userId?: string | null;
+  readonly leaseId?: string | null;
+  readonly sessionCookie?: string | null;
 }): Promise<void> {
   const db = getDb();
   await db.insert(chatQueries).values({
@@ -356,5 +377,8 @@ export async function persistChatQuery(input: {
     tokensIn: input.tokensIn,
     tokensOut: input.tokensOut,
     model: input.model,
+    userId: input.userId ?? undefined,
+    leaseId: input.leaseId ?? undefined,
+    sessionCookie: input.sessionCookie ?? undefined,
   });
 }

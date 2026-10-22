@@ -143,6 +143,13 @@ export class ModelRouter {
     const messages = params.messages ?? [];
     const taskClass = resolveTaskClass(params.explicitTaskClass, params.usageContext);
 
+    const isByok = Boolean(params.usageContext?.userByokKey);
+    const isSubscriber = Boolean(params.usageContext?.isSubscriber);
+    const isEntitledToDeep = isByok || isSubscriber;
+    const requestedMode = params.usageContext?.userMode;
+    const effectiveUserMode =
+      requestedMode === 'deep' ? (isEntitledToDeep ? 'deep' : 'fast') : requestedMode;
+
     let targetTier: ExecutionTier;
     if (params.explicitTier) {
       targetTier = params.explicitTier;
@@ -150,9 +157,14 @@ export class ModelRouter {
       const analysis = analyzeComplexity({
         taskClass,
         messages,
-        userMode: params.usageContext?.userMode,
+        userMode: effectiveUserMode,
       });
       targetTier = analysis.resolvedTier;
+
+      // Acceptance requirement (WP-13): non-entitled callers never reach Deep reasoning tier
+      if (!isEntitledToDeep && targetTier === 'reasoning' && taskClass !== 'DEEP_REASONING') {
+        targetTier = 'balanced';
+      }
     }
 
     // Estimate tokens conservatively (~3.5 chars per token across English/code/multilingual)
@@ -163,11 +175,24 @@ export class ModelRouter {
     }
     const estimatedTokens = Math.ceil(totalChars / 3.5);
 
+    const byokProvider = params.usageContext?.userByokProvider ?? 'gemini';
+
     const pool = TIER_MODEL_POOLS[targetTier];
     const candidateCollector: ModelCandidate[] = [];
 
     // Helper to evaluate if a candidate is fully viable
     const isCandidateViable = (candidate: ModelCandidate, requireBreakerClosed = true): boolean => {
+      // For BYOK requests, candidate provider MUST match the user's provider; bypass platform keypool
+      if (isByok) {
+        if (candidate.providerId !== byokProvider) {
+          return false;
+        }
+        if (candidate.contextWindow && estimatedTokens > candidate.contextWindow * 0.9) {
+          return false;
+        }
+        return true;
+      }
+
       // 1. Must have configured API keys
       if (!this.keyPool.hasKeys(candidate.providerId)) {
         return false;
@@ -225,7 +250,7 @@ export class ModelRouter {
     }
 
     // Tertiary Pass: Any configured provider fitting context window (even if breaker open)
-    if (candidateCollector.length === 0) {
+    if (!isByok && candidateCollector.length === 0) {
       for (const tier of ['balanced', 'fast', 'reasoning'] as const) {
         for (const candidate of TIER_MODEL_POOLS[tier]) {
           if (isCandidateViable(candidate, false)) {
@@ -234,6 +259,30 @@ export class ModelRouter {
         }
         if (candidateCollector.length > 0) break;
       }
+    }
+
+    // BYOK fallback: if no candidate in pools matched the byokProvider (e.g. openrouter), provide default candidate
+    if (isByok && candidateCollector.length === 0) {
+      const defaultModel =
+        byokProvider === 'gemini'
+          ? targetTier === 'reasoning'
+            ? 'gemini-2.5-pro'
+            : 'gemini-2.5-flash'
+          : byokProvider === 'groq'
+            ? 'llama-3.3-70b-versatile'
+            : byokProvider === 'openai'
+              ? targetTier === 'reasoning'
+                ? 'gpt-4o'
+                : 'gpt-4o-mini'
+              : byokProvider === 'openrouter'
+                ? 'meta-llama/llama-3.3-70b-instruct'
+                : 'llama-3.1-8b-instant';
+      candidateCollector.push({
+        providerId: byokProvider,
+        model: defaultModel,
+        maxTokens: 4096,
+        contextWindow: 128_000,
+      });
     }
 
     // Ultimate Safety Net: If keyPool has no keys at all (unit test or unconfigured environment)

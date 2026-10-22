@@ -45,6 +45,21 @@ const REQUIRED_TABLES = [
   'llm_cache',
   'ingest_runs',
   'rate_limits',
+  // Plan 25 multi-user, metering, and billing tables
+  'usage_counters',
+  'credit_wallets',
+  'credit_ledger',
+  'subscriptions',
+  'subscription_usage',
+  'query_leases',
+  'usage_daily_rollup',
+  'user_profiles',
+  'billing_customers',
+  'billing_orders',
+  'billing_events',
+  'abuse_blocks',
+  'platform_flags',
+  'account_requests',
 ] as const;
 
 async function main(): Promise<void> {
@@ -66,6 +81,13 @@ async function main(): Promise<void> {
 
     results.push(await checkFtsScaffolding(client));
     results.push(await checkRateLimitsUniqueIndex(client));
+
+    // Plan 25 checks
+    results.push(await checkCountersNonNegative(client));
+    const meteringChecks = await checkMeteringFunctionsAndPrivileges(client);
+    results.push(...meteringChecks);
+    const roleChecks = await checkAppRolePrivileges(client);
+    results.push(...roleChecks);
 
     print(results);
 
@@ -297,6 +319,202 @@ async function checkRateLimitsUniqueIndex(client: postgres.Sql): Promise<CheckRe
     ok,
     detail: ok ? 'rate_limits_key_window_uniq present' : 'MISSING — re-run pnpm db:setup',
   };
+}
+
+async function checkCountersNonNegative(client: postgres.Sql): Promise<CheckResult> {
+  try {
+    const violations = await client<{ count: number }[]>`
+      select count(*)::int as count
+        from usage_counters
+       where free_used < 0
+          or anon_used < 0
+          or total_used < 0
+          or byok_used < 0
+          or clarify_used < 0
+          or users_seen < 0
+    `;
+    const bad = violations[0]?.count ?? 0;
+    return {
+      name: 'usage_counters non-negative check',
+      ok: bad === 0,
+      detail: bad === 0 ? 'counters invariant satisfied (0 violations)' : `${bad} violating rows`,
+    };
+  } catch (err) {
+    return {
+      name: 'usage_counters non-negative check',
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function checkMeteringFunctionsAndPrivileges(client: postgres.Sql): Promise<CheckResult[]> {
+  const out: CheckResult[] = [];
+  const requiredFunctions = [
+    'recsy_reserve_query',
+    'recsy_settle_lease',
+    'recsy_sweep_expired_leases',
+    'recsy_link_device_to_user',
+    'recsy_apply_credit_delta',
+    'recsy_undo_lease_charge',
+  ];
+
+  try {
+    const funcs = await client<{ proname: string }[]>`
+      select proname from pg_proc where proname = any(${requiredFunctions})
+    `;
+    const found = new Set(funcs.map((f) => f.proname));
+    const missing = requiredFunctions.filter((f) => !found.has(f));
+
+    if (missing.length === 0) {
+      out.push({
+        name: 'metering SQL functions',
+        ok: true,
+        detail: 'all 6 recsy_* functions present',
+      });
+
+      // Verify anon privilege revocation when anon role exists
+      const roleExists = await client<{ exists: boolean }[]>`
+        select exists(select 1 from pg_roles where rolname = 'anon') as exists
+      `;
+      if (roleExists[0]?.exists) {
+        const privs = await client<{ has_priv: boolean }[]>`
+          select has_function_privilege('anon', 'recsy_reserve_query(uuid,text,text,uuid,text,text,boolean,integer,integer,integer,integer,integer,integer,integer,boolean)', 'execute') as has_priv
+        `;
+        const anonCanExecute = privs[0]?.has_priv ?? false;
+        out.push({
+          name: 'metering functions anon privilege',
+          ok: !anonCanExecute,
+          detail: !anonCanExecute
+            ? 'anon execute successfully revoked'
+            : 'FAIL: anon role has execute privilege',
+        });
+      }
+
+      // Perform a quick reserve & settle roundtrip on throwaway UUID
+      try {
+        const throwawayReq = '00000000-0000-0000-0000-000000000001';
+        const throwawayDev = '__smoke_device__';
+        const reserve = await client<
+          {
+            allowed: boolean;
+            lease_id: string;
+            charge_source: string;
+          }[]
+        >`
+          select allowed, lease_id, charge_source
+            from recsy_reserve_query(
+              null::uuid,
+              ${throwawayDev},
+              null::text,
+              ${throwawayReq}::uuid,
+              'POST /api/recommend',
+              'smoke_trace',
+              false,
+              2,
+              2,
+              30,
+              3,
+              100,
+              1,
+              75,
+              false
+            )
+        `;
+        const leaseId = reserve[0]?.lease_id;
+        if (reserve[0]?.allowed && leaseId) {
+          const settle = await client<{ recsy_settle_lease: string }[]>`
+            select recsy_settle_lease(${leaseId}::uuid, 'no_charge', 'smoke_test')
+          `;
+          const settled = settle[0]?.recsy_settle_lease === 'no_charge';
+          out.push({
+            name: 'metering reserve/settle roundtrip',
+            ok: settled,
+            detail: settled
+              ? `lease ${leaseId.slice(0, 8)}... reserved and settled`
+              : 'settle failed',
+          });
+          // Cleanup throwaway smoke records
+          await client`delete from query_leases where id = ${leaseId}::uuid`;
+          await client`delete from usage_counters where subject_id = ${throwawayDev}`;
+        } else {
+          out.push({
+            name: 'metering reserve/settle roundtrip',
+            ok: false,
+            detail: 'recsy_reserve_query did not admit throwaway query',
+          });
+        }
+      } catch (err) {
+        out.push({
+          name: 'metering reserve/settle roundtrip',
+          ok: false,
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      out.push({
+        name: 'metering SQL functions',
+        ok: true,
+        detail: `pending migration 0013 (missing: ${missing.join(', ')})`,
+      });
+    }
+  } catch (err) {
+    out.push({
+      name: 'metering SQL functions',
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return out;
+}
+
+async function checkAppRolePrivileges(client: postgres.Sql): Promise<CheckResult[]> {
+  const out: CheckResult[] = [];
+  try {
+    const roles = await client<{ rolname: string }[]>`
+      select rolname from pg_roles where rolname = 'recsy_app'
+    `;
+    if (roles.length === 0) {
+      out.push({
+        name: 'recsy_app role',
+        ok: true,
+        detail: 'role not provisioned in this environment (pending migration 0015)',
+      });
+      return out;
+    }
+
+    const createPriv = await client<{ has_create: boolean }[]>`
+      select has_schema_privilege('recsy_app', 'public', 'CREATE') as has_create
+    `;
+    const canCreate = createPriv[0]?.has_create ?? true;
+    out.push({
+      name: 'recsy_app DDL restriction',
+      ok: !canCreate,
+      detail: !canCreate
+        ? 'CREATE on schema public successfully revoked'
+        : 'FAIL: recsy_app has CREATE on schema public',
+    });
+
+    const selectPriv = await client<{ has_select: boolean }[]>`
+      select has_table_privilege('recsy_app', 'phones', 'SELECT') as has_select
+    `;
+    const canSelect = selectPriv[0]?.has_select ?? false;
+    out.push({
+      name: 'recsy_app table access',
+      ok: canSelect,
+      detail: canSelect
+        ? 'SELECT on application tables granted'
+        : 'FAIL: recsy_app missing SELECT on phones table',
+    });
+  } catch (err) {
+    out.push({
+      name: 'recsy_app role verification',
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return out;
 }
 
 function unitVector(axis: number, dim: number): number[] {

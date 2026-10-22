@@ -15,7 +15,7 @@
  * Used by: `src/app/api/recommend/route.ts`,
  *          `src/services/recommender/run-recommendation.ts`.
  */
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 
 import type { AppDb, AppQueryDb } from '@/services/db/client';
 import {
@@ -47,6 +47,7 @@ export async function insertRecommendationSession(
     sessionCookie: string;
     ipHash: string | null;
     userAgent: string | null;
+    userId?: string | null;
   },
 ): Promise<RecommendationSessionRow> {
   // Ownership is established on the product path, atomically with the session.
@@ -58,6 +59,7 @@ export async function insertRecommendationSession(
         clientToken: input.sessionCookie,
         ipHash: input.ipHash ?? undefined,
         userAgent: input.userAgent ?? undefined,
+        userId: input.userId ?? undefined,
       })
       .returning({ id: recommendationClients.id });
     if (!client) throw new Error('Failed to establish recommendation session ownership');
@@ -73,10 +75,16 @@ export async function insertRecommendationSession(
 export async function findSessionByCookie(
   db: AppQueryDb,
   sessionCookie: string,
+  options?: { userId?: string | null },
 ): Promise<RecommendationSessionRow | null> {
-  const [row] = await db
-    .select()
+  const [result] = await db
+    .select({
+      session: recommendationSessions,
+      clientUserId: recommendationClients.userId,
+      clientId: recommendationClients.id,
+    })
     .from(recommendationSessions)
+    .innerJoin(recommendationClients, eq(recommendationSessions.clientId, recommendationClients.id))
     .where(
       and(
         eq(recommendationSessions.sessionCookie, sessionCookie),
@@ -84,7 +92,38 @@ export async function findSessionByCookie(
       ),
     )
     .limit(1);
-  return row ?? null;
+
+  if (!result) return null;
+
+  const { session, clientUserId, clientId } = result;
+
+  if (options !== undefined) {
+    const currentUserId = options.userId ?? null;
+
+    if (currentUserId !== null) {
+      // Authenticated caller
+      if (clientUserId === currentUserId) {
+        return session;
+      }
+      if (clientUserId === null) {
+        // Unowned client graduating to authenticated user (Section 8.6)
+        await db
+          .update(recommendationClients)
+          .set({ userId: currentUserId, lastSeenAt: new Date() })
+          .where(and(eq(recommendationClients.id, clientId), isNull(recommendationClients.userId)));
+        return session;
+      }
+      // Belongs to a different user - never steal it!
+      return null;
+    }
+
+    // Anonymous caller: client must not belong to an authenticated user
+    if (clientUserId !== null) {
+      return null;
+    }
+  }
+
+  return session;
 }
 
 // ---------------------------------------------------------------------------

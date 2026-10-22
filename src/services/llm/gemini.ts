@@ -26,7 +26,7 @@ import type { z } from 'zod';
 import { ZodError } from 'zod';
 
 import { env } from '@/env';
-import { LlmError, LlmSchemaViolation } from '@/lib/errors';
+import { LlmError, LlmSchemaViolation, mapByokError } from '@/lib/errors';
 
 import {
   estimateTokensFromMessages,
@@ -101,6 +101,7 @@ function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
 
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
+  readonly isByok: boolean;
   private readonly clients: readonly GoogleGenAI[];
   private readonly governor: GeminiRequestGovernor | null;
   private preferredKeyIndex = 0;
@@ -108,31 +109,48 @@ export class GeminiProvider implements LlmProvider {
   private readonly maxRetries: number;
   private readonly timeoutMs: number;
 
+  static withKey(apiKey: string): GeminiProvider {
+    return new GeminiProvider({ customApiKey: apiKey });
+  }
+
   constructor(options?: {
     budget?: ProviderBudgetOptions;
     maxKeys?: number;
     maxRetries?: number;
     timeoutMs?: number;
+    customApiKey?: string;
   }) {
     this.evaluationBudget = options?.budget ? new ProviderRequestBudget(options.budget) : undefined;
     this.maxRetries = options?.maxRetries ?? 2;
     this.timeoutMs = options?.timeoutMs ?? 45_000;
-    const keys = getConfiguredGeminiKeys(env).map((key) => key.apiKey);
-    this.clients = keys.slice(0, options?.maxKeys ?? keys.length).map((apiKey) =>
-      createGoogleGenerativeAI({
-        apiKey,
-        ...(this.evaluationBudget ? { fetch: this.evaluationBudget.fetch } : {}),
-      }),
-    );
-    this.governor =
-      env.GEMINI_RATE_LIMIT_PROFILE === 'google_ai_studio_free'
-        ? new GeminiRequestGovernor(this.clients.length, {
-            profile: 'google_ai_studio_free',
-            rpm: env.GEMINI_FREE_RPM,
-            tpmInput: env.GEMINI_FREE_TPM_INPUT,
-            rpd: env.GEMINI_FREE_RPD,
-          })
-        : null;
+    this.isByok = Boolean(options?.customApiKey);
+
+    if (options?.customApiKey) {
+      this.clients = [
+        createGoogleGenerativeAI({
+          apiKey: options.customApiKey,
+          ...(this.evaluationBudget ? { fetch: this.evaluationBudget.fetch } : {}),
+        }),
+      ];
+      this.governor = null;
+    } else {
+      const keys = getConfiguredGeminiKeys(env).map((key) => key.apiKey);
+      this.clients = keys.slice(0, options?.maxKeys ?? keys.length).map((apiKey) =>
+        createGoogleGenerativeAI({
+          apiKey,
+          ...(this.evaluationBudget ? { fetch: this.evaluationBudget.fetch } : {}),
+        }),
+      );
+      this.governor =
+        env.GEMINI_RATE_LIMIT_PROFILE === 'google_ai_studio_free'
+          ? new GeminiRequestGovernor(this.clients.length, {
+              profile: 'google_ai_studio_free',
+              rpm: env.GEMINI_FREE_RPM,
+              tpmInput: env.GEMINI_FREE_TPM_INPUT,
+              rpd: env.GEMINI_FREE_RPD,
+            })
+          : null;
+    }
   }
 
   /**
@@ -173,9 +191,12 @@ export class GeminiProvider implements LlmProvider {
         if (this.governor) {
           await this.governor.recordMeasuredForKey(keyIndex, inputTokens);
         }
-        return { value, inputTokens, outputTokens, keyIndex };
+        return { value, inputTokens, outputTokens, keyIndex: this.isByok ? -1 : keyIndex };
       } catch (err) {
         lastErr = err;
+        if (this.isByok) {
+          mapByokError(err);
+        }
         // Preserve the actual 429 cause; do not replace it with a later budget error.
         if (this.evaluationBudget?.snapshot().quotaStopped) throw err;
         if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
@@ -193,6 +214,7 @@ export class GeminiProvider implements LlmProvider {
   }
 
   private async resolveStreamKeyIndex(estimateInputTokens: number): Promise<number> {
+    if (this.isByok) return 0;
     if (!this.governor) return this.preferredKeyIndex;
 
     for (let step = 0; step < this.clients.length; step++) {
@@ -303,6 +325,9 @@ export class GeminiProvider implements LlmProvider {
         },
       };
     } catch (err) {
+      if (this.isByok) {
+        mapByokError(err);
+      }
       if (this.clients.length > 1 && isLikelyGeminiQuotaExhaustedError(err)) {
         throw new LlmError(
           'Gemini stream failed (quota). Streaming cannot fail over to a backup key mid-flight; retry the request.',
@@ -434,6 +459,19 @@ export class GeminiProvider implements LlmProvider {
     usageContext?: LlmUsageContext,
     options?: EmbedOptions,
   ): Promise<EmbedResult> {
+    if (
+      !this.isByok &&
+      usageContext?.userByokKey &&
+      (usageContext.userByokProvider === 'gemini' || !usageContext.userByokProvider)
+    ) {
+      return GeminiProvider.withKey(usageContext.userByokKey).embed(
+        texts,
+        model,
+        usageContext,
+        options,
+      );
+    }
+
     const embedModel = model ?? env.LLM_EMBEDDING_MODEL;
     const startedAt = performance.now();
     const googleOptions: { outputDimensionality: number; taskType: string } = {
@@ -475,6 +513,9 @@ export class GeminiProvider implements LlmProvider {
       });
       return value;
     } catch (err) {
+      if (this.isByok) {
+        mapByokError(err);
+      }
       const causeMsg =
         err instanceof Error ? err.message : typeof err === 'string' ? err : 'unknown';
       throw new LlmError(
@@ -496,7 +537,7 @@ export class GeminiProvider implements LlmProvider {
     readonly usageContext?: LlmUsageContext;
     readonly inputTokens: number;
     readonly outputTokens: number;
-    readonly apiKeyIndex: number;
+    readonly apiKeyIndex?: number;
     readonly latencyMs: number;
   }): Promise<void> {
     return recordLlmUsageEvent({
@@ -506,7 +547,7 @@ export class GeminiProvider implements LlmProvider {
       usageContext: input.usageContext,
       inputTokens: input.inputTokens,
       outputTokens: input.outputTokens,
-      apiKeyIndex: input.apiKeyIndex,
+      apiKeyIndex: this.isByok ? undefined : input.apiKeyIndex,
       latencyMs: Math.round(input.latencyMs),
     });
   }
