@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from './route';
 import * as authModule from '@/services/internal/auth';
-import type { AppQueryDb } from '@/services/db/client';
+import type { AppDb } from '@/services/db/client';
 
 vi.mock('@/services/internal/auth');
 vi.mock('@/services/db/client', () => ({
@@ -39,7 +39,7 @@ describe('Operator Billing Actions API (WP-19)', () => {
     const mockExecute = vi.fn().mockResolvedValue([{ success: true, new_balance: 15 }]);
     vi.mocked(dbModule.getDb).mockReturnValue({
       execute: mockExecute,
-    } as unknown as AppQueryDb);
+    } as unknown as AppDb);
 
     const request = new NextRequest('http://localhost:3000/api/internal/billing/action', {
       method: 'POST',
@@ -69,7 +69,7 @@ describe('Operator Billing Actions API (WP-19)', () => {
     const mockExecute = vi.fn().mockResolvedValue([]);
     vi.mocked(dbModule.getDb).mockReturnValue({
       execute: mockExecute,
-    } as unknown as AppQueryDb);
+    } as unknown as AppDb);
 
     const request = new NextRequest('http://localhost:3000/api/internal/billing/action', {
       method: 'POST',
@@ -97,7 +97,7 @@ describe('Operator Billing Actions API (WP-19)', () => {
     const mockExecute = vi.fn().mockResolvedValue([{ id: 'block-new-1' }]);
     vi.mocked(dbModule.getDb).mockReturnValue({
       execute: mockExecute,
-    } as unknown as AppQueryDb);
+    } as unknown as AppDb);
 
     const request = new NextRequest('http://localhost:3000/api/internal/billing/action', {
       method: 'POST',

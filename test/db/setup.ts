@@ -41,9 +41,13 @@ if (!dbUrl) {
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
           CREATE ROLE authenticated NOLOGIN;
         END IF;
-        -- Grant the test runner user permission to SET ROLE to anon/authenticated
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'recsy_app') THEN
+          CREATE ROLE recsy_app WITH LOGIN NOINHERIT;
+        END IF;
+        -- Grant the test runner user permission to SET ROLE to anon/authenticated/recsy_app
         EXECUTE format('GRANT anon TO %I', CURRENT_USER);
         EXECUTE format('GRANT authenticated TO %I', CURRENT_USER);
+        EXECUTE format('GRANT recsy_app TO %I', CURRENT_USER);
       END
       $$;
     `;

@@ -86,6 +86,8 @@ async function main(): Promise<void> {
     results.push(await checkCountersNonNegative(client));
     const meteringChecks = await checkMeteringFunctionsAndPrivileges(client);
     results.push(...meteringChecks);
+    const roleChecks = await checkAppRolePrivileges(client);
+    results.push(...roleChecks);
 
     print(results);
 
@@ -464,6 +466,54 @@ async function checkMeteringFunctionsAndPrivileges(client: postgres.Sql): Promis
     });
   }
 
+  return out;
+}
+
+async function checkAppRolePrivileges(client: postgres.Sql): Promise<CheckResult[]> {
+  const out: CheckResult[] = [];
+  try {
+    const roles = await client<{ rolname: string }[]>`
+      select rolname from pg_roles where rolname = 'recsy_app'
+    `;
+    if (roles.length === 0) {
+      out.push({
+        name: 'recsy_app role',
+        ok: true,
+        detail: 'role not provisioned in this environment (pending migration 0015)',
+      });
+      return out;
+    }
+
+    const createPriv = await client<{ has_create: boolean }[]>`
+      select has_schema_privilege('recsy_app', 'public', 'CREATE') as has_create
+    `;
+    const canCreate = createPriv[0]?.has_create ?? true;
+    out.push({
+      name: 'recsy_app DDL restriction',
+      ok: !canCreate,
+      detail: !canCreate
+        ? 'CREATE on schema public successfully revoked'
+        : 'FAIL: recsy_app has CREATE on schema public',
+    });
+
+    const selectPriv = await client<{ has_select: boolean }[]>`
+      select has_table_privilege('recsy_app', 'phones', 'SELECT') as has_select
+    `;
+    const canSelect = selectPriv[0]?.has_select ?? false;
+    out.push({
+      name: 'recsy_app table access',
+      ok: canSelect,
+      detail: canSelect
+        ? 'SELECT on application tables granted'
+        : 'FAIL: recsy_app missing SELECT on phones table',
+    });
+  } catch (err) {
+    out.push({
+      name: 'recsy_app role verification',
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
   return out;
 }
 

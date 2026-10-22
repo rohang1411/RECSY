@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import * as authModule from '@/services/internal/auth';
-import type { AppQueryDb } from '@/services/db/client';
+import type { AppDb } from '@/services/db/client';
 
 vi.mock('@/services/internal/auth');
 vi.mock('@/services/db/client', () => ({
@@ -38,7 +38,7 @@ describe('Operator Flags API (WP-19)', () => {
           updated_by: 'operator',
         },
       ]),
-    } as unknown as AppQueryDb);
+    } as unknown as AppDb);
 
     const request = new NextRequest('http://localhost:3000/api/internal/flags');
     const response = await GET(request);
@@ -77,7 +77,7 @@ describe('Operator Flags API (WP-19)', () => {
 
     vi.mocked(dbModule.getDb).mockReturnValue({
       execute: mockExecute,
-    } as unknown as AppQueryDb);
+    } as unknown as AppDb);
 
     const request = new NextRequest('http://localhost:3000/api/internal/flags', {
       method: 'POST',
