@@ -8,13 +8,24 @@ import { quotaStore } from '@/components/quota/quota-store';
 
 export interface AccountMenuProps {
   email?: string | null;
+  displayName?: string | null;
+  firstName?: string | null;
+  avatarUrl?: string | null;
   signedIn?: boolean;
   className?: string;
 }
 
-export function AccountMenu({ email, signedIn = false, className = '' }: AccountMenuProps) {
+export function AccountMenu({
+  email,
+  displayName,
+  firstName,
+  avatarUrl,
+  signedIn = false,
+  className = '',
+}: AccountMenuProps) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -79,7 +90,9 @@ export function AccountMenu({ email, signedIn = false, className = '' }: Account
   }
 
   const localPart = email ? email.split('@')[0] : 'account';
-  const initial = localPart ? localPart[0]?.toUpperCase() : 'U';
+  const resolvedFirstName =
+    firstName || (displayName ? displayName.trim().split(/\s+/)[0] : null) || localPart;
+  const initial = (resolvedFirstName ? resolvedFirstName[0] : 'U')?.toUpperCase();
 
   return (
     <div ref={menuRef} className={`relative inline-block text-left ${className}`}>
@@ -89,13 +102,23 @@ export function AccountMenu({ email, signedIn = false, className = '' }: Account
         aria-expanded={open}
         aria-haspopup="true"
         aria-label="Account navigation menu"
-        className="border-border-hairline bg-surface hover:border-foreground hover:bg-surface-elevated flex items-center gap-2 border px-2.5 py-1 text-xs transition-colors"
+        className="border-border-hairline bg-surface hover:border-foreground hover:bg-surface-elevated flex items-center gap-2 border px-2 py-1 text-xs transition-colors"
       >
-        <div className="bg-accent flex h-5 w-5 items-center justify-center text-[11px] font-bold text-black uppercase">
-          {initial}
-        </div>
-        <span className="text-foreground hidden font-mono tracking-tight md:inline">
-          {localPart}
+        {avatarUrl && !imgError ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={resolvedFirstName || 'User avatar'}
+            onError={() => setImgError(true)}
+            className="border-border-hairline h-5 w-5 shrink-0 rounded-full border object-cover"
+          />
+        ) : (
+          <div className="bg-accent flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-black uppercase">
+            {initial}
+          </div>
+        )}
+        <span className="text-foreground hidden font-mono text-xs font-semibold tracking-tight md:inline">
+          {resolvedFirstName}
         </span>
         <span className="text-muted-foreground font-mono text-[9px] select-none">
           {open ? '▲' : '▼'}
@@ -106,14 +129,30 @@ export function AccountMenu({ email, signedIn = false, className = '' }: Account
         <div
           role="menu"
           aria-orientation="vertical"
-          className="border-border-hairline bg-surface animate-in fade-in zoom-in-95 absolute right-0 z-50 mt-1 w-56 border p-1 shadow-2xl duration-150"
+          className="border-border-hairline bg-surface animate-in fade-in zoom-in-95 absolute right-0 z-50 mt-1 w-64 border p-1 shadow-2xl duration-150"
         >
           {/* Identity Header */}
-          <div className="border-border-hairline border-b px-3 py-2">
-            <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
-              Signed in as
+          <div className="border-border-hairline border-b px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              {avatarUrl && !imgError ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt={displayName || resolvedFirstName || 'User avatar'}
+                  className="border-border-hairline h-8 w-8 shrink-0 rounded-full border object-cover"
+                />
+              ) : (
+                <div className="bg-accent flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold text-black uppercase">
+                  {initial}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-foreground truncate font-mono text-xs font-bold">
+                  {displayName || resolvedFirstName}
+                </div>
+                <div className="text-muted-foreground truncate font-mono text-[11px]">{email}</div>
+              </div>
             </div>
-            <div className="text-foreground truncate font-mono text-xs font-semibold">{email}</div>
           </div>
 
           {/* Account Navigation Links */}

@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { env } from '@/env';
 import { logger } from '@/services/logger';
 import type { AppQueryDb } from '@/services/db/client';
+import type { UserProfileRow } from '@/services/auth/profile';
 import type { EntitlementSnapshot, MeteringConfig, PlatformState } from './types';
 import { getMeteringConfig } from './config';
 import { getPlatformState, getDefaultPlatformState } from './platform';
@@ -88,6 +89,7 @@ export async function getEntitlementSnapshot(input: {
     deviceId?: string | null;
     email?: string | null;
   } | null;
+  profile?: UserProfileRow | null;
   config?: MeteringConfig;
   platform?: PlatformState;
 }): Promise<EntitlementSnapshot> {
@@ -190,6 +192,24 @@ export async function getEntitlementSnapshot(input: {
       nextSource = 'credit';
     }
 
+    let user: EntitlementSnapshot['user'] = null;
+    if (signedIn && input.profile) {
+      const p = input.profile;
+      const names = (p.display_name ?? '').trim().split(/\s+/);
+      const firstName = names[0] || (p.email ? p.email.split('@')[0] : 'Member');
+      const lastName = names.slice(1).join(' ') || null;
+      user = {
+        id: p.id,
+        email: p.email,
+        displayName: p.display_name ?? null,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        avatarUrl: p.avatar_url ?? null,
+        dateOfBirth: p.date_of_birth ? String(p.date_of_birth).slice(0, 10) : null,
+        createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
+      };
+    }
+
     return {
       signedIn,
       mode: config.mode,
@@ -212,6 +232,7 @@ export async function getEntitlementSnapshot(input: {
         signIn: env.SIGNUPS_ENABLED,
         billing: isBillingAllowedForViewer(identity.email),
       },
+      user,
     };
   } catch (err) {
     log.error({ err, userId }, 'failed to fetch entitlement snapshot; returning fallback');

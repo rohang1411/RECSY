@@ -89,6 +89,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         deviceId: identity.deviceId,
         email: profile?.email ?? null,
       },
+      profile,
     });
 
     const etag = `W/"${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex').slice(0, 27)}"`;

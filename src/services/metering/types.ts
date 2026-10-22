@@ -61,6 +61,16 @@ export interface EntitlementSnapshot {
     readonly signIn: boolean;
     readonly billing: boolean;
   };
+  readonly user?: {
+    readonly id: string;
+    readonly email: string;
+    readonly displayName: string | null;
+    readonly firstName: string | null;
+    readonly lastName: string | null;
+    readonly avatarUrl: string | null;
+    readonly dateOfBirth: string | null;
+    readonly createdAt: string;
+  } | null;
 }
 
 export interface MeteringConfig {

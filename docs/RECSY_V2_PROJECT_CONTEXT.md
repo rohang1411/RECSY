@@ -99,6 +99,8 @@ Brand priority and latest-released ordering are enforced through `src/services/c
     - [27.3 Data Architecture & Migrations](#273-data-architecture--migrations)
     - [27.4 Operational Commands & Scripts](#274-operational-commands--scripts)
     - [27.5 CI Quality Gates & Verification](#275-ci-quality-gates--verification)
+    - [27.6 User Identity, Profile Metadata & Authentication Modalities](#276-user-identity-profile-metadata--authentication-modalities)
+    - [27.7 Stripe Billing Architecture & Funds Settlement](#277-stripe-billing-architecture--funds-settlement)
 
 ---
 
@@ -4516,6 +4518,7 @@ The multi-user platform is founded on 4 structured forward-only Drizzle migratio
   - Security lockdown: `REVOKE ALL ON FUNCTION ... FROM PUBLIC`.
 - **`0014_metering_telemetry.sql`**: Operational telemetry, reporting views, and capacity rollups.
 - **`0015_least_privilege_role.sql`**: Least-privilege runtime role `recsy_app` with DDL revoked (`REVOKE CREATE ON SCHEMA public`) and schema isolation.
+- **`0016_user_profile_dob.sql`**: Adds nullable `date_of_birth date` column to `user_profiles` for demographic profile tracking and compliance.
 
 ### 27.4 Operational Commands & Scripts
 
@@ -4536,9 +4539,52 @@ All quality gates are enforced on PRs and `master` branch:
 
 - **7 / 7 GitHub Actions checks passing green**:
   1. `Database integration tests (PostgreSQL)`: Verified via `.github/workflows/db-tests.yml`.
-  2. `typecheck · lint · test · build`: Strict TypeScript, ESLint, 950+ unit tests, production build.
+  2. `typecheck · lint · test · build`: Strict TypeScript, ESLint, 980+ unit tests, production build.
   3. `Audit production dependencies`: Security audit with non-blocking upstream vulnerability alerts.
   4. `Gitleaks scan`: Git commit history secret scanner with `fetch-depth: 0`.
   5. `Playwright`: E2E verification of phone pages and mocked conversational recommender flows.
   6. `Check GEMINI for retrieval eval`: Environment evaluation readiness check.
   7. `Vercel Preview Comments`: Live deploy preview validation.
+
+### 27.6 User Identity, Profile Metadata & Authentication Modalities
+
+The identity subsystem supports multi-modal authentication under a strict zero-client-bundle architectural invariant:
+
+1. **Google OAuth (1-Click Social Sign-In)**:
+   - Initiated via server route `GET /auth/google?next=` with PKCE code challenge.
+   - Post-auth callback (`GET /auth/callback`) claims identity, ensures user profile in `user_profiles`, and ingests Google user metadata:
+     - `full_name` & `given_name` -> mapped to `display_name` and first name.
+     - `picture` & `avatar_url` -> stored in `avatar_url` for high-resolution navigation display.
+     - `email` -> verified email address.
+     - `date_of_birth` -> ingested if present in claims.
+
+2. **Email & Password Authentication**:
+   - **Sign In** (`POST /auth/password/signin`): Authenticates credentials via Supabase GoTrue. If no user exists with the requested email, the server responds with `{ ok: false, error: 'user_not_found' }`, allowing the frontend to dynamically suggest account creation.
+   - **Sign Up** (`POST /auth/password/signup`): Securely provisions an account with Full Name, Email, Password (min 8 chars, bcrypt-hashed at auth gateway), and optional Date of Birth. Automatically synchronizes the new user into `user_profiles` and attaches anonymous search history.
+
+3. **Email OTP & Magic Link Fallback**:
+   - Supported via `POST /auth/otp/send` and `POST /auth/otp/verify`.
+   - Magic links contain both `token_hash` verification and PKCE `code` exchange routes (`/auth/confirm` and `/auth/callback`).
+   - Email templates: Custom HTML template (`docs/email-templates/sign-in-code.html`) delivers the 6-digit `{{ .Token }}` code alongside a direct verification link (`{{ .ConfirmationURL }}`).
+
+4. **Navbar & Profile Experience**:
+   - **Top Navigation Cluster** (`AccountMenu.tsx` & `HeaderRightCluster.tsx`): Hydrated directly via `useQuota()`. When signed in, renders the user's circular avatar image (with initial fallback) and the person's **first name** (`firstName`).
+   - **Profile Overview** (`/account`): Displays the user's photo, verified email address, full name, formatted date of birth, membership tier, and member-since date, with inline editing for display name and birthdate (`PATCH /api/me/profile`).
+
+### 27.7 Stripe Billing Architecture & Funds Settlement
+
+1. **Funds Settlement Destination**:
+   - All customer payments (Credit Packs and Pro Monthly Subscriptions) are processed through **Stripe Hosted Checkout** and settled directly into the bank account linked to the **Stripe Account** whose secret key (`STRIPE_SECRET_KEY`) is configured.
+   - Payout schedule and currency conversions are controlled within the Stripe Merchant Dashboard.
+
+2. **Required Production Environment Variables**:
+   - `STRIPE_MODE`: `'test'` or `'live'`.
+   - `STRIPE_SECRET_KEY`: Secret API key (`sk_live_...` or `sk_test_...`).
+   - `STRIPE_WEBHOOK_SECRET`: Webhook signing secret (`whsec_...`) for `POST /api/billing/webhook`.
+   - `STRIPE_PRICE_PACK_S`: 25 Query Pack Stripe Price ID.
+   - `STRIPE_PRICE_PACK_M`: 100 Query Pack Stripe Price ID.
+   - `STRIPE_PRICE_PRO_MONTHLY`: Pro Plan Monthly Subscription Stripe Price ID.
+
+3. **Current Pre-Billing & Testing Posture**:
+   - When `BILLING_ENABLED=false` or `STRIPE_SECRET_KEY` is not provided, the platform automatically switches to `FakeBillingProvider`.
+   - Under `FakeBillingProvider`, payments are simulated for local testing (mock fulfillment without external HTTP calls); **no live credit cards are charged and zero funds move**.

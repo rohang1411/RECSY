@@ -26,7 +26,13 @@ export function HeaderRightCluster({ activeRegion }: HeaderRightClusterProps) {
       <QuotaChip onOpenDetails={() => setIsQuotaSheetOpen(true)} />
       <RegionSelector activeRegion={activeRegion} />
       <div className="from-accent/80 hidden h-px w-8 bg-gradient-to-r to-transparent md:block" />
-      <AccountMenu signedIn={quota.signedIn} />
+      <AccountMenu
+        signedIn={quota.signedIn}
+        email={quota.email}
+        displayName={quota.displayName}
+        firstName={quota.firstName}
+        avatarUrl={quota.avatarUrl}
+      />
 
       <QuotaSheet
         isOpen={isQuotaSheetOpen}

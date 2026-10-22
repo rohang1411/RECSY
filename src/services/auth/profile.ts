@@ -21,6 +21,7 @@ export interface UserProfileRow {
   readonly email_normalized: string;
   readonly display_name: string | null;
   readonly avatar_url: string | null;
+  readonly date_of_birth?: Date | string | null;
   readonly country: string | null;
   readonly locale: string | null;
   readonly terms_version: string | null;
@@ -59,6 +60,12 @@ export async function ensureUserProfile(
     (typeof metadata.avatar_url === 'string' && metadata.avatar_url.trim()) ||
     (typeof metadata.picture === 'string' && metadata.picture.trim()) ||
     null;
+  const rawDob =
+    (typeof metadata.date_of_birth === 'string' && metadata.date_of_birth.trim()) ||
+    (typeof metadata.birthday === 'string' && metadata.birthday.trim()) ||
+    (typeof metadata.birthdate === 'string' && metadata.birthdate.trim()) ||
+    null;
+  const dateOfBirth = rawDob && /^\d{4}-\d{2}-\d{2}$/.test(rawDob) ? rawDob : null;
   const termsVersion =
     (typeof metadata.terms_version === 'string' && metadata.terms_version.trim()) || '2026-10';
   const termsAcceptedAt = metadata.terms_accepted_at
@@ -69,17 +76,18 @@ export async function ensureUserProfile(
   try {
     await db.execute(sql`
       INSERT INTO user_profiles (
-        id, email, email_normalized, display_name, avatar_url,
+        id, email, email_normalized, display_name, avatar_url, date_of_birth,
         terms_version, terms_accepted_at, marketing_opt_in,
         status, billing_hold, created_at, updated_at, last_seen_at
       ) VALUES (
-        ${userId}::uuid, ${rawEmail}, ${emailNorm}, ${displayName}, ${avatarUrl},
+        ${userId}::uuid, ${rawEmail}, ${emailNorm}, ${displayName}, ${avatarUrl}, ${dateOfBirth}::date,
         ${termsVersion}, ${termsAcceptedAt}::timestamptz, ${marketingOptIn},
         'active', false, now(), now(), now()
       )
       ON CONFLICT (id) DO UPDATE SET
         display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
         avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
+        date_of_birth = COALESCE(EXCLUDED.date_of_birth, user_profiles.date_of_birth),
         last_seen_at = CASE
           WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
           ELSE user_profiles.last_seen_at
@@ -92,6 +100,33 @@ export async function ensureUserProfile(
     log.error({ err, userId }, 'failed to ensure user profile');
     throw err;
   }
+}
+
+/**
+ * Updates a user profile's editable fields (display_name, date_of_birth, avatar_url).
+ */
+export async function updateUserProfile(
+  db: AppQueryDb,
+  userId: string,
+  data: {
+    displayName?: string | null;
+    dateOfBirth?: string | null;
+    avatarUrl?: string | null;
+  },
+): Promise<UserProfileRow | null> {
+  await db.execute(sql`
+    UPDATE user_profiles
+       SET display_name = COALESCE(${data.displayName !== undefined ? data.displayName : null}, display_name),
+           date_of_birth = CASE
+             WHEN ${data.dateOfBirth !== undefined} THEN ${data.dateOfBirth ? data.dateOfBirth : null}::date
+             ELSE date_of_birth
+           END,
+           avatar_url = COALESCE(${data.avatarUrl !== undefined ? data.avatarUrl : null}, avatar_url),
+           updated_at = now()
+     WHERE id = ${userId}::uuid;
+  `);
+
+  return getUserProfile(db, userId);
 }
 
 /**

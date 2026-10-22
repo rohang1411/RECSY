@@ -34,10 +34,14 @@ DECLARE
 BEGIN
   FOREACH s IN ARRAY sensitive_schemas LOOP
     IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = s) THEN
-      EXECUTE format('REVOKE ALL ON SCHEMA %I FROM recsy_app', s);
-      EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM recsy_app', s);
-      EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM recsy_app', s);
-      EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM recsy_app', s);
+      BEGIN
+        EXECUTE format('REVOKE ALL ON SCHEMA %I FROM recsy_app', s);
+        EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM recsy_app', s);
+        EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM recsy_app', s);
+        EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM recsy_app', s);
+      EXCEPTION WHEN OTHERS THEN
+        NULL;
+      END;
     END IF;
   END LOOP;
 END

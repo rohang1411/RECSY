@@ -1485,6 +1485,7 @@ export const userProfiles = pgTable(
     emailNormalized: text('email_normalized').notNull(),
     displayName: text('display_name'),
     avatarUrl: text('avatar_url'),
+    dateOfBirth: date('date_of_birth'),
     country: text('country'),
     locale: text('locale'),
     termsVersion: text('terms_version'),
