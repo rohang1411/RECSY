@@ -1,7 +1,17 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { QuotaMeter } from '@/components/quota/QuotaMeter';
+import { QuotaSheet } from '@/components/quota/QuotaSheet';
+import { quotaStore } from '@/components/quota/quota-store';
+import {
+  handleMeteredError,
+  createMeteredRequestInit,
+  type MeteredErrorResponse,
+} from '@/lib/metered-fetch';
+import { savePendingIntent } from '@/lib/pending-intent';
+import { toast } from 'sonner';
 
 import { CitationChip } from '@/components/phone/CitationChip';
 import type { AskRetrievalTrace } from '@/lib/ask-retrieval-trace';
@@ -10,7 +20,6 @@ import {
   CLIENT_SETTING_KEYS,
   useClientSetting,
 } from '@/lib/client-settings';
-import { getClientByokHeaders } from '@/lib/byok-client';
 import type { ResolvedCitation } from '@/services/chat/citations';
 import type { QuotaSnapshotLite } from '@/services/metering/types';
 
@@ -121,30 +130,55 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
   );
+  const pendingQueryRef = useRef<string>('');
+  const [isQuotaSheetOpen, setIsQuotaSheetOpen] = useState(false);
+  const [quotaReason, setQuotaReason] = useState<'free_exhausted' | 'sub_exhausted' | 'device_cap'>(
+    'free_exhausted',
+  );
 
   const ask = useCallback(async () => {
     const q = query.trim();
     if (!q || busy) return;
+    pendingQueryRef.current = q;
     setBusy(true);
     setError(null);
     setAnswer('');
     setCitations([]);
     setMeta(null);
+    quotaStore.setPipFlash('pulse');
 
     try {
-      const res = await fetch('/api/ask', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getClientByokHeaders(),
-        },
-        body: JSON.stringify({ phoneSlug, query: q }),
-      });
+      const res = await fetch(
+        '/api/ask',
+        createMeteredRequestInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneSlug, query: q }),
+        }),
+      );
 
       if (!res.ok) {
-        const j = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(j?.message ?? `Request failed (${res.status})`);
+        const j = (await res.json().catch(() => null)) as MeteredErrorResponse | null;
+        const action = handleMeteredError(res.status, j, res.headers.get('Retry-After'));
+        quotaStore.setPipFlash('restored');
+        setQuery(pendingQueryRef.current);
+
+        if (action.kind === 'quota') {
+          setQuotaReason(action.reason);
+          setIsQuotaSheetOpen(true);
+        } else if (action.kind === 'auth') {
+          savePendingIntent({ text: pendingQueryRef.current, route: `/p/${phoneSlug}` });
+          window.location.href = '/login';
+        } else if (action.kind === 'toast') {
+          toast.error(action.message);
+        } else {
+          setError(action.message);
+        }
+        return;
       }
+
+      quotaStore.setPipFlash('spent');
+      pendingQueryRef.current = '';
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No response body');
@@ -173,6 +207,13 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               model: evt.model,
               retrievalTrace: evt.retrievalTrace,
             });
+            if (evt.quota) {
+              quotaStore.updateFromQuotaLite(evt.quota);
+            }
+          } else if (evt.type === 'quota') {
+            if (evt.quota) {
+              quotaStore.updateFromQuotaLite(evt.quota);
+            }
           } else if (evt.type === 'error') {
             throw new Error(evt.message);
           }
@@ -213,7 +254,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               }}
               rows={3}
               placeholder="How is the battery life for heavy camera use?"
-              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-y border-b px-0 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none disabled:opacity-50"
+              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-y border-b px-0 py-3 font-mono text-base focus-visible:ring-0 focus-visible:outline-none disabled:opacity-50 md:text-sm"
               disabled={busy}
             />
           </label>
@@ -262,6 +303,17 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
           </article>
         ) : null}
       </div>
+      <div className="mt-3">
+        <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
+      </div>
+      <QuotaSheet
+        isOpen={isQuotaSheetOpen}
+        onClose={() => setIsQuotaSheetOpen(false)}
+        reason={quotaReason}
+        onSelectProduct={(code) => {
+          window.location.href = `/pricing?product=${code}`;
+        }}
+      />
     </section>
   );
 }

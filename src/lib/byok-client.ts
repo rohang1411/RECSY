@@ -29,3 +29,14 @@ export function getClientByokHeaders(): Record<string, string> {
     return {};
   }
 }
+
+export function hasClientByokKey(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const key = window.localStorage.getItem(`recsy:setting:${CLIENT_SETTING_KEYS.byokKey}`);
+    const parsedKey = key ? (JSON.parse(key) as string) : '';
+    return Boolean(parsedKey && typeof parsedKey === 'string' && parsedKey.trim());
+  } catch {
+    return false;
+  }
+}

@@ -79,7 +79,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         refs: {},
       };
 
-      const claim = await claimBillingEvent(event, mockDb as AppQueryDb);
+      const claim = await claimBillingEvent(event, mockDb as unknown as AppQueryDb);
       expect(claim.outcome).toBe('claimed');
       if (claim.outcome === 'claimed') {
         expect(claim.eventRowId).toBe('row-1');
@@ -98,7 +98,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         refs: {},
       };
 
-      const claim = await claimBillingEvent(event, mockDb as AppQueryDb);
+      const claim = await claimBillingEvent(event, mockDb as unknown as AppQueryDb);
       expect(claim.outcome).toBe('duplicate');
     });
   });
@@ -127,7 +127,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
       const result = await fulfilCheckoutSession(
         checkout.checkoutId,
         fakeProvider,
-        mockDb as AppQueryDb,
+        mockDb as unknown as AppQueryDb,
       );
 
       expect(result.fulfilled).toBe(true);
@@ -152,7 +152,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         .mockResolvedValueOnce([{ id: 'ord-1', user_id: '99999999-9999-9999-9999-999999999999' }]);
 
       await expect(
-        fulfilCheckoutSession(checkout.checkoutId, fakeProvider, mockDb as AppQueryDb),
+        fulfilCheckoutSession(checkout.checkoutId, fakeProvider, mockDb as unknown as AppQueryDb),
       ).rejects.toThrow('USER_MISMATCH');
     });
   });
@@ -175,7 +175,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
 
       mockDb.execute.mockResolvedValueOnce([{ id: 'sub-row-1' }]);
 
-      const result = await syncSubscription(subId, fakeProvider, mockDb as AppQueryDb);
+      const result = await syncSubscription(subId, fakeProvider, mockDb as unknown as AppQueryDb);
       expect(result.synced).toBe(true);
       expect(result.subscriptionId).toBe('sub-row-1');
     });
@@ -208,7 +208,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         // update order status
         .mockResolvedValueOnce([]);
 
-      const result = await applyRefund(chargeId, fakeProvider, mockDb as AppQueryDb);
+      const result = await applyRefund(chargeId, fakeProvider, mockDb as unknown as AppQueryDb);
       expect(result.refunded).toBe(true);
       expect(result.reversed).toBe(25);
     });
@@ -237,7 +237,13 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         // update user_profiles billing_hold = true
         .mockResolvedValueOnce([]);
 
-      await applyDispute('dp_123', chargeId, 'created', fakeProvider, mockDb as AppQueryDb);
+      await applyDispute(
+        'dp_123',
+        chargeId,
+        'created',
+        fakeProvider,
+        mockDb as unknown as AppQueryDb,
+      );
 
       expect(mockDb.execute).toHaveBeenCalledTimes(4);
     });
@@ -248,7 +254,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
       const userId = '11111111-1111-1111-1111-111111111111';
       mockDb.execute.mockResolvedValueOnce([{ provider_customer_id: 'fake_cus_1' }]);
 
-      const portal = await startPortal(userId, mockDb as AppQueryDb);
+      const portal = await startPortal(userId, mockDb as unknown as AppQueryDb);
       expect(portal.url).toContain('/account?portal=simulated');
     });
 
@@ -256,7 +262,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
       const userId = '22222222-2222-2222-2222-222222222222';
       mockDb.execute.mockResolvedValueOnce([]);
 
-      await expect(startPortal(userId, mockDb as AppQueryDb)).rejects.toThrow();
+      await expect(startPortal(userId, mockDb as unknown as AppQueryDb)).rejects.toThrow();
     });
   });
 
@@ -287,7 +293,7 @@ describe('WP-14: Billing Engine & Webhooks', () => {
         // 6. Expired pending orders -> none
         .mockResolvedValueOnce([]);
 
-      const result = await reconcileBilling(fakeProvider, mockDb as AppQueryDb);
+      const result = await reconcileBilling(fakeProvider, mockDb as unknown as AppQueryDb);
       expect(result.fixedPurchases).toBe(1);
     });
   });

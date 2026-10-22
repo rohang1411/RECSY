@@ -1,25 +1,18 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
 import { REGIONS, type RegionConfig } from '@/lib/regions';
-import { Globe, X } from 'lucide-react';
+import { Globe } from 'lucide-react';
+import { Sheet } from '@/components/ui/sheet';
 
 interface RegionSelectorProps {
   readonly activeRegion: RegionConfig;
 }
 
-const emptySubscribe = () => () => {};
-
 export function RegionSelector({ activeRegion }: RegionSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
   const [liveInrRate, setLiveInrRate] = useState<number>(83.5);
-  const mounted = useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false,
-  );
 
   useEffect(() => {
     // Fetch cached daily exchange rate
@@ -32,17 +25,6 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
 
   const handleSelect = async (countryCode: string) => {
     if (countryCode === activeRegion.countryCode) {
@@ -71,59 +53,38 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
     }
   };
 
-  const drawerContent = (
-    <>
-      {/* Backdrop */}
-      {isOpen && (
-        <div
-          onClick={() => !isChanging && setIsOpen(false)}
-          className="animate-in fade-in fixed inset-0 z-50 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
-        />
-      )}
-
-      {/* Slide-out Drawer */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Select Region"
-        aria-hidden={!isOpen}
-        className={`bg-background border-primary cubic-bezier(0.16, 1, 0.3, 1) fixed top-0 right-0 bottom-0 z-50 w-full max-w-[380px] border-l-3 p-6 transition-all duration-300 ${
-          isOpen
-            ? 'translate-x-0 opacity-100'
-            : 'pointer-events-none invisible translate-x-full opacity-0'
-        } flex flex-col justify-between`}
+  return (
+    <div className="relative font-mono">
+      {/* Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="border-outline bg-background hover:border-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-colors duration-150 focus-visible:outline-none"
+        aria-label={`Select region (current: ${activeRegion.label})`}
       >
-        <div>
-          {/* Drawer Header */}
-          <div className="border-outline-variant mb-6 flex items-center justify-between border-b-2 pb-4">
-            <h2 className="text-primary text-sm font-black tracking-widest uppercase">
-              Select Region
-            </h2>
-            <button
-              onClick={() => setIsOpen(false)}
-              disabled={isChanging}
-              className="border-outline hover:border-primary hover:bg-primary hover:text-background cursor-pointer border p-1 transition-colors focus-visible:outline-none disabled:opacity-50"
-              aria-label="Close panel"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+        <span>
+          {activeRegion.countryCode} ({activeRegion.symbol})
+        </span>
+        <Globe className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      </button>
 
-          <p className="text-muted-foreground mb-6 text-[11px] leading-relaxed">
-            We adapt catalog availability, brand pricing, and recommendation budgets based on your
-            selection.
-          </p>
-
-          {/* Region Grid/List */}
+      <Sheet
+        isOpen={isOpen}
+        onClose={() => !isChanging && setIsOpen(false)}
+        title="SELECT REGION"
+        description="We adapt catalog availability, pricing, and recommendations based on your selection."
+      >
+        <div className="flex h-full flex-col justify-between space-y-6">
           <div className="space-y-4">
             {Object.values(REGIONS).map((reg) => {
               const isSelected = reg.countryCode === activeRegion.countryCode;
               return (
                 <button
                   key={reg.countryCode}
+                  type="button"
                   onClick={() => handleSelect(reg.countryCode)}
                   disabled={isChanging}
-                  className={`w-full cursor-pointer border-2 p-4 text-left transition-all focus-visible:outline-none ${
+                  className={`w-full cursor-pointer border p-4 text-left transition-all focus-visible:outline-none ${
                     isSelected
                       ? 'border-primary bg-surface-container-high'
                       : 'border-outline-variant hover:border-primary hover:bg-surface-container'
@@ -171,38 +132,19 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
               );
             })}
           </div>
-        </div>
 
-        {/* Drawer Footer */}
-        <div className="border-outline-variant mt-6 border-t pt-4">
-          <div className="text-muted-foreground text-center text-[9px]">
-            RECSY • Dynamic Regional Routing
+          <div className="border-outline-variant border-t pt-4 text-center">
+            <p className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+              Dynamic Regional Routing
+            </p>
             {isChanging && (
-              <div className="text-primary mt-2 animate-pulse font-black tracking-widest uppercase">
+              <p className="text-primary mt-2 animate-pulse font-mono text-xs font-bold tracking-widest uppercase">
                 Applying region configuration...
-              </div>
+              </p>
             )}
           </div>
         </div>
-      </div>
-    </>
-  );
-
-  return (
-    <div className="relative font-mono">
-      {/* Trigger Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="border-primary bg-background hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border-2 px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-all duration-150 focus-visible:outline-none"
-        aria-label={`Select region (current: ${activeRegion.label})`}
-      >
-        <span>
-          {activeRegion.countryCode} ({activeRegion.symbol})
-        </span>
-        <Globe className="h-3.5 w-3.5 shrink-0" />
-      </button>
-
-      {mounted && createPortal(drawerContent, document.body)}
+      </Sheet>
     </div>
   );
 }

@@ -18,7 +18,17 @@ import {
   writeRecommendSession,
 } from '@/lib/recommend-session';
 import { cn } from '@/lib/utils';
-import { getClientByokHeaders } from '@/lib/byok-client';
+import { QuotaMeter } from '@/components/quota/QuotaMeter';
+import { QuotaSheet } from '@/components/quota/QuotaSheet';
+import { quotaStore } from '@/components/quota/quota-store';
+import {
+  handleMeteredError,
+  createMeteredRequestInit,
+  type MeteredErrorResponse,
+} from '@/lib/metered-fetch';
+import { savePendingIntent } from '@/lib/pending-intent';
+import { toast } from 'sonner';
+import type { QuotaSnapshotLite } from '@/services/metering/types';
 
 type ApiPick = {
   readonly phoneId: string;
@@ -159,6 +169,11 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conversationEndRef = useRef<HTMLLIElement | null>(null);
+  const pendingMessageRef = useRef<string>('');
+  const [isQuotaSheetOpen, setIsQuotaSheetOpen] = useState(false);
+  const [quotaReason, setQuotaReason] = useState<'free_exhausted' | 'sub_exhausted' | 'device_cap'>(
+    'free_exhausted',
+  );
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
@@ -202,6 +217,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
   async function send() {
     const message = input.trim();
     if (!message || busy) return;
+    pendingMessageRef.current = message;
     setInput('');
     setError(null);
     setPicks(null);
@@ -214,23 +230,50 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
     setPendingQuery(message);
     setLines((prev) => [...prev, { role: 'user', text: message }]);
     setBusy(true);
+    quotaStore.setPipFlash('pulse');
+
     try {
-      const res = await fetch('/api/recommend', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getClientByokHeaders(),
-        },
-        credentials: 'include',
-        body: JSON.stringify({ message }),
-      });
+      const res = await fetch(
+        '/api/recommend',
+        createMeteredRequestInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message }),
+        }),
+      );
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) {
-        const msg =
-          data && typeof data === 'object' && 'message' in data
-            ? String((data as { message: unknown }).message)
-            : `Request failed (${res.status})`;
-        throw new Error(msg);
+        const action = handleMeteredError(
+          res.status,
+          data as MeteredErrorResponse,
+          res.headers.get('Retry-After'),
+        );
+        quotaStore.setPipFlash('restored');
+        setInput(pendingMessageRef.current);
+        setLines((prev) =>
+          prev.length > 0 && prev[prev.length - 1]?.role === 'user' ? prev.slice(0, -1) : prev,
+        );
+        setPendingQuery(null);
+
+        if (action.kind === 'quota') {
+          setQuotaReason(action.reason);
+          setIsQuotaSheetOpen(true);
+        } else if (action.kind === 'auth') {
+          savePendingIntent({ text: pendingMessageRef.current, route: '/recommend' });
+          window.location.href = '/login';
+        } else if (action.kind === 'toast') {
+          toast.error(action.message);
+        } else {
+          setError(action.message);
+        }
+        return;
+      }
+
+      quotaStore.setPipFlash('spent');
+      pendingMessageRef.current = '';
+
+      if (data && typeof data === 'object' && 'quota' in data && data.quota) {
+        quotaStore.updateFromQuotaLite(data.quota as unknown as QuotaSnapshotLite);
       }
       if (!data || typeof data !== 'object' || !('kind' in data)) {
         throw new Error('Invalid response');
@@ -412,9 +455,10 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                 }
               }}
               placeholder={placeholderText}
-              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-none border-b px-0 py-3 font-mono text-sm focus-visible:ring-0 focus-visible:outline-none"
+              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-none border-b px-0 py-3 font-mono text-base focus-visible:ring-0 focus-visible:outline-none md:text-sm"
               disabled={busy}
             />
+            <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
             <button
               type="button"
               onClick={() => void send()}
@@ -585,6 +629,15 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
           ) : null}
         </section>
       </div>
+
+      <QuotaSheet
+        isOpen={isQuotaSheetOpen}
+        onClose={() => setIsQuotaSheetOpen(false)}
+        reason={quotaReason}
+        onSelectProduct={(code) => {
+          window.location.href = `/pricing?product=${code}`;
+        }}
+      />
     </div>
   );
 }

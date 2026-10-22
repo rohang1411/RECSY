@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import { Hanken_Grotesk, Inter, JetBrains_Mono } from 'next/font/google';
-import { Toaster } from 'sonner';
 
 import { AnalyticsClient } from '@/components/AnalyticsClient';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { EntitlementProvider } from '@/components/quota/EntitlementProvider';
+import { Toaster } from '@/components/ui/toaster';
 import { env } from '@/env';
 
 import './globals.css';
@@ -67,17 +68,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${inter.variable} ${hanken.variable} ${jetbrains.variable} bg-background text-foreground font-sans antialiased`}
       >
         <ThemeProvider forcedTheme="dark" enableSystem={false}>
-          <div className="flex min-h-dvh flex-col">
-            <AppHeader />
-            <main className="flex-1">{children}</main>
-            <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
-              <div className="px-grid-margin mx-auto max-w-7xl">
-                © {new Date().getFullYear()} RECSY
-              </div>
-            </footer>
-          </div>
-          <Toaster position="top-right" richColors closeButton />
-          <AnalyticsClient />
+          <EntitlementProvider>
+            <div className="flex min-h-dvh flex-col">
+              <AppHeader />
+              <main className="flex-1">{children}</main>
+              <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
+                <div className="px-grid-margin mx-auto max-w-7xl">
+                  © {new Date().getFullYear()} RECSY
+                </div>
+              </footer>
+            </div>
+            <Toaster />
+            <AnalyticsClient />
+          </EntitlementProvider>
         </ThemeProvider>
       </body>
     </html>
