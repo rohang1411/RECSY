@@ -25,7 +25,10 @@ describe('GET /auth/google', () => {
     expect(res.headers.get('location')).toBe(
       'https://accounts.google.com/o/oauth2/auth?client_id=123',
     );
-    expect(mockDriver.getGoogleOAuthUrl).toHaveBeenCalledWith('/recommend');
+    expect(mockDriver.getGoogleOAuthUrl).toHaveBeenCalledWith(
+      '/recommend',
+      expect.objectContaining({ siteUrl: expect.any(String) }),
+    );
   });
 
   it('falls back to /login?error=oauth_init_failed on driver error', async () => {

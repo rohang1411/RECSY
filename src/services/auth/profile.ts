@@ -88,6 +88,14 @@ export async function ensureUserProfile(
         display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
         avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
         date_of_birth = COALESCE(EXCLUDED.date_of_birth, user_profiles.date_of_birth),
+        email = CASE
+          WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN EXCLUDED.email
+          ELSE user_profiles.email
+        END,
+        email_normalized = CASE
+          WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN EXCLUDED.email_normalized
+          ELSE user_profiles.email_normalized
+        END,
         last_seen_at = CASE
           WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
           ELSE user_profiles.last_seen_at

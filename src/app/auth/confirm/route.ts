@@ -147,7 +147,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
     await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);
 
-    return NextResponse.redirect(new URL(returnTo, request.url), { status: 302 });
+    const redirect = NextResponse.redirect(new URL(returnTo, request.url), { status: 302 });
+    if (typeof client?.applyCookies === 'function') {
+      client.applyCookies(redirect);
+    }
+    return redirect;
   } catch (err) {
     log.error({ err }, 'unexpected error in POST /auth/confirm');
     return NextResponse.redirect(new URL('/login?error=server_error', request.url), {

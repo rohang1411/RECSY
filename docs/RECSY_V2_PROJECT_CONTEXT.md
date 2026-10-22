@@ -4588,3 +4588,40 @@ The identity subsystem supports multi-modal authentication under a strict zero-c
 3. **Current Pre-Billing & Testing Posture**:
    - When `BILLING_ENABLED=false` or `STRIPE_SECRET_KEY` is not provided, the platform automatically switches to `FakeBillingProvider`.
    - Under `FakeBillingProvider`, payments are simulated for local testing (mock fulfillment without external HTTP calls); **no live credit cards are charged and zero funds move**.
+
+### 27.8 Production Authentication Reliability, Dynamic Origin Resolution & Session Persistence Architecture
+
+#### 1. Root Cause Analysis (Deep Architectural Diagnostic)
+
+When deploying to multi-environment infrastructure (local development, preview branches on Vercel, and live production domains), two severe cascading defects were identified in the authentication lifecycle:
+
+1. **Static Origin Leak (`localhost:3000` Redirects on Live Environments)**:
+   - **Mechanism**: `SupabaseAuthDriver.getGoogleOAuthUrl`, `SupabaseAuthDriver.sendOtp`, and `startCheckout` relied on `env.NEXT_PUBLIC_SITE_URL`. In `.env.local` and `src/env.ts`, `NEXT_PUBLIC_SITE_URL` defaulted to `http://localhost:3000`.
+   - **Impact**: When a user on `https://recsy-pi.vercel.app` initiated Google OAuth or requested an email verification link, RECSY sent `redirectTo: http://localhost:3000/auth/callback` to Google and Supabase GoTrue. Google therefore redirected the browser to `http://localhost:3000/auth/callback?code=...` instead of the live site, dumping the user out of the application.
+   - **Security / Same-Origin Isolation**: Cookies established on `localhost:3000` could never be read by `recsy-pi.vercel.app` due to browser Same-Origin Policy (SOP).
+
+2. **Next.js App Router Route Handler Cookie Detachment (Session Non-Persistence)**:
+   - **Mechanism**: In Next.js App Router (Node.js runtime), `@supabase/ssr` writes session tokens (`sb-*-auth-token`) to the request-scoped `(await cookies()).set()`. However, `src/app/auth/callback/route.ts` returned an explicitly instantiated `NextResponse.redirect(new URL(returnTo, request.url), { status: 302 })`. Next.js does **not** automatically copy mutated cookies from `cookieStore` onto an explicit `NextResponse` instance.
+   - **Impact**: The HTTP 302 Found response was sent to the browser **without `Set-Cookie` headers**, immediately discarding the user's authenticated session. Even if a user signed in repeatedly, subsequent requests had zero `sb-*` cookies, causing `GET /api/me/entitlements` to report `signedIn: false`. The user was stuck in an unauthenticated loop.
+   - **PKCE Code Verifier Loss**: Similarly, during OAuth initiation (`GET /auth/google`), Supabase SSR generated a PKCE `code_verifier` cookie. Returning `NextResponse.redirect` without header synchronization meant the code verifier cookie was never saved by the browser, causing code exchange failures on callback.
+
+#### 2. Architectural Solution Implemented
+
+To eradicate these issues permanently across all environments (local, preview, and production), the following production architecture was implemented:
+
+1. **Dynamic Canonical Origin Resolution (`src/lib/site-url.ts`)**:
+   - Instead of reading compile-time or static environment fallbacks, server routes resolve the canonical client-facing origin dynamically from incoming request headers in strict precedence order:
+     1. Reverse Proxy headers: `x-forwarded-host` + `x-forwarded-proto` (authoritative on Vercel, Cloudflare, and edge load balancers).
+     2. Next.js internal listener: `request.nextUrl.origin`.
+     3. Request URL parser: `new URL(request.url).origin`.
+     4. Platform environment variables: `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_URL`.
+     5. Configured `NEXT_PUBLIC_SITE_URL` fallback.
+   - Applied universally to `GET /auth/google`, `POST /auth/otp/send`, `POST /api/billing/checkout`, and `POST /api/billing/portal`.
+
+2. **Route Handler Response Cookie Serialization (`applyCookies`)**:
+   - `createSupabaseServerClient` in `src/services/auth/supabase-server.ts` was extended with cookie capture instrumentation. Every cookie written by `@supabase/ssr` (including PKCE code verifiers, access tokens, and refresh tokens) is recorded with its full cryptographic attributes (`HttpOnly`, `Secure`, `SameSite=Lax`, `Max-Age`, `Path`).
+   - The client returns a strongly typed `applyCookies(response: NextResponse): NextResponse` helper.
+   - All auth routes (`/auth/google`, `/auth/callback`, `/auth/confirm`, `/auth/otp/verify`, `/auth/password/signin`, `/auth/password/signup`) stamp their outgoing `NextResponse.redirect` or `NextResponse.json` objects using `client.applyCookies(response)`, ensuring `Set-Cookie` headers are strictly present on the HTTP wire.
+
+3. **User Profile Conflict Resolution**:
+   - In `src/services/auth/profile.ts`, `ensureUserProfile` was updated to synchronize `email` and `email_normalized` on `ON CONFLICT (id) DO UPDATE SET`, ensuring user metadata remains cohesive across Google OAuth and password authentication modalities.

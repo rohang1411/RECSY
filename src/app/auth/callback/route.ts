@@ -47,13 +47,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (error || !data.user) {
           log.warn({ error }, 'Supabase PKCE code exchange failed');
-          return NextResponse.redirect(
+          const redirect = NextResponse.redirect(
             new URL(
               `/login?error=auth_exchange_failed&next=${encodeURIComponent(returnTo)}`,
               request.url,
             ),
             { status: 302 },
           );
+          if (typeof client?.applyCookies === 'function') {
+            client.applyCookies(redirect);
+          }
+          return redirect;
         }
         user = data.user;
       } else if (tokenHash) {
@@ -63,13 +67,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         });
         if (error || !data.user) {
           log.warn({ error }, 'Supabase token hash verification failed');
-          return NextResponse.redirect(
+          const redirect = NextResponse.redirect(
             new URL(
               `/login?error=auth_verify_failed&next=${encodeURIComponent(returnTo)}`,
               request.url,
             ),
             { status: 302 },
           );
+          if (typeof client?.applyCookies === 'function') {
+            client.applyCookies(redirect);
+          }
+          return redirect;
         }
         user = data.user;
       }
@@ -82,6 +90,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         });
 
         await claimAnonymousState(db, user.id, identity.deviceId, sessionToken);
+        if (typeof client?.applyCookies === 'function') {
+          client.applyCookies(responseRedirect);
+        }
         return responseRedirect;
       }
     }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { cookies } from 'next/headers';
 import type { AuthDriver, AuthResultUser, SignInWithOtpInput, VerifyOtpInput } from '../driver';
+import type { SupabaseServerClient } from '../supabase-server';
 import { env } from '@/env';
 import { isHostedDatabaseUrl } from '@/services/eval/workload-guard';
 
@@ -44,7 +45,10 @@ export class FakeAuthDriver implements AuthDriver {
     assertFakeAuthAllowed();
   }
 
-  async getGoogleOAuthUrl(returnTo = '/'): Promise<string> {
+  async getGoogleOAuthUrl(
+    returnTo = '/',
+    options?: { siteUrl?: string; client?: SupabaseServerClient },
+  ): Promise<string> {
     const fakeId = randomUUID();
     const cookieStore = await cookies();
     cookieStore.set(FAKE_AUTH_COOKIE_NAME, fakeId, {
@@ -52,7 +56,10 @@ export class FakeAuthDriver implements AuthDriver {
       sameSite: 'lax',
       path: '/',
     });
-    return `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?fake_uid=${fakeId}&next=${encodeURIComponent(returnTo)}`;
+    const baseUrl = options?.siteUrl
+      ? options.siteUrl.replace(/\/$/, '')
+      : env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '');
+    return `${baseUrl}/auth/callback?fake_uid=${fakeId}&next=${encodeURIComponent(returnTo)}`;
   }
 
   async sendOtp(_input: SignInWithOtpInput): Promise<{ sent: boolean }> {
@@ -80,7 +87,7 @@ export class FakeAuthDriver implements AuthDriver {
     };
   }
 
-  async signOut(): Promise<void> {
+  async signOut(_options?: { client?: SupabaseServerClient }): Promise<void> {
     const cookieStore = await cookies();
     cookieStore.delete(FAKE_AUTH_COOKIE_NAME);
   }

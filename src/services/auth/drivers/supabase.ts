@@ -1,5 +1,5 @@
 import type { AuthDriver, AuthResultUser, SignInWithOtpInput, VerifyOtpInput } from '../driver';
-import { createSupabaseServerClient } from '../supabase-server';
+import { createSupabaseServerClient, type SupabaseServerClient } from '../supabase-server';
 import { safeReturnTo } from '../return-to';
 import { env } from '@/env';
 import { logger } from '@/services/logger';
@@ -7,10 +7,16 @@ import { logger } from '@/services/logger';
 const log = logger.child({ component: 'supabase-auth-driver' });
 
 export class SupabaseAuthDriver implements AuthDriver {
-  async getGoogleOAuthUrl(returnTo = '/'): Promise<string> {
-    const client = await createSupabaseServerClient();
+  async getGoogleOAuthUrl(
+    returnTo = '/',
+    options?: { siteUrl?: string; client?: SupabaseServerClient },
+  ): Promise<string> {
+    const client = options?.client ?? (await createSupabaseServerClient());
     const sanitizedReturn = safeReturnTo(returnTo);
-    const redirectTo = `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(sanitizedReturn)}`;
+    const baseUrl = options?.siteUrl
+      ? options.siteUrl.replace(/\/$/, '')
+      : env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '');
+    const redirectTo = `${baseUrl}/auth/callback?next=${encodeURIComponent(sanitizedReturn)}`;
 
     const { data, error } = await client.auth.signInWithOAuth({
       provider: 'google',
@@ -32,9 +38,12 @@ export class SupabaseAuthDriver implements AuthDriver {
   }
 
   async sendOtp(input: SignInWithOtpInput): Promise<{ sent: boolean }> {
-    const client = await createSupabaseServerClient();
+    const client = input.client ?? (await createSupabaseServerClient());
     const sanitizedReturn = safeReturnTo(input.returnTo ?? '/');
-    const emailRedirectTo = `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(sanitizedReturn)}`;
+    const baseUrl = input.siteUrl
+      ? input.siteUrl.replace(/\/$/, '')
+      : env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '');
+    const emailRedirectTo = `${baseUrl}/auth/callback?next=${encodeURIComponent(sanitizedReturn)}`;
 
     const { error } = await client.auth.signInWithOtp({
       email: input.email.trim(),
@@ -54,7 +63,7 @@ export class SupabaseAuthDriver implements AuthDriver {
   }
 
   async verifyOtp(input: VerifyOtpInput): Promise<{ user: AuthResultUser | null }> {
-    const client = await createSupabaseServerClient();
+    const client = input.client ?? (await createSupabaseServerClient());
 
     const { data, error } = await client.auth.verifyOtp({
       email: input.email.trim(),
@@ -76,9 +85,9 @@ export class SupabaseAuthDriver implements AuthDriver {
     };
   }
 
-  async signOut(): Promise<void> {
+  async signOut(options?: { client?: SupabaseServerClient }): Promise<void> {
     try {
-      const client = await createSupabaseServerClient();
+      const client = options?.client ?? (await createSupabaseServerClient());
       await client.auth.signOut({ scope: 'local' });
     } catch (err) {
       log.warn({ err }, 'error during Supabase signOut (ignored)');

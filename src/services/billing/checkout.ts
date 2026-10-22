@@ -33,6 +33,7 @@ export async function startCheckout(
   email: string,
   productCode: BillingProductCode,
   dbClient?: AppQueryDb,
+  siteUrlOverride?: string,
 ): Promise<{ url: string; checkoutId: string }> {
   const db = dbClient ?? getDb();
   const provider = getBillingProvider();
@@ -131,7 +132,10 @@ export async function startCheckout(
   const timeBucket = Math.floor(Date.now() / (5 * 60 * 1000));
   const idempotencyKey = `checkout:${userId}:${productCode}:${timeBucket}`;
 
-  const siteUrl = (env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const siteUrl = (siteUrlOverride || env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(
+    /\/$/,
+    '',
+  );
   const successUrl = `${siteUrl}/account/billing/return?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${siteUrl}/pricing?checkout=canceled`;
 
@@ -197,7 +201,11 @@ export async function startCheckout(
  * Creates customer portal session for managing payment methods, invoices, and subscriptions.
  * Normative reference: Section 9.4.2 of plan 25.
  */
-export async function startPortal(userId: string, dbClient?: AppQueryDb): Promise<{ url: string }> {
+export async function startPortal(
+  userId: string,
+  dbClient?: AppQueryDb,
+  siteUrlOverride?: string,
+): Promise<{ url: string }> {
   const db = dbClient ?? getDb();
   const provider = getBillingProvider();
 
@@ -218,7 +226,10 @@ export async function startPortal(userId: string, dbClient?: AppQueryDb): Promis
     );
   }
 
-  const siteUrl = (env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const siteUrl = (siteUrlOverride || env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(
+    /\/$/,
+    '',
+  );
   const returnUrl = `${siteUrl}/account`;
 
   const portal = await provider.createPortalSession({

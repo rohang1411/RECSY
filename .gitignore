@@ -208,3 +208,5 @@ legacy/ios/Runner/GeneratedPluginRegistrant.*
 /output/eval/
 /.playwright-cli/
 .rocketride/
+
+scratch/
