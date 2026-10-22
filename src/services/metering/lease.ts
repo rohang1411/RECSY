@@ -85,7 +85,6 @@ export class QueryLease {
           ${this.id}::uuid,
           'commit',
           'success',
-          ${this.traceId},
           ${meta?.model ?? null},
           ${meta?.tokensIn ?? null},
           ${meta?.tokensOut ?? null},
@@ -148,9 +147,7 @@ export class QueryLease {
         SELECT recsy_settle_lease(
           ${this.id}::uuid,
           'no_charge',
-          ${reason},
-          ${this.traceId},
-          NULL, NULL, NULL, NULL, NULL, NULL
+          ${reason}
         );
       `);
 
@@ -187,9 +184,7 @@ export class QueryLease {
         SELECT recsy_settle_lease(
           ${this.id}::uuid,
           'refund',
-          ${reason},
-          ${this.traceId},
-          NULL, NULL, NULL, NULL, NULL, NULL
+          ${reason}
         );
       `);
 
