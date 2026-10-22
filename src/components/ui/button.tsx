@@ -98,3 +98,8 @@ export function BrutalistLinkButton({
     </Link>
   );
 }
+
+export const Button = BrutalistButton;
+export type ButtonProps = BrutalistButtonProps;
+export const LinkButton = BrutalistLinkButton;
+export type LinkButtonProps = BrutalistLinkButtonProps;

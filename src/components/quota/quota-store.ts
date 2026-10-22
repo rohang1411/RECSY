@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import type { EntitlementSnapshot, QuotaSnapshotLite } from '@/services/metering/types';
 
 export interface QuotaStoreState {
@@ -157,4 +158,44 @@ export const quotaStore = {
     };
     notify();
   },
+
+  async refresh(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      const res = await fetch('/api/me/entitlements');
+      if (res.ok) {
+        const snap = (await res.json()) as EntitlementSnapshot;
+        quotaStore.setSnapshot(snap, false);
+      }
+    } catch {
+      // Ignore network errors on refresh
+    }
+  },
 };
+
+export function useQuota() {
+  const storeState = useSyncExternalStore(
+    quotaStore.subscribe,
+    quotaStore.getSnapshot,
+    quotaStore.getServerSnapshot,
+  );
+  const snap = storeState.snapshot;
+  const isSubscriber = Boolean(
+    snap?.subscription &&
+    (snap.subscription.status === 'active' || snap.subscription.status === 'past_due'),
+  );
+  return {
+    ...storeState,
+    signedIn: snap?.signedIn ?? false,
+    email: null,
+    isSubscriber,
+    freeRemaining: snap?.free.remaining ?? 2,
+    freeAllowance: snap?.free.allowance ?? 2,
+    credits: snap?.credits ?? 0,
+    subRemaining: snap?.subscription
+      ? Math.max(0, snap.subscription.includedQueries - snap.subscription.usedThisPeriod)
+      : 0,
+    resetAt: snap?.resetAt ?? '2099-01-01T00:00:00.000Z',
+    refresh: () => quotaStore.refresh(),
+  };
+}

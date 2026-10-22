@@ -6,6 +6,7 @@ import { AnalyticsClient } from '@/components/AnalyticsClient';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { EntitlementProvider } from '@/components/quota/EntitlementProvider';
+import { AuthSheet } from '@/components/auth/AuthSheet';
 import { Toaster } from '@/components/ui/toaster';
 import { env } from '@/env';
 
@@ -100,6 +101,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </div>
               </footer>
             </div>
+            <AuthSheet />
             <Toaster />
             <AnalyticsClient />
           </EntitlementProvider>
