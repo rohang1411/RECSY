@@ -305,5 +305,8 @@ export async function reserveQuery(input: ReserveQueryInput): Promise<QueryLease
     status,
     quota: quotaPayload,
     actions,
+    context: {
+      leaseId: row.lease_id ?? undefined,
+    },
   });
 }

@@ -57,6 +57,7 @@ import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/tur
 import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
+import { findReplayQuery } from '@/services/metering/replay';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
 import { resolveReasoningMode } from '@/services/metering/mode';
 import type { QueryLease } from '@/services/metering/lease';
@@ -171,17 +172,73 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     // 5. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
     const tReserveStart = performance.now();
-    lease = await reserveQuery({
-      db,
-      identity,
-      requestId,
-      route: 'POST /api/ask',
-      traceId,
-      byok: isByok,
-      shedFree: platform.shedFreeFor(identity),
-      config,
-    });
-    reserveMs = Math.round(performance.now() - tReserveStart);
+    try {
+      lease = await reserveQuery({
+        db,
+        identity,
+        requestId,
+        route: 'POST /api/ask',
+        traceId,
+        byok: isByok,
+        shedFree: platform.shedFreeFor(identity),
+        config,
+      });
+      reserveMs = Math.round(performance.now() - tReserveStart);
+    } catch (err: unknown) {
+      if (err instanceof QuotaDeniedError && err.code === 'DUPLICATE_REQUEST') {
+        const leaseId = (err.context?.leaseId as string) || null;
+        if (leaseId) {
+          const replay = await findReplayQuery(db, leaseId);
+          if (replay) {
+            log.info({ traceId, requestId, leaseId }, 'replaying_committed_chat_query');
+            const enc = new TextEncoder();
+            const replayStream = new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(
+                  enc.encode(
+                    `${JSON.stringify({
+                      type: 'meta',
+                      phoneId: replay.phoneId,
+                      retrievedChunkIds: replay.retrievedChunkIds,
+                    })}\n`,
+                  ),
+                );
+                controller.enqueue(
+                  enc.encode(
+                    `${JSON.stringify({
+                      type: 'delta',
+                      text: replay.answer,
+                    })}\n`,
+                  ),
+                );
+                controller.enqueue(
+                  enc.encode(
+                    `${JSON.stringify({
+                      type: 'done',
+                      citations: replay.citations,
+                      model: 'replayed',
+                      quota: replay.quota,
+                      replayed: true,
+                    })}\n`,
+                  ),
+                );
+                controller.close();
+              },
+            });
+
+            return new Response(replayStream, {
+              headers: {
+                'Content-Type': 'application/x-ndjson; charset=utf-8',
+                'Cache-Control': 'no-store',
+                'X-Trace-Id': traceId,
+                'X-Request-Id': requestId,
+              },
+            });
+          }
+        }
+      }
+      throw err;
+    }
 
     // 6. Check phone target
     const [phone] = await db

@@ -13,6 +13,7 @@ import * as deviceRateLimitModule from '@/services/abuse/rate-limit-device';
 import * as turnstileModule from '@/services/abuse/turnstile';
 import * as sessionModule from '@/services/recommender/session';
 import * as summaryModule from '@/services/metering/summary';
+import * as replayModule from '@/services/metering/replay';
 import { getDb } from '@/services/db/client';
 import { QueryLease } from '@/services/metering/lease';
 
@@ -39,6 +40,7 @@ vi.mock('@/services/metering/rate-limit-user');
 vi.mock('@/services/abuse/rate-limit-device');
 vi.mock('@/services/abuse/turnstile');
 vi.mock('@/services/recommender/session');
+vi.mock('@/services/metering/replay');
 vi.mock('@/services/metering/summary', async (importOriginal) => {
   const actual = await importOriginal<typeof summaryModule>();
   return {
@@ -471,6 +473,58 @@ describe('POST /api/recommend (WP-08)', () => {
       const res = await POST(request);
       expect(res.status).toBe(409);
       expect(res.headers.get('retry-after')).toBe('2');
+      expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('replay on committed DUPLICATE_REQUEST: returns stored result with no new model execution (WP-18)', async () => {
+      vi.mocked(reserveModule.reserveQuery).mockRejectedValue(
+        new QuotaDeniedError('DUPLICATE_REQUEST', 'Duplicate request in flight.', {
+          status: 409,
+          context: { leaseId: 'lease-replay-abc' },
+          quota: { remaining: 1 },
+          actions: [],
+        }),
+      );
+
+      vi.mocked(replayModule.findReplayTurn).mockResolvedValue({
+        turnId: 'turn-replay-1',
+        sessionId: 'sess-replay-1',
+        userMessage: 'best battery phone under 500',
+        intent: 'recommend',
+        extractedRequirements: { battery: 5000 },
+        candidatePhoneIds: ['phone-1'],
+        picks: [{ id: 'phone-1', model: 'Galaxy A55' }],
+        clarifyingQuestion: null,
+        latencyMs: 310,
+        quota: {
+          outcome: 'committed',
+          chargeSource: 'daily_free',
+          remaining: 1,
+          freeRemaining: 1,
+          creditBalance: 0,
+          subRemaining: 0,
+          resetAt: '2026-10-22T00:00:00.000Z',
+        },
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'a0000000-0000-4000-8000-000000000001',
+        },
+        body: JSON.stringify({ message: 'best battery phone under 500' }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.replayed).toBe(true);
+      expect(body.message).toBe('best battery phone under 500');
+      expect(body.picks).toHaveLength(1);
+      expect(body.quota.outcome).toBe('charged');
+      // Zero model pipeline executions on replay
       expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
     });
 

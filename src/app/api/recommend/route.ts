@@ -55,6 +55,7 @@ import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/tur
 import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
+import { findReplayTurn } from '@/services/metering/replay';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
 import { resolveReasoningMode } from '@/services/metering/mode';
 import type { QueryLease } from '@/services/metering/lease';
@@ -187,17 +188,49 @@ export async function POST(request: NextRequest): Promise<Response> {
     assertPlatformAcceptsRequest(platform, identity, isByok);
 
     const tReserveStart = performance.now();
-    lease = await reserveQuery({
-      db,
-      identity,
-      requestId,
-      route: 'POST /api/recommend',
-      traceId,
-      byok: isByok,
-      shedFree: platform.shedFreeFor(identity),
-      config,
-    });
-    reserveMs = Math.round(performance.now() - tReserveStart);
+    try {
+      lease = await reserveQuery({
+        db,
+        identity,
+        requestId,
+        route: 'POST /api/recommend',
+        traceId,
+        byok: isByok,
+        shedFree: platform.shedFreeFor(identity),
+        config,
+      });
+      reserveMs = Math.round(performance.now() - tReserveStart);
+    } catch (err: unknown) {
+      if (err instanceof QuotaDeniedError && err.code === 'DUPLICATE_REQUEST') {
+        const leaseId = (err.context?.leaseId as string) || null;
+        if (leaseId) {
+          const replay = await findReplayTurn(db, leaseId);
+          if (replay) {
+            log.info({ traceId, requestId, leaseId }, 'replaying_committed_recommendation');
+            return NextResponse.json(
+              {
+                message: replay.userMessage,
+                intent: replay.intent,
+                requirements: replay.extractedRequirements,
+                picks: replay.picks ?? [],
+                clarifyingQuestion: replay.clarifyingQuestion ?? undefined,
+                quota: replay.quota,
+                sessionId: replay.sessionId,
+                replayed: true,
+              },
+              {
+                headers: {
+                  'Cache-Control': 'private, no-store',
+                  'X-Trace-Id': traceId,
+                  'X-Request-Id': requestId,
+                },
+              },
+            );
+          }
+        }
+      }
+      throw err;
+    }
 
     const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
     let sessionToken = cookieVal;

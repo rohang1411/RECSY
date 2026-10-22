@@ -507,6 +507,7 @@ export const recommendationSessions = pgTable(
       t.status,
       t.updatedAt,
     ),
+    index('idx_recommendation_sessions_updated_at').on(t.updatedAt),
   ],
 );
 
