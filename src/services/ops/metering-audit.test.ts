@@ -81,7 +81,9 @@ describe('Metering Invariant Audits (WP-19)', () => {
     const mockDbFail = {
       execute: vi
         .fn()
-        .mockResolvedValue([{ lease_id: 'lease-undelivered', created_at: '2026-10-21T10:00:00Z' }]),
+        .mockResolvedValue([
+          { lease_id: 'lease-undelivered', reserved_at: '2026-10-21T10:00:00Z' },
+        ]),
     };
     const resFail = await auditFairCharging(mockDbFail as unknown as AppQueryDb);
     expect(resFail.passed).toBe(false);

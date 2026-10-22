@@ -94,8 +94,8 @@ export async function auditCreditConsumption(db: AppQueryDb): Promise<AuditAnoma
   const rows = await db.execute<Row>(sql`
     SELECT q.id::text AS lease_id
     FROM query_leases q
-    LEFT JOIN credit_ledger l ON l.ref_id = q.id::text AND l.source = 'lease'
-    WHERE q.charge_source = 'credit_pack'
+    LEFT JOIN credit_ledger l ON l.ref_id = q.id::text AND l.ref_type = 'lease'
+    WHERE q.charge_source = 'credit'
       AND q.status = 'committed'
       AND l.id IS NULL
     LIMIT 20;
@@ -130,8 +130,7 @@ export async function auditSubscriptionUsage(db: AppQueryDb): Promise<AuditAnoma
     LEFT JOIN query_leases q ON q.user_id = s.user_id
          AND q.charge_source = 'subscription'
          AND q.status = 'committed'
-         AND q.created_at >= u.period_start
-         AND q.created_at < u.period_end
+         AND q.period_start = u.period_start
     GROUP BY u.subscription_id, u.used
     HAVING u.used <> COUNT(q.id)
     LIMIT 20;
@@ -155,16 +154,16 @@ export async function auditSubscriptionUsage(db: AppQueryDb): Promise<AuditAnoma
 export async function auditFairCharging(db: AppQueryDb): Promise<AuditAnomaly> {
   type Row = Record<string, unknown> & {
     lease_id: string;
-    created_at: string;
+    reserved_at: string;
   };
 
   const rows = await db.execute<Row>(sql`
-    SELECT q.id::text AS lease_id, q.created_at::text AS created_at
+    SELECT q.id::text AS lease_id, q.reserved_at::text AS reserved_at
     FROM query_leases q
     LEFT JOIN recommendation_turns t ON t.lease_id = q.id
     LEFT JOIN chat_queries c ON c.lease_id = q.id
     WHERE q.status = 'committed'
-      AND q.created_at >= (now() - interval '24 hours')
+      AND q.reserved_at >= (now() - interval '24 hours')
       AND t.id IS NULL
       AND c.id IS NULL
     LIMIT 20;

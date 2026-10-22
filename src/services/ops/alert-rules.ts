@@ -50,7 +50,7 @@ export async function checkRefundRatio(db: AppQueryDb): Promise<AlertResult> {
       COUNT(*) FILTER (WHERE status = 'committed')::int AS committed,
       COUNT(*) FILTER (WHERE status = 'refunded')::int AS refunded
     FROM query_leases
-    WHERE created_at >= (now() - interval '30 minutes')
+    WHERE reserved_at >= (now() - interval '30 minutes')
       AND status IN ('committed', 'refunded');
   `);
   const committed = rows[0]?.committed ?? 0;
@@ -82,7 +82,7 @@ export async function checkLateCommit(db: AppQueryDb): Promise<AlertResult> {
       COUNT(*)::int AS committed,
       COUNT(*) FILTER (WHERE settled_at > expires_at)::int AS late
     FROM query_leases
-    WHERE created_at >= (now() - interval '1 hour')
+    WHERE reserved_at >= (now() - interval '1 hour')
       AND status = 'committed';
   `);
   const committed = rows[0]?.committed ?? 0;
@@ -109,7 +109,7 @@ export async function checkWebhookBacklog(db: AppQueryDb): Promise<AlertResult> 
     SELECT COUNT(*)::int AS count
     FROM billing_events
     WHERE status IN ('received', 'failed', 'processing')
-      AND created_at < (now() - interval '10 minutes');
+      AND received_at < (now() - interval '10 minutes');
   `);
   const count = rows[0]?.count ?? 0;
   return {
@@ -257,8 +257,8 @@ export async function checkAnonIpSpike(db: AppQueryDb): Promise<AlertResult> {
     SELECT COUNT(*)::int AS count
     FROM query_leases
     WHERE status = 'denied'
-      AND denial_reason = 'ANON_IP_CAP'
-      AND created_at >= (now() - interval '10 minutes');
+      AND settle_reason = 'ANON_IP_CAP'
+      AND reserved_at >= (now() - interval '10 minutes');
   `);
   const count = rows[0]?.count ?? 0;
   const fired = count > 50;
