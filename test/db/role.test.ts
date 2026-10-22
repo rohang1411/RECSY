@@ -38,17 +38,33 @@ describe('least-privilege role recsy_app (WP-20 live tests)', () => {
         const rows = await tx`SELECT count(*)::int AS count FROM phones`;
         expect(typeof rows[0]?.count).toBe('number');
 
-        // 2. DDL fails with permission denied
-        await expect(tx`CREATE TABLE __test_ddl_table (id int)`).rejects.toThrow(
-          /permission denied/i,
-        );
+        // 2. DDL fails with permission denied (run in savepoint so transaction remains usable)
+        let ddlFailed = false;
+        try {
+          await tx.savepoint(async (sp) => {
+            await sp`CREATE TABLE __test_ddl_table (id int)`;
+          });
+        } catch (err: unknown) {
+          ddlFailed = true;
+          expect(String(err)).toMatch(/permission denied/i);
+        }
+        expect(ddlFailed).toBe(true);
 
         // 3. Sensitive schema access fails (if auth schema exists)
         const [authSchema] = await tx<{ exists: boolean }[]>`
           SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') AS exists
         `;
         if (authSchema?.exists) {
-          await expect(tx`SELECT * FROM auth.users LIMIT 1`).rejects.toThrow(/permission denied/i);
+          let authFailed = false;
+          try {
+            await tx.savepoint(async (sp) => {
+              await sp`SELECT * FROM auth.users LIMIT 1`;
+            });
+          } catch (err: unknown) {
+            authFailed = true;
+            expect(String(err)).toMatch(/permission denied/i);
+          }
+          expect(authFailed).toBe(true);
         }
       });
     } finally {

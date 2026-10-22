@@ -578,9 +578,10 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
 
     // Device account cap: deviceUserCap = 3 distinct accounts on same device
     const devCap = newDeviceId();
-    // User A uses 1
+    const uid1 = newUserId();
+    // User 1 uses 1
     const rA1 = await callReserve(sql, {
-      userId: uidA,
+      userId: uid1,
       deviceId: devCap,
       freeAllowance: 2,
       deviceUserCap: 3,
@@ -625,7 +626,12 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     const dev = newDeviceId();
 
     for (let i = 1; i <= 10; i++) {
-      const res = await callReserve(sql, { userId: uid, deviceId: dev, freeAllowance: 100 });
+      const res = await callReserve(sql, {
+        userId: uid,
+        deviceId: dev,
+        freeAllowance: 100,
+        deviceUserCap: 100,
+      });
       expect(res.allowed).toBe(true);
       leaseIds.push(res.lease_id!);
       const outcome = await callSettle(sql, res.lease_id!, 'no_charge', 'clarify', 10);
@@ -633,7 +639,12 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     }
 
     // 11th no_charge exceeds clarifyFreeCap (10) and is committed
-    const res11 = await callReserve(sql, { userId: uid, deviceId: dev, freeAllowance: 100 });
+    const res11 = await callReserve(sql, {
+      userId: uid,
+      deviceId: dev,
+      freeAllowance: 100,
+      deviceUserCap: 100,
+    });
     leaseIds.push(res11.lease_id!);
     const outcome11 = await callSettle(sql, res11.lease_id!, 'no_charge', 'clarify', 10);
     expect(outcome11).toBe('committed');
@@ -696,30 +707,38 @@ describe.skipIf(!shouldRun)('Metering SQL Core Integration (Migration 0013)', ()
     await sql.unsafe(`CREATE SCHEMA "${namespace}"`);
 
     try {
-      // Replay migrations 0012 and 0013 into scoped schema
-      for (const tag of ['0012_multi_user_tables', '0013_metering_functions']) {
-        const filePath = resolve(process.cwd(), `drizzle/migrations/${tag}.sql`);
-        const source = await readFile(filePath, 'utf8');
-        const scoped = source
-          .replaceAll('"public".', `"${namespace}".`)
-          .replace(
-            /WHERE conname = ('[^']*')/gi,
-            `WHERE conname = $1 AND connamespace = '${namespace}'::regnamespace`,
-          );
+      // Replay migrations 0012 and 0013 into scoped schema using dedicated client with search_path
+      const replayClient = createTestClient({ max: 1 });
+      try {
+        await replayClient.unsafe(`SET search_path = "${namespace}", public, extensions`);
+        for (const tag of ['0012_multi_user_tables', '0013_metering_functions']) {
+          const filePath = resolve(process.cwd(), `drizzle/migrations/${tag}.sql`);
+          const source = await readFile(filePath, 'utf8');
+          const scoped = source
+            .replaceAll('"public".', `"${namespace}".`)
+            .replace(
+              /WHERE conname = ('[^']*')/gi,
+              `WHERE conname = $1 AND connamespace = '${namespace}'::regnamespace`,
+            );
 
-        for (const statement of scoped.split('--> statement-breakpoint').filter((s) => s.trim())) {
-          await sql.unsafe(statement).simple();
+          for (const statement of scoped
+            .split('--> statement-breakpoint')
+            .filter((s) => s.trim())) {
+            await replayClient.unsafe(statement).simple();
+          }
         }
+      } finally {
+        await replayClient.end({ timeout: 5 });
       }
 
       // Execute recsy_reserve_query within scoped schema
       const client = createTestClient({ max: 1 });
       try {
-        await client.unsafe(`SET search_path = "${namespace}", extensions`);
+        await client.unsafe(`SET search_path = "${namespace}", public, extensions`);
         const res = await client<{ allowed: boolean; lease_id: string }[]>`
           SELECT allowed, lease_id
             FROM recsy_reserve_query(
-              gen_random_uuid(), 'eval_dev', NULL, gen_random_uuid(),
+              gen_random_uuid(), 'eval_dev', NULL::text, gen_random_uuid(),
               'POST /api/recommend', 'eval_trace', false, 2, 2, 30, 3, 100, 1, 75, false
             )
         `;

@@ -128,14 +128,24 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
     // r2 left reserved
 
     const violations = await sql<{ active_credit_leases: number; net_consumed: number }[]>`
-      SELECT COUNT(DISTINCT q.id)::int AS active_credit_leases,
-             COALESCE(SUM(CASE WHEN l.kind = 'consume' THEN 1 WHEN l.kind = 'refund' THEN -1 ELSE 0 END), 0)::int AS net_consumed
-        FROM credit_ledger l
-        FULL OUTER JOIN query_leases q ON q.user_id = l.user_id AND q.charge_source = 'credit' AND q.status IN ('reserved', 'committed')
-       WHERE (l.kind IN ('consume', 'refund') OR q.id IS NOT NULL)
-         AND (l.user_id = ${uid}::uuid OR q.user_id = ${uid}::uuid)
-       GROUP BY COALESCE(l.user_id, q.user_id)
-      HAVING COUNT(DISTINCT q.id) <> COALESCE(SUM(CASE WHEN l.kind = 'consume' THEN 1 WHEN l.kind = 'refund' THEN -1 ELSE 0 END), 0)
+      WITH leases AS (
+        SELECT user_id, COUNT(*)::int AS count
+          FROM query_leases
+         WHERE user_id = ${uid}::uuid AND charge_source = 'credit' AND status IN ('reserved', 'committed')
+         GROUP BY user_id
+      ),
+      ledger AS (
+        SELECT user_id, SUM(CASE WHEN kind = 'consume' THEN 1 WHEN kind = 'refund' THEN -1 ELSE 0 END)::int AS count
+          FROM credit_ledger
+         WHERE user_id = ${uid}::uuid AND kind IN ('consume', 'refund')
+         GROUP BY user_id
+      )
+      SELECT COALESCE(leases.user_id, ledger.user_id) AS user_id,
+             COALESCE(leases.count, 0) AS active_credit_leases,
+             COALESCE(ledger.count, 0) AS net_consumed
+        FROM leases
+        FULL OUTER JOIN ledger ON leases.user_id = ledger.user_id
+       WHERE COALESCE(leases.count, 0) <> COALESCE(ledger.count, 0)
     `;
 
     expect(violations.length).toBe(0);
@@ -208,13 +218,13 @@ describe.skipIf(!shouldRun)('Section 13.8 Invariant Audit Queries', () => {
     const clientId = randomUUID();
     const sessId = randomUUID();
     await sql`
-      INSERT INTO recommendation_clients (id, user_id, session_token)
+      INSERT INTO recommendation_clients (id, user_id, client_token)
       VALUES (${clientId}::uuid, ${uid}::uuid, ${`token_${uid}`})
       ON CONFLICT DO NOTHING
     `;
     await sql`
-      INSERT INTO recommendation_sessions (id, client_id)
-      VALUES (${sessId}::uuid, ${clientId}::uuid)
+      INSERT INTO recommendation_sessions (id, client_id, session_cookie)
+      VALUES (${sessId}::uuid, ${clientId}::uuid, ${`cookie_${uid}`})
       ON CONFLICT DO NOTHING
     `;
     await sql`

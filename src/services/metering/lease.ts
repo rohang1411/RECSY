@@ -83,7 +83,7 @@ export class QueryLease {
       const result = await client.execute<{ recsy_settle_lease: LeaseStatus }>(sql`
         SELECT recsy_settle_lease(
           ${this.id}::uuid,
-          'commit'::lease_action,
+          'commit',
           'success',
           ${this.traceId},
           ${meta?.model ?? null},
@@ -147,7 +147,7 @@ export class QueryLease {
       const result = await client.execute<{ recsy_settle_lease: LeaseStatus }>(sql`
         SELECT recsy_settle_lease(
           ${this.id}::uuid,
-          'no_charge'::lease_action,
+          'no_charge',
           ${reason},
           ${this.traceId},
           NULL, NULL, NULL, NULL, NULL, NULL
@@ -186,7 +186,7 @@ export class QueryLease {
       const result = await client.execute<{ recsy_settle_lease: LeaseStatus }>(sql`
         SELECT recsy_settle_lease(
           ${this.id}::uuid,
-          'refund'::lease_action,
+          'refund',
           ${reason},
           ${this.traceId},
           NULL, NULL, NULL, NULL, NULL, NULL
