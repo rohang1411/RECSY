@@ -25,17 +25,17 @@ export function getMeteringConfig(overrides?: Partial<MeteringConfig>): Metering
 
   const base: MeteringConfig = {
     mode,
-    freeDailyQueries: env.FREE_DAILY_QUERIES,
-    anonDailyQueries: env.ANON_DAILY_QUERIES,
-    anonIpDailyCap: env.ANON_IP_DAILY_CAP,
-    deviceAccountCap: env.DEVICE_ACCOUNT_CAP,
-    byokDailyCap: env.BYOK_DAILY_CAP,
-    clarifyFreeCap: env.CLARIFY_FREE_CAP,
-    maxInflightFree: env.MAX_INFLIGHT_FREE,
-    maxInflightPro: env.MAX_INFLIGHT_PRO,
-    leaseTtlSeconds: env.LEASE_TTL_SECONDS,
-    dbTimeoutMs: env.METERING_DB_TIMEOUT_MS,
-    globalDailyPlatformCap: env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT,
+    freeDailyQueries: Number(env.FREE_DAILY_QUERIES),
+    anonDailyQueries: Number(env.ANON_DAILY_QUERIES),
+    anonIpDailyCap: Number(env.ANON_IP_DAILY_CAP),
+    deviceAccountCap: Number(env.DEVICE_ACCOUNT_CAP),
+    byokDailyCap: Number(env.BYOK_DAILY_CAP),
+    clarifyFreeCap: Number(env.CLARIFY_FREE_CAP),
+    maxInflightFree: Number(env.MAX_INFLIGHT_FREE),
+    maxInflightPro: Number(env.MAX_INFLIGHT_PRO),
+    leaseTtlSeconds: Number(env.LEASE_TTL_SECONDS),
+    dbTimeoutMs: Number(env.METERING_DB_TIMEOUT_MS),
+    globalDailyPlatformCap: Number(env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT),
   };
 
   if (overrides) {

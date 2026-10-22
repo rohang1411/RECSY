@@ -284,18 +284,24 @@ export const env = createEnv({
     // --- plan25: metering, auth, billing ---
     QUOTA_MODE: process.env.QUOTA_MODE ?? 'off',
     QUOTA_TEST_OVERRIDE: process.env.QUOTA_TEST_OVERRIDE,
-    FREE_DAILY_QUERIES: process.env.FREE_DAILY_QUERIES ?? '2',
-    ANON_DAILY_QUERIES: process.env.ANON_DAILY_QUERIES ?? '2',
-    ANON_IP_DAILY_CAP: process.env.ANON_IP_DAILY_CAP ?? '30',
-    DEVICE_ACCOUNT_CAP: process.env.DEVICE_ACCOUNT_CAP ?? '3',
-    BYOK_DAILY_CAP: process.env.BYOK_DAILY_CAP ?? '100',
-    CLARIFY_FREE_CAP: process.env.CLARIFY_FREE_CAP ?? '10',
-    MAX_INFLIGHT_FREE: process.env.MAX_INFLIGHT_FREE ?? '1',
-    MAX_INFLIGHT_PRO: process.env.MAX_INFLIGHT_PRO ?? '2',
-    LEASE_TTL_SECONDS: process.env.LEASE_TTL_SECONDS ?? '75',
-    METERING_DB_TIMEOUT_MS: process.env.METERING_DB_TIMEOUT_MS ?? '3000',
-    AUTH_VERIFY_TIMEOUT_MS: process.env.AUTH_VERIFY_TIMEOUT_MS ?? '2000',
-    GLOBAL_DAILY_PLATFORM_CAP_DEFAULT: process.env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT ?? '0',
+    FREE_DAILY_QUERIES: process.env.FREE_DAILY_QUERIES ? Number(process.env.FREE_DAILY_QUERIES) : 2,
+    ANON_DAILY_QUERIES: process.env.ANON_DAILY_QUERIES ? Number(process.env.ANON_DAILY_QUERIES) : 2,
+    ANON_IP_DAILY_CAP: process.env.ANON_IP_DAILY_CAP ? Number(process.env.ANON_IP_DAILY_CAP) : 30,
+    DEVICE_ACCOUNT_CAP: process.env.DEVICE_ACCOUNT_CAP ? Number(process.env.DEVICE_ACCOUNT_CAP) : 3,
+    BYOK_DAILY_CAP: process.env.BYOK_DAILY_CAP ? Number(process.env.BYOK_DAILY_CAP) : 100,
+    CLARIFY_FREE_CAP: process.env.CLARIFY_FREE_CAP ? Number(process.env.CLARIFY_FREE_CAP) : 10,
+    MAX_INFLIGHT_FREE: process.env.MAX_INFLIGHT_FREE ? Number(process.env.MAX_INFLIGHT_FREE) : 1,
+    MAX_INFLIGHT_PRO: process.env.MAX_INFLIGHT_PRO ? Number(process.env.MAX_INFLIGHT_PRO) : 2,
+    LEASE_TTL_SECONDS: process.env.LEASE_TTL_SECONDS ? Number(process.env.LEASE_TTL_SECONDS) : 75,
+    METERING_DB_TIMEOUT_MS: process.env.METERING_DB_TIMEOUT_MS
+      ? Number(process.env.METERING_DB_TIMEOUT_MS)
+      : 3000,
+    AUTH_VERIFY_TIMEOUT_MS: process.env.AUTH_VERIFY_TIMEOUT_MS
+      ? Number(process.env.AUTH_VERIFY_TIMEOUT_MS)
+      : 2000,
+    GLOBAL_DAILY_PLATFORM_CAP_DEFAULT: process.env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT
+      ? Number(process.env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT)
+      : 0,
     DEVICE_ID_SECRET: process.env.DEVICE_ID_SECRET,
     IP_HASH_SECRET: process.env.IP_HASH_SECRET,
     TRUST_PROXY_HEADER: process.env.TRUST_PROXY_HEADER,
