@@ -523,7 +523,7 @@ describe('POST /api/recommend (WP-08)', () => {
       expect(body.replayed).toBe(true);
       expect(body.message).toBe('best battery phone under 500');
       expect(body.picks).toHaveLength(1);
-      expect(body.quota.outcome).toBe('charged');
+      expect(body.quota.outcome).toBe('committed');
       // Zero model pipeline executions on replay
       expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
     });
