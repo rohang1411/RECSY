@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthDriver } from '@/services/auth/driver';
 import { isDisposableEmail } from '@/services/auth/email';
 import { safeReturnTo } from '@/services/auth/return-to';
+import { resolveSiteUrl } from '@/lib/site-url';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { readRequestJson } from '@/lib/request-json';
 import { ValidationError } from '@/lib/errors';
@@ -34,12 +35,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const captchaToken =
       typeof body.captchaToken === 'string' ? body.captchaToken.trim() : undefined;
     const returnTo = safeReturnTo(typeof body.returnTo === 'string' ? body.returnTo : undefined);
+    const siteUrl = resolveSiteUrl(request);
 
     const driver = getAuthDriver();
     await driver.sendOtp({
       email: rawEmail,
       captchaToken,
       returnTo,
+      siteUrl,
     });
 
     // Always respond with sent: true to protect user privacy (prevent email enumeration)

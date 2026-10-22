@@ -81,13 +81,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ok: true,
       user: {
         id: data.user.id,
         email: data.user.email,
       },
     });
+    if (typeof client?.applyCookies === 'function') {
+      client.applyCookies(response);
+    }
+    return response;
   } catch (err) {
     log.error({ err }, 'unexpected error in password sign-in');
     return NextResponse.json(

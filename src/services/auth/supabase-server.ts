@@ -7,29 +7,70 @@ import { logger } from '@/services/logger';
 
 const log = logger.child({ component: 'supabase-server' });
 
-export type SupabaseServerClient = ReturnType<typeof createServerClient>;
+export type CookieOptions = NonNullable<Parameters<NextResponse['cookies']['set']>[2]>;
+
+export type SupabaseServerClient = ReturnType<typeof createServerClient> & {
+  applyCookies: (response: NextResponse) => NextResponse;
+  getModifiedCookies: () => Array<{
+    name: string;
+    value: string;
+    options?: CookieOptions;
+  }>;
+};
 
 /**
  * Creates a server-side Supabase client reading and writing cookies
  * through Next.js headers/cookies context (Route Handlers & Server Components).
+ *
+ * Provides `applyCookies(response)` to ensure session and PKCE cookies
+ * are reliably attached to explicitly returned `NextResponse` instances
+ * (such as 302 redirects or JSON responses).
  */
-export async function createSupabaseServerClient(): Promise<SupabaseServerClient> {
+export async function createSupabaseServerClient(options?: {
+  response?: NextResponse;
+}): Promise<SupabaseServerClient> {
   const cookieStore = await cookies();
+  const modifiedCookies: Array<{
+    name: string;
+    value: string;
+    options?: CookieOptions;
+  }> = [];
 
-  return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
+  const rawClient = createServerClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options: cookieOptions }) => {
+              cookieStore.set(name, value, cookieOptions);
+              const typedOpts = cookieOptions as unknown as CookieOptions;
+              modifiedCookies.push({ name, value, options: typedOpts });
+              if (options?.response) {
+                options.response.cookies.set(name, value, typedOpts);
+              }
+            });
+          } catch {
+            // Setting cookies in Server Components is not permitted; ignored safely
+          }
+        },
       },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        } catch {
-          // Setting cookies in Server Components is not permitted; ignored safely
-        }
-      },
+    },
+  );
+
+  return Object.assign(rawClient, {
+    applyCookies(response: NextResponse): NextResponse {
+      for (const { name, value, options: cookieOptions } of modifiedCookies) {
+        response.cookies.set(name, value, cookieOptions);
+      }
+      return response;
+    },
+    getModifiedCookies() {
+      return [...modifiedCookies];
     },
   });
 }
@@ -42,17 +83,41 @@ export function createSupabaseProxyClient(
   request: NextRequest,
   response: NextResponse,
 ): SupabaseServerClient {
-  return createServerClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
+  const modifiedCookies: Array<{
+    name: string;
+    value: string;
+    options?: CookieOptions;
+  }> = [];
+
+  const rawClient = createServerClient(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options: cookieOptions }) => {
+            request.cookies.set(name, value);
+            const typedOpts = cookieOptions as unknown as CookieOptions;
+            response.cookies.set(name, value, typedOpts);
+            modifiedCookies.push({ name, value, options: typedOpts });
+          });
+        },
       },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          request.cookies.set(name, value);
-          response.cookies.set(name, value, options);
-        });
-      },
+    },
+  );
+
+  return Object.assign(rawClient, {
+    applyCookies(res: NextResponse): NextResponse {
+      for (const { name, value, options: cookieOptions } of modifiedCookies) {
+        res.cookies.set(name, value, cookieOptions);
+      }
+      return res;
+    },
+    getModifiedCookies() {
+      return [...modifiedCookies];
     },
   });
 }

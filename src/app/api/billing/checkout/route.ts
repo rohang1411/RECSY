@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { readRequestJson } from '@/lib/request-json';
 import { isAppError, toAppError, publicErrorMessage } from '@/lib/errors';
+import { resolveSiteUrl } from '@/lib/site-url';
 import { getDb } from '@/services/db/client';
 import { requireUser, getUserProfile } from '@/services/auth/profile';
 import { startCheckout } from '@/services/billing/checkout';
@@ -27,11 +28,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const json = await readRequestJson(request, 4096);
     const body = checkoutBodySchema.parse(json);
 
+    const siteUrl = resolveSiteUrl(request);
     const result = await startCheckout(
       identity.userId!,
       email,
       body.productCode as BillingProductCode,
       db,
+      siteUrl,
     );
 
     return NextResponse.json(

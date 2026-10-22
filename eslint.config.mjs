@@ -77,9 +77,10 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // `src/env.ts`, config files, and scripts are allowed to read process.env.
+    // `src/env.ts`, site URL resolver, config files, and scripts are allowed to read process.env.
     files: [
       'src/env.ts',
+      'src/lib/site-url.ts',
       '*.config.{ts,mjs,cjs,js}',
       'drizzle.config.ts',
       'next.config.ts',
@@ -113,6 +114,7 @@ const eslintConfig = defineConfig([
     'orchestration/**',
     '**/.venv/**',
     '.claude/**',
+    'scratch/**',
     // Pre-rewrite Flutter project — read-only, never linted.
     'legacy/**',
   ]),

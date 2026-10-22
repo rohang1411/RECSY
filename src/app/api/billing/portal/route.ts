@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { isAppError, toAppError, publicErrorMessage } from '@/lib/errors';
+import { resolveSiteUrl } from '@/lib/site-url';
 import { getDb } from '@/services/db/client';
 import { requireUser } from '@/services/auth/profile';
 import { startPortal } from '@/services/billing/checkout';
@@ -14,8 +15,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const db = getDb();
     const identity = await requireUser(request, { db });
+    const siteUrl = resolveSiteUrl(request);
 
-    const result = await startPortal(identity.userId!, db);
+    const result = await startPortal(identity.userId!, db, siteUrl);
 
     return NextResponse.json(
       { url: result.url },
