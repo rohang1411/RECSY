@@ -13,6 +13,11 @@ import {
   renderDeletionRequestedEmail,
   renderDeletionCancelledEmail,
 } from '@/services/email/templates';
+import { env } from '@/env';
+import { getSupabaseAdminClient } from '@/services/auth/supabase-admin';
+import { logger } from '@/services/logger';
+
+const log = logger.child({ component: 'account-deletion' });
 
 export const DELETION_COOLING_PERIOD_DAYS = 30;
 
@@ -140,6 +145,19 @@ export async function executeDeletion(
        AND kind = 'delete'
        AND status = 'pending';
   `);
+
+  // Delete from Supabase Auth so identity and active sessions are fully purged
+  try {
+    const supabaseAdmin = getSupabaseAdminClient();
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (error) {
+      log.warn({ err: error, userId }, 'failed to delete user from Supabase auth.users');
+    }
+  } catch (authErr) {
+    if (env.NODE_ENV !== 'test') {
+      log.warn({ err: authErr, userId }, 'error calling Supabase admin deleteUser');
+    }
+  }
 
   return { completed: true };
 }

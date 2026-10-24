@@ -82,15 +82,19 @@ jobs:
 
       - name: Run Studio Images Backfill
         shell: bash
+        env:
+          INPUT_SLUG: ${{ github.event.inputs.slug }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_FORCE: ${{ github.event.inputs.force }}
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.slug }}" ]; then
-            ARGS="$ARGS --slug ${{ github.event.inputs.slug }}"
+          if [ -n "$INPUT_SLUG" ]; then
+            ARGS="$ARGS --slug $INPUT_SLUG"
           fi
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            ARGS="$ARGS --limit ${{ github.event.inputs.limit }}"
+          if [ -n "$INPUT_LIMIT" ]; then
+            ARGS="$ARGS --limit $INPUT_LIMIT"
           fi
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+          if [ "$INPUT_FORCE" = "true" ]; then
             ARGS="$ARGS --force"
           fi
           pnpm exec tsx scripts/catalog-backfill-gsmarena-images.ts $ARGS

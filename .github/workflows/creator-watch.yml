@@ -91,6 +91,8 @@ jobs:
 
       - name: Poll feeds
         shell: bash
+        env:
+          INPUT_MAX: ${{ github.event.inputs.max_candidates }}
         run: |
-          MAX="${{ github.event.inputs.max_candidates || '5' }}"
+          MAX="${INPUT_MAX:-5}"
           pnpm exec tsx scripts/creator-watch.ts --max-candidates "$MAX"

@@ -5,10 +5,23 @@ interface CitationChipProps {
   readonly label: string;
 }
 
+function isSafeUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function CitationChip({ citation, label }: CitationChipProps) {
-  if (!citation) {
+  if (!citation || !isSafeUrl(citation.sourceUrl)) {
     return (
-      <span className="border-outline-variant bg-muted text-muted-foreground mx-0.5 inline-flex items-center border px-1.5 py-0.5 align-baseline font-mono text-xs">
+      <span
+        className="border-outline-variant bg-muted text-muted-foreground mx-0.5 inline-flex items-center border px-1.5 py-0.5 align-baseline font-mono text-xs"
+        title={citation?.title}
+      >
         {label}
       </span>
     );

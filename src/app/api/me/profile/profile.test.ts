@@ -69,6 +69,23 @@ describe('/api/me/profile', () => {
   });
 
   describe('PATCH /api/me/profile', () => {
+    it('returns 403 when cross-origin request is detected (CSRF protection)', async () => {
+      const req = {
+        headers: {
+          get: (name: string) => {
+            if (name.toLowerCase() === 'origin') return 'https://malicious-attacker.com';
+            if (name.toLowerCase() === 'host') return 'recsy.com';
+            return null;
+          },
+        },
+        json: vi.fn().mockResolvedValue({ displayName: 'Hacked' }),
+      } as unknown as NextRequest;
+
+      const res = await PATCH(req);
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json.error).toContain('Cross-origin request forbidden');
+    });
     it('returns 400 on invalid date of birth format', async () => {
       vi.spyOn(identityModule, 'resolveRequestIdentity').mockResolvedValue({
         userId: 'u1',

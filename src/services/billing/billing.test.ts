@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { getCatalog, getProductByCode, getProductByPriceId } from './catalog';
 import { FakeBillingProvider } from './fake-provider';
 import { claimBillingEvent } from './inbox';
@@ -7,6 +7,8 @@ import { syncSubscription } from './subscription-sync';
 import { startPortal } from './checkout';
 import { reconcileBilling } from './reconcile';
 import type { AppQueryDb } from '@/services/db/client';
+import { getBillingProvider, setBillingProviderForTest } from './provider';
+import { env } from '@/env';
 
 describe('WP-14: Billing Engine & Webhooks', () => {
   let fakeProvider: FakeBillingProvider;
@@ -295,6 +297,43 @@ describe('WP-14: Billing Engine & Webhooks', () => {
 
       const result = await reconcileBilling(fakeProvider, mockDb as unknown as AppQueryDb);
       expect(result.fixedPurchases).toBe(1);
+    });
+
+    describe('Provider Security Guard (SEC-04)', () => {
+      afterEach(() => {
+        setBillingProviderForTest(null);
+      });
+
+      it('throws in production if BILLING_ENABLED is true and provider is fake', () => {
+        const origEnv = { ...env };
+        try {
+          const envMut = env as unknown as Record<string, unknown>;
+          envMut.NODE_ENV = 'production';
+          envMut.BILLING_ENABLED = true;
+          envMut.BILLING_PROVIDER = 'fake';
+          setBillingProviderForTest(null);
+          expect(() => getBillingProvider()).toThrow('BILLING_PROVIDER cannot be set to "fake"');
+        } finally {
+          Object.assign(env, origEnv);
+          setBillingProviderForTest(null);
+        }
+      });
+
+      it('throws in production if BILLING_ENABLED is true and STRIPE_SECRET_KEY is missing', () => {
+        const origEnv = { ...env };
+        try {
+          const envMut = env as unknown as Record<string, unknown>;
+          envMut.NODE_ENV = 'production';
+          envMut.BILLING_ENABLED = true;
+          envMut.BILLING_PROVIDER = 'stripe';
+          envMut.STRIPE_SECRET_KEY = undefined;
+          setBillingProviderForTest(null);
+          expect(() => getBillingProvider()).toThrow('STRIPE_SECRET_KEY must be configured');
+        } finally {
+          Object.assign(env, origEnv);
+          setBillingProviderForTest(null);
+        }
+      });
     });
   });
 });

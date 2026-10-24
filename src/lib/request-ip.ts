@@ -6,8 +6,12 @@ const DEV_FALLBACK_IP_SECRET = 'dev-ip-hash-hmac-secret-min-32-chars-key';
 
 /**
  * Best-effort client IP extraction.
- * If `TRUST_PROXY_HEADER` is set, that header takes precedence.
- * Otherwise, checks `x-vercel-forwarded-for`, `x-forwarded-for` (first hop), `x-real-ip`.
+ * In order of trust:
+ * 1. env.TRUST_PROXY_HEADER (if explicitly configured by operator)
+ * 2. 'cf-connecting-ip' (Cloudflare edge)
+ * 3. 'x-vercel-forwarded-for' (Vercel edge)
+ * 4. 'x-forwarded-for' (first hop)
+ * 5. 'x-real-ip'
  */
 export function getRequestClientIp(
   request: NextRequest | { headers: { get: (name: string) => string | null } },
@@ -19,6 +23,10 @@ export function getRequestClientIp(
       if (first) return first;
     }
   }
+
+  // Check cf-connecting-ip (Cloudflare edge)
+  const cfIp = request.headers.get('cf-connecting-ip')?.trim();
+  if (cfIp) return cfIp;
 
   // Check x-vercel-forwarded-for (injected by Vercel edge)
   const vff = request.headers.get('x-vercel-forwarded-for')?.trim();
@@ -123,6 +131,9 @@ export function getIpPrefix(ip: string): string | null {
  * Truncated to 32 hex chars.
  */
 export function hashIpPrefix(ipPrefix: string): string {
+  if (env.NODE_ENV === 'production' && !env.IP_HASH_SECRET) {
+    throw new Error('IP_HASH_SECRET must be configured in production environment');
+  }
   const secret = env.IP_HASH_SECRET || DEV_FALLBACK_IP_SECRET;
   return createHmac('sha256', secret).update(ipPrefix.trim()).digest('hex').slice(0, 32);
 }

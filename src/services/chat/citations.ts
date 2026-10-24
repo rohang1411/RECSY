@@ -47,9 +47,12 @@ export function validateCitationTags(
   return { ok: true };
 }
 
-function buildCitationUrl(chunk: RetrievedChunk): string {
+export function buildCitationUrl(chunk: RetrievedChunk): string {
   try {
     const u = new URL(chunk.source.url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return '#';
+    }
     if (chunk.source.type === 'youtube' && chunk.startTs != null && !Number.isNaN(chunk.startTs)) {
       u.searchParams.set('t', String(Math.max(0, Math.floor(chunk.startTs))));
     }
@@ -58,7 +61,7 @@ function buildCitationUrl(chunk: RetrievedChunk): string {
     }
     return u.toString();
   } catch {
-    return chunk.source.url;
+    return '#';
   }
 }
 
