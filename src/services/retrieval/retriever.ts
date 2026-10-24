@@ -91,58 +91,61 @@ export class HybridRetriever {
     const log = this.deps.log.child({ phoneId, retriever: 'hybrid' });
     log.debug({ opts }, 'hybrid retrieval begin');
 
-    // Step 1: embed the query. Done up-front so vector + FTS can run in
-    // parallel with the same input object.
+    // Step 1: launch FTS immediately in parallel with query embedding.
+    // FTS only requires raw query text, so running it concurrently with the
+    // embedding model HTTP call saves 50-100ms on the critical path.
+    const ftsPromise = (async () => {
+      const stageStart = performance.now();
+      try {
+        const chunks = await this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever });
+        return {
+          chunks,
+          ms: performance.now() - stageStart,
+          error: undefined as string | undefined,
+        };
+      } catch (err) {
+        const error = toAppError(err).message;
+        log.warn({ err: error }, 'fts retriever failed');
+        return {
+          chunks: [] as readonly RetrievedChunk[],
+          ms: performance.now() - stageStart,
+          error,
+        };
+      }
+    })();
+
+    // Step 2: embed the query.
     const embeddingStart = performance.now();
     const queryEmbedding = await this.embedQuery(query);
     const embeddingMs = performance.now() - embeddingStart;
 
-    // Step 2: parallel vector + FTS.
-    const [vectorResult, ftsResult] = await Promise.all([
-      (async () => {
-        const stageStart = performance.now();
-        try {
-          const chunks = await this.deps.vector.search({
-            phoneId,
-            query,
-            k: opts.kPerRetriever,
-            queryEmbedding,
-          });
-          return {
-            chunks,
-            ms: performance.now() - stageStart,
-            error: undefined as string | undefined,
-          };
-        } catch (err) {
-          const error = toAppError(err).message;
-          log.warn({ err: error }, 'vector retriever failed');
-          return {
-            chunks: [] as readonly RetrievedChunk[],
-            ms: performance.now() - stageStart,
-            error,
-          };
-        }
-      })(),
-      (async () => {
-        const stageStart = performance.now();
-        try {
-          const chunks = await this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever });
-          return {
-            chunks,
-            ms: performance.now() - stageStart,
-            error: undefined as string | undefined,
-          };
-        } catch (err) {
-          const error = toAppError(err).message;
-          log.warn({ err: error }, 'fts retriever failed');
-          return {
-            chunks: [] as readonly RetrievedChunk[],
-            ms: performance.now() - stageStart,
-            error,
-          };
-        }
-      })(),
-    ]);
+    // Step 3: launch vector search with query embedding, then await both vector and FTS.
+    const vectorPromise = (async () => {
+      const stageStart = performance.now();
+      try {
+        const chunks = await this.deps.vector.search({
+          phoneId,
+          query,
+          k: opts.kPerRetriever,
+          queryEmbedding,
+        });
+        return {
+          chunks,
+          ms: performance.now() - stageStart,
+          error: undefined as string | undefined,
+        };
+      } catch (err) {
+        const error = toAppError(err).message;
+        log.warn({ err: error }, 'vector retriever failed');
+        return {
+          chunks: [] as readonly RetrievedChunk[],
+          ms: performance.now() - stageStart,
+          error,
+        };
+      }
+    })();
+
+    const [vectorResult, ftsResult] = await Promise.all([vectorPromise, ftsPromise]);
     const qualityStart = performance.now();
     const excludedChunkIds = [
       ...new Set(

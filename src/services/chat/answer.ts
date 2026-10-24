@@ -68,6 +68,8 @@ export interface PhoneQnaInput {
   readonly isSubscriber?: boolean;
   /** Optional stage timer for latency breakdown (Plan 26 WP-00). */
   readonly timer?: StageTimer;
+  /** Optional thinking budget override for grounded synthesis (Plan 26 WP-04). */
+  readonly thinking?: 'default' | 'low' | 'minimal';
 }
 
 export interface PhoneQnaResult {
@@ -156,12 +158,14 @@ async function chatAnswer(
   byok?: PhoneQnaInput['byok'],
   serverMode?: 'fast' | 'deep',
   isSubscriber?: boolean,
+  thinking?: 'default' | 'low' | 'minimal',
 ): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
     messages,
     temperature: 0.35,
     maxOutputTokens: 2048,
+    thinking,
     usageContext: {
       area: 'Phone Q&A',
       feature: 'Grounded answer',
@@ -318,7 +322,15 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   const generationCalls: ChatResult[] = [];
 
   const runFirstGeneration = () =>
-    chatAnswer(llm, messages, signal, input.byok, input.serverMode, input.isSubscriber);
+    chatAnswer(
+      llm,
+      messages,
+      signal,
+      input.byok,
+      input.serverMode,
+      input.isSubscriber,
+      input.thinking,
+    );
 
   let answer = timer
     ? await timer.time('generate', runFirstGeneration)
@@ -332,7 +344,15 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
     const runRetryGeneration = () =>
-      chatAnswer(llm, messages, signal, input.byok, input.serverMode, input.isSubscriber);
+      chatAnswer(
+        llm,
+        messages,
+        signal,
+        input.byok,
+        input.serverMode,
+        input.isSubscriber,
+        input.thinking,
+      );
     answer = timer ? await timer.time('generate', runRetryGeneration) : await runRetryGeneration();
     generationCalls.push(answer);
     ({ text, usage, model } = answer);

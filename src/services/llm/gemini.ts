@@ -99,6 +99,29 @@ function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
   return /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded/i.test(msg);
 }
 
+function toGeminiThinkingProviderOptions(thinking?: 'default' | 'low' | 'minimal') {
+  if (!thinking || thinking === 'default') return undefined;
+  if (thinking === 'minimal') {
+    return {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
+      },
+    };
+  }
+  if (thinking === 'low') {
+    return {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 1024,
+        },
+      },
+    };
+  }
+  return undefined;
+}
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
   readonly isByok: boolean;
@@ -248,6 +271,7 @@ export class GeminiProvider implements LlmProvider {
             maxOutputTokens: input.maxOutputTokens,
             abortSignal: this.requestSignal(input.signal),
             maxRetries: this.maxRetries,
+            providerOptions: toGeminiThinkingProviderOptions(input.thinking),
           });
           return {
             value: {
@@ -292,6 +316,7 @@ export class GeminiProvider implements LlmProvider {
       maxOutputTokens: input.maxOutputTokens,
       abortSignal: this.requestSignal(input.signal),
       maxRetries: this.maxRetries,
+      providerOptions: toGeminiThinkingProviderOptions(input.thinking),
     });
 
     try {

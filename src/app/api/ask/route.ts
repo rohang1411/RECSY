@@ -16,7 +16,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { ZodError, z } from 'zod';
@@ -46,7 +46,7 @@ import {
   runPhoneQna,
 } from '@/services/chat/answer';
 import { getDb, type AppQueryDb } from '@/services/db/client';
-import { phones } from '@/services/db/schema';
+import { getAskPhoneTarget } from '@/services/chat/phone-target';
 import { getLlm } from '@/services/llm';
 import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { createHybridRetriever } from '@/services/retrieval/factory';
@@ -144,18 +144,22 @@ export async function POST(request: NextRequest): Promise<Response> {
     const body = askBodySchema.parse(json);
     const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
-    // 3. Identity and suspension checks
+    // 3. Start phone lookup in parallel with admission
     const db = getDb();
+    const phonePromise = timer.time('phone', () => getAskPhoneTarget(db, body.phoneSlug));
+    phonePromise.catch(() => undefined); // avoid unhandled rejection if admission throws first
+
+    // 4. Identity and suspension checks
     identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
 
     if (identity.isSuspended) {
       throw new AccountRestrictedError();
     }
 
-    // 4. Platform state (cached in-memory, read-only)
+    // 5. Platform state (cached in-memory, read-only)
     const platform = await timer.time('platform', () => getPlatformState(db));
 
-    // 5. Rate limiting (single-statement batch for IP, user, device)
+    // 6. Rate limiting (single-statement batch for IP, user, device)
     await timer.time('rl', () =>
       consumeAdmissionLimits({
         db,
@@ -176,12 +180,45 @@ export async function POST(request: NextRequest): Promise<Response> {
       ),
     );
 
-    // 6. Platform admission & BYOK
+    // 7. Platform admission & BYOK
     const byok = extractByokFromHeaders(request.headers);
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);
 
-    // 5. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
+    // 8. Verify phone target before creating a lease
+    const phone = await phonePromise;
+    if (!phone || phone.status !== 'active') {
+      const totalMs = Math.round(performance.now() - t0);
+      emitMeteredRequestSummary({
+        traceId,
+        route: 'POST /api/ask',
+        quotaMode: config.mode,
+        byok: isByok,
+        userId: identity.userId,
+        deviceId: identity.deviceId,
+        chargeSource: undefined,
+        outcome: 'denied',
+        denial: 'NOT_FOUND',
+        reserveMs: 0,
+        settleMs: 0,
+        totalMs,
+        httpStatus: 404,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
+      });
+
+      const notFoundHeaders: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (shouldEmitServerTiming(request)) {
+        notFoundHeaders['Server-Timing'] = timer.serverTiming();
+      }
+
+      return Response.json(
+        { code: 'NOT_FOUND', message: 'Phone not found' },
+        { status: 404, headers: notFoundHeaders },
+      );
+    }
+
+    // 9. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
     const tReserveStart = performance.now();
     try {
       lease = await timer.time('reserve', () =>
@@ -258,54 +295,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw err;
     }
 
-    // 6. Check phone target
-    const [phone] = await timer.time('phone', () =>
-      db
-        .select({
-          id: phones.id,
-          status: phones.status,
-          brand: phones.brand,
-          model: phones.model,
-          lastIngestAt: phones.lastIngestAt,
-          nextIngestAt: phones.nextIngestAt,
-        })
-        .from(phones)
-        .where(eq(phones.slug, body.phoneSlug))
-        .limit(1),
-    );
-
-    if (!phone || phone.status !== 'active') {
-      await lease.refund('not_found').catch(() => undefined);
-      const totalMs = Math.round(performance.now() - t0);
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity.userId,
-        deviceId: identity.deviceId,
-        chargeSource: lease.chargeSource,
-        outcome: 'refunded',
-        denial: 'NOT_FOUND',
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: 404,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-
-      const notFoundHeaders: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (shouldEmitServerTiming(request)) {
-        notFoundHeaders['Server-Timing'] = timer.serverTiming();
-      }
-
-      return Response.json(
-        { code: 'NOT_FOUND', message: 'Phone not found' },
-        { status: 404, headers: notFoundHeaders },
-      );
-    }
-
     // 7. Stream-aware Q&A execution
     const enc = new TextEncoder();
     let cancelled = false;
@@ -354,6 +343,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             serverMode,
             isSubscriber,
             timer,
+            thinking: platform.perf.grounded_thinking,
           });
 
           const latencyMs = Math.round(performance.now() - tStreamStart);

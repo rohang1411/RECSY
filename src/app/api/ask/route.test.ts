@@ -230,29 +230,8 @@ describe('POST /api/ask (WP-09)', () => {
       expect(chatAnswerModule.runPhoneQna).not.toHaveBeenCalled();
     });
 
-    it('returns 404 JSON and refunds lease when phone is not found', async () => {
+    it('returns 404 JSON without creating or refunding a lease when phone is not found', async () => {
       mockDbSelectChain.limit.mockResolvedValueOnce([]); // no phone found
-
-      const mockLease = new QueryLease({
-        id: '00000000-0000-4000-8000-000000000099',
-        chargeSource: 'daily_free',
-        quota: {
-          remaining: 1,
-          freeRemaining: 1,
-          creditBalance: 0,
-          subRemaining: 0,
-          resetAt: new Date().toISOString(),
-        },
-        requestId: '00000000-0000-4000-8000-000000000002',
-        route: 'POST /api/ask',
-        deviceId: 'dev_test_123',
-        userId: 'user_123',
-        traceId: 'trace_test_123',
-        isNoop: false,
-      });
-
-      vi.mocked(reserveModule.reserveQuery).mockResolvedValue(mockLease);
-      const refundSpy = vi.spyOn(mockLease, 'refund').mockResolvedValue('refunded');
 
       const request = new NextRequest('http://localhost:3000/api/ask', {
         method: 'POST',
@@ -262,8 +241,15 @@ describe('POST /api/ask (WP-09)', () => {
 
       const res = await POST(request);
       expect(res.status).toBe(404);
-      expect(refundSpy).toHaveBeenCalledWith('not_found');
+      expect(reserveModule.reserveQuery).not.toHaveBeenCalled();
       expect(chatAnswerModule.runPhoneQna).not.toHaveBeenCalled();
+      expect(summaryModule.emitMeteredRequestSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'denied',
+          denial: 'NOT_FOUND',
+          httpStatus: 404,
+        }),
+      );
     });
   });
 
