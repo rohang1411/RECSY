@@ -23,6 +23,8 @@ const STATIC_ROUTES: readonly {
  * Sitemap: static marketing/app routes; active phone pages are appended from public data cache.
  * Contract reference: Plan 26 WP-07 & WP-08.
  */
+export const revalidate = 3600;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = new URL(env.NEXT_PUBLIC_SITE_URL);
   const now = new Date();

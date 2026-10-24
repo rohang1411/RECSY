@@ -68,6 +68,13 @@ async function runWithCacheFallback<T>(
 // 1. Phone page data
 // ---------------------------------------------------------------------------
 
+export interface PhoneRegionalPrice {
+  readonly price: string | null;
+  readonly currency: string | null;
+  readonly isEstimated: boolean | null;
+  readonly isAvailable: boolean | null;
+}
+
 export interface PhonePageData {
   readonly id: string;
   readonly slug: string;
@@ -78,11 +85,12 @@ export interface PhonePageData {
   readonly msrpUsd: string | null;
   readonly imageUrl: string | null;
   readonly specJson: unknown;
-  readonly localPrice: string | null;
-  readonly isEstimated: boolean | null;
+  readonly regionalPrices: Record<string, PhoneRegionalPrice>;
+  readonly localPrice?: string | null;
+  readonly isEstimated?: boolean | null;
 }
 
-async function fetchPhonePageData(slug: string, region: string): Promise<PhonePageData | null> {
+async function fetchPhonePageData(slug: string): Promise<PhonePageData | null> {
   const db = getDb();
   const [phone] = await db
     .select({
@@ -95,46 +103,84 @@ async function fetchPhonePageData(slug: string, region: string): Promise<PhonePa
       msrpUsd: phones.msrpUsd,
       imageUrl: phones.imageUrl,
       specJson: phones.specJson,
-      localPrice: phoneRegionalDetails.price,
-      isEstimated: phoneRegionalDetails.isEstimated,
     })
     .from(phones)
-    .leftJoin(
-      phoneRegionalDetails,
-      and(
-        eq(phoneRegionalDetails.phoneId, phones.id),
-        eq(phoneRegionalDetails.countryCode, region),
-      ),
-    )
     .where(eq(phones.slug, slug))
     .limit(1);
 
-  return (phone as PhonePageData | undefined) ?? null;
+  if (!phone) {
+    return null;
+  }
+
+  const regionalRows = await db
+    .select({
+      countryCode: phoneRegionalDetails.countryCode,
+      price: phoneRegionalDetails.price,
+      currency: phoneRegionalDetails.currency,
+      isEstimated: phoneRegionalDetails.isEstimated,
+      isAvailable: phoneRegionalDetails.isAvailable,
+    })
+    .from(phoneRegionalDetails)
+    .where(eq(phoneRegionalDetails.phoneId, phone.id));
+
+  const regionalPrices: Record<string, PhoneRegionalPrice> = {};
+  for (const r of regionalRows) {
+    regionalPrices[r.countryCode] = {
+      price: r.price,
+      currency: r.currency,
+      isEstimated: r.isEstimated,
+      isAvailable: r.isAvailable,
+    };
+  }
+
+  const defaultDetail = regionalPrices['US'];
+
+  return {
+    ...phone,
+    regionalPrices,
+    localPrice: defaultDetail?.price ?? phone.msrpUsd,
+    isEstimated: defaultDetail?.isEstimated ?? false,
+  };
 }
 
 export async function getPhonePageData(
   slug: string,
-  region: string,
+  region?: string,
 ): Promise<PhonePageData | null> {
-  const reg = region.trim().toUpperCase();
-  if (!isSupportedRegion(reg)) {
+  if (region && !isSupportedRegion(region.trim().toUpperCase())) {
     throw new Error(`Unsupported region code: ${region}`);
   }
   const cleanSlug = slug.trim().toLowerCase();
   const enabled = await isPublicDataCacheEnabled();
+
+  let data: PhonePageData | null;
   if (!enabled) {
-    return fetchPhonePageData(cleanSlug, reg);
+    data = await fetchPhonePageData(cleanSlug);
+  } else {
+    const cached = unstable_cache(
+      () => fetchPhonePageData(cleanSlug),
+      ['phone-page', env.DATABASE_SCHEMA, cleanSlug],
+      {
+        revalidate: 600,
+        tags: [TAGS.phones, TAGS.phone(cleanSlug)],
+      },
+    );
+    data = await runWithCacheFallback(cached, () => fetchPhonePageData(cleanSlug));
   }
 
-  const cached = unstable_cache(
-    () => fetchPhonePageData(cleanSlug, reg),
-    ['phone-page', env.DATABASE_SCHEMA, cleanSlug, reg],
-    {
-      revalidate: 600,
-      tags: [TAGS.phones, TAGS.phone(cleanSlug)],
-    },
-  );
-  return runWithCacheFallback(cached, () => fetchPhonePageData(cleanSlug, reg));
+  if (!data) return null;
+
+  if (region) {
+    const reg = region.trim().toUpperCase();
+    const detail = data.regionalPrices[reg];
+    return {
+      ...data,
+      localPrice: detail?.price ?? data.msrpUsd,
+      isEstimated: detail?.isEstimated ?? false,
+    };
+  }
+
+  return data;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { getActiveRegion } from '@/lib/get-active-region';
 import { HeaderRightCluster } from './HeaderRightCluster';
 
 const navItems = [
@@ -11,9 +10,7 @@ const navItems = [
   { href: '/settings', label: 'Settings' },
 ] as const;
 
-export async function AppHeader() {
-  const activeRegion = await getActiveRegion();
-
+export function AppHeader() {
   return (
     <header className="border-outline-variant bg-background/95 sticky top-0 z-40 w-full border-b backdrop-blur">
       <div className="px-grid-margin flex min-h-16 items-center justify-between gap-8">
@@ -37,7 +34,7 @@ export async function AppHeader() {
           ))}
         </nav>
 
-        <HeaderRightCluster activeRegion={activeRegion} />
+        <HeaderRightCluster />
       </div>
       <nav
         aria-label="Primary mobile"

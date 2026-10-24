@@ -4,12 +4,15 @@ import { PhoneSpecSchema } from '@/features/phones/schema';
 import { PhoneHeader } from '@/components/phone/PhoneHeader';
 import { PhoneSpecSummary } from '@/components/phone/PhoneSpecSummary';
 import { ScorecardSection } from '@/components/phone/ScorecardSection';
-import { getActiveRegion } from '@/lib/get-active-region';
 import { getPhonePageData } from '@/services/cache/public-data';
 
 import { PhoneChat } from './phone-chat';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 600;
+
+export async function generateStaticParams() {
+  return [];
+}
 
 interface PageProps {
   readonly params: Promise<{ slug: string }>;
@@ -17,9 +20,7 @@ interface PageProps {
 
 export default async function PhonePage({ params }: PageProps) {
   const { slug } = await params;
-  const activeRegion = await getActiveRegion();
-
-  const phone = await getPhonePageData(slug, activeRegion.countryCode);
+  const phone = await getPhonePageData(slug);
 
   if (!phone || phone.status !== 'active') {
     notFound();
@@ -34,16 +35,14 @@ export default async function PhonePage({ params }: PageProps) {
         model={phone.model}
         tagline={phone.tagline}
         imageUrl={phone.imageUrl}
-        localPrice={phone.localPrice ?? phone.msrpUsd}
-        isEstimated={phone.isEstimated ?? false}
-        activeRegion={activeRegion}
+        regionalPrices={phone.regionalPrices}
+        msrpUsd={phone.msrpUsd}
       />
       {specParsed.success ? (
         <PhoneSpecSummary
           spec={specParsed.data}
-          localPrice={phone.localPrice ?? phone.msrpUsd}
-          isEstimated={phone.isEstimated ?? false}
-          activeRegion={activeRegion}
+          regionalPrices={phone.regionalPrices}
+          msrpUsd={phone.msrpUsd}
         />
       ) : null}
       <ScorecardSection phoneId={phone.id} />

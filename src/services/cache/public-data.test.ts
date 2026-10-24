@@ -115,4 +115,62 @@ describe('public-data cache readers', () => {
     const slugs = await getActivePhoneSlugs();
     expect(slugs).toEqual([{ slug: 'pixel-9', updatedAt: '2026-03-01T12:00:00.000Z' }]);
   });
+
+  it('queries regional prices across all supported regions in getPhonePageData', async () => {
+    setPublicDataCacheEnabledForTest(false);
+
+    const mockPhone = {
+      id: 'phone-1',
+      slug: 'pixel-9',
+      brand: 'Google',
+      model: 'Pixel 9',
+      tagline: 'AI in your hand',
+      status: 'active',
+      msrpUsd: '799',
+      imageUrl: 'https://example.com/p9.jpg',
+      specJson: {},
+    };
+
+    const mockRegionalDetails = [
+      {
+        countryCode: 'US',
+        price: '799',
+        currency: 'USD',
+        isEstimated: false,
+        isAvailable: true,
+      },
+      {
+        countryCode: 'IN',
+        price: '79999',
+        currency: 'INR',
+        isEstimated: false,
+        isAvailable: true,
+      },
+    ];
+
+    let queryCount = 0;
+    const mockDb = {
+      select: vi.fn().mockImplementation(() => ({
+        from: vi.fn().mockImplementation(() => ({
+          where: vi.fn().mockImplementation(() => {
+            queryCount++;
+            if (queryCount === 1) {
+              return {
+                limit: vi.fn().mockResolvedValue([mockPhone]),
+              };
+            }
+            return Promise.resolve(mockRegionalDetails);
+          }),
+        })),
+      })),
+    };
+    vi.spyOn(dbModule, 'getDb').mockReturnValue(mockDb as never);
+
+    const pageData = await getPhonePageData('pixel-9');
+    expect(pageData).toBeDefined();
+    expect(pageData?.slug).toBe('pixel-9');
+    expect(pageData?.regionalPrices.US?.price).toBe('799');
+    expect(pageData?.regionalPrices.IN?.price).toBe('79999');
+    expect(pageData?.localPrice).toBe('799');
+  });
 });
