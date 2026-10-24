@@ -68,7 +68,7 @@ export class PostgresRateLimitStore implements RateLimitStore {
     const result = await this.db.execute<{ key: string; count: number }>(sql`
       INSERT INTO rate_limits (key, window_start, count)
       SELECT t.k, t.w, 1
-        FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS t(k text, w timestamptz)
+        FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) AS t(k text, w timestamptz)
       ON CONFLICT (key, window_start)
       DO UPDATE SET count = rate_limits.count + 1
       RETURNING key, count`);

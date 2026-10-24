@@ -41,7 +41,7 @@ describe.skipIf(!shouldRun)('Rate Limits Hot Path SQL Integration (WP-03)', () =
     const res1 = await sql<{ key: string; count: number }[]>`
       INSERT INTO rate_limits (key, window_start, count)
       SELECT t.k, t.w::timestamptz, 1
-        FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS t(k text, w timestamptz)
+        FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) AS t(k text, w timestamptz)
       ON CONFLICT (key, window_start)
       DO UPDATE SET count = rate_limits.count + 1
       RETURNING key, count;
@@ -56,7 +56,7 @@ describe.skipIf(!shouldRun)('Rate Limits Hot Path SQL Integration (WP-03)', () =
     const res2 = await sql<{ key: string; count: number }[]>`
       INSERT INTO rate_limits (key, window_start, count)
       SELECT t.k, t.w::timestamptz, 1
-        FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS t(k text, w timestamptz)
+        FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) AS t(k text, w timestamptz)
       ON CONFLICT (key, window_start)
       DO UPDATE SET count = rate_limits.count + 1
       RETURNING key, count;
@@ -79,7 +79,7 @@ describe.skipIf(!shouldRun)('Rate Limits Hot Path SQL Integration (WP-03)', () =
         sql<{ key: string; count: number }[]>`
         INSERT INTO rate_limits (key, window_start, count)
         SELECT t.k, t.w::timestamptz, 1
-          FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS t(k text, w timestamptz)
+          FROM jsonb_to_recordset(${JSON.stringify(rows)}::text::jsonb) AS t(k text, w timestamptz)
         ON CONFLICT (key, window_start)
         DO UPDATE SET count = rate_limits.count + 1
         RETURNING key, count;
@@ -102,8 +102,9 @@ describe.skipIf(!shouldRun)('Rate Limits Hot Path SQL Integration (WP-03)', () =
 
   it('separates windows across minute boundaries (hh:mm:59.999 vs hh:(mm+1):00.000)', async () => {
     const k = newKey('window_boundary');
-    const t1 = 1700000059999;
-    const t2 = 1700000060000;
+    const base = Math.floor(Date.now() / 60_000) * 60_000;
+    const t1 = base + 59_999;
+    const t2 = base + 60_000;
 
     const w1 = new Date(Math.floor(t1 / 60_000) * 60_000).toISOString();
     const w2 = new Date(Math.floor(t2 / 60_000) * 60_000).toISOString();
