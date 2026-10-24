@@ -70,6 +70,8 @@ export interface PhoneQnaInput {
   readonly timer?: StageTimer;
   /** Optional thinking budget override for grounded synthesis (Plan 26 WP-04). */
   readonly thinking?: 'default' | 'low' | 'minimal';
+  /** Optional stage notifier for streaming / buffered status updates (Plan 26 WP-06). */
+  readonly onStage?: (stage: 'retrieving' | 'generating') => void;
 }
 
 export interface PhoneQnaResult {
@@ -123,7 +125,7 @@ function buildSourcesBlock(retrieval: RetrievalResult): string {
     .join('\n\n');
 }
 
-function buildMessages(
+export function buildMessages(
   query: string,
   retrieval: RetrievalResult,
   retryInvalidAnswer: string | undefined,
@@ -258,6 +260,7 @@ function toDate(v: Date | string | null | undefined): Date | null {
  */
 export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult> {
   const { phoneId, query, retriever, llm, log, signal, retrievalOptions, timer } = input;
+  input.onStage?.('retrieving');
 
   const qBytes = new TextEncoder().encode(query).length;
   if (qBytes > MAX_CHAT_MESSAGE_BYTES) {
@@ -319,6 +322,7 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   const allowed = new Set(retrieval.chunks.map((c) => c.chunkId.toLowerCase()));
 
   let messages = buildMessages(query, retrieval, undefined);
+  input.onStage?.('generating');
   const generationCalls: ChatResult[] = [];
 
   const runFirstGeneration = () =>

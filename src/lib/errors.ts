@@ -137,6 +137,17 @@ export class RateLimitError extends AppError {
   }
 }
 
+export class LlmTimeoutError extends AppError {
+  constructor(
+    message = 'LLM operation timed out',
+    context?: Record<string, unknown>,
+    cause?: unknown,
+  ) {
+    super('LLM_TIMEOUT', message, { context, cause });
+    this.name = 'LlmTimeoutError';
+  }
+}
+
 export class LlmError extends AppError {
   constructor(message: string, context?: Record<string, unknown>, cause?: unknown) {
     super('LLM_ERROR', message, { context, cause });

@@ -113,6 +113,10 @@ export interface LlmProvider {
   chat(input: ChatInput): Promise<ChatResult>;
   /** Streaming chat completion. Consumers iterate deltas. */
   chatStream(input: ChatInput): AsyncIterable<ChatDelta>;
+  /** Look up cached chat response without executing model (Plan 26 WP-06/WP-10). */
+  lookupChat?(input: ChatInput): Promise<ChatResult | null>;
+  /** Store completed chat response in cache (Plan 26 WP-06/WP-10). */
+  storeChat?(input: ChatInput, result: ChatResult): void;
   /** Zod-validated structured output with automatic one-shot retry on schema failures. */
   structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>>;
   /** Batched text embedding. */
@@ -125,7 +129,10 @@ export interface LlmProvider {
 }
 
 /** Interface segregation: callers needing only chat, streaming, and structured extraction. */
-export type ChatCapable = Pick<LlmProvider, 'name' | 'chat' | 'chatStream' | 'structured'>;
+export type ChatCapable = Pick<LlmProvider, 'name' | 'chat' | 'chatStream' | 'structured'> & {
+  lookupChat?(input: ChatInput): Promise<ChatResult | null>;
+  storeChat?(input: ChatInput, result: ChatResult): void;
+};
 
 /** Interface segregation: callers needing only embedding generation. */
 export type EmbedCapable = Pick<LlmProvider, 'name' | 'embed'>;

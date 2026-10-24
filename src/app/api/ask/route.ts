@@ -27,6 +27,7 @@ import {
   AccountRestrictedError,
   AppError,
   ByokError,
+  IntegrationError,
   QuotaDeniedError,
   RateLimitError,
   publicErrorMessage,
@@ -37,6 +38,7 @@ import { getRequestClientIp } from '@/lib/request-ip';
 import { parseRequestId } from '@/lib/request-id';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
+import { deferOrRun } from '@/lib/defer';
 import { createStageTimer } from '@/lib/stage-timer';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
 import {
@@ -44,7 +46,11 @@ import {
   chunkTextForStream,
   persistChatQuery,
   runPhoneQna,
+  type PhoneQnaResult,
 } from '@/services/chat/answer';
+import { runPhoneQnaStream } from '@/services/chat/answer-stream';
+import { CitationStreamGuard } from '@/services/chat/citation-stream-guard';
+import { inCanary } from '@/services/perf/flags';
 import { getDb, type AppQueryDb } from '@/services/db/client';
 import { getAskPhoneTarget } from '@/services/chat/phone-target';
 import { getLlm } from '@/services/llm';
@@ -306,6 +312,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     let streamOutcome: MeteredRequestOutcome = 'committed';
     let settleMs = 0;
 
+    const mode = platform.perf.ask_streaming;
+    const shouldStream =
+      mode === 'on' ||
+      (mode === 'canary' &&
+        inCanary(identity?.deviceId ?? '', platform.perf.ask_streaming_canary_pct));
+
     const stream = new ReadableStream<Uint8Array>({
       cancel() {
         cancelled = true;
@@ -317,6 +329,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         };
 
         const tStreamStart = performance.now();
+        write({ type: 'status', stage: 'retrieving' });
+
         try {
           const rawRequestedMode = request.headers
             .get('x-recsy-user-mode')
@@ -328,124 +342,279 @@ export async function POST(request: NextRequest): Promise<Response> {
           );
           const isSubscriber = lease!.chargeSource === 'subscription' || serverMode === 'deep';
 
-          const result = await runPhoneQna({
-            phoneId: phone.id,
-            query: body.query,
-            retriever: getHybrid(),
-            llm: getLlm(),
-            log: log.child({ phoneId: phone.id }),
-            signal: request.signal,
-            retrievalOptions: {
-              rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
-            },
-            phoneMeta: {
-              brand: phone.brand,
-              model: phone.model,
-              lastIngestAt: phone.lastIngestAt,
-              nextIngestAt: phone.nextIngestAt,
-            },
-            byok,
-            serverMode,
-            isSubscriber,
-            timer,
-            thinking: platform.perf.grounded_thinking,
-          });
+          if (shouldStream) {
+            let finalResult: (PhoneQnaResult & { streamed: true; citationRepairs: number }) | null =
+              null;
+            let firstDeltaRecorded = false;
 
-          const latencyMs = Math.round(performance.now() - tStreamStart);
-          const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
-
-          const persistenceStart = performance.now();
-          await timer.time('persist', () =>
-            persistChatQuery({
+            for await (const ev of runPhoneQnaStream({
               phoneId: phone.id,
               query: body.query,
-              answer: result.text,
-              citations: result.citations,
-              retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
+              retriever: getHybrid(),
+              llm: getLlm(),
+              log: log.child({ phoneId: phone.id }),
+              signal: request.signal,
+              retrievalOptions: {
+                rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
+              },
+              phoneMeta: {
+                brand: phone.brand,
+                model: phone.model,
+                lastIngestAt: phone.lastIngestAt,
+                nextIngestAt: phone.nextIngestAt,
+              },
+              byok,
+              serverMode,
+              isSubscriber,
+              timer,
+              thinking: platform.perf.grounded_thinking,
+            })) {
+              if (ev.type === 'final') {
+                finalResult = ev.result;
+                break;
+              }
+              if (ev.type === 'delta' && !firstDeltaRecorded) {
+                firstDeltaRecorded = true;
+                timer.mark('firstDelta');
+              }
+              write(ev);
+            }
+
+            if (!finalResult) {
+              if (cancelled || request.signal.aborted) {
+                const tSettleStart = performance.now();
+                await timer.time('settle', () => lease!.noCharge('client_abort'));
+                settleMs = Math.round(performance.now() - tSettleStart);
+                streamOutcome = 'no_charge';
+                return;
+              }
+              throw new IntegrationError('Stream closed unexpectedly without final result', {
+                phoneId: phone.id,
+              });
+            }
+
+            const latencyMs = Math.round(performance.now() - tStreamStart);
+            const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
+
+            const persistenceStart = performance.now();
+            await timer.time('persist', () =>
+              persistChatQuery({
+                phoneId: phone.id,
+                query: body.query,
+                answer: finalResult!.text,
+                citations: finalResult!.citations,
+                retrievedChunkIds: finalResult!.retrieval.chunks.map((c) => c.chunkId),
+                latencyMs,
+                tokensIn: finalResult!.generationAccounting.tokensIn,
+                tokensOut: finalResult!.generationAccounting.tokensOut,
+                model: finalResult!.model,
+                userId: identity!.userId,
+                leaseId: leaseIdForDb,
+              }),
+            );
+            const persistenceMs = performance.now() - persistenceStart;
+
+            const meta = {
+              model: finalResult.model,
+              tokensIn: finalResult.generationAccounting.tokensIn,
+              tokensOut: finalResult.generationAccounting.tokensOut,
               latencyMs,
+              cacheHit: finalResult.generationAccounting.cacheHits > 0,
+            };
+
+            const tSettleStart = performance.now();
+            let outcome: 'commit' | 'no_charge';
+            await timer.time('settle', async () => {
+              if (finalResult!.model === NO_CONTEXT_MODEL) {
+                await lease!.noCharge('no_context');
+                outcome = 'no_charge';
+                streamOutcome = 'no_charge';
+              } else {
+                await lease!.commit(meta);
+                outcome = 'commit';
+                streamOutcome = 'committed';
+              }
+            });
+            settleMs = Math.round(performance.now() - tSettleStart);
+
+            write({
+              type: 'done',
+              citations: finalResult.citations,
+              usage: finalResult.usage,
+              generationAccounting: finalResult.generationAccounting,
+              model: finalResult.model,
+              streamed: true,
+              citationRepairs: finalResult.citationRepairs,
+              persistenceMs,
+              retrievalMs: finalResult.retrieval.debug.totalMs,
+              retrievalTrace: buildAskRetrievalTrace(finalResult.retrieval),
+              quota: lease!.projectedQuota(outcome!),
+            });
+
+            const totalMs = Math.round(performance.now() - t0);
+            const ttfvtMs = Math.round(performance.now() - t0);
+            emitMeteredRequestSummary({
+              traceId,
+              route: 'POST /api/ask',
+              quotaMode: config.mode,
+              byok: isByok,
+              userId: identity!.userId,
+              deviceId: identity!.deviceId,
+              chargeSource: lease!.chargeSource,
+              outcome: streamOutcome,
+              reserveMs,
+              settleMs,
+              totalMs,
+              model: finalResult.model,
+              tokensIn: finalResult.generationAccounting.tokensIn,
+              tokensOut: finalResult.generationAccounting.tokensOut,
+              cacheHit: finalResult.generationAccounting.cacheHits > 0,
+              httpStatus: 200,
+              stages: timer.snapshot(),
+              ttfbMs,
+              ttfvtMs,
+            });
+          } else {
+            // Buffered path
+            const result = await runPhoneQna({
+              phoneId: phone.id,
+              query: body.query,
+              retriever: getHybrid(),
+              llm: getLlm(),
+              log: log.child({ phoneId: phone.id }),
+              signal: request.signal,
+              retrievalOptions: {
+                rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
+              },
+              phoneMeta: {
+                brand: phone.brand,
+                model: phone.model,
+                lastIngestAt: phone.lastIngestAt,
+                nextIngestAt: phone.nextIngestAt,
+              },
+              byok,
+              serverMode,
+              isSubscriber,
+              timer,
+              thinking: platform.perf.grounded_thinking,
+              onStage: (stage) => write({ type: 'status', stage }),
+            });
+
+            if (mode === 'shadow') {
+              void deferOrRun('shadow-citation-guard', async () => {
+                const allowed = new Set(
+                  result.retrieval.chunks.map((c) => c.chunkId.toLowerCase()),
+                );
+                const shadowGuard = new CitationStreamGuard(allowed);
+                shadowGuard.push(result.text);
+                shadowGuard.flush();
+                if (shadowGuard.stats.strippedTags > 0) {
+                  log.warn(
+                    { stripped: shadowGuard.stats.strippedTags, phoneId: phone.id },
+                    'shadow_streaming_stripped_tags',
+                  );
+                }
+              });
+            }
+
+            const latencyMs = Math.round(performance.now() - tStreamStart);
+            const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
+
+            const persistenceStart = performance.now();
+            await timer.time('persist', () =>
+              persistChatQuery({
+                phoneId: phone.id,
+                query: body.query,
+                answer: result.text,
+                citations: result.citations,
+                retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
+                latencyMs,
+                tokensIn: result.generationAccounting.tokensIn,
+                tokensOut: result.generationAccounting.tokensOut,
+                model: result.model,
+                userId: identity!.userId,
+                leaseId: leaseIdForDb,
+              }),
+            );
+            const persistenceMs = performance.now() - persistenceStart;
+
+            const meta = {
+              model: result.model,
               tokensIn: result.generationAccounting.tokensIn,
               tokensOut: result.generationAccounting.tokensOut,
-              model: result.model,
-              userId: identity!.userId,
-              leaseId: leaseIdForDb,
-            }),
-          );
-          const persistenceMs = performance.now() - persistenceStart;
+              latencyMs,
+              cacheHit: result.generationAccounting.cacheHits > 0,
+            };
 
-          const meta = {
-            model: result.model,
-            tokensIn: result.generationAccounting.tokensIn,
-            tokensOut: result.generationAccounting.tokensOut,
-            latencyMs,
-            cacheHit: result.generationAccounting.cacheHits > 0,
-          };
+            const tSettleStart = performance.now();
+            let outcome: 'commit' | 'no_charge';
+            await timer.time('settle', async () => {
+              if (result.model === NO_CONTEXT_MODEL) {
+                await lease!.noCharge('no_context');
+                outcome = 'no_charge';
+                streamOutcome = 'no_charge';
+              } else if (cancelled || request.signal.aborted) {
+                await lease!.noCharge('client_abort');
+                outcome = 'no_charge';
+                streamOutcome = 'no_charge';
+              } else {
+                await lease!.commit(meta);
+                outcome = 'commit';
+                streamOutcome = 'committed';
+              }
+            });
+            settleMs = Math.round(performance.now() - tSettleStart);
 
-          const tSettleStart = performance.now();
-          let outcome: 'commit' | 'no_charge';
-          await timer.time('settle', async () => {
-            if (result.model === NO_CONTEXT_MODEL) {
-              await lease!.noCharge('no_context');
-              outcome = 'no_charge';
-              streamOutcome = 'no_charge';
-            } else if (cancelled || request.signal.aborted) {
-              await lease!.noCharge('client_abort');
-              outcome = 'no_charge';
-              streamOutcome = 'no_charge';
-            } else {
-              await lease!.commit(meta);
-              outcome = 'commit';
-              streamOutcome = 'committed';
+            write({
+              type: 'meta',
+              phoneId: phone.id,
+              retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
+            });
+
+            timer.mark('firstDelta');
+            const ttfvtMs = Math.round(performance.now() - t0);
+
+            for (const piece of chunkTextForStream(result.text)) {
+              write({ type: 'delta', text: piece });
             }
-          });
-          settleMs = Math.round(performance.now() - tSettleStart);
 
-          write({
-            type: 'meta',
-            phoneId: phone.id,
-            retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
-          });
+            write({
+              type: 'done',
+              citations: result.citations,
+              usage: result.usage,
+              generationAccounting: result.generationAccounting,
+              model: result.model,
+              streamed: false,
+              citationRepairs: 0,
+              persistenceMs,
+              retrievalMs: result.retrieval.debug.totalMs,
+              retrievalTrace: buildAskRetrievalTrace(result.retrieval),
+              quota: lease!.projectedQuota(outcome!),
+            });
 
-          timer.mark('firstDelta');
-          const ttfvtMs = Math.round(performance.now() - t0);
-
-          for (const piece of chunkTextForStream(result.text)) {
-            write({ type: 'delta', text: piece });
+            const totalMs = Math.round(performance.now() - t0);
+            emitMeteredRequestSummary({
+              traceId,
+              route: 'POST /api/ask',
+              quotaMode: config.mode,
+              byok: isByok,
+              userId: identity!.userId,
+              deviceId: identity!.deviceId,
+              chargeSource: lease!.chargeSource,
+              outcome: streamOutcome,
+              reserveMs,
+              settleMs,
+              totalMs,
+              model: result.model,
+              tokensIn: result.generationAccounting.tokensIn,
+              tokensOut: result.generationAccounting.tokensOut,
+              cacheHit: result.generationAccounting.cacheHits > 0,
+              httpStatus: 200,
+              stages: timer.snapshot(),
+              ttfbMs,
+              ttfvtMs,
+            });
           }
-
-          write({
-            type: 'done',
-            citations: result.citations,
-            usage: result.usage,
-            generationAccounting: result.generationAccounting,
-            model: result.model,
-            persistenceMs,
-            retrievalMs: result.retrieval.debug.totalMs,
-            retrievalTrace: buildAskRetrievalTrace(result.retrieval),
-            quota: lease!.projectedQuota(outcome!),
-          });
-
-          const totalMs = Math.round(performance.now() - t0);
-          emitMeteredRequestSummary({
-            traceId,
-            route: 'POST /api/ask',
-            quotaMode: config.mode,
-            byok: isByok,
-            userId: identity!.userId,
-            deviceId: identity!.deviceId,
-            chargeSource: lease!.chargeSource,
-            outcome: streamOutcome,
-            reserveMs,
-            settleMs,
-            totalMs,
-            model: result.model,
-            tokensIn: result.generationAccounting.tokensIn,
-            tokensOut: result.generationAccounting.tokensOut,
-            cacheHit: result.generationAccounting.cacheHits > 0,
-            httpStatus: 200,
-            stages: timer.snapshot(),
-            ttfbMs,
-            ttfvtMs,
-          });
         } catch (err) {
           const app = toAppError(err);
           log.error({ err, code: app.code }, 'Q&A request failed');
@@ -490,6 +659,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const streamHeaders: Record<string, string> = {
       'Content-Type': 'application/x-ndjson; charset=utf-8',
       'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
       'X-Trace-Id': traceId,
       'X-Request-Id': requestId,
     };
