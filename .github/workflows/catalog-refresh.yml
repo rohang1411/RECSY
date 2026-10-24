@@ -156,10 +156,21 @@ jobs:
 
       - name: Run catalog refresh
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_SOURCE: ${{ github.event.inputs.source }}
+          INPUT_SINCE_YEARS: ${{ github.event.inputs.since_years }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_MOBILEAPI_MAX_REQUESTS: ${{ github.event.inputs.mobileapi_max_requests }}
+          INPUT_OEM_ENRICH: ${{ github.event.inputs.oem_enrich }}
+          INPUT_OEM_LIMIT: ${{ github.event.inputs.oem_limit }}
+          INPUT_PROMOTE: ${{ github.event.inputs.promote }}
+          INPUT_MEDIA_BACKFILL: ${{ github.event.inputs.media_backfill }}
+          INPUT_MEDIA_LIMIT: ${{ github.event.inputs.media_limit }}
+          HAS_MOBILEAPI_SECRET: ${{ needs.secrets-gate.outputs.mobileapi }}
+          HAS_GEMINI_SECRET: ${{ needs.secrets-gate.outputs.gemini }}
         run: |
-          EVENT_NAME="${{ github.event_name }}"
-          SCHEDULE="${{ github.event.schedule }}"
-
           if [ "$EVENT_NAME" = "schedule" ]; then
             SINCE_YEARS="4"
             PROMOTE="true"
@@ -181,15 +192,15 @@ jobs:
               echo "[catalog-refresh] weekly lightweight scheduled run with MobileAPI micro-budget (5 reqs max)"
             fi
           else
-            SOURCE="${{ github.event.inputs.source || 'both' }}"
-            SINCE_YEARS="${{ github.event.inputs.since_years || '4' }}"
-            LIMIT="${{ github.event.inputs.limit || '300' }}"
-            MOBILEAPI_MAX_REQUESTS="${{ github.event.inputs.mobileapi_max_requests || '50' }}"
-            OEM_ENRICH="${{ github.event.inputs.oem_enrich || 'true' }}"
-            OEM_LIMIT="${{ github.event.inputs.oem_limit || '25' }}"
-            PROMOTE="${{ github.event.inputs.promote || 'true' }}"
-            MEDIA_BACKFILL="${{ github.event.inputs.media_backfill || 'true' }}"
-            MEDIA_LIMIT="${{ github.event.inputs.media_limit || '50' }}"
+            SOURCE="${INPUT_SOURCE:-both}"
+            SINCE_YEARS="${INPUT_SINCE_YEARS:-4}"
+            LIMIT="${INPUT_LIMIT:-300}"
+            MOBILEAPI_MAX_REQUESTS="${INPUT_MOBILEAPI_MAX_REQUESTS:-50}"
+            OEM_ENRICH="${INPUT_OEM_ENRICH:-true}"
+            OEM_LIMIT="${INPUT_OEM_LIMIT:-25}"
+            PROMOTE="${INPUT_PROMOTE:-true}"
+            MEDIA_BACKFILL="${INPUT_MEDIA_BACKFILL:-true}"
+            MEDIA_LIMIT="${INPUT_MEDIA_LIMIT:-50}"
           fi
 
           echo "[catalog-refresh] syncing canonical mainstream flagships..."
@@ -202,7 +213,7 @@ jobs:
           if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "mobileapi" ]; then
             if [ "$MOBILEAPI_MAX_REQUESTS" = "0" ]; then
               echo "[catalog-refresh] MobileAPI skipped for this scheduled cadence."
-            elif [ "${{ needs.secrets-gate.outputs.mobileapi }}" = "true" ]; then
+            elif [ "$HAS_MOBILEAPI_SECRET" = "true" ]; then
               ARGS="--since-years $SINCE_YEARS --limit $LIMIT --max-requests $MOBILEAPI_MAX_REQUESTS --min-request-gap-ms 13000"
               if [ "$PROMOTE" = "true" ]; then
                 ARGS="$ARGS --promote --update-existing"
@@ -226,7 +237,7 @@ jobs:
             pnpm exec tsx scripts/catalog-enrich-oem.ts $ARGS
           fi
 
-          if [ "${{ needs.secrets-gate.outputs.gemini }}" = "true" ]; then
+          if [ "$HAS_GEMINI_SECRET" = "true" ]; then
             pnpm exec tsx scripts/catalog-enrich-gsmarena.ts --limit "$OEM_LIMIT"
             pnpm exec tsx scripts/catalog-promote.ts --ready --limit 50 --update-existing
           else

@@ -128,12 +128,16 @@ jobs:
 
       - name: Run manual ingestion
         shell: bash
+        env:
+          INPUT_ADAPTER: ${{ github.event.inputs.adapter }}
+          INPUT_PHONE: ${{ github.event.inputs.phone }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
         run: |
           ADAPTER_FLAG=""
-          if [ "${{ github.event.inputs.adapter }}" != "all" ]; then
-            ADAPTER_FLAG="--adapter ${{ github.event.inputs.adapter }}"
+          if [ "$INPUT_ADAPTER" != "all" ]; then
+            ADAPTER_FLAG="--adapter $INPUT_ADAPTER"
           fi
           pnpm exec tsx scripts/ingest.ts \
-            --phone "${{ github.event.inputs.phone }}" \
+            --phone "$INPUT_PHONE" \
             $ADAPTER_FLAG \
-            --limit "${{ github.event.inputs.limit }}"
+            --limit "$INPUT_LIMIT"

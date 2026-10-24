@@ -58,4 +58,24 @@ describe('citations', () => {
     const resolved = resolveCitations(text, chunks);
     expect(resolved.map((c) => c.chunkId)).toEqual([b, sampleId]);
   });
+
+  it('neutralizes non-http(s) protocols in sourceUrl', () => {
+    const maliciousChunk: RetrievedChunk = {
+      chunkId: sampleId,
+      sourceId: 's1',
+      text: 'hello',
+      score: 1,
+      source: {
+        id: 's1',
+        url: 'javascript:alert(document.cookie)',
+        title: 'Exploit',
+        type: 'article',
+        author: null,
+        channel: null,
+        publishedAt: null,
+      },
+    };
+    const resolved = resolveCitations(`[c:${sampleId}]`, [maliciousChunk]);
+    expect(resolved[0]?.sourceUrl).toBe('#');
+  });
 });

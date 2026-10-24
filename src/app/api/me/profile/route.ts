@@ -5,6 +5,7 @@ import { getDb } from '@/services/db/client';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { getUserProfile, updateUserProfile } from '@/services/auth/profile';
 import { UnauthorizedError, ValidationError, isAppError, publicErrorMessage } from '@/lib/errors';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { logger } from '@/services/logger';
 
 export const runtime = 'nodejs';
@@ -62,6 +63,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function PATCH(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
+
     const db = getDb();
     const identity = await resolveRequestIdentity(request, { db });
 

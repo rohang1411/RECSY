@@ -8,6 +8,9 @@ import {
   recommendationFeedback,
 } from '@/services/db/schema';
 import { deleteUserHistory } from './history';
+import { executeDeletion } from './deletion';
+import * as profileModule from '@/services/auth/profile';
+import { setSupabaseAdminClientForTest } from '@/services/auth/supabase-admin';
 
 describe('FK Chain & User History Cascade (WP-18 & Plan 25 Section 10.5)', () => {
   it('verifies Drizzle schema enforces onDelete: cascade down the recommendation graph', () => {
@@ -50,5 +53,33 @@ describe('FK Chain & User History Cascade (WP-18 & Plan 25 Section 10.5)', () =>
     );
     expect(result.deleted).toBe(7);
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('executeDeletion cascades DB tables and purges user from Supabase auth.users', async () => {
+    const mockDb = {
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    vi.spyOn(profileModule, 'getUserProfile').mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      billing_hold: false,
+    } as unknown as Awaited<ReturnType<typeof profileModule.getUserProfile>>);
+
+    const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
+    setSupabaseAdminClientForTest({
+      auth: {
+        admin: {
+          deleteUser: deleteUserMock,
+        },
+      },
+    } as unknown as Parameters<typeof setSupabaseAdminClientForTest>[0]);
+
+    const res = await executeDeletion(
+      mockDb as unknown as AppQueryDb,
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(res.completed).toBe(true);
+    expect(deleteUserMock).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
+    expect(mockDb.execute).toHaveBeenCalledTimes(5);
+    setSupabaseAdminClientForTest(null);
   });
 });

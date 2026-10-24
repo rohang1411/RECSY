@@ -96,11 +96,15 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run automated scorecard
         shell: bash
+        env:
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_MAX_RUNTIME: ${{ github.event.inputs.max_runtime_minutes }}
+          INPUT_FORCE: ${{ github.event.inputs.force }}
         run: |
-          LIMIT="${{ github.event.inputs.limit || '20' }}"
-          MAX_RUNTIME="${{ github.event.inputs.max_runtime_minutes || '38' }}"
+          LIMIT="${INPUT_LIMIT:-20}"
+          MAX_RUNTIME="${INPUT_MAX_RUNTIME:-38}"
           ARGS="--limit $LIMIT --max-runtime-minutes $MAX_RUNTIME"
-          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+          if [ "$INPUT_FORCE" = "true" ]; then
             ARGS="$ARGS --force"
           fi
           pnpm exec tsx scripts/scorecard-auto.ts $ARGS

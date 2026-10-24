@@ -29,6 +29,25 @@ describe('assertSameOrigin', () => {
     expect(() => assertSameOrigin(req)).not.toThrow();
   });
 
+  it('rejects cross-origin requests when Origin and x-forwarded-host match an untrusted domain', () => {
+    const req = new NextRequest('https://recsy.app/api/billing/checkout', {
+      method: 'POST',
+      headers: {
+        host: 'recsy.app',
+        'x-forwarded-host': 'evil-phishing.com',
+        origin: 'https://evil-phishing.com',
+      },
+    });
+
+    expect(() => assertSameOrigin(req)).toThrowError(AppError);
+    try {
+      assertSameOrigin(req);
+    } catch (err) {
+      expect((err as AppError).code).toBe('BAD_ORIGIN');
+      expect((err as AppError).status).toBe(403);
+    }
+  });
+
   it('passes for localhost development origins', () => {
     const req = new NextRequest('http://localhost:3000/api/recommend', {
       method: 'POST',

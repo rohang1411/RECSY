@@ -111,13 +111,18 @@ jobs:
 
       - name: Run targeted ingestion
         shell: bash
+        env:
+          INPUT_PHONE: ${{ github.event.inputs.phone }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
         run: |
           pnpm exec tsx scripts/ingest.ts \
-            --phone "${{ github.event.inputs.phone }}" \
-            --limit "${{ github.event.inputs.limit }}"
+            --phone "$INPUT_PHONE" \
+            --limit "$INPUT_LIMIT"
 
       - name: Generate aspect scorecards for new phone
         shell: bash
+        env:
+          INPUT_PHONE: ${{ github.event.inputs.phone }}
         run: |
           pnpm exec tsx scripts/scorecard-run.ts \
-            --phone "${{ github.event.inputs.phone }}" || true
+            --phone "$INPUT_PHONE" || true

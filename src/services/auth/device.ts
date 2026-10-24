@@ -12,6 +12,9 @@ export function mintDeviceCookieValue(): string {
 }
 
 export function hashDeviceId(rawCookieValue: string): string {
+  if (env.NODE_ENV === 'production' && !env.DEVICE_ID_SECRET) {
+    throw new Error('DEVICE_ID_SECRET must be configured in production environment');
+  }
   const secret = env.DEVICE_ID_SECRET || DEV_FALLBACK_SECRET;
   return createHmac('sha256', secret).update(rawCookieValue.trim()).digest('hex').slice(0, 32);
 }
