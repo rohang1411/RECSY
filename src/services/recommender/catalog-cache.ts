@@ -20,18 +20,26 @@ const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 interface CacheEntry {
   readonly entries: readonly PhoneCatalogEntry[];
   readonly expiresAt: number;
+  readonly hasSpecEmb: boolean;
 }
 
 let hits = 0;
 let misses = 0;
+const lastObservedHasSpecEmb = new Map<string, boolean>();
 
 export function getCacheStats(): { hits: number; misses: number } {
   return { hits, misses };
 }
 
+export function shouldEmbedForRegion(regionCode: string = 'US'): boolean {
+  const reg = regionCode.trim().toUpperCase();
+  return lastObservedHasSpecEmb.get(reg) ?? true;
+}
+
 export function resetCacheStatsForTest(): void {
   hits = 0;
   misses = 0;
+  lastObservedHasSpecEmb.clear();
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -69,9 +77,13 @@ export async function getCachedRecommendationCatalog(
   if (!promise) {
     promise = loadRecommendationCatalog(db, regionCode, options)
       .then((entries) => {
+        const reg = regionCode.trim().toUpperCase();
+        const hasSpecEmb = entries.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
+        lastObservedHasSpecEmb.set(reg, hasSpecEmb);
         cache.set(key, {
           entries,
           expiresAt: Date.now() + CATALOG_CACHE_TTL_MS,
+          hasSpecEmb,
         });
         return entries;
       })

@@ -200,6 +200,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);
 
+    const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
+    let sessionToken = cookieVal;
+    let setSessionCookie = false;
+
+    // Start read-only session lookup in parallel with reservation (Plan 26 WP-05)
+    const sessionLookupPromise = sessionToken
+      ? timer.time('session', () =>
+          findSessionByCookie(db, sessionToken!, { userId: identity!.userId }),
+        )
+      : Promise.resolve(null);
+    sessionLookupPromise.catch(() => undefined); // avoid unhandled rejection if reservation throws
+
     const tReserveStart = performance.now();
     try {
       lease = await timer.time('reserve', () =>
@@ -251,27 +263,19 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw err;
     }
 
-    const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
-    let sessionToken = cookieVal;
-    let setSessionCookie = false;
-
-    const session = await timer.time('session', async () => {
-      let s = sessionToken
-        ? await findSessionByCookie(db, sessionToken, { userId: identity!.userId })
-        : null;
-
-      if (!s) {
-        sessionToken = randomBytes(24).toString('base64url');
-        s = await insertRecommendationSession(db, {
-          sessionCookie: sessionToken,
+    let session = await sessionLookupPromise;
+    if (!session) {
+      sessionToken = randomBytes(24).toString('base64url');
+      session = await timer.time('session', () =>
+        insertRecommendationSession(db, {
+          sessionCookie: sessionToken!,
           ipHash: hashSessionIp(ip),
           userAgent: request.headers.get('user-agent'),
           userId: identity!.userId,
-        });
-        setSessionCookie = true;
-      }
-      return s;
-    });
+        }),
+      );
+      setSessionCookie = true;
+    }
 
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
     const sessionId = session.id;

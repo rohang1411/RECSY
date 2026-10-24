@@ -20,13 +20,13 @@ import type { Logger } from 'pino';
 import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/lib/constants';
 import type { StageTimer } from '@/lib/stage-timer';
 import type { AppQueryDb } from '@/services/db/client';
-import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
 import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
 import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
-import { getCachedRecommendationCatalog } from './catalog-cache';
+import { getCachedRecommendationCatalog, shouldEmbedForRegion } from './catalog-cache';
+import { getCachedAspectDefinitions } from './aspect-definitions-cache';
 import { extractUserRequirements } from './extract-requirements';
 import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
@@ -192,36 +192,49 @@ export async function runRecommendationPipeline(input: {
   const refineDetection = detectRefineIntent(input.userMessage);
   const refineEligible = refineDetection.refine && priorPickIds != null && priorPickIds.length > 0;
 
-  const defRows = input.timer
-    ? await input.timer.time('aspectDefs', () => input.db.select().from(aspectDefinitions))
-    : await input.db.select().from(aspectDefinitions);
+  // Parallel independent loads after requirements are extracted:
+  // 1. Query embedding (if catalog has spec embeddings or on cold instance)
+  // 2. Aspect definitions (cached, 10-minute TTL)
+  // 3. Recommendation catalog (cached, 10-minute TTL)
+  const qtext = buildRecommenderQueryText(requirements);
+  const shouldEmbed = shouldEmbedForRegion(input.regionCode ?? 'US');
+  const runEmbed = () =>
+    input.llm.embed(
+      [qtext],
+      undefined,
+      {
+        area: 'Recommendation',
+        feature: 'Semantic query embedding',
+        source: '/api/recommend',
+      },
+      { taskType: 'RETRIEVAL_QUERY' },
+    );
+
+  const embedPromise = shouldEmbed
+    ? (input.timer ? input.timer.time('embed', runEmbed) : runEmbed()).then(
+        (emb) => emb.embeddings[0],
+      )
+    : Promise.resolve(undefined);
+  embedPromise.catch(() => undefined);
+
+  const runAspectDefs = () => getCachedAspectDefinitions(input.db);
+  const runCatalog = () => getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
+
+  const [defRows, fullCatalog] = await Promise.all([
+    input.timer ? input.timer.time('aspectDefs', runAspectDefs) : runAspectDefs(),
+    input.timer ? input.timer.time('catalog', runCatalog) : runCatalog(),
+  ]);
 
   const defaultW = buildDefaultAspectWeights(defRows);
-
-  const fullCatalog = input.timer
-    ? await input.timer.time('catalog', () =>
-        getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US'),
-      )
-    : await getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
-
   const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
   let queryEmbedding: readonly number[] | undefined;
+
   if (hasSpecEmb) {
-    const qtext = buildRecommenderQueryText(requirements);
-    const runEmbed = () =>
-      input.llm.embed(
-        [qtext],
-        undefined,
-        {
-          area: 'Recommendation',
-          feature: 'Semantic query embedding',
-          source: '/api/recommend',
-        },
-        { taskType: 'RETRIEVAL_QUERY' },
-      );
-    const emb = input.timer ? await input.timer.time('embed', runEmbed) : await runEmbed();
-    queryEmbedding = emb.embeddings[0];
+    queryEmbedding = await embedPromise;
   } else {
+    if (shouldEmbed) {
+      input.log.warn('recommender_embed_discarded');
+    }
     input.log.info(
       'no phones.spec_embedding rows — skipping query embed (run pnpm spec-embed:backfill)',
     );
