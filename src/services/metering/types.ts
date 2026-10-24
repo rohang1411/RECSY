@@ -1,6 +1,6 @@
 /**
  * Metering and entitlement type definitions.
- * Normative reference: Section 5.7, 7.1, 7.3, 7.5, 13.2 of plan 25.
+ * Normative reference: Section 5.7, 7.1, 7.3, 7.5, 13.2 of plan 25; Plan 26 WP-00.
  */
 
 export type ChargeSource = 'daily_free' | 'anon_free' | 'subscription' | 'credit' | 'byok';
@@ -107,6 +107,14 @@ export type MeteredRequestOutcome =
   | 'expired'
   | 'error';
 
+export interface MeteredRequestCacheSummary {
+  readonly catalog?: 'hit' | 'miss';
+  readonly queryEmbedding?: 'hit' | 'miss';
+  readonly platform?: 'hit' | 'miss';
+  readonly abuse?: 'hit' | 'miss';
+  readonly llm?: 'hit' | 'miss';
+}
+
 export interface MeteredRequestSummary {
   readonly event: 'metered_request';
   readonly traceId: string;
@@ -127,4 +135,8 @@ export interface MeteredRequestSummary {
   readonly costMicros: number;
   readonly cacheHit: boolean;
   readonly httpStatus: number;
+  readonly stages?: Readonly<Record<string, number>>;
+  readonly ttfbMs?: number;
+  readonly ttfvtMs?: number;
+  readonly cache?: MeteredRequestCacheSummary;
 }

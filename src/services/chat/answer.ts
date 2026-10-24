@@ -29,6 +29,7 @@ import {
   RETRIEVAL_TOP_K_PRE_RERANK,
 } from '@/lib/constants';
 import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
+import type { StageTimer } from '@/lib/stage-timer';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
 import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
@@ -65,6 +66,8 @@ export interface PhoneQnaInput {
   readonly serverMode?: 'fast' | 'deep';
   /** True when user is confirmed subscriber entitled to reasoning tier. */
   readonly isSubscriber?: boolean;
+  /** Optional stage timer for latency breakdown (Plan 26 WP-00). */
+  readonly timer?: StageTimer;
 }
 
 export interface PhoneQnaResult {
@@ -250,7 +253,7 @@ function toDate(v: Date | string | null | undefined): Date | null {
  * refusal that reads like a bug to end users.
  */
 export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult> {
-  const { phoneId, query, retriever, llm, log, signal, retrievalOptions } = input;
+  const { phoneId, query, retriever, llm, log, signal, retrievalOptions, timer } = input;
 
   const qBytes = new TextEncoder().encode(query).length;
   if (qBytes > MAX_CHAT_MESSAGE_BYTES) {
@@ -268,6 +271,21 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       ...(retrievalOptions ?? {}),
     },
   });
+
+  if (timer && retrieval.debug) {
+    if (retrieval.debug.embedding?.ms) {
+      timer.record('embed', retrieval.debug.embedding.ms);
+    }
+    if (retrieval.debug.vector?.ms) {
+      timer.record('vector', retrieval.debug.vector.ms);
+    }
+    if (retrieval.debug.fts?.ms) {
+      timer.record('fts', retrieval.debug.fts.ms);
+    }
+    if (retrieval.debug.mmr?.ms) {
+      timer.record('mmrVectors', retrieval.debug.mmr.ms);
+    }
+  }
 
   if (retrieval.chunks.length === 0) {
     if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
@@ -298,14 +316,14 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
 
   let messages = buildMessages(query, retrieval, undefined);
   const generationCalls: ChatResult[] = [];
-  let answer = await chatAnswer(
-    llm,
-    messages,
-    signal,
-    input.byok,
-    input.serverMode,
-    input.isSubscriber,
-  );
+
+  const runFirstGeneration = () =>
+    chatAnswer(llm, messages, signal, input.byok, input.serverMode, input.isSubscriber);
+
+  let answer = timer
+    ? await timer.time('generate', runFirstGeneration)
+    : await runFirstGeneration();
+
   generationCalls.push(answer);
   let { text, usage, model } = answer;
 
@@ -313,14 +331,9 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    answer = await chatAnswer(
-      llm,
-      messages,
-      signal,
-      input.byok,
-      input.serverMode,
-      input.isSubscriber,
-    );
+    const runRetryGeneration = () =>
+      chatAnswer(llm, messages, signal, input.byok, input.serverMode, input.isSubscriber);
+    answer = timer ? await timer.time('generate', runRetryGeneration) : await runRetryGeneration();
     generationCalls.push(answer);
     ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);

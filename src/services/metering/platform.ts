@@ -9,6 +9,13 @@ const log = logger.child({ component: 'platform-state' });
 
 const PLATFORM_STATE_CACHE_TTL_MS = 10_000;
 
+let hits = 0;
+let misses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits, misses };
+}
+
 interface CachedState {
   state: PlatformState;
   cachedAt: number;
@@ -81,8 +88,11 @@ export async function getPlatformState(db: AppQueryDb): Promise<PlatformState> {
   const now = Date.now();
 
   if (cachedPlatformState && now - cachedPlatformState.cachedAt < PLATFORM_STATE_CACHE_TTL_MS) {
+    hits++;
     return cachedPlatformState.state;
   }
+
+  misses++;
 
   if (inFlightPromise) {
     return inFlightPromise;
@@ -172,4 +182,6 @@ export function assertPlatformAcceptsRequest(
 export function resetPlatformStateCache(): void {
   cachedPlatformState = null;
   inFlightPromise = null;
+  hits = 0;
+  misses = 0;
 }

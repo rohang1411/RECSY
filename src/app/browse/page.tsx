@@ -11,6 +11,7 @@ import { phones, phoneRegionalDetails } from '@/services/db/schema';
 
 import { BrowseFiltersForm } from './browse-filters-form';
 import { appSearchParamsToURLSearchParams } from './search-params-helpers';
+import { getCachedBrands } from './brands-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,29 +45,6 @@ function getBrowseOrderBy(sort: BrowseSortOption) {
 
 interface PageProps {
   readonly searchParams: Promise<Readonly<Record<string, string | string[] | undefined>>>;
-}
-
-let cachedBrands: {
-  readonly brands: readonly string[];
-  readonly expiresAtMs: number;
-} | null = null;
-
-async function getCachedBrands(): Promise<readonly string[]> {
-  const now = Date.now();
-  if (cachedBrands && now < cachedBrands.expiresAtMs) {
-    return cachedBrands.brands;
-  }
-  const db = getDb();
-  const brandRows = await db
-    .select({ brand: phones.brand })
-    .from(phones)
-    .where(eq(phones.status, 'active'))
-    .groupBy(phones.brand)
-    .orderBy(asc(phones.brand));
-
-  const brands = brandRows.map((r) => r.brand);
-  cachedBrands = { brands, expiresAtMs: now + 3_600_000 };
-  return brands;
 }
 
 export default async function BrowsePage({ searchParams }: PageProps) {

@@ -5,7 +5,7 @@
  * or user-owned recommendation session, enforces metering, quota reservations,
  * rate limits, abuse checks, then runs the full recommender pipeline.
  *
- * Normative reference: Section 7.3.1, 7.5, 7.7, 8.6, 8.7 of plan 25.
+ * Normative reference: Section 7.3.1, 7.5, 7.7, 8.6, 8.7 of plan 25; Plan 26 WP-00.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -30,6 +30,8 @@ import { readRequestJson } from '@/lib/request-json';
 import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { assertSameOrigin } from '@/lib/same-origin';
+import { createStageTimer } from '@/lib/stage-timer';
+import { shouldEmitServerTiming } from '@/lib/server-timing';
 import { getDb, type AppQueryDb } from '@/services/db/client';
 import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
@@ -142,6 +144,7 @@ async function assertCaptchaIfRiskFlagged(
 
 export async function POST(request: NextRequest): Promise<Response> {
   const t0 = performance.now();
+  const timer = createStageTimer();
   const traceId = randomBytes(16).toString('hex');
   const log = requestLogger({ traceId, route: 'POST /api/recommend' });
   const config = getMeteringConfig();
@@ -155,7 +158,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     assertSameOrigin(request);
     const ip = getRequestClientIp(request);
-    await consumeRecommendRateLimit(ip);
+    await timer.time('rl', () => consumeRecommendRateLimit(ip));
 
     const json = await readRequestJson(request, 16_384);
     const body = bodySchema.parse(json);
@@ -163,42 +166,48 @@ export async function POST(request: NextRequest): Promise<Response> {
     const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
     const db = getDb();
-    identity = await resolveRequestIdentity(request, { db });
+    identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
 
     if (identity.isSuspended) {
       throw new AccountRestrictedError();
     }
 
     if (identity.userId) {
-      await consumeUserRateLimit(identity.userId, 'recommend', db);
+      await timer.time('rl', () => consumeUserRateLimit(identity!.userId!, 'recommend', db));
     }
-    await consumeDeviceRateLimit(db, identity.deviceId, 'POST /api/recommend');
-
-    await assertCaptchaIfRiskFlagged(
-      db,
-      identity,
-      config.anonIpDailyCap,
-      request.headers.get('x-turnstile-token'),
-      ip,
+    await timer.time('rl', () =>
+      consumeDeviceRateLimit(db, identity!.deviceId, 'POST /api/recommend'),
     );
 
-    const platform = await getPlatformState(db);
+    await timer.time('captcha', () =>
+      assertCaptchaIfRiskFlagged(
+        db,
+        identity!,
+        config.anonIpDailyCap,
+        request.headers.get('x-turnstile-token'),
+        ip,
+      ),
+    );
+
+    const platform = await timer.time('platform', () => getPlatformState(db));
     const byok = extractByokFromHeaders(request.headers);
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);
 
     const tReserveStart = performance.now();
     try {
-      lease = await reserveQuery({
-        db,
-        identity,
-        requestId,
-        route: 'POST /api/recommend',
-        traceId,
-        byok: isByok,
-        shedFree: platform.shedFreeFor(identity),
-        config,
-      });
+      lease = await timer.time('reserve', () =>
+        reserveQuery({
+          db,
+          identity: identity!,
+          requestId,
+          route: 'POST /api/recommend',
+          traceId,
+          byok: isByok,
+          shedFree: platform.shedFreeFor(identity!),
+          config,
+        }),
+      );
       reserveMs = Math.round(performance.now() - tReserveStart);
     } catch (err: unknown) {
       if (err instanceof QuotaDeniedError && err.code === 'DUPLICATE_REQUEST') {
@@ -207,6 +216,14 @@ export async function POST(request: NextRequest): Promise<Response> {
           const replay = await findReplayTurn(db, leaseId);
           if (replay) {
             log.info({ traceId, requestId, leaseId }, 'replaying_committed_recommendation');
+            const replayHeaders: Record<string, string> = {
+              'Cache-Control': 'private, no-store',
+              'X-Trace-Id': traceId,
+              'X-Request-Id': requestId,
+            };
+            if (shouldEmitServerTiming(request)) {
+              replayHeaders['Server-Timing'] = timer.serverTiming();
+            }
             return NextResponse.json(
               {
                 message: replay.userMessage,
@@ -219,11 +236,7 @@ export async function POST(request: NextRequest): Promise<Response> {
                 replayed: true,
               },
               {
-                headers: {
-                  'Cache-Control': 'private, no-store',
-                  'X-Trace-Id': traceId,
-                  'X-Request-Id': requestId,
-                },
+                headers: replayHeaders,
               },
             );
           }
@@ -234,21 +247,25 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
     let sessionToken = cookieVal;
-    let session = sessionToken
-      ? await findSessionByCookie(db, sessionToken, { userId: identity.userId })
-      : null;
     let setSessionCookie = false;
 
-    if (!session) {
-      sessionToken = randomBytes(24).toString('base64url');
-      session = await insertRecommendationSession(db, {
-        sessionCookie: sessionToken,
-        ipHash: hashSessionIp(ip),
-        userAgent: request.headers.get('user-agent'),
-        userId: identity.userId,
-      });
-      setSessionCookie = true;
-    }
+    const session = await timer.time('session', async () => {
+      let s = sessionToken
+        ? await findSessionByCookie(db, sessionToken, { userId: identity!.userId })
+        : null;
+
+      if (!s) {
+        sessionToken = randomBytes(24).toString('base64url');
+        s = await insertRecommendationSession(db, {
+          sessionCookie: sessionToken,
+          ipHash: hashSessionIp(ip),
+          userAgent: request.headers.get('user-agent'),
+          userId: identity!.userId,
+        });
+        setSessionCookie = true;
+      }
+      return s;
+    });
 
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
     const sessionId = session.id;
@@ -258,7 +275,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       | 'deep'
       | undefined;
     const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
-    const serverMode = await resolveReasoningMode(identity, lease, requestedMode, db);
+    const serverMode = await timer.time('mode', () =>
+      resolveReasoningMode(identity!, lease!, requestedMode, db),
+    );
     const isSubscriber = lease.chargeSource === 'subscription' || serverMode === 'deep';
 
     const tPipelineStart = performance.now();
@@ -273,6 +292,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       isSubscriber,
       leaseId: lease.isNoop || lease.id === 'off' ? null : lease.id,
       log: log.child({ sessionId }),
+      timer,
     });
     const latencyMs = Math.round(performance.now() - tPipelineStart);
 
@@ -282,47 +302,49 @@ export async function POST(request: NextRequest): Promise<Response> {
     const leaseIdForDb = lease.isNoop || lease.id === 'off' ? null : lease.id;
 
     const tSettleStart = performance.now();
-    await db.transaction(async (tx) => {
-      const turnIndex = await nextTurnIndex(tx, sessionId);
+    await timer.time('settle', async () => {
+      await db.transaction(async (tx) => {
+        const turnIndex = await nextTurnIndex(tx, sessionId);
 
-      if (result.kind === 'clarify') {
-        await tx.insert(recommendationTurns).values({
-          sessionId,
-          turnIndex,
-          userMessage: body.message,
-          intent: 'clarify',
-          extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-          clarifyingQuestion: result.clarifyingQuestion,
-          latencyMs,
-          leaseId: leaseIdForDb,
-        });
-      } else {
-        await tx.insert(recommendationTurns).values({
-          sessionId,
-          turnIndex,
-          userMessage: body.message,
-          intent: 'recommend',
-          extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-          candidatePhoneIds: result.picks.map((p) => p.phoneId),
-          picks: result.picks as unknown[],
-          latencyMs,
-          leaseId: leaseIdForDb,
-        });
-      }
-
-      if (outcome === 'commit') {
-        await lease!.commit(
-          {
-            model: env.LLM_CHAT_MODEL,
-            tokensIn: result.usage?.tokensIn,
-            tokensOut: result.usage?.tokensOut,
+        if (result.kind === 'clarify') {
+          await tx.insert(recommendationTurns).values({
+            sessionId,
+            turnIndex,
+            userMessage: body.message,
+            intent: 'clarify',
+            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
+            clarifyingQuestion: result.clarifyingQuestion,
             latencyMs,
-          },
-          tx,
-        );
-      } else {
-        await lease!.noCharge(reason, tx);
-      }
+            leaseId: leaseIdForDb,
+          });
+        } else {
+          await tx.insert(recommendationTurns).values({
+            sessionId,
+            turnIndex,
+            userMessage: body.message,
+            intent: 'recommend',
+            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
+            candidatePhoneIds: result.picks.map((p) => p.phoneId),
+            picks: result.picks as unknown[],
+            latencyMs,
+            leaseId: leaseIdForDb,
+          });
+        }
+
+        if (outcome === 'commit') {
+          await lease!.commit(
+            {
+              model: env.LLM_CHAT_MODEL,
+              tokensIn: result.usage?.tokensIn,
+              tokensOut: result.usage?.tokensOut,
+              latencyMs,
+            },
+            tx,
+          );
+        } else {
+          await lease!.noCharge(reason, tx);
+        }
+      });
     });
     settleMs = Math.round(performance.now() - tSettleStart);
 
@@ -343,7 +365,15 @@ export async function POST(request: NextRequest): Promise<Response> {
       tokensIn: result.usage?.tokensIn,
       tokensOut: result.usage?.tokensOut,
       httpStatus: 200,
+      stages: timer.snapshot(),
+      ttfbMs: totalMs,
+      ttfvtMs: totalMs,
     });
+
+    const responseHeaders: Record<string, string> = { 'X-Trace-Id': traceId };
+    if (shouldEmitServerTiming(request)) {
+      responseHeaders['Server-Timing'] = timer.serverTiming();
+    }
 
     const res = NextResponse.json(
       {
@@ -357,7 +387,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         topAspects: result.kind === 'results' ? result.topAspects : undefined,
         quota: lease.projectedQuota(outcome),
       },
-      { status: 200, headers: { 'X-Trace-Id': traceId } },
+      { status: 200, headers: responseHeaders },
     );
 
     if (setSessionCookie && sessionToken) {
@@ -375,6 +405,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         .catch((e) => log.error({ e }, 'refund failed; lease will expire'));
     }
 
+    const errorServerTiming = shouldEmitServerTiming(request) ? timer.serverTiming() : undefined;
+
     if (err instanceof ZodError) {
       emitMeteredRequestSummary({
         traceId,
@@ -390,10 +422,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs,
         totalMs,
         httpStatus: 400,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       return NextResponse.json(
         { code: 'VALIDATION', message: err.flatten() },
-        { status: 400, headers: { 'X-Trace-Id': traceId } },
+        { status: 400, headers },
       );
     }
 
@@ -409,6 +445,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       const headers: Record<string, string> = { 'X-Trace-Id': traceId };
       if (retryAfter) headers['Retry-After'] = retryAfter;
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
 
       emitMeteredRequestSummary({
         traceId,
@@ -424,6 +461,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs,
         totalMs,
         httpStatus: err.status,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
 
       return NextResponse.json(
@@ -452,7 +491,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs,
         totalMs,
         httpStatus: 429,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+      const headers: Record<string, string> = {
+        'X-Trace-Id': traceId,
+        'Retry-After': '60',
+      };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       return NextResponse.json(
         {
           code: 'RATE_LIMITED',
@@ -460,10 +506,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         },
         {
           status: 429,
-          headers: {
-            'X-Trace-Id': traceId,
-            'Retry-After': '60',
-          },
+          headers,
         },
       );
     }
@@ -483,13 +526,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs,
         totalMs,
         httpStatus: 403,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       return NextResponse.json(
         {
           code: 'ACCOUNT_RESTRICTED',
           message: err.message,
         },
-        { status: 403, headers: { 'X-Trace-Id': traceId } },
+        { status: 403, headers },
       );
     }
 
@@ -498,6 +545,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (err.code === 'BYOK_RATE_LIMITED') {
         headers['Retry-After'] = '60';
       }
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       emitMeteredRequestSummary({
         traceId,
         route: 'POST /api/recommend',
@@ -512,6 +560,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs,
         totalMs,
         httpStatus: err.status,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
       return NextResponse.json(
         {
@@ -544,6 +594,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     } else if (app.code === 'CAPACITY_BUSY') {
       headers['Retry-After'] = '30';
     }
+    if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
 
     emitMeteredRequestSummary({
       traceId,
@@ -559,6 +610,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       settleMs,
       totalMs,
       httpStatus: app.status,
+      stages: timer.snapshot(),
+      ttfbMs: totalMs,
     });
 
     return NextResponse.json(

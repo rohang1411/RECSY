@@ -12,7 +12,7 @@
  * 3. Commits lease on success, no_charge on empty corpus or client abort, refunds on error.
  * 4. Terminal `done` and `error` chunks contain `quota: QuotaSnapshotLite`.
  *
- * Normative reference: Section 7.3.2, 7.5, 7.7, 8.7 of plan 25.
+ * Normative reference: Section 7.3.2, 7.5, 7.7, 8.7 of plan 25; Plan 26 WP-00.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -37,6 +37,8 @@ import { getRequestClientIp } from '@/lib/request-ip';
 import { parseRequestId } from '@/lib/request-id';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
+import { createStageTimer } from '@/lib/stage-timer';
+import { shouldEmitServerTiming } from '@/lib/server-timing';
 import {
   NO_CONTEXT_MODEL,
   chunkTextForStream,
@@ -123,6 +125,7 @@ async function assertCaptchaIfRiskFlagged(
 
 export async function POST(request: NextRequest): Promise<Response> {
   const t0 = performance.now();
+  const timer = createStageTimer();
   const traceId = randomUUID();
   const log = requestLogger({ traceId, route: 'POST /api/ask' });
   const config = getMeteringConfig();
@@ -131,12 +134,13 @@ export async function POST(request: NextRequest): Promise<Response> {
   let identity: RequestIdentity | null = null;
   let isByok = false;
   let reserveMs = 0;
+  let ttfbMs = 0;
 
   try {
     // 1. IP rate limit (cheap abuse shield first)
     assertSameOrigin(request);
     const ip = getRequestClientIp(request);
-    await consumeAskRateLimit(ip);
+    await timer.time('rl', () => consumeAskRateLimit(ip));
 
     // 2. Request body & request id parsing
     const json = await readRequestJson(request, 24_576);
@@ -145,27 +149,29 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     // 3. Identity and abuse checks
     const db = getDb();
-    identity = await resolveRequestIdentity(request, { db });
+    identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
 
     if (identity.isSuspended) {
       throw new AccountRestrictedError();
     }
 
     if (identity.userId) {
-      await consumeUserRateLimit(identity.userId, 'ask', db);
+      await timer.time('rl', () => consumeUserRateLimit(identity!.userId!, 'ask', db));
     }
-    await consumeDeviceRateLimit(db, identity.deviceId, 'POST /api/ask');
+    await timer.time('rl', () => consumeDeviceRateLimit(db, identity!.deviceId, 'POST /api/ask'));
 
-    await assertCaptchaIfRiskFlagged(
-      db,
-      identity,
-      config.anonIpDailyCap,
-      request.headers.get('x-turnstile-token'),
-      ip,
+    await timer.time('captcha', () =>
+      assertCaptchaIfRiskFlagged(
+        db,
+        identity!,
+        config.anonIpDailyCap,
+        request.headers.get('x-turnstile-token'),
+        ip,
+      ),
     );
 
     // 4. Platform admission & BYOK
-    const platform = await getPlatformState(db);
+    const platform = await timer.time('platform', () => getPlatformState(db));
     const byok = extractByokFromHeaders(request.headers);
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);
@@ -173,16 +179,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     // 5. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
     const tReserveStart = performance.now();
     try {
-      lease = await reserveQuery({
-        db,
-        identity,
-        requestId,
-        route: 'POST /api/ask',
-        traceId,
-        byok: isByok,
-        shedFree: platform.shedFreeFor(identity),
-        config,
-      });
+      lease = await timer.time('reserve', () =>
+        reserveQuery({
+          db,
+          identity: identity!,
+          requestId,
+          route: 'POST /api/ask',
+          traceId,
+          byok: isByok,
+          shedFree: platform.shedFreeFor(identity!),
+          config,
+        }),
+      );
       reserveMs = Math.round(performance.now() - tReserveStart);
     } catch (err: unknown) {
       if (err instanceof QuotaDeniedError && err.code === 'DUPLICATE_REQUEST') {
@@ -226,13 +234,18 @@ export async function POST(request: NextRequest): Promise<Response> {
               },
             });
 
+            const replayHeaders: Record<string, string> = {
+              'Content-Type': 'application/x-ndjson; charset=utf-8',
+              'Cache-Control': 'no-store',
+              'X-Trace-Id': traceId,
+              'X-Request-Id': requestId,
+            };
+            if (shouldEmitServerTiming(request)) {
+              replayHeaders['Server-Timing'] = timer.serverTiming();
+            }
+
             return new Response(replayStream, {
-              headers: {
-                'Content-Type': 'application/x-ndjson; charset=utf-8',
-                'Cache-Control': 'no-store',
-                'X-Trace-Id': traceId,
-                'X-Request-Id': requestId,
-              },
+              headers: replayHeaders,
             });
           }
         }
@@ -241,21 +254,24 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     // 6. Check phone target
-    const [phone] = await db
-      .select({
-        id: phones.id,
-        status: phones.status,
-        brand: phones.brand,
-        model: phones.model,
-        lastIngestAt: phones.lastIngestAt,
-        nextIngestAt: phones.nextIngestAt,
-      })
-      .from(phones)
-      .where(eq(phones.slug, body.phoneSlug))
-      .limit(1);
+    const [phone] = await timer.time('phone', () =>
+      db
+        .select({
+          id: phones.id,
+          status: phones.status,
+          brand: phones.brand,
+          model: phones.model,
+          lastIngestAt: phones.lastIngestAt,
+          nextIngestAt: phones.nextIngestAt,
+        })
+        .from(phones)
+        .where(eq(phones.slug, body.phoneSlug))
+        .limit(1),
+    );
 
     if (!phone || phone.status !== 'active') {
       await lease.refund('not_found').catch(() => undefined);
+      const totalMs = Math.round(performance.now() - t0);
       emitMeteredRequestSummary({
         traceId,
         route: 'POST /api/ask',
@@ -268,12 +284,20 @@ export async function POST(request: NextRequest): Promise<Response> {
         denial: 'NOT_FOUND',
         reserveMs,
         settleMs: 0,
-        totalMs: Math.round(performance.now() - t0),
+        totalMs,
         httpStatus: 404,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+
+      const notFoundHeaders: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (shouldEmitServerTiming(request)) {
+        notFoundHeaders['Server-Timing'] = timer.serverTiming();
+      }
+
       return Response.json(
         { code: 'NOT_FOUND', message: 'Phone not found' },
-        { status: 404, headers: { 'X-Trace-Id': traceId } },
+        { status: 404, headers: notFoundHeaders },
       );
     }
 
@@ -300,11 +324,8 @@ export async function POST(request: NextRequest): Promise<Response> {
             ?.trim()
             .toLowerCase() as 'fast' | 'deep' | undefined;
           const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
-          const serverMode = await resolveReasoningMode(
-            identity ?? { userId: null },
-            lease!,
-            requestedMode,
-            db,
+          const serverMode = await timer.time('mode', () =>
+            resolveReasoningMode(identity ?? { userId: null }, lease!, requestedMode, db),
           );
           const isSubscriber = lease!.chargeSource === 'subscription' || serverMode === 'deep';
 
@@ -327,25 +348,28 @@ export async function POST(request: NextRequest): Promise<Response> {
             byok,
             serverMode,
             isSubscriber,
+            timer,
           });
 
           const latencyMs = Math.round(performance.now() - tStreamStart);
           const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
 
           const persistenceStart = performance.now();
-          await persistChatQuery({
-            phoneId: phone.id,
-            query: body.query,
-            answer: result.text,
-            citations: result.citations,
-            retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
-            latencyMs,
-            tokensIn: result.generationAccounting.tokensIn,
-            tokensOut: result.generationAccounting.tokensOut,
-            model: result.model,
-            userId: identity!.userId,
-            leaseId: leaseIdForDb,
-          });
+          await timer.time('persist', () =>
+            persistChatQuery({
+              phoneId: phone.id,
+              query: body.query,
+              answer: result.text,
+              citations: result.citations,
+              retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
+              latencyMs,
+              tokensIn: result.generationAccounting.tokensIn,
+              tokensOut: result.generationAccounting.tokensOut,
+              model: result.model,
+              userId: identity!.userId,
+              leaseId: leaseIdForDb,
+            }),
+          );
           const persistenceMs = performance.now() - persistenceStart;
 
           const meta = {
@@ -358,19 +382,21 @@ export async function POST(request: NextRequest): Promise<Response> {
 
           const tSettleStart = performance.now();
           let outcome: 'commit' | 'no_charge';
-          if (result.model === NO_CONTEXT_MODEL) {
-            await lease!.noCharge('no_context');
-            outcome = 'no_charge';
-            streamOutcome = 'no_charge';
-          } else if (cancelled || request.signal.aborted) {
-            await lease!.noCharge('client_abort');
-            outcome = 'no_charge';
-            streamOutcome = 'no_charge';
-          } else {
-            await lease!.commit(meta);
-            outcome = 'commit';
-            streamOutcome = 'committed';
-          }
+          await timer.time('settle', async () => {
+            if (result.model === NO_CONTEXT_MODEL) {
+              await lease!.noCharge('no_context');
+              outcome = 'no_charge';
+              streamOutcome = 'no_charge';
+            } else if (cancelled || request.signal.aborted) {
+              await lease!.noCharge('client_abort');
+              outcome = 'no_charge';
+              streamOutcome = 'no_charge';
+            } else {
+              await lease!.commit(meta);
+              outcome = 'commit';
+              streamOutcome = 'committed';
+            }
+          });
           settleMs = Math.round(performance.now() - tSettleStart);
 
           write({
@@ -378,6 +404,9 @@ export async function POST(request: NextRequest): Promise<Response> {
             phoneId: phone.id,
             retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
           });
+
+          timer.mark('firstDelta');
+          const ttfvtMs = Math.round(performance.now() - t0);
 
           for (const piece of chunkTextForStream(result.text)) {
             write({ type: 'delta', text: piece });
@@ -392,7 +421,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             persistenceMs,
             retrievalMs: result.retrieval.debug.totalMs,
             retrievalTrace: buildAskRetrievalTrace(result.retrieval),
-            quota: lease!.projectedQuota(outcome),
+            quota: lease!.projectedQuota(outcome!),
           });
 
           const totalMs = Math.round(performance.now() - t0);
@@ -413,6 +442,9 @@ export async function POST(request: NextRequest): Promise<Response> {
             tokensOut: result.generationAccounting.tokensOut,
             cacheHit: result.generationAccounting.cacheHits > 0,
             httpStatus: 200,
+            stages: timer.snapshot(),
+            ttfbMs,
+            ttfvtMs,
           });
         } catch (err) {
           const app = toAppError(err);
@@ -445,6 +477,8 @@ export async function POST(request: NextRequest): Promise<Response> {
             settleMs,
             totalMs,
             httpStatus: app.status,
+            stages: timer.snapshot(),
+            ttfbMs,
           });
         } finally {
           if (!cancelled) controller.close();
@@ -452,12 +486,19 @@ export async function POST(request: NextRequest): Promise<Response> {
       },
     });
 
+    ttfbMs = Math.round(performance.now() - t0);
+    const streamHeaders: Record<string, string> = {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Trace-Id': traceId,
+      'X-Request-Id': requestId,
+    };
+    if (shouldEmitServerTiming(request)) {
+      streamHeaders['Server-Timing'] = timer.serverTiming();
+    }
+
     return new Response(stream, {
-      headers: {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
-        'Cache-Control': 'no-store',
-        'X-Trace-Id': traceId,
-      },
+      headers: streamHeaders,
     });
   } catch (err) {
     const totalMs = Math.round(performance.now() - t0);
@@ -465,6 +506,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       const refundCode = err instanceof AppError ? err.code : 'internal_error';
       await lease.refund(refundCode).catch(() => undefined);
     }
+
+    const errorServerTiming = shouldEmitServerTiming(request) ? timer.serverTiming() : undefined;
 
     if (err instanceof ZodError) {
       const msg = err.issues[0]?.message ?? 'Invalid request body';
@@ -482,11 +525,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs: 0,
         totalMs,
         httpStatus: 400,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
-      return NextResponse.json(
-        { code: 'VALIDATION', message: msg },
-        { status: 400, headers: { 'X-Trace-Id': traceId } },
-      );
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
+      return NextResponse.json({ code: 'VALIDATION', message: msg }, { status: 400, headers });
     }
 
     if (err instanceof QuotaDeniedError) {
@@ -501,6 +545,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
       const headers: Record<string, string> = { 'X-Trace-Id': traceId };
       if (retryAfter) headers['Retry-After'] = retryAfter;
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
 
       emitMeteredRequestSummary({
         traceId,
@@ -516,6 +561,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs: 0,
         totalMs,
         httpStatus: err.status,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
 
       return NextResponse.json(
@@ -544,7 +591,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs: 0,
         totalMs,
         httpStatus: 429,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+      const headers: Record<string, string> = {
+        'X-Trace-Id': traceId,
+        'Retry-After': '60',
+      };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       return NextResponse.json(
         {
           code: 'RATE_LIMITED',
@@ -552,10 +606,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         },
         {
           status: 429,
-          headers: {
-            'X-Trace-Id': traceId,
-            'Retry-After': '60',
-          },
+          headers,
         },
       );
     }
@@ -575,13 +626,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs: 0,
         totalMs,
         httpStatus: 403,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
+      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       return NextResponse.json(
         {
           code: 'ACCOUNT_RESTRICTED',
           message: err.message,
         },
-        { status: 403, headers: { 'X-Trace-Id': traceId } },
+        { status: 403, headers },
       );
     }
 
@@ -590,6 +645,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (err.code === 'BYOK_RATE_LIMITED') {
         headers['Retry-After'] = '60';
       }
+      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
       emitMeteredRequestSummary({
         traceId,
         route: 'POST /api/ask',
@@ -604,6 +660,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         settleMs: 0,
         totalMs,
         httpStatus: err.status,
+        stages: timer.snapshot(),
+        ttfbMs: totalMs,
       });
       return NextResponse.json(
         {
@@ -623,6 +681,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     } else if (app.code === 'CAPACITY_BUSY') {
       headers['Retry-After'] = '30';
     }
+    if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
 
     emitMeteredRequestSummary({
       traceId,
@@ -638,6 +697,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       settleMs: 0,
       totalMs,
       httpStatus: app.status,
+      stages: timer.snapshot(),
+      ttfbMs: totalMs,
     });
 
     return NextResponse.json(

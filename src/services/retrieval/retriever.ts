@@ -61,9 +61,17 @@ export interface HybridSearchInput extends Omit<RetrievalRequest, 'k' | 'queryEm
 
 const QUERY_EMBEDDING_CACHE_MAX = 128;
 let providerEmbeddingCaches = new WeakMap<LlmProvider, Map<string, Promise<readonly number[]>>>();
+let queryEmbeddingHits = 0;
+let queryEmbeddingMisses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits: queryEmbeddingHits, misses: queryEmbeddingMisses };
+}
 
 export function resetHybridRetrieverQueryEmbeddingCache(): void {
   providerEmbeddingCaches = new WeakMap();
+  queryEmbeddingHits = 0;
+  queryEmbeddingMisses = 0;
 }
 
 export class HybridRetriever {
@@ -304,7 +312,10 @@ export class HybridRetriever {
     const key = `${embeddingModel ?? 'default'}\0RETRIEVAL_QUERY\0${query}`;
     let cached = queryEmbeddingCache.get(key);
 
-    if (!cached) {
+    if (cached) {
+      queryEmbeddingHits++;
+    } else {
+      queryEmbeddingMisses++;
       cached = llm
         .embed(
           [query],

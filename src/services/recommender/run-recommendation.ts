@@ -18,6 +18,7 @@
 import type { Logger } from 'pino';
 
 import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/lib/constants';
+import type { StageTimer } from '@/lib/stage-timer';
 import type { AppQueryDb } from '@/services/db/client';
 import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
@@ -147,21 +148,28 @@ export async function runRecommendationPipeline(input: {
   readonly isSubscriber?: boolean;
   readonly leaseId?: string | null;
   readonly log: Logger;
+  readonly timer?: StageTimer;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
     getLatestRequirementsForSession(input.db, input.sessionId),
     getLatestRecommendPickIds(input.db, input.sessionId),
   ]);
 
-  const extracted = await extractUserRequirements({
-    llm: input.llm,
-    userMessage: input.userMessage,
-    previous,
-    regionCode: input.regionCode ?? 'US',
-    byok: input.byok,
-    serverMode: input.serverMode,
-    isSubscriber: input.isSubscriber,
-  });
+  const runExtract = () =>
+    extractUserRequirements({
+      llm: input.llm,
+      userMessage: input.userMessage,
+      previous,
+      regionCode: input.regionCode ?? 'US',
+      byok: input.byok,
+      serverMode: input.serverMode,
+      isSubscriber: input.isSubscriber,
+    });
+
+  const extracted = input.timer
+    ? await input.timer.time('extract', runExtract)
+    : await runExtract();
+
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });
   const unsupported = unsupportedHardFeatures(requirements);
@@ -184,24 +192,34 @@ export async function runRecommendationPipeline(input: {
   const refineDetection = detectRefineIntent(input.userMessage);
   const refineEligible = refineDetection.refine && priorPickIds != null && priorPickIds.length > 0;
 
-  const defRows = await input.db.select().from(aspectDefinitions);
+  const defRows = input.timer
+    ? await input.timer.time('aspectDefs', () => input.db.select().from(aspectDefinitions))
+    : await input.db.select().from(aspectDefinitions);
+
   const defaultW = buildDefaultAspectWeights(defRows);
-  const fullCatalog = await getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
+
+  const fullCatalog = input.timer
+    ? await input.timer.time('catalog', () =>
+        getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US'),
+      )
+    : await getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
 
   const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
   let queryEmbedding: readonly number[] | undefined;
   if (hasSpecEmb) {
     const qtext = buildRecommenderQueryText(requirements);
-    const emb = await input.llm.embed(
-      [qtext],
-      undefined,
-      {
-        area: 'Recommendation',
-        feature: 'Semantic query embedding',
-        source: '/api/recommend',
-      },
-      { taskType: 'RETRIEVAL_QUERY' },
-    );
+    const runEmbed = () =>
+      input.llm.embed(
+        [qtext],
+        undefined,
+        {
+          area: 'Recommendation',
+          feature: 'Semantic query embedding',
+          source: '/api/recommend',
+        },
+        { taskType: 'RETRIEVAL_QUERY' },
+      );
+    const emb = input.timer ? await input.timer.time('embed', runEmbed) : await runEmbed();
     queryEmbedding = emb.embeddings[0];
   } else {
     input.log.info(
@@ -217,10 +235,15 @@ export async function runRecommendationPipeline(input: {
     const priorIdSet = new Set(priorPickIds);
     const narrowed = fullCatalog.filter((entry) => priorIdSet.has(entry.phoneId));
     if (narrowed.length > 0) {
-      const res = rankCandidates(narrowed, requirements, defaultW, {
-        queryEmbedding,
-        refined: true,
-      });
+      const runRankRefined = async () =>
+        rankCandidates(narrowed, requirements, defaultW, {
+          queryEmbedding,
+          refined: true,
+        });
+      const res = input.timer
+        ? await input.timer.time('rank', runRankRefined)
+        : await runRankRefined();
+
       if (res.picks.length > 0) {
         picks = res.picks;
         rankResult = res;
@@ -251,7 +274,9 @@ export async function runRecommendationPipeline(input: {
   }
 
   if (!refined) {
-    const res = rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
+    const runRankFull = async () =>
+      rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
+    const res = input.timer ? await input.timer.time('rank', runRankFull) : await runRankFull();
     picks = res.picks;
     rankResult = res;
   }

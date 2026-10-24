@@ -22,6 +22,18 @@ interface CacheEntry {
   readonly expiresAt: number;
 }
 
+let hits = 0;
+let misses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits, misses };
+}
+
+export function resetCacheStatsForTest(): void {
+  hits = 0;
+  misses = 0;
+}
+
 const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<readonly PhoneCatalogEntry[]>>();
 
@@ -46,8 +58,11 @@ export async function getCachedRecommendationCatalog(
 
   const hit = cache.get(key);
   if (hit && now < hit.expiresAt) {
+    hits++;
     return hit.entries;
   }
+
+  misses++;
 
   // Coalesce in-flight fetches so concurrent requests share a single DB load
   let promise = inFlight.get(key);
