@@ -12,6 +12,7 @@ import * as userRateLimitModule from '@/services/metering/rate-limit-user';
 import * as deviceRateLimitModule from '@/services/abuse/rate-limit-device';
 import * as turnstileModule from '@/services/abuse/turnstile';
 import * as summaryModule from '@/services/metering/summary';
+import { DEFAULT_PERF_FLAGS } from '@/services/perf/flags';
 import { getDb } from '@/services/db/client';
 import { QueryLease } from '@/services/metering/lease';
 import type { RetrievalResult } from '@/services/retrieval/types';
@@ -131,6 +132,7 @@ describe('POST /api/ask (WP-09)', () => {
       usedToday: 10,
       capacity: 'ok',
       shedFreeFor: () => false,
+      perf: DEFAULT_PERF_FLAGS,
     });
 
     vi.mocked(identityModule.resolveRequestIdentity).mockResolvedValue({

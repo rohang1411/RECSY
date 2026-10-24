@@ -186,6 +186,7 @@ export const env = createEnv({
     ALERT_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
     USER_RATE_RECOMMEND_PER_MIN: z.coerce.number().int().min(1).default(12),
     USER_RATE_ASK_PER_MIN: z.coerce.number().int().min(1).default(20),
+    PERF_FLAGS_DEFAULT_JSON: z.string().optional(),
   },
 
   /**
@@ -333,6 +334,7 @@ export const env = createEnv({
     ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
     USER_RATE_RECOMMEND_PER_MIN: process.env.USER_RATE_RECOMMEND_PER_MIN ?? '12',
     USER_RATE_ASK_PER_MIN: process.env.USER_RATE_ASK_PER_MIN ?? '20',
+    PERF_FLAGS_DEFAULT_JSON: process.env.PERF_FLAGS_DEFAULT_JSON,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? 'support@recsy.com',
   },

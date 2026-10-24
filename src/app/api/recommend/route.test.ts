@@ -14,6 +14,7 @@ import * as turnstileModule from '@/services/abuse/turnstile';
 import * as sessionModule from '@/services/recommender/session';
 import * as summaryModule from '@/services/metering/summary';
 import * as replayModule from '@/services/metering/replay';
+import { DEFAULT_PERF_FLAGS } from '@/services/perf/flags';
 import { getDb } from '@/services/db/client';
 import { QueryLease } from '@/services/metering/lease';
 
@@ -85,6 +86,7 @@ describe('POST /api/recommend (WP-08)', () => {
       usedToday: 10,
       capacity: 'ok',
       shedFreeFor: () => false,
+      perf: DEFAULT_PERF_FLAGS,
     });
 
     vi.mocked(identityModule.resolveRequestIdentity).mockResolvedValue({
@@ -535,6 +537,7 @@ describe('POST /api/recommend (WP-08)', () => {
         usedToday: 10,
         capacity: 'paused',
         shedFreeFor: () => true,
+        perf: DEFAULT_PERF_FLAGS,
       });
 
       vi.mocked(platformModule.assertPlatformAcceptsRequest).mockImplementation(() => {
@@ -601,6 +604,7 @@ describe('POST /api/recommend (WP-08)', () => {
         usedToday: 5000,
         capacity: 'paused',
         shedFreeFor: () => true,
+        perf: DEFAULT_PERF_FLAGS,
       });
 
       const byokLease = new QueryLease({

@@ -1,7 +1,8 @@
 /**
  * Metering and entitlement type definitions.
- * Normative reference: Section 5.7, 7.1, 7.3, 7.5, 13.2 of plan 25; Plan 26 WP-00.
+ * Normative reference: Section 5.7, 7.1, 7.3, 7.5, 13.2 of plan 25; Plan 26 WP-00, WP-01.
  */
+import type { PerfFlags } from '@/services/perf/flags';
 
 export type ChargeSource = 'daily_free' | 'anon_free' | 'subscription' | 'credit' | 'byok';
 
@@ -97,6 +98,7 @@ export interface PlatformState {
   readonly usedToday: number;
   readonly capacity: 'ok' | 'busy' | 'paused';
   shedFreeFor(identity: { userId: string | null }): boolean;
+  readonly perf: PerfFlags;
 }
 
 export type MeteredRequestOutcome =

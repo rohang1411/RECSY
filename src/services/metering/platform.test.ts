@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   getPlatformState,
+  getPerfFlags,
   assertPlatformAcceptsRequest,
   resetPlatformStateCache,
   getDefaultPlatformState,
 } from './platform';
+import { DEFAULT_PERF_FLAGS } from '@/services/perf/flags';
 import type { AppQueryDb } from '@/services/db/client';
 import { AppError } from '@/lib/errors';
 
@@ -19,6 +21,7 @@ describe('Metering Platform State & Admission Control', () => {
     expect(def.capacity).toBe('ok');
     expect(def.killSwitch.enabled).toBe(false);
     expect(def.shedFreeFor({ userId: null })).toBe(false);
+    expect(def.perf).toEqual(DEFAULT_PERF_FLAGS);
   });
 
   it('performs single-flight deduplication and caches state for 10s', async () => {
@@ -30,6 +33,7 @@ describe('Metering Platform State & Admission Control', () => {
           {
             kill_switch: { enabled: false },
             cap: 1000,
+            perf_flags: { ask_streaming: 'canary', ask_streaming_canary_pct: 15 },
             used_today: 100,
           },
         ];
@@ -46,12 +50,19 @@ describe('Metering Platform State & Admission Control', () => {
     expect(state1.globalDailyCap).toBe(1000);
     expect(state1.usedToday).toBe(100);
     expect(state1.capacity).toBe('ok');
+    expect(state1.perf.ask_streaming).toBe('canary');
+    expect(state1.perf.ask_streaming_canary_pct).toBe(15);
     expect(state2).toBe(state1);
 
     // Subsequent call within 10s uses cache
     const state3 = await getPlatformState(mockDb);
     expect(queryCount).toBe(1);
     expect(state3).toBe(state1);
+
+    // getPerfFlags uses the same cached platform state with zero extra DB calls
+    const perf = await getPerfFlags(mockDb);
+    expect(queryCount).toBe(1);
+    expect(perf.ask_streaming).toBe('canary');
   });
 
   it('falls back to stale cache or default on DB failure', async () => {
