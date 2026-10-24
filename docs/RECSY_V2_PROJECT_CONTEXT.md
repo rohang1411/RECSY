@@ -1806,6 +1806,25 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-10-24 - API Latency, Token Streaming & System Design Architecture Complete (Plan 26, WP-00 through WP-14)
+
+- **Execution of Plan 26**: Completed comprehensive API latency optimization, true token streaming, public caching, and clean system design decomposition across all work packages:
+  - **WP-00 Baseline Instrumentation & Benchmark**: Created `StageTimer` (`src/lib/stage-timer.ts`), `Server-Timing` headers, cache telemetry, and deterministic benchmark harness (`scripts/benchmark-api-latency.ts`). Baseline documented in `docs/Reports/03_API_LATENCY_BASELINE.md`.
+  - **WP-01 Runtime Performance Flags**: Created `perf_flags` JSONB in `platform_flags` with schema validation (`src/services/perf/flags.ts`) and operator toggling via `POST /api/internal/flags`.
+  - **WP-02 Auth Fast Path**: Upgraded `resolveRequestIdentity` to use `@supabase/auth-js` `getClaims()` for local asymmetric JWT verification, eliminating duplicate proxy round trips on metered routes. Fixed fake auth cookie production bypass.
+  - **WP-03 Single-Statement Admission Rate Limiting**: Replaced 2-3 sequential Postgres upserts with a single batched multi-row JSON upsert with sorted keys (`PostgresRateLimitStore`), reducing admission statement count from 3 to 1.
+  - **WP-04 `/api/ask` Critical-Path Trimming**: Parallelized phone lookup with quota reservation and query embedding with full-text search. Non-blocking usage telemetry via Next.js `after()`.
+  - **WP-05 `/api/recommend` Critical-Path Trimming**: Parallelized session lookup with quota reservation, and parallelized aspect definitions, catalog loading, and query embedding.
+  - **WP-06 True Token Streaming with Citation Guard**: Implemented real-time token streaming using `runPhoneQnaStream` protected by `CitationStreamGuard`. Slashed `/api/ask` TTFVT by 76.3% (1,180ms down to 280ms) while guaranteeing zero unvalidated citation leaks across 1,000 property-tested stream splits.
+  - **WP-07 Public Data Caching with Tagged Revalidation**: Wrapped catalog and scorecard fetchers in `unstable_cache` with `'phones'`, `'brands'`, `'scorecards'` tags (`src/services/cache/public-data.ts`), backed by HMAC-signed revalidation endpoint `POST /api/internal/revalidate`.
+  - **WP-08 Static Rendering for Layout, Marketing & Phone Pages**: Isolated client cookie dependencies in `RegionSelectIsland`, allowing `/p/[slug]`, `/`, and marketing pages to be statically pre-rendered with ISR (`revalidate = 600`), dropping warm page latency to < 5ms.
+  - **WP-09 Clean Route Decomposition**: Refactored monolithic route handlers into thin controllers (< 215 lines). Extracted `admitMeteredRequest` (`src/services/metering/admission.ts`), `meteredErrorResponse` (`src/services/metering/http-errors.ts`), `AskQuestionUseCase`, and `RecommendTurnUseCase`, verified by 15 characterization tests.
+  - **WP-10 LLM Layer Hygiene**: Fixed double usage recording in Gemini gateway, hardened streaming circuit breakers, and bounded token budgets.
+  - **WP-11 Database Hygiene on Hot Path**: Consolidated `rate_limits` table pruning into single owner (`scripts/db-prune.ts`). Implemented `withStatementTimeout` using `SET LOCAL statement_timeout` inside transactions to prevent pooler connection leakage.
+  - **WP-12 Optional Redis Adapter**: Evaluated per Decision D26-2; Postgres single-statement handles load with 0 extra cost, preserving $0.00 recurring cloud expenditure.
+  - **WP-13 Verification & Latency Report**: Benchmarked post-implementation state across concurrency $C=1, 5, 20$. Documented in `docs/Reports/04_API_LATENCY_AFTER_PLAN_26.md`.
+  - **WP-14 Documentation & Runbooks**: Authored ADR-0023, Runbooks 13, 14, 15, and updated deployment and project context documents.
+
 ### 2026-10-21 - Multi-user platform transformation complete (Plan 25, WP-00 through WP-21)
 
 - **Execution of Plan 25**: Shipped enterprise-grade multi-user platform transformation across 22 work packages.
@@ -4174,6 +4193,21 @@ Breaking changes use `!` suffix: `feat(db)!: add ingest_runs table`.
 
 > This section tracks deliberately deferred work. Items are not bugs; they are conscious trade-offs. Each item includes an acceptance criteria and a rough difficulty.
 
+### P0 - API Latency, Token Streaming & System Design (Plan 26) — SHIPPED (WP-00 through WP-14)
+
+Source of truth: [Plan 26](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md). Baseline: [Report 03](./Reports/03_API_LATENCY_BASELINE.md). Post-implementation: [Report 04](./Reports/04_API_LATENCY_AFTER_PLAN_26.md). ADR-0023, Runbooks 13–15.
+
+| Item                                      | Status    | Acceptance criteria                                                                     | Evidence / Artifact                                                          |
+| :---------------------------------------- | :-------- | :-------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- |
+| True Token Streaming (WP-06)              | Completed | Real model tokens emitted during generation; TTFVT p50 reduced 76.3% (1,180ms → 280ms)  | `src/services/chat/answer.ts`, `citation-stream-guard.ts`                    |
+| Citation Stream Guard (WP-06)             | Completed | Never emits invalid `[c:uuid]` tags; 1,000 random token stream splits pass              | `src/services/chat/citation-stream-guard.test.ts`                            |
+| Single-Statement Rate Limits (WP-03)      | Completed | All 3 admission limits upserted in 1 multi-row JSON statement with sorted keys          | `src/services/rate-limit/store.ts`                                           |
+| Critical-Path Parallelization (WP-04, 05) | Completed | Concurrent lookups and embeddings; usage telemetry moved off critical path              | `src/app/api/ask/route.ts`, `src/app/api/recommend/route.ts`                 |
+| Public Cache & Static Pages (WP-07, 08)   | Completed | Tagged `unstable_cache` + ISR (`revalidate = 600`), warm pages return in < 5ms          | `src/services/cache/public-data.ts`, `revalidate-client.ts`                  |
+| Route Decomposition (WP-09)               | Completed | Thin controllers (< 215 lines); SRP use cases and centralized admission & error mapping | `admission.ts`, `http-errors.ts`, `ask-use-case.ts`, `recommend-use-case.ts` |
+| LLM Layer & DB Hygiene (WP-10, 11)        | Completed | Zero double-counting, non-blocking telemetry, `withStatementTimeout` on hot path        | `src/services/llm/gateway/index.ts`, `src/services/db/timeout.ts`            |
+| Zero Cloud Cost (D26-2)                   | Completed | 100% free-tier preserved, no paid Redis needed or provisioned                           | Free tier preserved across Vercel, Supabase, Cloudflare                      |
+
 ### P0 - Multi-user platform (Plan 25) — SHIPPED (WP-00 through WP-21)
 
 Source of truth: [Plan 25](./ImplementationPlans/25.%20multi-user-platform-quotas-billing-and-artful-experience-plan.md). All 22 work packages (WP-00 through WP-21) implemented, tested, and audited. Ready for production stage rollout (S0 Groundwork → S1 Shadow → S2 Accounts → S3 Enforce Free → S4 Billing Test → S5 Billing Live → S6 GA).
@@ -4848,7 +4882,7 @@ The security architecture is validated through automated test suites:
 
 ## 29. API Latency, Caching & Clean System Design (Plan 26)
 
-> **Status: Planned (not started).** Master Plan: [Plan 26 v2.0.0](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md) (v1.0.0 archived in `ImplementationPlans/archive/`). Analysis: [Report 02 v1.1](./Reports/02_API_ARCHITECTURE_DESIGN_AND_PERFORMANCE_ANALYSIS.md). ADR-0023 is written by WP-14.
+> **Status: Completed (WP-00 through WP-14 shipped; WP-12 evaluated and bypassed per gate D26-2).** Master Plan: [Plan 26 v2.0.0](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md). Baseline: [Report 03](./Reports/03_API_LATENCY_BASELINE.md). Post-Implementation Verification: [Report 04](./Reports/04_API_LATENCY_AFTER_PLAN_26.md). ADR: [ADR-0023](./adr/0023-api-latency-and-caching-architecture.md). Runbooks: 13, 14, 15.
 
 ### 29.1 Verified findings that drive the plan
 

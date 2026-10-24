@@ -1,7 +1,7 @@
 # RECSY v2 — Comprehensive API Architecture, System Design & Performance Analysis
 
 > **Document Metadata**  
-> **Status:** Published; **revised v1.1 (2026-10-24)** with verified corrections. Where this report and Plan 26 v2.0.0 differ, Plan 26 and Section 10 below are authoritative  
+> **Status:** Superseded by implementation; **revised v1.1 (2026-10-24)**. For authoritative empirical measurements after implementation, see [Report 03 — API Latency Baseline](file:///docs/Reports/03_API_LATENCY_BASELINE.md) and [Report 04 — API Latency & Verification After Plan 26](file:///docs/Reports/04_API_LATENCY_AFTER_PLAN_26.md). Where this analysis report and Plan 26 / Report 04 differ, Report 04 and Plan 26 are authoritative  
 > **Author:** Senior & Staff Software Engineering Architecture Review (FAANG / Frontier AI Perspective)  
 > **Target System:** RECSY v2 (`mobile_recommender`)  
 > **Stack:** Next.js 16 (App Router, Node.js Serverless) · Drizzle ORM · Supabase PostgreSQL 17.6 + pgvector · Gemini 3 Flash / 2.5 Pro · Groq · Cerebras · NVIDIA NIM · Stripe · Cloudflare Turnstile  
