@@ -9,6 +9,7 @@
  */
 import { env } from '@/env';
 import type { AppQueryDb } from '@/services/db/client';
+import { withStatementTimeout } from '@/services/db/timeout';
 import {
   loadRecommendationCatalog,
   type LoadCatalogOptions,
@@ -75,7 +76,9 @@ export async function getCachedRecommendationCatalog(
   // Coalesce in-flight fetches so concurrent requests share a single DB load
   let promise = inFlight.get(key);
   if (!promise) {
-    promise = loadRecommendationCatalog(db, regionCode, options)
+    promise = withStatementTimeout(db, '3s', (scopedDb) =>
+      loadRecommendationCatalog(scopedDb, regionCode, options),
+    )
       .then((entries) => {
         const reg = regionCode.trim().toUpperCase();
         const hasSpecEmb = entries.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
