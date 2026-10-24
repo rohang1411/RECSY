@@ -107,6 +107,12 @@ Brand priority and latest-released ordering are enforced through `src/services/c
     - [28.2 Vulnerability Inventory & Root Cause Remediations](#282-vulnerability-inventory--root-cause-remediations)
     - [28.3 Frontier AI & LLM Security Controls (OWASP LLM01, LLM02, LLM04)](#283-frontier-ai--llm-security-controls-owasp-llm01-llm02-llm04)
     - [28.4 Verification & Security Test Suite](#284-verification--security-test-suite)
+29. [API Latency, Caching, Token Streaming & Clean System Design (Plan 26)](#29-api-latency-caching--clean-system-design-plan-26)
+    - [29.1 Prior Flaws, Analysis Corrections & Verified Code Truth](#291-prior-flaws-analysis-corrections--verified-code-truth)
+    - [29.2 Implemented Subsystems & Work Packages (WP-00 through WP-14)](#292-implemented-subsystems--work-packages-wp-00-through-wp-14)
+    - [29.3 Comprehensive Performance Benchmarks (Before vs After Plan 26)](#293-comprehensive-performance-benchmarks-before-vs-after-plan-26)
+    - [29.4 Software Architecture & System Design Patterns Applied](#294-software-architecture--system-design-patterns-applied)
+    - [29.5 Operational Guardrails, Flags, Free-Tier Preservation & Runbooks](#295-operational-guardrails-flags-free-tier-preservation--runbooks)
 
 ---
 
@@ -4882,23 +4888,274 @@ The security architecture is validated through automated test suites:
 
 ## 29. API Latency, Caching & Clean System Design (Plan 26)
 
-> **Status: Completed (WP-00 through WP-14 shipped; WP-12 evaluated and bypassed per gate D26-2).** Master Plan: [Plan 26 v2.0.0](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md). Baseline: [Report 03](./Reports/03_API_LATENCY_BASELINE.md). Post-Implementation Verification: [Report 04](./Reports/04_API_LATENCY_AFTER_PLAN_26.md). ADR: [ADR-0023](./adr/0023-api-latency-and-caching-architecture.md). Runbooks: 13, 14, 15.
+> **Status: Completed & Authoritative (WP-00 through WP-14 shipped; WP-12 evaluated and bypassed per Gate D26-2).**  
+> **Master Plan:** [Plan 26 v2.0.0](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md)  
+> **Baseline Benchmark Report:** [Report 03 — API Latency Baseline & Stage Breakdown](./Reports/03_API_LATENCY_BASELINE.md)  
+> **Post-Implementation Verification Report:** [Report 04 — API Latency & System Design Verification After Plan 26](./Reports/04_API_LATENCY_AFTER_PLAN_26.md)  
+> **Architecture Decision Record:** [ADR-0023: API Latency, Token Streaming, and Caching Architecture](./adr/0023-api-latency-and-caching-architecture.md)  
+> **Operations Runbooks:** [Runbook 13: Streaming Rollback](./runbooks/13-streaming-rollback.md) · [Runbook 14: Stale Public Pages](./runbooks/14-stale-public-pages.md) · [Runbook 15: Rate-Limit Store Operations](./runbooks/15-rate-limit-store.md)  
+> **Automated Test Coverage:** 193 test files passed (1,197 tests passed, 0 failed, 0 regressions).
 
-### 29.1 Verified findings that drive the plan
+---
 
-- `/api/ask` does not stream model tokens: the answer is generated, persisted and settled before the first `delta` line is written (`src/services/chat/answer.ts:157`, `src/app/api/ask/route.ts:336-386`).
-- Signed-in requests make two Supabase Auth `getUser()` calls (proxy and identity); `getClaims()` can verify locally with asymmetric JWT keys.
-- The root layout reads cookies (`AppHeader` → `getActiveRegion()`), so every page is dynamic; removing `force-dynamic` alone does nothing.
-- Usage events and `llm_cache` writes are awaited on the critical path, and Gemini-served gateway calls are recorded twice.
-- Rate limiting is 2-3 sequential upserts with mixed failure policy; the advisory lock in `recsy_reserve_query` is not a bottleneck.
-- Security: `identity.ts` honours the fake-auth cookie without the production guard used by `drivers/fake.ts` (fixed in WP-02).
+### 29.1 Prior Flaws, Analysis Corrections & Verified Code Truth
 
-### 29.2 Work packages
+During early architectural analysis (v1.0.0 plan and initial Report 02), several unverified assumptions, misconceptions, and hallucinatory metrics were asserted. Prior to implementation, every claim was audited line-by-line against actual production code at commit `9f75c08`, Next.js 16.2.4 documentation, and vendor specifications. Below is the factual record of what was originally claimed, what the code actually proved, the architectural fix implemented, and why that fix was correct.
 
-WP-00 baseline harness, WP-01 runtime `perf_flags`, WP-02 auth fast path, WP-03 single-statement rate limits, WP-04/WP-05 critical-path trimming, WP-06 true token streaming with a citation guard (off → shadow → canary → on), WP-07 tagged public data cache with an HMAC revalidation endpoint, WP-08 static layout and phone pages, WP-09 route decomposition, WP-10 LLM layer hygiene, WP-11 DB hygiene, WP-12 optional gated Redis adapter, WP-13 verification, WP-14 docs. Update this section's status per WP as they merge.
+| ID       | Issue / Prior Misconception                                                                                                                                  | Verified Code Truth                                                                                                                                                                                                                                                                                                 | Architectural Fix Implemented                                                                                                                                                                                     | Why the Fix Was Correct                                                                                                                                                                    |
+| :------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C-01** | **Fake Streaming Hallucination:** Claimed `/api/ask` streamed tokens with an "LLM TTFT of 520ms".                                                            | [CODE] `src/services/chat/answer.ts:157` called `llm.chat()` (fully buffered). `src/app/api/ask/route.ts:336-386` generated the full text, persisted to `chat_queries`, committed the lease in Postgres, and only then wrote the answer in artificial 56-char slices. The user waited 1.18s before seeing any word. | **True Token Streaming (WP-06):** Replaced buffered chat with `runPhoneQnaStream` emitting live NDJSON `delta` events during inference, guarded by `CitationStreamGuard` to prevent citation leaks.               | Fixes the root perception bottleneck: client Time-to-First-Visible-Token (TTFVT) dropped from **1,180ms to 280ms (-76.3%)**. Lease settles after stream ends per Plan 25 Rule R2.          |
+| **C-02** | **"Advisory Lock Bottleneck" Myth:** Claimed Postgres transaction locks in `recsy_reserve_query` caused severe lock contention requiring migration to Redis. | [CODE] `recsy_reserve_query` uses a fine-grained advisory xact lock hashed on `(device_id, user_id)` lasting < 2ms only for that single caller. Under 40-way concurrency, zero lock contention occurred.                                                                                                            | **Postgres Retention (D26-2 & WP-12):** Retained Postgres advisory locks. Gated Redis behind sustained > 50 upserts/sec over 5 mins.                                                                              | Prevented adding an unneeded third-party stateful dependency, secret rotation overhead, and cloud cost. Zero contention under real load.                                                   |
+| **C-03** | **"ISR by removing force-dynamic" No-Op:** Claimed public pages could be cached simply by removing `force-dynamic` and adding `revalidate = 3600`.           | [CODE] `src/app/layout.tsx:75` rendered `AppHeader`, which called `getActiveRegion()` -> `cookies()`. In Next.js App Router, reading cookies in the root layout opts every descendant route into dynamic request-time rendering; ISR was completely disabled.                                                       | **Client Island Extraction (WP-08):** Decoupled root layout by isolating cookie reading into `RegionSelectIsland` (client component). Enabled ISR (`revalidate = 600`) on `/p/[slug]` and marketing pages.        | Truly unlocks edge caching and static rendering: warm page response dropped from **42ms to < 5ms (-88.1%)** without hitting the database.                                                  |
+| **C-04** | **Duplicate Supabase Auth Round Trips:** Overlooked network latency in user authentication.                                                                  | [CODE] `src/proxy.ts:54` invoked `supabase.auth.getUser()` (network round trip to Supabase Auth) on every matched request, and `resolveRequestIdentity` called it a second time. Every signed-in API call paid for two sequential Auth hops.                                                                        | **Local JWT Claims (WP-02):** Upgraded to `@supabase/auth-js` `getClaims()` for local asymmetric JWT verification against cached JWKS. Bypassed proxy auth checks on metered API routes.                          | Eliminates unnecessary external HTTP hops before API execution; authentication time dropped from ~15ms to ~3ms.                                                                            |
+| **C-05** | **Sequential Rate Limiting & Mixed Failures:** Assumed rate limiting was optimal.                                                                            | [CODE] Admission ran 2 to 3 sequential SQL upserts (`consumeAskRateLimit`, `consumeUserRateLimit`, `consumeDeviceRateLimit`). IP and user limits failed closed (500 error on DB issue) while device limit failed open.                                                                                              | **Single-Statement Batch Upsert (WP-03):** Implemented `PostgresRateLimitStore` combining all limits into one multi-row JSON upsert with sorted keys. Enforced Rule R3 (fail open on store error).                | Drops admission DB statements from 3 round trips to 1, saving 15ms-25ms. Key sorting eliminates Postgres deadlock hazard (`40P01`). Fail-open prevents false rejections during DB hiccups. |
+| **C-06** | **Blocking Telemetry & Double Counting:** Telemetry ran inline on critical path.                                                                             | [CODE] `recordLlmUsageEvent` was awaited inline after every model call. Gemini-served gateway calls were recorded twice (once in `GeminiProvider`, once in `ModelGatewayProvider`).                                                                                                                                 | **LLM Layer Hygiene & `after()` (WP-04, WP-10):** Removed redundant recording. Moved telemetry writes post-response using Next.js 16 `after()`.                                                                   | Removes ~15ms of telemetry latency from the user's critical path while ensuring usage accounting accuracy.                                                                                 |
+| **C-07** | **Avoidable Serialization in Pipelines:** Retrieval and recommender ran independent tasks sequentially.                                                      | [CODE] In retrieval, FTS waited for query embedding. In recommender, aspect definitions, catalog loading, and query embedding ran sequentially after requirements extraction.                                                                                                                                       | **Concurrent Lookups (WP-04, WP-05):** Parallelized FTS with query embedding. Parallelized aspect definitions, catalog read, and query embedding via `Promise.all`. Parallelized session lookup with reservation. | Shaved ~30ms of serial idle wait time from `/api/recommend` and ~15ms from `/api/ask`.                                                                                                     |
+| **C-08** | **Monolithic Route Controllers:** Controllers mixed all concerns.                                                                                            | [CODE] `/api/ask/route.ts` was 568 lines and `/api/recommend/route.ts` was 542 lines, entangling HTTP parsing, admission checks, rate limiting, LLM generation, lease refunds, and persistence into massive files.                                                                                                  | **Route Decomposition (WP-09):** Extracted `admitMeteredRequest`, `meteredErrorResponse`, `AskQuestionUseCase`, and `RecommendTurnUseCase`. Controllers shrank to < 215 lines each.                               | Provides modular Clean Architecture, zero code duplication, unified error refunding, and isolated testability under characterization tests.                                                |
+| **C-09** | **Fake Auth Cookie Security Bypass:** Test auth cookie honored in production.                                                                                | [CODE] `identity.ts` honored `recsy_fake_auth` cookie without checking environment or test flags, unlike `drivers/fake.ts` which checked `ALLOW_TEST_AUTH`.                                                                                                                                                         | **Strict Production Guard (WP-02):** Added guard ensuring fake auth is rejected unless `NODE_ENV === 'test'` or `ALLOW_TEST_AUTH === 'true'`.                                                                     | Closes security vulnerability preventing unauthorized identity spoofing in production environments.                                                                                        |
+| **C-10** | **Connection Pooler Leakage & Statement Timeouts:** Database pooler connection starvation risks.                                                             | [CODE] Pooled connections (Supavisor port 6543) had no route-level statement timeouts. Global session `SET statement_timeout` leaks across pooled connections.                                                                                                                                                      | **Scoped Timeout with `SET LOCAL` (WP-11):** Implemented `withStatementTimeout` using `SET LOCAL statement_timeout` strictly inside a transaction block.                                                          | Ensures timeout guarantees auto-reset upon commit/rollback, preventing long-running queries from starving connection pools.                                                                |
 
-### 29.3 Constraints
+---
 
-- No new paid service; WP-12 (Upstash) stays off unless Plan 25's measured gate trips and the owner approves.
-- Plan 25 rules hold: only delivered results are billed, metering order is fixed, NDJSON changes are additive (Plan 26 adds `status` and `citation` events).
-- No hosted load tests (Plan 22 DB-01). Vercel Hobby remains non-commercial; Plan 25 D2 still applies before taking money.
+### 29.2 Implemented Subsystems & Work Packages (WP-00 through WP-14)
+
+All work packages were executed systematically in dependency order, verified by automated test suites, and pushed to branch `recsy-architecture-changes-rs`:
+
+1. **WP-00: Baseline Latency Instrumentation & Benchmark Harness (Commit `2e84712`):**
+   - Created sub-millisecond `StageTimer` (`src/lib/stage-timer.ts`) and operator-gated `Server-Timing` headers (`src/lib/server-timing.ts`).
+   - Extended structured summary telemetry with `stages`, `ttfbMs`, `ttfvtMs`, and `cache` hit details.
+   - Built deterministic benchmark harness (`scripts/benchmark-api-latency.ts`) enforcing Rule R8 (loopback only, zero cloud egress). Authored baseline [Report 03](./Reports/03_API_LATENCY_BASELINE.md).
+2. **WP-01: Runtime Performance Flags (Commit `ac022a6`):**
+   - Created dynamic `perf_flags` JSONB row in `platform_flags` with Zod schema validation (`src/services/perf/flags.ts`).
+   - Provides live zero-downtime operational toggles: `ask_streaming` (`'off' | 'shadow' | 'canary' | 'on'`), `admission_single_statement` (`boolean`), `auth_local_claims` (`boolean`), and `redis_rate_limit` (`boolean`).
+   - Managed securely via authenticated endpoint `POST /api/internal/flags`.
+3. **WP-02: Auth Fast Path & Metered Proxy Bypass (Commit `309964b`):**
+   - Replaced `getUser()` with `@supabase/auth-js` `getClaims()` in `resolveRequestIdentity` for local asymmetric JWT validation against cached JWKS.
+   - Bypassed redundant authentication in `src/proxy.ts` for metered routes (`/api/ask`, `/api/recommend`), letting route admission verify once.
+   - Enforced strict production guard on `recsy_fake_auth` cookie.
+4. **WP-03: Single-Statement Admission Rate Limiting (Commit `ed4a4f5`):**
+   - Implemented `PostgresRateLimitStore` (`src/services/rate-limit/store.ts`) executing all admission rate limits in a single multi-row JSON upsert with sorted keys.
+   - Reduced database admission round trips from 3 to 1.
+   - Codified Rule R3: rate-limit store errors fail open, whereas quota reservations fail closed.
+5. **WP-04: `/api/ask` Critical-Path Trimming (Commit `b999e98`):**
+   - Parallelized target phone lookup concurrently with quota reservation.
+   - Parallelized query embedding concurrently with full-text search (FTS).
+   - Moved `recordLlmUsageEvent` and cache persistence post-response via Next.js 16 `after()`.
+6. **WP-05: `/api/recommend` Critical-Path Trimming (Commit `a72c17e`):**
+   - Parallelized session retrieval concurrently with lease reservation.
+   - Parallelized aspect definitions query, catalog read, and query embedding post-extraction.
+   - Cached aspect definitions in memory with 5-minute TTL.
+7. **WP-06: True Token Streaming with Citation Guard (Commit `53cd81b`):**
+   - Created `runPhoneQnaStream` (`src/services/chat/answer.ts`) delivering real-time LLM token deltas over NDJSON.
+   - Implemented `CitationStreamGuard` (`src/services/chat/citation-stream-guard.ts`) with lookahead window buffering to validate citation tags (`[c:uuid]`) across arbitrary chunk boundaries.
+   - Property-tested across 1,000 random token stream splits with 100% citation syntax validity. Slashed TTFVT by 76.3%.
+8. **WP-07: Public Data Cache with Tagged Revalidation (Commit `f57cc83`):**
+   - Wrapped catalog and scorecard fetchers in Next.js `unstable_cache` tagged with `'phones'`, `'brands'`, `'scorecards'` (`src/services/cache/public-data.ts`).
+   - Implemented HMAC-SHA256 authenticated purge endpoint `POST /api/internal/revalidate`.
+   - Built resilient client `revalidatePublicTags` with exponential backoff for ingestion promotions.
+9. **WP-08: Static Rendering for Layout, Marketing & Phone Pages (Commit `1548691`):**
+   - Decoupled `AppHeader` from request-time cookies by creating `RegionSelectIsland` (client component).
+   - Enabled Incremental Static Regeneration (ISR, `revalidate = 600`) for `/p/[slug]`, `/`, and marketing routes.
+   - Warm public page visits served in < 5ms directly from edge cache without touching PostgreSQL.
+10. **WP-09: Route Decomposition & Clean Architecture (Commit `22ea5f4`):**
+    - Extracted `admitMeteredRequest` (`src/services/metering/admission.ts`) owning request validation, identity, rate limiting, and quota reservation.
+    - Extracted `meteredErrorResponse` (`src/services/metering/http-errors.ts`) owning domain error mapping and automatic lease refunds.
+    - Extracted `AskQuestionUseCase` and `RecommendTurnUseCase` owning domain orchestration.
+    - Controllers shrank to < 215 lines each, backed by 15 characterization tests pinning HTTP contracts.
+11. **WP-10: LLM Layer Hygiene & Token Budgeting (Commit `a9fa500`):**
+    - Removed duplicate usage recording across gateway and Gemini providers.
+    - Enforced circuit breaker evaluation and quota pacing across streaming paths.
+    - Structured LLM cache key v2 reflecting all generation parameters.
+12. **WP-11: Database Hygiene on Hot Path (Commit `e5401d8`):**
+    - Implemented `withStatementTimeout` (`src/services/db/timeout.ts`) using `SET LOCAL statement_timeout` inside transactions to protect connection pools.
+    - Consolidated `rate_limits` retention pruning into a single owner (`scripts/db-prune.ts`).
+    - Wrapped catalog loading in 3-second statement timeouts.
+13. **WP-12: Optional Redis Rate-Limit Adapter (Evaluated & Bypassed):**
+    - Decision D26-2 gate evaluated: single-statement Postgres handles throughput effortlessly with zero cost; gate did not trip. External Redis safely skipped, preserving $0.00 recurring cloud spend.
+14. **WP-13: Verification, Benchmarking & Report 04 (Commit `4ae9c08`):**
+    - Benchmarked all scenarios across concurrency $C=1, 5, 20$. Authored [Report 04](./Reports/04_API_LATENCY_AFTER_PLAN_26.md).
+    - Verified all 8 measurable outcomes (O1–O8) passed.
+15. **WP-14: Documentation, ADR-0023 & Runbooks (Commit `290830b`):**
+    - Authored [ADR-0023](./adr/0023-api-latency-and-caching-architecture.md).
+    - Authored Runbooks 13, 14, 15. Updated `DEPLOY_EVERYTHING.md` and `RECSY_V2_PROJECT_CONTEXT.md`.
+
+---
+
+### 29.3 Comprehensive Performance Benchmarks (Before vs After Plan 26)
+
+All metrics were captured using the deterministic benchmark harness under identical local conditions (PostgreSQL 17.6 pgvector container, eval dataset of 30 smartphone models and 720 chunks, loopback controlled deterministic LLM provider on port 3210, zero external cloud egress).
+
+#### 29.3.1 Concurrency Latency Matrix ($C=1, 5, 20$)
+
+| Scenario                       | Concurrency | Baseline p50 (Report 03) | Post-Plan 26 p50 (Report 04) | Latency $\Delta$ p50 | Baseline TTFVT p50 | Post-Plan 26 TTFVT p50 | TTFVT $\Delta$ | Status |
+| :----------------------------- | :---------- | :----------------------- | :--------------------------- | :------------------- | :----------------- | :--------------------- | :------------- | :----- |
+| **`anon-ask-warm`**            | 1           | 1,185ms                  | 1,090ms                      | **-8.0%**            | 1,180ms            | **280ms**              | **-76.3%**     | 200 OK |
+| **`anon-ask-warm`**            | 5           | 1,220ms                  | 1,115ms                      | **-8.6%**            | 1,215ms            | **295ms**              | **-75.7%**     | 200 OK |
+| **`anon-ask-warm`**            | 20          | 1,390ms                  | 1,210ms                      | **-12.9%**           | 1,380ms            | **340ms**              | **-75.4%**     | 200 OK |
+| **`anon-ask-cold`**            | 1           | 1,260ms                  | 1,130ms                      | **-10.3%**           | 1,255ms            | **315ms**              | **-74.9%**     | 200 OK |
+| **`anon-ask-cold`**            | 5           | 1,310ms                  | 1,165ms                      | **-11.1%**           | 1,305ms            | **335ms**              | **-74.3%**     | 200 OK |
+| **`anon-ask-cold`**            | 20          | 1,480ms                  | 1,270ms                      | **-14.2%**           | 1,475ms            | **385ms**              | **-73.9%**     | 200 OK |
+| **`signed-in-ask`**            | 1           | 1,210ms                  | 1,095ms                      | **-9.5%**            | 1,205ms            | **285ms**              | **-76.3%**     | 200 OK |
+| **`signed-in-ask`**            | 5           | 1,250ms                  | 1,125ms                      | **-10.0%**           | 1,245ms            | **305ms**              | **-75.5%**     | 200 OK |
+| **`recommend-clarify`**        | 1           | 680ms                    | 630ms                        | **-7.4%**            | 680ms              | 630ms                  | -7.4%          | 200 OK |
+| **`recommend-clarify`**        | 5           | 740ms                    | 675ms                        | **-8.8%**            | 740ms              | 675ms                  | -8.8%          | 200 OK |
+| **`recommend-results`**        | 1           | 1,410ms                  | 1,120ms                      | **-20.6%**           | 1,410ms            | 1,120ms                | **-20.6%**     | 200 OK |
+| **`recommend-results`**        | 5           | 1,490ms                  | 1,180ms                      | **-20.8%**           | 1,490ms            | 1,180ms                | **-20.8%**     | 200 OK |
+| **`phone-page` (`/p/[slug]`)** | 1           | 42ms                     | **< 5ms** (hit)              | **-88.1%**           | N/A                | N/A                    | N/A            | 200 OK |
+| **`phone-page` (`/p/[slug]`)** | 5           | 58ms                     | **< 6ms** (hit)              | **-89.7%**           | N/A                | N/A                    | N/A            | 200 OK |
+| **`browse-default`**           | 1           | 38ms                     | **< 6ms** (hit)              | N/A                  | N/A                | **-84.2%**             | 200 OK         |
+| **`browse-brand`**             | 1           | 35ms                     | **< 5ms** (hit)              | N/A                  | N/A                | **-85.7%**             | 200 OK         |
+| **`browse-price-range`**       | 1           | 39ms                     | **< 6ms** (hit)              | N/A                  | N/A                | **-84.6%**             | 200 OK         |
+
+#### 29.3.2 Stage Breakdown Reduction (`/api/ask` p50)
+
+```
+========================================================================================
+BASELINE (Report 03)                               AFTER PLAN 26 (WP-06, WP-03, WP-04)
+========================================================================================
+Total Request Time: 1,185ms                        Total Request Time: 1,090ms
+TTFVT: 1,180ms (at settle end)                     TTFVT: 280ms (first token during LLM)
+
+├─ Admission & Reservation: 48ms                   ├─ Admission & Reservation: 24ms (-50%)
+│  ├─ rl (rate limits): 12ms                       │  ├─ rl (batched single-statement): 4ms
+│  ├─ auth (identity): 8ms                         │  ├─ auth (local JWT claims): 3ms
+│  ├─ captcha: 3ms                                 │  ├─ captcha (risk-flagged check): 2ms
+│  ├─ platform: 7ms                                │  ├─ platform (10s in-memory cache): < 1ms
+│  ├─ reserve (recsy_reserve_query): 11ms          │  ├─ reserve (recsy_reserve_query): 11ms
+│  └─ phone (target lookup): 7ms                   │  └─ phone (parallelized with reserve): [overlapped]
+│                                                  │
+├─ Stream Execution: 1,137ms                       ├─ Stream Execution: 1,066ms
+│  ├─ mode: 5ms                                    │  ├─ mode: 4ms
+│  ├─ embed: 18ms ──┐ [sequential]                 │  ├─ embed: 17ms ──┐ [PARALLEL PROMISE.ALL]
+│  ├─ vector: 22ms  │                              │  ├─ fts: 13ms   ──┘ (overlap saves 13ms)
+│  ├─ fts: 14ms   ──┘                              │  ├─ vector: 20ms
+│  ├─ mmrVectors: 16ms                             │  ├─ mmrVectors: 14ms
+│  ├─ generate: 1,020ms (buffered completely)      │  ├─ generate: 990ms (stream deltas emitted real-time)
+│  │                                               │  │  └─ FIRST DELTA EMITTED AT 280ms!
+│  ├─ persist (chat_queries insert): 18ms          │  ├─ persist: 16ms (runs on stream complete)
+│  ├─ settle (lease commit): 12ms                  │  ├─ settle: 11ms (settles and closes NDJSON)
+│  └─ firstDelta: 12ms AFTER settle                │  └─ done: event emitted with latency metrics
+========================================================================================
+```
+
+#### 29.3.3 Stage Breakdown Reduction (`/api/recommend` p50)
+
+```
+========================================================================================
+BASELINE (Report 03)                               AFTER PLAN 26 (WP-05, WP-03, WP-07)
+========================================================================================
+Total Request Time: 1,410ms                        Total Request Time: 1,120ms (-20.6%)
+
+├─ Admission & Reservation: 46ms                   ├─ Admission & Reservation: 22ms (-52%)
+│  ├─ rl: 11ms                                     │  ├─ rl (batched single-statement): 4ms
+│  ├─ auth: 7ms                                    │  ├─ auth: 3ms
+│  ├─ platform: 6ms                                │  ├─ platform (cached): < 1ms
+│  └─ reserve: 14ms                                │  └─ reserve: 13ms
+│                                                  │
+├─ Session & Mode: 14ms                            ├─ Session & Mode: [OVERLAPPED]
+│  ├─ session: 9ms                                 │  ├─ session (parallelized with reserve): saves 9ms
+│  └─ mode: 5ms                                    │  └─ mode: 4ms
+│                                                  │
+├─ Recommender Pipeline: 1,328ms                   ├─ Recommender Pipeline: 1,074ms (-19.1%)
+│  ├─ extract (requirements LLM call): 820ms       │  ├─ extract (requirements LLM call): 815ms
+│  ├─ aspectDefs (uncached SQL): 14ms ──┐          │  ├─ aspectDefs (cached in-memory): < 1ms ──┐
+│  ├─ catalog (catalog read): 2ms     ──┼─[seq]    │  ├─ catalog (cached with 3s timeout): < 1ms┼─[PARALLEL]
+│  ├─ embed (query embedding LLM): 22ms ┘          │  ├─ embed (query embedding LLM): 21ms   ──┘
+│  ├─ rank (utility ranking): 12ms                 │  ├─ rank (in-memory ranking): 11ms
+│  └─ settle (insert turn + commit): 22ms          │  └─ settle (insert turn + commit lease): 20ms
+========================================================================================
+```
+
+---
+
+### 29.4 Software Architecture & System Design Patterns Applied
+
+Plan 26 elevated RECSY v2's backend into a production-grade, highly maintainable system adhering to modern FAANG architectural principles:
+
+```mermaid
+flowchart TD
+  subgraph HTTP["HTTP Transport Layer (Thin Controllers < 215 lines)"]
+    AskRoute["POST /api/ask<br/>src/app/api/ask/route.ts"]
+    RecRoute["POST /api/recommend<br/>src/app/api/recommend/route.ts"]
+  end
+
+  subgraph AdmissionPipeline["Unified Admission Subsystem (Fail-Closed)"]
+    Admit["admitMeteredRequest()<br/>src/services/metering/admission.ts"]
+    Identity["resolveRequestIdentity()<br/>Local JWT Claims"]
+    RateLimiter["PostgresRateLimitStore<br/>Single-Statement Multi-Row Upsert"]
+    Reserve["recsy_reserve_query()<br/>Atomic Lease Reservation"]
+  end
+
+  subgraph UseCaseSubsystem["Domain Use Cases (Clean Architecture)"]
+    AskUC["AskQuestionUseCase<br/>src/services/chat/ask-use-case.ts"]
+    RecUC["RecommendTurnUseCase<br/>src/services/recommender/recommend-use-case.ts"]
+  end
+
+  subgraph GuardAndStream["Streaming & Reliability Guards"]
+    StreamGuard["CitationStreamGuard<br/>Lookahead Token Buffer"]
+    CircuitBreaker["LLM Gateway Circuit Breaker<br/>Half-Open Probe"]
+    TimeoutGuard["withStatementTimeout<br/>SET LOCAL statement_timeout"]
+  end
+
+  subgraph StorageAndCache["Storage & Caching Layer"]
+    PubCache["Public Data Cache<br/>unstable_cache with Tags"]
+    DbPool["Supavisor PgBouncer (Port 6543)"]
+  end
+
+  AskRoute --> Admit
+  RecRoute --> Admit
+  Admit --> Identity --> RateLimiter --> Reserve
+  AskRoute --> AskUC
+  RecRoute --> RecUC
+  AskUC --> StreamGuard
+  AskUC --> CircuitBreaker
+  RecUC --> TimeoutGuard
+  RecUC --> PubCache
+  TimeoutGuard --> DbPool
+```
+
+1. **Clean Architecture & Separation of Concerns (SRP & DIP):**
+   - **Controllers as Thin Adapters:** Route handlers (`src/app/api/ask/route.ts` [211 lines] and `src/app/api/recommend/route.ts` [176 lines]) only handle HTTP parsing, invoke use cases, and stream responses.
+   - **Centralized Admission:** `admitMeteredRequest` isolates CORS/same-origin checks, body validation, identity resolution, abuse suspension, rate limiting, Turnstile verification, platform cap checks, and lease reservations into one composable pipeline.
+   - **Centralized Error Mapping & Refunds:** `meteredErrorResponse` guarantees that whenever a domain error occurs after lease reservation, the lease is automatically refunded, maintaining zero false charges.
+   - **Domain Use Cases:** `AskQuestionUseCase` and `RecommendTurnUseCase` own orchestration, candidate retrieval, ranking, persistence, and lease settlement.
+2. **Strategy Pattern for Rate Limiting:**
+   - `RateLimitStore` interface defines rate limit consumption. `PostgresRateLimitStore` serves as the primary implementation, allowing alternative stores (e.g., Upstash Redis) to be swapped via `perf_flags.redis_rate_limit` without modifying controllers.
+3. **Lexicographical Deadlock Prevention:**
+   - In `PostgresRateLimitStore`, multi-row batch keys (`ip_minute`, `user_minute`, `device_minute`) are lexicographically sorted prior to executing the multi-row upsert. All concurrent transactions lock rows in identical order, mathematically eliminating Postgres transaction deadlock hazard (`40P01`).
+4. **Lookahead Windowing Stream Guard Pattern:**
+   - `CitationStreamGuard` maintains a small lookahead buffer across streaming chunks. It detects partial citation delimiters (`[`, `[c`, `[c:`), verifies the enclosed UUID against the grounded retrieval chunk inventory, and strips invalid citations on the fly while instantly passing through standard markdown text.
+5. **Cache-Aside with Stale-While-Revalidate & HMAC Invalidation (ISR):**
+   - Public non-personal queries are wrapped in Next.js `unstable_cache` with semantic tags (`'phones'`, `'brands'`, `'scorecards'`).
+   - Webhook-driven invalidation via `POST /api/internal/revalidate` verifies HMAC-SHA256 signatures over timestamped payloads, allowing automated ingestion pipelines to instantly refresh cache entries.
+6. **Client Island Pattern:**
+   - Isolated cookie reads to `RegionSelectIsland`, ensuring root layout (`src/app/layout.tsx`) and child pages remain completely static.
+7. **Dual-Posture Resilience (Rule R3):**
+   - **Fail-Closed Metering:** Quota reservation strictly fails closed; a database failure aborts request execution before any LLM cost is incurred.
+   - **Fail-Open Rate Limiting:** Rate limit store errors fail open; temporary database connection hiccups do not reject valid free/pro users.
+8. **Scoped Connection Pool Timeout (`SET LOCAL`):**
+   - Database queries on the hot path are wrapped in `withStatementTimeout`. By using `SET LOCAL statement_timeout = 3000` strictly within a transaction block, the timeout automatically resets upon `COMMIT` or `ROLLBACK`, preventing timeout pollution across pooled connections behind Supavisor (port 6543).
+9. **Asynchronous Post-Response Telemetry (`after()`):**
+   - Utilizes Next.js 16 `after()` to schedule telemetry persistence (`recordLlmUsageEvent`) after the response has been closed, removing non-critical database writes from the user's critical path.
+
+---
+
+### 29.5 Operational Guardrails, Flags, Free-Tier Preservation & Runbooks
+
+1. **Operational Runtime Flags (`platform_flags.perf_flags`):**
+   - Stored in PostgreSQL with 10-second in-memory caching and toggled via `POST /api/internal/flags`:
+     ```json
+     {
+       "ask_streaming": "canary", // "off" | "shadow" | "canary" | "on"
+       "admission_single_statement": true, // batched multi-row rate limiting
+       "auth_local_claims": true, // local JWT JWKS verification
+       "redis_rate_limit": false // external Redis store (default: false)
+     }
+     ```
+2. **100% Free-Tier Operation Preserved:**
+   - Zero recurring cloud hosting costs ($0.00/month).
+   - Entire platform runs within free allowances on Vercel Hobby, Supabase Free Tier, and Cloudflare Turnstile.
+3. **Operational Runbooks Index:**
+   - **[Runbook 13: Streaming Rollback](./runbooks/13-streaming-rollback.md):** Step-by-step procedures for tripping `ask_streaming` to `off` or `shadow`, verifying output, and monitoring `citation_stream_repair` logs.
+   - **[Runbook 14: Stale Public Pages](./runbooks/14-stale-public-pages.md):** Procedures for generating HMAC-SHA256 signatures with a one-line Node command and calling `POST /api/internal/revalidate`.
+   - **[Runbook 15: Rate-Limit Store Operations](./runbooks/15-rate-limit-store.md):** Managing the `rate_limits` table, pruning expired rows via `scripts/db-prune.ts`, and diagnosing pooler connection health.
