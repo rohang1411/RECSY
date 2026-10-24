@@ -1,66 +1,32 @@
 /**
- * POST /api/recommend — conversational recommender pipeline.
+ * POST /api/recommend — conversational recommender pipeline (Plan 26 WP-09).
  *
- * Accepts `{ message, sessionId? }`. Creates or loads an anonymous
- * or user-owned recommendation session, enforces metering, quota reservations,
- * rate limits, abuse checks, then runs the full recommender pipeline.
- *
- * Normative reference: Section 7.3.1, 7.5, 7.7, 8.6, 8.7 of plan 25; Plan 26 WP-00.
+ * Thin controller delegating to `admitMeteredRequest`, `RecommendTurnUseCase`,
+ * and `meteredErrorResponse`.
  */
 import { randomBytes } from 'node:crypto';
-
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { ZodError, z } from 'zod';
-import { sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
-import { env } from '@/env';
-import {
-  AccountRestrictedError,
-  AppError,
-  ByokError,
-  QuotaDeniedError,
-  RateLimitError,
-  isAppError,
-  publicErrorMessage,
-  toAppError,
-} from '@/lib/errors';
+import { QuotaDeniedError } from '@/lib/errors';
+import { parseRequestId } from '@/lib/request-id';
 import { readRequestJson } from '@/lib/request-json';
-import { summarizeErrorChainForLogs } from '@/lib/summarize-error';
-import { getRequestClientIp } from '@/lib/request-ip';
-import { assertSameOrigin } from '@/lib/same-origin';
-import { createStageTimer } from '@/lib/stage-timer';
+import { createStageTimer, type StageTimer } from '@/lib/stage-timer';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
-import { getDb, type AppQueryDb } from '@/services/db/client';
-import { recommendationTurns } from '@/services/db/schema';
+import { getDb } from '@/services/db/client';
 import { getLlm } from '@/services/llm';
-import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { requestLogger } from '@/services/logger';
-import { consumeAdmissionLimits } from '@/services/rate-limit';
-import { hashSessionIp } from '@/services/rate-limit/ip-hash';
-import { runRecommendationPipeline } from '@/services/recommender/run-recommendation';
-import {
-  findSessionByCookie,
-  insertRecommendationSession,
-  nextTurnIndex,
-} from '@/services/recommender/session';
-import {
-  getDeviceCookieName,
-  getDeviceCookieOptions,
-  mintDeviceCookieValue,
-} from '@/services/auth/device';
-import { resolveRequestIdentity, type RequestIdentity } from '@/services/auth/identity';
-import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/turnstile';
-import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
+import { findSessionByCookie } from '@/services/recommender/session';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
-import { findReplayTurn } from '@/services/metering/replay';
-import { emitMeteredRequestSummary } from '@/services/metering/summary';
-import { resolveReasoningMode } from '@/services/metering/mode';
+import { findReplayTurn, type ReplayTurnResult } from '@/services/metering/replay';
 import type { QueryLease } from '@/services/metering/lease';
+import { admitMeteredRequest, type AdmittedRequest } from '@/services/metering/admission';
+import { meteredErrorResponse } from '@/services/metering/http-errors';
+import { RecommendTurnUseCase } from '@/services/recommender/recommend-use-case';
 
-import { parseRequestId } from '@/lib/request-id';
 export { parseRequestId };
 
 export const runtime = 'nodejs';
@@ -78,66 +44,34 @@ const bodySchema = z.object({
     ),
 });
 
-function sessionCookieOptions(): {
-  readonly httpOnly: boolean;
-  readonly sameSite: 'lax';
-  readonly path: string;
-  readonly maxAge: number;
-  readonly secure: boolean;
-} {
-  return {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 14,
-    secure: env.NODE_ENV === 'production',
+function createReplayResponse(
+  replay: ReplayTurnResult,
+  traceId: string,
+  requestId: string,
+  timer: StageTimer,
+  request: NextRequest,
+): NextResponse {
+  const replayHeaders: Record<string, string> = {
+    'Cache-Control': 'private, no-store',
+    'X-Trace-Id': traceId,
+    'X-Request-Id': requestId,
   };
-}
-
-function attachDeviceCookieIfNeeded(res: NextResponse, request: NextRequest): void {
-  const name = getDeviceCookieName();
-  if (!request.cookies.get(name)?.value) {
-    res.cookies.set(name, mintDeviceCookieValue(), getDeviceCookieOptions());
+  if (shouldEmitServerTiming(request)) {
+    replayHeaders['Server-Timing'] = timer.serverTiming();
   }
-}
-
-async function assertCaptchaIfRiskFlagged(
-  db: AppQueryDb,
-  identity: RequestIdentity,
-  anonIpCap: number,
-  turnstileToken: string | null | undefined,
-  clientIp?: string,
-): Promise<void> {
-  if (identity.userId !== null || !identity.ipKey || anonIpCap <= 0 || !env.TURNSTILE_SECRET_KEY) {
-    return;
-  }
-  try {
-    const res = await db.execute<{ queries_used: number }>(sql`
-      SELECT queries_used FROM usage_counters
-       WHERE subject_type = 'ip_prefix'
-         AND subject_id = ${identity.ipKey}
-         AND usage_date = (now() AT TIME ZONE 'UTC')::date
-       LIMIT 1;
-    `);
-    const ipAnonUsedToday = res[0]?.queries_used ?? 0;
-    if (isTrafficRiskFlagged({ ipKey: identity.ipKey, ipAnonUsedToday, anonIpCap })) {
-      if (!turnstileToken) {
-        throw new AppError('CAPTCHA_REQUIRED', 'Security verification required', {
-          status: 428,
-        });
-      }
-      const result = await verifyTurnstileToken(turnstileToken, clientIp);
-      if (!result.success) {
-        throw new AppError('CAPTCHA_REQUIRED', 'Security verification failed. Please try again.', {
-          status: 428,
-          context: { errorCodes: result.errorCodes },
-        });
-      }
-    }
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'CAPTCHA_REQUIRED') throw err;
-    // Fail-open on transient database counter lookup error
-  }
+  return NextResponse.json(
+    {
+      message: replay.userMessage,
+      intent: replay.intent,
+      requirements: replay.extractedRequirements,
+      picks: replay.picks ?? [],
+      clarifyingQuestion: replay.clarifyingQuestion ?? undefined,
+      quota: replay.quota,
+      sessionId: replay.sessionId,
+      replayed: true,
+    },
+    { headers: replayHeaders },
+  );
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -145,90 +79,42 @@ export async function POST(request: NextRequest): Promise<Response> {
   const timer = createStageTimer();
   const traceId = randomBytes(16).toString('hex');
   const log = requestLogger({ traceId, route: 'POST /api/recommend' });
-  const config = getMeteringConfig();
 
   let lease: QueryLease | null = null;
-  let identity: RequestIdentity | null = null;
-  let isByok = false;
+  let admitted: AdmittedRequest | null = null;
   let reserveMs = 0;
-  let settleMs = 0;
 
   try {
-    // 1. Same-origin check
-    assertSameOrigin(request);
-    const ip = getRequestClientIp(request);
-
-    // 2. Request body & request id parsing (fail-fast before database work)
+    // 1. Request body parsing (fail-fast before database work)
     const json = await readRequestJson(request, 16_384);
     const body = bodySchema.parse(json);
-    const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
-    // 3. Platform state (cached in-memory, read-only; loaded before identity for localClaims flag)
+    // 2. Shared metered request admission pipeline
     const db = getDb();
-    const platform = await timer.time('platform', () => getPlatformState(db));
+    admitted = await admitMeteredRequest(request, 'POST /api/recommend', { db }, timer);
 
-    // 4. Identity and suspension checks (Plan 26 WP-02: local claims fast path when enabled)
-    identity = await timer.time('auth', () =>
-      resolveRequestIdentity(request, {
-        db,
-        localClaims: platform.perf.auth_local_claims,
-      }),
-    );
-
-    if (identity.isSuspended) {
-      throw new AccountRestrictedError();
-    }
-
-    // 5. Rate limiting (single-statement batch for IP, user, device)
-    await timer.time('rl', () =>
-      consumeAdmissionLimits({
-        db,
-        ip,
-        identity: identity!,
-        route: 'recommend',
-        singleStatement: platform.perf.admission_single_statement,
-      }),
-    );
-
-    await timer.time('captcha', () =>
-      assertCaptchaIfRiskFlagged(
-        db,
-        identity!,
-        config.anonIpDailyCap,
-        request.headers.get('x-turnstile-token'),
-        ip,
-      ),
-    );
-
-    // 6. Platform admission & BYOK
-    const byok = extractByokFromHeaders(request.headers);
-    isByok = byok != null;
-    assertPlatformAcceptsRequest(platform, identity, isByok);
-
+    // 3. Start read-only session lookup in parallel with reservation
     const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
-    let sessionToken = cookieVal;
-    let setSessionCookie = false;
-
-    // Start read-only session lookup in parallel with reservation (Plan 26 WP-05)
-    const sessionLookupPromise = sessionToken
+    const sessionLookupPromise = cookieVal
       ? timer.time('session', () =>
-          findSessionByCookie(db, sessionToken!, { userId: identity!.userId }),
+          findSessionByCookie(db, cookieVal, { userId: admitted!.identity.userId }),
         )
       : Promise.resolve(null);
     sessionLookupPromise.catch(() => undefined); // avoid unhandled rejection if reservation throws
 
+    // 4. Reserve quota BEFORE pipeline execution
     const tReserveStart = performance.now();
     try {
       lease = await timer.time('reserve', () =>
         reserveQuery({
           db,
-          identity: identity!,
-          requestId,
+          identity: admitted!.identity,
+          requestId: admitted!.requestId,
           route: 'POST /api/recommend',
           traceId,
-          byok: isByok,
-          shedFree: platform.shedFreeFor(identity!),
-          config,
+          byok: admitted!.isByok,
+          shedFree: admitted!.platform.shedFreeFor(admitted!.identity),
+          config: admitted!.config,
         }),
       );
       reserveMs = Math.round(performance.now() - tReserveStart);
@@ -238,404 +124,48 @@ export async function POST(request: NextRequest): Promise<Response> {
         if (leaseId) {
           const replay = await findReplayTurn(db, leaseId);
           if (replay) {
-            log.info({ traceId, requestId, leaseId }, 'replaying_committed_recommendation');
-            const replayHeaders: Record<string, string> = {
-              'Cache-Control': 'private, no-store',
-              'X-Trace-Id': traceId,
-              'X-Request-Id': requestId,
-            };
-            if (shouldEmitServerTiming(request)) {
-              replayHeaders['Server-Timing'] = timer.serverTiming();
-            }
-            return NextResponse.json(
-              {
-                message: replay.userMessage,
-                intent: replay.intent,
-                requirements: replay.extractedRequirements,
-                picks: replay.picks ?? [],
-                clarifyingQuestion: replay.clarifyingQuestion ?? undefined,
-                quota: replay.quota,
-                sessionId: replay.sessionId,
-                replayed: true,
-              },
-              {
-                headers: replayHeaders,
-              },
+            log.info(
+              { traceId, requestId: admitted.requestId, leaseId },
+              'replaying_committed_recommendation',
             );
+            return createReplayResponse(replay, traceId, admitted.requestId, timer, request);
           }
         }
       }
       throw err;
     }
 
-    let session = await sessionLookupPromise;
-    if (!session) {
-      sessionToken = randomBytes(24).toString('base64url');
-      session = await timer.time('session', () =>
-        insertRecommendationSession(db, {
-          sessionCookie: sessionToken!,
-          ipHash: hashSessionIp(ip),
-          userAgent: request.headers.get('user-agent'),
-          userId: identity!.userId,
-        }),
-      );
-      setSessionCookie = true;
-    }
-
-    const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
-    const sessionId = session.id;
-
-    const rawRequestedMode = request.headers.get('x-recsy-user-mode')?.trim().toLowerCase() as
-      | 'fast'
-      | 'deep'
-      | undefined;
-    const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
-    const serverMode = await timer.time('mode', () =>
-      resolveReasoningMode(identity!, lease!, requestedMode, db),
-    );
-    const isSubscriber = lease.chargeSource === 'subscription' || serverMode === 'deep';
-
-    const tPipelineStart = performance.now();
-    const result = await runRecommendationPipeline({
+    // 5. Execute recommendation turn use case
+    const useCase = new RecommendTurnUseCase({
       db,
       llm: getLlm(),
-      sessionId,
-      userMessage: body.message,
-      regionCode,
-      byok,
-      serverMode,
-      isSubscriber,
-      leaseId: lease.isNoop || lease.id === 'off' ? null : lease.id,
-      log: log.child({ sessionId }),
+      log,
       timer,
     });
-    const latencyMs = Math.round(performance.now() - tPipelineStart);
 
-    const isSuccessPicks = result.kind === 'results' && result.picks.length > 0;
-    const outcome: 'commit' | 'no_charge' = isSuccessPicks ? 'commit' : 'no_charge';
-    const reason: 'clarify' | 'no_results' = result.kind === 'clarify' ? 'clarify' : 'no_results';
-    const leaseIdForDb = lease.isNoop || lease.id === 'off' ? null : lease.id;
-
-    const tSettleStart = performance.now();
-    await timer.time('settle', async () => {
-      await db.transaction(async (tx) => {
-        const turnIndex = await nextTurnIndex(tx, sessionId);
-
-        if (result.kind === 'clarify') {
-          await tx.insert(recommendationTurns).values({
-            sessionId,
-            turnIndex,
-            userMessage: body.message,
-            intent: 'clarify',
-            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-            clarifyingQuestion: result.clarifyingQuestion,
-            latencyMs,
-            leaseId: leaseIdForDb,
-          });
-        } else {
-          await tx.insert(recommendationTurns).values({
-            sessionId,
-            turnIndex,
-            userMessage: body.message,
-            intent: 'recommend',
-            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-            candidatePhoneIds: result.picks.map((p) => p.phoneId),
-            picks: result.picks as unknown[],
-            latencyMs,
-            leaseId: leaseIdForDb,
-          });
-        }
-
-        if (outcome === 'commit') {
-          await lease!.commit(
-            {
-              model: env.LLM_CHAT_MODEL,
-              tokensIn: result.usage?.tokensIn,
-              tokensOut: result.usage?.tokensOut,
-              latencyMs,
-            },
-            tx,
-          );
-        } else {
-          await lease!.noCharge(reason, tx);
-        }
-      });
-    });
-    settleMs = Math.round(performance.now() - tSettleStart);
-
-    const totalMs = Math.round(performance.now() - t0);
-    emitMeteredRequestSummary({
+    return await useCase.execute({
+      request,
+      message: body.message,
+      admitted,
+      lease,
+      sessionLookupPromise,
       traceId,
-      route: 'POST /api/recommend',
-      quotaMode: config.mode,
-      byok: isByok,
-      userId: identity.userId,
-      deviceId: identity.deviceId,
-      chargeSource: lease.chargeSource,
-      outcome: outcome === 'commit' ? 'committed' : 'no_charge',
+      requestId: admitted.requestId,
+      t0,
       reserveMs,
-      settleMs,
-      totalMs,
-      model: env.LLM_CHAT_MODEL,
-      tokensIn: result.usage?.tokensIn,
-      tokensOut: result.usage?.tokensOut,
-      httpStatus: 200,
-      stages: timer.snapshot(),
-      ttfbMs: totalMs,
-      ttfvtMs: totalMs,
     });
-
-    const responseHeaders: Record<string, string> = { 'X-Trace-Id': traceId };
-    if (shouldEmitServerTiming(request)) {
-      responseHeaders['Server-Timing'] = timer.serverTiming();
-    }
-
-    const res = NextResponse.json(
-      {
-        kind: result.kind,
-        clarifyingQuestion: result.kind === 'clarify' ? result.clarifyingQuestion : undefined,
-        picks: result.kind === 'results' ? result.picks : undefined,
-        relaxed: result.kind === 'results' ? result.relaxed : undefined,
-        refined: result.kind === 'results' ? result.refined : undefined,
-        scoresTied: result.kind === 'results' ? result.scoresTied : undefined,
-        scorecardMissing: result.kind === 'results' ? result.scorecardMissing : undefined,
-        topAspects: result.kind === 'results' ? result.topAspects : undefined,
-        quota: lease.projectedQuota(outcome),
-      },
-      { status: 200, headers: responseHeaders },
-    );
-
-    if (setSessionCookie && sessionToken) {
-      res.cookies.set(RECOMMEND_SESSION_COOKIE, sessionToken, sessionCookieOptions());
-    }
-    attachDeviceCookieIfNeeded(res, request);
-
-    return res;
   } catch (err) {
-    const totalMs = Math.round(performance.now() - t0);
-    if (lease && !lease.settled) {
-      const refundCode = err instanceof AppError ? err.code : 'internal_error';
-      await lease
-        .refund(refundCode)
-        .catch((e) => log.error({ e }, 'refund failed; lease will expire'));
-    }
-
-    const errorServerTiming = shouldEmitServerTiming(request) ? timer.serverTiming() : undefined;
-
-    if (err instanceof ZodError) {
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/recommend',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'VALIDATION',
-        reserveMs,
-        settleMs,
-        totalMs,
-        httpStatus: 400,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json(
-        { code: 'VALIDATION', message: err.flatten() },
-        { status: 400, headers },
-      );
-    }
-
-    if (err instanceof QuotaDeniedError) {
-      const retryAfter =
-        err.code === 'TOO_MANY_INFLIGHT' || err.code === 'DUPLICATE_REQUEST'
-          ? '2'
-          : err.code === 'CAPACITY_BUSY'
-            ? '30'
-            : err.code === 'METERING_UNAVAILABLE'
-              ? '10'
-              : undefined;
-
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (retryAfter) headers['Retry-After'] = retryAfter;
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/recommend',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: err.code,
-        reserveMs,
-        settleMs,
-        totalMs,
-        httpStatus: err.status,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-
-      return NextResponse.json(
-        {
-          code: err.code,
-          message: publicErrorMessage(err),
-          quota: err.quota,
-          actions: err.actions,
-        },
-        { status: err.status, headers },
-      );
-    }
-
-    if (err instanceof RateLimitError) {
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/recommend',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'RATE_LIMITED',
-        reserveMs,
-        settleMs,
-        totalMs,
-        httpStatus: 429,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = {
-        'X-Trace-Id': traceId,
-        'Retry-After': '60',
-      };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json(
-        {
-          code: 'RATE_LIMITED',
-          message: 'Too many requests. Please wait a moment.',
-        },
-        {
-          status: 429,
-          headers,
-        },
-      );
-    }
-
-    if (err instanceof AccountRestrictedError) {
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/recommend',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'ACCOUNT_RESTRICTED',
-        reserveMs,
-        settleMs,
-        totalMs,
-        httpStatus: 403,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json(
-        {
-          code: 'ACCOUNT_RESTRICTED',
-          message: err.message,
-        },
-        { status: 403, headers },
-      );
-    }
-
-    if (err instanceof ByokError) {
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (err.code === 'BYOK_RATE_LIMITED') {
-        headers['Retry-After'] = '60';
-      }
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/recommend',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'error',
-        denial: err.code,
-        reserveMs,
-        settleMs,
-        totalMs,
-        httpStatus: err.status,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      return NextResponse.json(
-        {
-          code: err.code,
-          message: publicErrorMessage(err),
-        },
-        { status: err.status, headers },
-      );
-    }
-
-    const app = toAppError(err);
-    const detail = summarizeErrorChainForLogs(err);
-    log.warn(
-      {
-        err: app.message,
-        code: app.code,
-        ...(isAppError(err) ? { context: err.context } : {}),
-        detail,
-      },
-      'POST /api/recommend failed',
-    );
-    const devDebug =
-      env.NODE_ENV === 'development' && isAppError(err) && err.code === 'LLM_SCHEMA_VIOLATION'
-        ? { context: err.context, causeChain: detail }
-        : undefined;
-
-    const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-    if (app.code === 'METERING_UNAVAILABLE' || app.code === 'AUTH_UNAVAILABLE') {
-      headers['Retry-After'] = '10';
-    } else if (app.code === 'CAPACITY_BUSY') {
-      headers['Retry-After'] = '30';
-    }
-    if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-
-    emitMeteredRequestSummary({
+    return meteredErrorResponse(err, {
       traceId,
       route: 'POST /api/recommend',
-      quotaMode: config.mode,
-      byok: isByok,
-      userId: identity?.userId,
-      deviceId: identity?.deviceId,
-      chargeSource: lease?.chargeSource,
-      outcome: lease ? 'refunded' : 'error',
-      denial: app.code,
+      request,
+      timer,
+      t0,
+      lease,
+      identity: admitted?.identity ?? null,
+      isByok: admitted?.isByok ?? false,
+      config: admitted?.config ?? getMeteringConfig(),
       reserveMs,
-      settleMs,
-      totalMs,
-      httpStatus: app.status,
-      stages: timer.snapshot(),
-      ttfbMs: totalMs,
     });
-
-    return NextResponse.json(
-      {
-        code: app.code,
-        message: publicErrorMessage(app),
-        ...(devDebug != null ? { debug: devDebug } : {}),
-      },
-      { status: app.status, headers },
-    );
   }
 }

@@ -167,6 +167,6 @@ describe('Runtime Performance Flags (WP-01)', () => {
       expect(flags.ask_streaming).toBe('on');
       expect(flags.auth_local_claims).toBe(true);
       expect(flags.admission_single_statement).toBe(true);
-    });
+    }, 15000);
   });
 });

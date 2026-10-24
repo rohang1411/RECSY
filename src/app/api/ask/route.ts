@@ -1,73 +1,32 @@
 /**
- * POST /api/ask — phone-scoped grounded Q&A with NDJSON streaming.
+ * POST /api/ask — phone-scoped grounded Q&A with NDJSON streaming (Plan 26 WP-09).
  *
- * Accepts `{ phoneSlug, query, sessionId? }`. Runs hybrid retrieval
- * (vector + FTS + RRF + MMR) scoped to the requested phone, validates
- * retrieved citations, then streams Gemini's grounded answer back as
- * NDJSON.
- *
- * Implements stream-aware metering & quota reservation:
- * 1. Quota reservation happens BEFORE the stream exists so denials return clean JSON (402/429/503).
- * 2. Grounded answer persisted with userId and leaseId before settling.
- * 3. Commits lease on success, no_charge on empty corpus or client abort, refunds on error.
- * 4. Terminal `done` and `error` chunks contain `quota: QuotaSnapshotLite`.
- *
- * Normative reference: Section 7.3.2, 7.5, 7.7, 8.7 of plan 25; Plan 26 WP-00.
+ * Thin controller delegating to `admitMeteredRequest`, `AskQuestionUseCase`,
+ * and `meteredErrorResponse`.
  */
 import { randomUUID } from 'node:crypto';
-
-import { sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
-import { ZodError, z } from 'zod';
+import { z } from 'zod';
 
-import { env } from '@/env';
 import { MAX_CHAT_MESSAGE_BYTES } from '@/lib/constants';
-import {
-  AccountRestrictedError,
-  AppError,
-  ByokError,
-  IntegrationError,
-  QuotaDeniedError,
-  RateLimitError,
-  publicErrorMessage,
-  toAppError,
-} from '@/lib/errors';
+import { QuotaDeniedError } from '@/lib/errors';
 import { readRequestJson } from '@/lib/request-json';
-import { getRequestClientIp } from '@/lib/request-ip';
-import { parseRequestId } from '@/lib/request-id';
-import { assertSameOrigin } from '@/lib/same-origin';
-import { buildAskRetrievalTrace } from '@/lib/ask-retrieval-trace';
-import { deferOrRun } from '@/lib/defer';
-import { createStageTimer } from '@/lib/stage-timer';
+import { createStageTimer, type StageTimer } from '@/lib/stage-timer';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
-import {
-  NO_CONTEXT_MODEL,
-  chunkTextForStream,
-  persistChatQuery,
-  runPhoneQna,
-  type PhoneQnaResult,
-} from '@/services/chat/answer';
-import { runPhoneQnaStream } from '@/services/chat/answer-stream';
-import { CitationStreamGuard } from '@/services/chat/citation-stream-guard';
-import { inCanary } from '@/services/perf/flags';
-import { getDb, type AppQueryDb } from '@/services/db/client';
+import { getDb } from '@/services/db/client';
 import { getAskPhoneTarget } from '@/services/chat/phone-target';
 import { getLlm } from '@/services/llm';
-import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { requestLogger } from '@/services/logger';
-import { consumeAdmissionLimits } from '@/services/rate-limit';
-import { resolveRequestIdentity, type RequestIdentity } from '@/services/auth/identity';
-import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/turnstile';
-import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
+import { inCanary } from '@/services/perf/flags';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
-import { findReplayQuery } from '@/services/metering/replay';
+import { findReplayQuery, type ReplayQueryResult } from '@/services/metering/replay';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
-import { resolveReasoningMode } from '@/services/metering/mode';
 import type { QueryLease } from '@/services/metering/lease';
-import type { MeteredRequestOutcome } from '@/services/metering/types';
+import { admitMeteredRequest, type AdmittedRequest } from '@/services/metering/admission';
+import { meteredErrorResponse } from '@/services/metering/http-errors';
+import { AskQuestionUseCase } from '@/services/chat/ask-use-case';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -88,43 +47,61 @@ function getHybrid(): ReturnType<typeof createHybridRetriever> {
   return hybridSingleton;
 }
 
-async function assertCaptchaIfRiskFlagged(
-  db: AppQueryDb,
-  identity: RequestIdentity,
-  anonIpCap: number,
-  turnstileToken: string | null | undefined,
-  clientIp?: string,
-): Promise<void> {
-  if (identity.userId !== null || !identity.ipKey || anonIpCap <= 0 || !env.TURNSTILE_SECRET_KEY) {
-    return;
+function createReplayResponse(
+  replay: ReplayQueryResult,
+  traceId: string,
+  requestId: string,
+  timer: StageTimer,
+  request: NextRequest,
+): Response {
+  const enc = new TextEncoder();
+  const replayStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        enc.encode(
+          `${JSON.stringify({
+            type: 'meta',
+            phoneId: replay.phoneId,
+            retrievedChunkIds: replay.retrievedChunkIds,
+          })}\n`,
+        ),
+      );
+      controller.enqueue(
+        enc.encode(
+          `${JSON.stringify({
+            type: 'delta',
+            text: replay.answer,
+          })}\n`,
+        ),
+      );
+      controller.enqueue(
+        enc.encode(
+          `${JSON.stringify({
+            type: 'done',
+            citations: replay.citations,
+            model: 'replayed',
+            quota: replay.quota,
+            replayed: true,
+          })}\n`,
+        ),
+      );
+      controller.close();
+    },
+  });
+
+  const replayHeaders: Record<string, string> = {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Trace-Id': traceId,
+    'X-Request-Id': requestId,
+  };
+  if (shouldEmitServerTiming(request)) {
+    replayHeaders['Server-Timing'] = timer.serverTiming();
   }
-  try {
-    const res = await db.execute<{ queries_used: number }>(sql`
-      SELECT queries_used FROM usage_counters
-       WHERE subject_type = 'ip_prefix'
-         AND subject_id = ${identity.ipKey}
-         AND usage_date = (now() AT TIME ZONE 'UTC')::date
-       LIMIT 1;
-    `);
-    const ipAnonUsedToday = res[0]?.queries_used ?? 0;
-    if (isTrafficRiskFlagged({ ipKey: identity.ipKey, ipAnonUsedToday, anonIpCap })) {
-      if (!turnstileToken) {
-        throw new AppError('CAPTCHA_REQUIRED', 'Security verification required', {
-          status: 428,
-        });
-      }
-      const result = await verifyTurnstileToken(turnstileToken, clientIp);
-      if (!result.success) {
-        throw new AppError('CAPTCHA_REQUIRED', 'Security verification failed. Please try again.', {
-          status: 428,
-          context: { errorCodes: result.errorCodes },
-        });
-      }
-    }
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'CAPTCHA_REQUIRED') throw err;
-    // Fail-open on transient database counter lookup error
-  }
+
+  return new Response(replayStream, {
+    headers: replayHeaders,
+  });
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -132,81 +109,35 @@ export async function POST(request: NextRequest): Promise<Response> {
   const timer = createStageTimer();
   const traceId = randomUUID();
   const log = requestLogger({ traceId, route: 'POST /api/ask' });
-  const config = getMeteringConfig();
 
   let lease: QueryLease | null = null;
-  let identity: RequestIdentity | null = null;
-  let isByok = false;
+  let admitted: AdmittedRequest | null = null;
   let reserveMs = 0;
-  let ttfbMs = 0;
 
   try {
-    // 1. Same-origin check
-    assertSameOrigin(request);
-    const ip = getRequestClientIp(request);
-
-    // 2. Request body & request id parsing (fail-fast before database work)
+    // 1. Request body parsing (fail-fast before database work)
     const json = await readRequestJson(request, 24_576);
     const body = askBodySchema.parse(json);
-    const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
-    // 3. Start phone lookup in parallel with admission
+    // 2. Start phone lookup in parallel with admission
     const db = getDb();
     const phonePromise = timer.time('phone', () => getAskPhoneTarget(db, body.phoneSlug));
     phonePromise.catch(() => undefined); // avoid unhandled rejection if admission throws first
 
-    // 4. Platform state (cached in-memory, read-only; loaded before identity for localClaims flag)
-    const platform = await timer.time('platform', () => getPlatformState(db));
+    // 3. Shared metered request admission pipeline
+    admitted = await admitMeteredRequest(request, 'POST /api/ask', { db }, timer);
 
-    // 5. Identity and suspension checks (Plan 26 WP-02: local claims fast path when enabled)
-    identity = await timer.time('auth', () =>
-      resolveRequestIdentity(request, {
-        db,
-        localClaims: platform.perf.auth_local_claims,
-      }),
-    );
-
-    if (identity.isSuspended) {
-      throw new AccountRestrictedError();
-    }
-
-    // 6. Rate limiting (single-statement batch for IP, user, device)
-    await timer.time('rl', () =>
-      consumeAdmissionLimits({
-        db,
-        ip,
-        identity: identity!,
-        route: 'ask',
-        singleStatement: platform.perf.admission_single_statement,
-      }),
-    );
-
-    await timer.time('captcha', () =>
-      assertCaptchaIfRiskFlagged(
-        db,
-        identity!,
-        config.anonIpDailyCap,
-        request.headers.get('x-turnstile-token'),
-        ip,
-      ),
-    );
-
-    // 7. Platform admission & BYOK
-    const byok = extractByokFromHeaders(request.headers);
-    isByok = byok != null;
-    assertPlatformAcceptsRequest(platform, identity, isByok);
-
-    // 8. Verify phone target before creating a lease
+    // 4. Verify phone target before reserving a lease
     const phone = await phonePromise;
     if (!phone || phone.status !== 'active') {
       const totalMs = Math.round(performance.now() - t0);
       emitMeteredRequestSummary({
         traceId,
         route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity.userId,
-        deviceId: identity.deviceId,
+        quotaMode: admitted.config.mode,
+        byok: admitted.isByok,
+        userId: admitted.identity.userId,
+        deviceId: admitted.identity.deviceId,
         chargeSource: undefined,
         outcome: 'denied',
         denial: 'NOT_FOUND',
@@ -229,19 +160,19 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
 
-    // 9. Reserve quota BEFORE the stream exists (returns clean JSON on denial)
+    // 5. Reserve quota BEFORE execution
     const tReserveStart = performance.now();
     try {
       lease = await timer.time('reserve', () =>
         reserveQuery({
           db,
-          identity: identity!,
-          requestId,
+          identity: admitted!.identity,
+          requestId: admitted!.requestId,
           route: 'POST /api/ask',
           traceId,
-          byok: isByok,
-          shedFree: platform.shedFreeFor(identity!),
-          config,
+          byok: admitted!.isByok,
+          shedFree: admitted!.platform.shedFreeFor(admitted!.identity),
+          config: admitted!.config,
         }),
       );
       reserveMs = Math.round(performance.now() - tReserveStart);
@@ -251,632 +182,57 @@ export async function POST(request: NextRequest): Promise<Response> {
         if (leaseId) {
           const replay = await findReplayQuery(db, leaseId);
           if (replay) {
-            log.info({ traceId, requestId, leaseId }, 'replaying_committed_chat_query');
-            const enc = new TextEncoder();
-            const replayStream = new ReadableStream<Uint8Array>({
-              start(controller) {
-                controller.enqueue(
-                  enc.encode(
-                    `${JSON.stringify({
-                      type: 'meta',
-                      phoneId: replay.phoneId,
-                      retrievedChunkIds: replay.retrievedChunkIds,
-                    })}\n`,
-                  ),
-                );
-                controller.enqueue(
-                  enc.encode(
-                    `${JSON.stringify({
-                      type: 'delta',
-                      text: replay.answer,
-                    })}\n`,
-                  ),
-                );
-                controller.enqueue(
-                  enc.encode(
-                    `${JSON.stringify({
-                      type: 'done',
-                      citations: replay.citations,
-                      model: 'replayed',
-                      quota: replay.quota,
-                      replayed: true,
-                    })}\n`,
-                  ),
-                );
-                controller.close();
-              },
-            });
-
-            const replayHeaders: Record<string, string> = {
-              'Content-Type': 'application/x-ndjson; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'X-Trace-Id': traceId,
-              'X-Request-Id': requestId,
-            };
-            if (shouldEmitServerTiming(request)) {
-              replayHeaders['Server-Timing'] = timer.serverTiming();
-            }
-
-            return new Response(replayStream, {
-              headers: replayHeaders,
-            });
+            log.info(
+              { traceId, requestId: admitted.requestId, leaseId },
+              'replaying_committed_chat_query',
+            );
+            return createReplayResponse(replay, traceId, admitted.requestId, timer, request);
           }
         }
       }
       throw err;
     }
 
-    // 7. Stream-aware Q&A execution
-    const enc = new TextEncoder();
-    let cancelled = false;
-    let streamOutcome: MeteredRequestOutcome = 'committed';
-    let settleMs = 0;
-
-    const mode = platform.perf.ask_streaming;
+    // 6. Streaming decision gated by perf flags
+    const mode = admitted.platform.perf.ask_streaming;
     const shouldStream =
       mode === 'on' ||
       (mode === 'canary' &&
-        inCanary(identity?.deviceId ?? '', platform.perf.ask_streaming_canary_pct));
+        inCanary(admitted.identity.deviceId, admitted.platform.perf.ask_streaming_canary_pct));
 
-    const stream = new ReadableStream<Uint8Array>({
-      cancel() {
-        cancelled = true;
-      },
-      async start(controller) {
-        const write = (obj: unknown) => {
-          if (cancelled || request.signal.aborted) return;
-          controller.enqueue(enc.encode(`${JSON.stringify(obj)}\n`));
-        };
-
-        const tStreamStart = performance.now();
-        write({ type: 'status', stage: 'retrieving' });
-
-        try {
-          const rawRequestedMode = request.headers
-            .get('x-recsy-user-mode')
-            ?.trim()
-            .toLowerCase() as 'fast' | 'deep' | undefined;
-          const requestedMode = rawRequestedMode === 'deep' ? 'deep' : byok?.userMode;
-          const serverMode = await timer.time('mode', () =>
-            resolveReasoningMode(identity ?? { userId: null }, lease!, requestedMode, db),
-          );
-          const isSubscriber = lease!.chargeSource === 'subscription' || serverMode === 'deep';
-
-          if (shouldStream) {
-            let finalResult: (PhoneQnaResult & { streamed: true; citationRepairs: number }) | null =
-              null;
-            let firstDeltaRecorded = false;
-
-            for await (const ev of runPhoneQnaStream({
-              phoneId: phone.id,
-              query: body.query,
-              retriever: getHybrid(),
-              llm: getLlm(),
-              log: log.child({ phoneId: phone.id }),
-              signal: request.signal,
-              retrievalOptions: {
-                rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
-              },
-              phoneMeta: {
-                brand: phone.brand,
-                model: phone.model,
-                lastIngestAt: phone.lastIngestAt,
-                nextIngestAt: phone.nextIngestAt,
-              },
-              byok,
-              serverMode,
-              isSubscriber,
-              timer,
-              thinking: platform.perf.grounded_thinking,
-            })) {
-              if (ev.type === 'final') {
-                finalResult = ev.result;
-                break;
-              }
-              if (ev.type === 'delta' && !firstDeltaRecorded) {
-                firstDeltaRecorded = true;
-                timer.mark('firstDelta');
-              }
-              write(ev);
-            }
-
-            if (!finalResult) {
-              if (cancelled || request.signal.aborted) {
-                const tSettleStart = performance.now();
-                await timer.time('settle', () => lease!.noCharge('client_abort'));
-                settleMs = Math.round(performance.now() - tSettleStart);
-                streamOutcome = 'no_charge';
-                return;
-              }
-              throw new IntegrationError('Stream closed unexpectedly without final result', {
-                phoneId: phone.id,
-              });
-            }
-
-            const latencyMs = Math.round(performance.now() - tStreamStart);
-            const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
-
-            const persistenceStart = performance.now();
-            await timer.time('persist', () =>
-              persistChatQuery({
-                phoneId: phone.id,
-                query: body.query,
-                answer: finalResult!.text,
-                citations: finalResult!.citations,
-                retrievedChunkIds: finalResult!.retrieval.chunks.map((c) => c.chunkId),
-                latencyMs,
-                tokensIn: finalResult!.generationAccounting.tokensIn,
-                tokensOut: finalResult!.generationAccounting.tokensOut,
-                model: finalResult!.model,
-                userId: identity!.userId,
-                leaseId: leaseIdForDb,
-              }),
-            );
-            const persistenceMs = performance.now() - persistenceStart;
-
-            const meta = {
-              model: finalResult.model,
-              tokensIn: finalResult.generationAccounting.tokensIn,
-              tokensOut: finalResult.generationAccounting.tokensOut,
-              latencyMs,
-              cacheHit: finalResult.generationAccounting.cacheHits > 0,
-            };
-
-            const tSettleStart = performance.now();
-            let outcome: 'commit' | 'no_charge';
-            await timer.time('settle', async () => {
-              if (finalResult!.model === NO_CONTEXT_MODEL) {
-                await lease!.noCharge('no_context');
-                outcome = 'no_charge';
-                streamOutcome = 'no_charge';
-              } else {
-                await lease!.commit(meta);
-                outcome = 'commit';
-                streamOutcome = 'committed';
-              }
-            });
-            settleMs = Math.round(performance.now() - tSettleStart);
-
-            write({
-              type: 'done',
-              citations: finalResult.citations,
-              usage: finalResult.usage,
-              generationAccounting: finalResult.generationAccounting,
-              model: finalResult.model,
-              streamed: true,
-              citationRepairs: finalResult.citationRepairs,
-              persistenceMs,
-              retrievalMs: finalResult.retrieval.debug.totalMs,
-              retrievalTrace: buildAskRetrievalTrace(finalResult.retrieval),
-              quota: lease!.projectedQuota(outcome!),
-            });
-
-            const totalMs = Math.round(performance.now() - t0);
-            const ttfvtMs = Math.round(performance.now() - t0);
-            emitMeteredRequestSummary({
-              traceId,
-              route: 'POST /api/ask',
-              quotaMode: config.mode,
-              byok: isByok,
-              userId: identity!.userId,
-              deviceId: identity!.deviceId,
-              chargeSource: lease!.chargeSource,
-              outcome: streamOutcome,
-              reserveMs,
-              settleMs,
-              totalMs,
-              model: finalResult.model,
-              tokensIn: finalResult.generationAccounting.tokensIn,
-              tokensOut: finalResult.generationAccounting.tokensOut,
-              cacheHit: finalResult.generationAccounting.cacheHits > 0,
-              httpStatus: 200,
-              stages: timer.snapshot(),
-              ttfbMs,
-              ttfvtMs,
-            });
-          } else {
-            // Buffered path
-            const result = await runPhoneQna({
-              phoneId: phone.id,
-              query: body.query,
-              retriever: getHybrid(),
-              llm: getLlm(),
-              log: log.child({ phoneId: phone.id }),
-              signal: request.signal,
-              retrievalOptions: {
-                rerank: env.RETRIEVAL_LLM_RERANK ? 'llm' : 'off',
-              },
-              phoneMeta: {
-                brand: phone.brand,
-                model: phone.model,
-                lastIngestAt: phone.lastIngestAt,
-                nextIngestAt: phone.nextIngestAt,
-              },
-              byok,
-              serverMode,
-              isSubscriber,
-              timer,
-              thinking: platform.perf.grounded_thinking,
-              onStage: (stage) => write({ type: 'status', stage }),
-            });
-
-            if (mode === 'shadow') {
-              void deferOrRun('shadow-citation-guard', async () => {
-                const allowed = new Set(
-                  result.retrieval.chunks.map((c) => c.chunkId.toLowerCase()),
-                );
-                const shadowGuard = new CitationStreamGuard(allowed);
-                shadowGuard.push(result.text);
-                shadowGuard.flush();
-                if (shadowGuard.stats.strippedTags > 0) {
-                  log.warn(
-                    { stripped: shadowGuard.stats.strippedTags, phoneId: phone.id },
-                    'shadow_streaming_stripped_tags',
-                  );
-                }
-              });
-            }
-
-            const latencyMs = Math.round(performance.now() - tStreamStart);
-            const leaseIdForDb = lease!.isNoop || lease!.id === 'off' ? null : lease!.id;
-
-            const persistenceStart = performance.now();
-            await timer.time('persist', () =>
-              persistChatQuery({
-                phoneId: phone.id,
-                query: body.query,
-                answer: result.text,
-                citations: result.citations,
-                retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
-                latencyMs,
-                tokensIn: result.generationAccounting.tokensIn,
-                tokensOut: result.generationAccounting.tokensOut,
-                model: result.model,
-                userId: identity!.userId,
-                leaseId: leaseIdForDb,
-              }),
-            );
-            const persistenceMs = performance.now() - persistenceStart;
-
-            const meta = {
-              model: result.model,
-              tokensIn: result.generationAccounting.tokensIn,
-              tokensOut: result.generationAccounting.tokensOut,
-              latencyMs,
-              cacheHit: result.generationAccounting.cacheHits > 0,
-            };
-
-            const tSettleStart = performance.now();
-            let outcome: 'commit' | 'no_charge';
-            await timer.time('settle', async () => {
-              if (result.model === NO_CONTEXT_MODEL) {
-                await lease!.noCharge('no_context');
-                outcome = 'no_charge';
-                streamOutcome = 'no_charge';
-              } else if (cancelled || request.signal.aborted) {
-                await lease!.noCharge('client_abort');
-                outcome = 'no_charge';
-                streamOutcome = 'no_charge';
-              } else {
-                await lease!.commit(meta);
-                outcome = 'commit';
-                streamOutcome = 'committed';
-              }
-            });
-            settleMs = Math.round(performance.now() - tSettleStart);
-
-            write({
-              type: 'meta',
-              phoneId: phone.id,
-              retrievedChunkIds: result.retrieval.chunks.map((c) => c.chunkId),
-            });
-
-            timer.mark('firstDelta');
-            const ttfvtMs = Math.round(performance.now() - t0);
-
-            for (const piece of chunkTextForStream(result.text)) {
-              write({ type: 'delta', text: piece });
-            }
-
-            write({
-              type: 'done',
-              citations: result.citations,
-              usage: result.usage,
-              generationAccounting: result.generationAccounting,
-              model: result.model,
-              streamed: false,
-              citationRepairs: 0,
-              persistenceMs,
-              retrievalMs: result.retrieval.debug.totalMs,
-              retrievalTrace: buildAskRetrievalTrace(result.retrieval),
-              quota: lease!.projectedQuota(outcome!),
-            });
-
-            const totalMs = Math.round(performance.now() - t0);
-            emitMeteredRequestSummary({
-              traceId,
-              route: 'POST /api/ask',
-              quotaMode: config.mode,
-              byok: isByok,
-              userId: identity!.userId,
-              deviceId: identity!.deviceId,
-              chargeSource: lease!.chargeSource,
-              outcome: streamOutcome,
-              reserveMs,
-              settleMs,
-              totalMs,
-              model: result.model,
-              tokensIn: result.generationAccounting.tokensIn,
-              tokensOut: result.generationAccounting.tokensOut,
-              cacheHit: result.generationAccounting.cacheHits > 0,
-              httpStatus: 200,
-              stages: timer.snapshot(),
-              ttfbMs,
-              ttfvtMs,
-            });
-          }
-        } catch (err) {
-          const app = toAppError(err);
-          log.error({ err, code: app.code }, 'Q&A request failed');
-
-          const tRefundStart = performance.now();
-          await lease!.refund(app.code).catch(() => undefined);
-          settleMs = Math.round(performance.now() - tRefundStart);
-          streamOutcome = 'refunded';
-
-          write({
-            type: 'error',
-            code: app.code,
-            message: publicErrorMessage(app),
-            quota: lease!.projectedQuota('refund'),
-          });
-
-          const totalMs = Math.round(performance.now() - t0);
-          emitMeteredRequestSummary({
-            traceId,
-            route: 'POST /api/ask',
-            quotaMode: config.mode,
-            byok: isByok,
-            userId: identity!.userId,
-            deviceId: identity!.deviceId,
-            chargeSource: lease!.chargeSource,
-            outcome: 'refunded',
-            denial: app.code,
-            reserveMs,
-            settleMs,
-            totalMs,
-            httpStatus: app.status,
-            stages: timer.snapshot(),
-            ttfbMs,
-          });
-        } finally {
-          if (!cancelled) controller.close();
-        }
-      },
+    // 7. Execute Q&A use case
+    const useCase = new AskQuestionUseCase({
+      db,
+      llm: getLlm(),
+      retriever: getHybrid(),
+      log,
+      timer,
     });
 
-    ttfbMs = Math.round(performance.now() - t0);
-    const streamHeaders: Record<string, string> = {
-      'Content-Type': 'application/x-ndjson; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Accel-Buffering': 'no',
-      'X-Trace-Id': traceId,
-      'X-Request-Id': requestId,
-    };
-    if (shouldEmitServerTiming(request)) {
-      streamHeaders['Server-Timing'] = timer.serverTiming();
-    }
-
-    return new Response(stream, {
-      headers: streamHeaders,
+    return await useCase.execute({
+      request,
+      phone,
+      query: body.query,
+      admitted,
+      lease,
+      traceId,
+      requestId: admitted.requestId,
+      t0,
+      reserveMs,
+      shouldStream,
     });
   } catch (err) {
-    const totalMs = Math.round(performance.now() - t0);
-    if (lease && !lease.settled) {
-      const refundCode = err instanceof AppError ? err.code : 'internal_error';
-      await lease.refund(refundCode).catch(() => undefined);
-    }
-
-    const errorServerTiming = shouldEmitServerTiming(request) ? timer.serverTiming() : undefined;
-
-    if (err instanceof ZodError) {
-      const msg = err.issues[0]?.message ?? 'Invalid request body';
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'VALIDATION',
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: 400,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json({ code: 'VALIDATION', message: msg }, { status: 400, headers });
-    }
-
-    if (err instanceof QuotaDeniedError) {
-      const retryAfter =
-        err.code === 'TOO_MANY_INFLIGHT' || err.code === 'DUPLICATE_REQUEST'
-          ? '2'
-          : err.code === 'CAPACITY_BUSY'
-            ? '30'
-            : err.code === 'METERING_UNAVAILABLE'
-              ? '10'
-              : undefined;
-
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (retryAfter) headers['Retry-After'] = retryAfter;
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: err.code,
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: err.status,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-
-      return NextResponse.json(
-        {
-          code: err.code,
-          message: publicErrorMessage(err),
-          quota: err.quota,
-          actions: err.actions,
-        },
-        { status: err.status, headers },
-      );
-    }
-
-    if (err instanceof RateLimitError) {
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'RATE_LIMITED',
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: 429,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = {
-        'X-Trace-Id': traceId,
-        'Retry-After': '60',
-      };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json(
-        {
-          code: 'RATE_LIMITED',
-          message: 'Too many requests. Please wait a moment.',
-        },
-        {
-          status: 429,
-          headers,
-        },
-      );
-    }
-
-    if (err instanceof AccountRestrictedError) {
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'denied',
-        denial: 'ACCOUNT_RESTRICTED',
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: 403,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      return NextResponse.json(
-        {
-          code: 'ACCOUNT_RESTRICTED',
-          message: err.message,
-        },
-        { status: 403, headers },
-      );
-    }
-
-    if (err instanceof ByokError) {
-      const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-      if (err.code === 'BYOK_RATE_LIMITED') {
-        headers['Retry-After'] = '60';
-      }
-      if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-      emitMeteredRequestSummary({
-        traceId,
-        route: 'POST /api/ask',
-        quotaMode: config.mode,
-        byok: isByok,
-        userId: identity?.userId,
-        deviceId: identity?.deviceId,
-        chargeSource: lease?.chargeSource,
-        outcome: 'error',
-        denial: err.code,
-        reserveMs,
-        settleMs: 0,
-        totalMs,
-        httpStatus: err.status,
-        stages: timer.snapshot(),
-        ttfbMs: totalMs,
-      });
-      return NextResponse.json(
-        {
-          code: err.code,
-          message: publicErrorMessage(err),
-        },
-        { status: err.status, headers },
-      );
-    }
-
-    const app = toAppError(err);
-    log.error({ err, code: app.code }, 'Q&A request setup failed');
-
-    const headers: Record<string, string> = { 'X-Trace-Id': traceId };
-    if (app.code === 'METERING_UNAVAILABLE' || app.code === 'AUTH_UNAVAILABLE') {
-      headers['Retry-After'] = '10';
-    } else if (app.code === 'CAPACITY_BUSY') {
-      headers['Retry-After'] = '30';
-    }
-    if (errorServerTiming) headers['Server-Timing'] = errorServerTiming;
-
-    emitMeteredRequestSummary({
+    return meteredErrorResponse(err, {
       traceId,
       route: 'POST /api/ask',
-      quotaMode: config.mode,
-      byok: isByok,
-      userId: identity?.userId,
-      deviceId: identity?.deviceId,
-      chargeSource: lease?.chargeSource,
-      outcome: lease?.settleOutcome === 'refunded' ? 'refunded' : 'error',
-      denial: app.code,
+      request,
+      timer,
+      t0,
+      lease,
+      identity: admitted?.identity ?? null,
+      isByok: admitted?.isByok ?? false,
+      config: admitted?.config ?? getMeteringConfig(),
       reserveMs,
-      settleMs: 0,
-      totalMs,
-      httpStatus: app.status,
-      stages: timer.snapshot(),
-      ttfbMs: totalMs,
     });
-
-    return NextResponse.json(
-      {
-        code: app.code,
-        message: publicErrorMessage(app),
-      },
-      { status: app.status, headers },
-    );
   }
 }

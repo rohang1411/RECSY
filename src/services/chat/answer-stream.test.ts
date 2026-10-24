@@ -130,11 +130,11 @@ describe('runPhoneQnaStream', () => {
 
     expect(deltas.join('')).toBe(cachedText);
     expect(citations).toHaveLength(1);
-    expect(citations[0].chunkId).toBe(chunkId);
-    expect(finalResult.generationAccounting.cacheHits).toBe(1);
-    expect(finalResult.generationAccounting.providerCalls).toBe(0);
-    expect(finalResult.streamed).toBe(true);
-    expect(finalResult.citationRepairs).toBe(0);
+    expect(citations[0]?.chunkId).toBe(chunkId);
+    expect(finalResult?.generationAccounting.cacheHits).toBe(1);
+    expect(finalResult?.generationAccounting.providerCalls).toBe(0);
+    expect(finalResult?.streamed).toBe(true);
+    expect(finalResult?.citationRepairs).toBe(0);
   });
 
   it('streams deltas on cache miss and emits citations progressively', async () => {
