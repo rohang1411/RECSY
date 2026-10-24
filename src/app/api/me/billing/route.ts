@@ -76,6 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const db = getDb();
+    // Plan 26 WP-02: Financial ledger access keeps authoritative getUser() server round trip.
     const identity = await requireUser(request, { db });
 
     // Rate limiting: 60/min

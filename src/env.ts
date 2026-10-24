@@ -353,3 +353,11 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+if (
+  process.env.SKIP_ENV_VALIDATION !== 'true' &&
+  env.NODE_ENV === 'production' &&
+  env.AUTH_DRIVER === 'fake'
+) {
+  throw new Error('AUTH_DRIVER=fake is forbidden when NODE_ENV=production');
+}

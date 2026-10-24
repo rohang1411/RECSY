@@ -1,7 +1,12 @@
 import type { NextRequest } from 'next/server';
 import { getDeviceCookieName, hashDeviceId } from './device';
 import { isSubjectBlocked } from './abuse-cache';
-import { createSupabaseServerClient, getVerifiedUserWithTimeout } from './supabase-server';
+import {
+  createSupabaseServerClient,
+  getVerifiedClaimsWithTimeout,
+  getVerifiedUserWithTimeout,
+} from './supabase-server';
+import { assertFakeAuthAllowed } from './drivers/fake';
 import { AppError } from '@/lib/errors';
 import { getIpPrefix, getRequestClientIp, hashIpPrefix } from '@/lib/request-ip';
 import { env } from '@/env';
@@ -10,6 +15,10 @@ import type { AppQueryDb } from '@/services/db/client';
 
 export interface RequestIdentity {
   readonly userId: string | null;
+  /**
+   * Whether the user's email is verified.
+   * Note: advisory when resolved via local claims (localClaims=true).
+   */
   readonly emailVerified: boolean;
   readonly deviceId: string;
   readonly deviceCookieIsNew: boolean;
@@ -20,11 +29,11 @@ export interface RequestIdentity {
 
 /**
  * Resolves verified identity, device identity, IP prefix key, and suspension status.
- * Contract reference: Plan 25 Section 7.2.
+ * Contract reference: Plan 25 Section 7.2 and Plan 26 WP-02.
  */
 export async function resolveRequestIdentity(
   request: NextRequest,
-  options?: { db?: AppQueryDb },
+  options?: { db?: AppQueryDb; localClaims?: boolean },
 ): Promise<RequestIdentity> {
   // 1. IP and IP prefix key
   const clientIp = getRequestClientIp(request);
@@ -51,6 +60,7 @@ export async function resolveRequestIdentity(
   let emailVerified = false;
 
   if (env.AUTH_DRIVER === 'fake') {
+    assertFakeAuthAllowed();
     const fakeUid = request.cookies.get('recsy_fake_uid')?.value?.trim();
     if (fakeUid) {
       userId = fakeUid;
@@ -65,10 +75,18 @@ export async function resolveRequestIdentity(
     if (hasSbCookie) {
       try {
         const client = await createSupabaseServerClient();
-        const user = await getVerifiedUserWithTimeout(client);
-        if (user) {
-          userId = user.id;
-          emailVerified = Boolean(user.email_confirmed_at);
+        if (options?.localClaims) {
+          const verified = await getVerifiedClaimsWithTimeout(client);
+          if (verified) {
+            userId = verified.id;
+            emailVerified = verified.emailVerified;
+          }
+        } else {
+          const user = await getVerifiedUserWithTimeout(client);
+          if (user) {
+            userId = user.id;
+            emailVerified = Boolean(user.email_confirmed_at);
+          }
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.message === 'AUTH_TIMEOUT') {

@@ -25,6 +25,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const db = getDb();
+    // Plan 26 WP-02: Auth callback keeps authoritative getUser() server round trip for identity verification.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
 

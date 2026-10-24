@@ -163,16 +163,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     const body = bodySchema.parse(json);
     const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
-    // 3. Identity and suspension checks
+    // 3. Platform state (cached in-memory, read-only; loaded before identity for localClaims flag)
     const db = getDb();
-    identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
+    const platform = await timer.time('platform', () => getPlatformState(db));
+
+    // 4. Identity and suspension checks (Plan 26 WP-02: local claims fast path when enabled)
+    identity = await timer.time('auth', () =>
+      resolveRequestIdentity(request, {
+        db,
+        localClaims: platform.perf.auth_local_claims,
+      }),
+    );
 
     if (identity.isSuspended) {
       throw new AccountRestrictedError();
     }
-
-    // 4. Platform state (cached in-memory, read-only)
-    const platform = await timer.time('platform', () => getPlatformState(db));
 
     // 5. Rate limiting (single-statement batch for IP, user, device)
     await timer.time('rl', () =>

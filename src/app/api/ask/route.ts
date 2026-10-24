@@ -149,15 +149,20 @@ export async function POST(request: NextRequest): Promise<Response> {
     const phonePromise = timer.time('phone', () => getAskPhoneTarget(db, body.phoneSlug));
     phonePromise.catch(() => undefined); // avoid unhandled rejection if admission throws first
 
-    // 4. Identity and suspension checks
-    identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
+    // 4. Platform state (cached in-memory, read-only; loaded before identity for localClaims flag)
+    const platform = await timer.time('platform', () => getPlatformState(db));
+
+    // 5. Identity and suspension checks (Plan 26 WP-02: local claims fast path when enabled)
+    identity = await timer.time('auth', () =>
+      resolveRequestIdentity(request, {
+        db,
+        localClaims: platform.perf.auth_local_claims,
+      }),
+    );
 
     if (identity.isSuspended) {
       throw new AccountRestrictedError();
     }
-
-    // 5. Platform state (cached in-memory, read-only)
-    const platform = await timer.time('platform', () => getPlatformState(db));
 
     // 6. Rate limiting (single-statement batch for IP, user, device)
     await timer.time('rl', () =>
