@@ -187,6 +187,7 @@ export const env = createEnv({
     USER_RATE_RECOMMEND_PER_MIN: z.coerce.number().int().min(1).default(12),
     USER_RATE_ASK_PER_MIN: z.coerce.number().int().min(1).default(20),
     PERF_FLAGS_DEFAULT_JSON: z.string().optional(),
+    REVALIDATE_SECRET: z.string().min(32).optional(),
   },
 
   /**
@@ -335,6 +336,7 @@ export const env = createEnv({
     USER_RATE_RECOMMEND_PER_MIN: process.env.USER_RATE_RECOMMEND_PER_MIN ?? '12',
     USER_RATE_ASK_PER_MIN: process.env.USER_RATE_ASK_PER_MIN ?? '20',
     PERF_FLAGS_DEFAULT_JSON: process.env.PERF_FLAGS_DEFAULT_JSON,
+    REVALIDATE_SECRET: process.env.REVALIDATE_SECRET,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? 'support@recsy.com',
   },
@@ -355,6 +357,7 @@ export const env = createEnv({
 });
 
 if (
+  typeof window === 'undefined' &&
   process.env.SKIP_ENV_VALIDATION !== 'true' &&
   env.NODE_ENV === 'production' &&
   env.AUTH_DRIVER === 'fake'

@@ -1,9 +1,6 @@
-import { asc, eq } from 'drizzle-orm';
 import type { MetadataRoute } from 'next';
-
 import { env } from '@/env';
-import { getDb } from '@/services/db/client';
-import { phones } from '@/services/db/schema';
+import { getActivePhoneSlugs } from '@/services/cache/public-data';
 
 const STATIC_ROUTES: readonly {
   path: string;
@@ -23,31 +20,9 @@ const STATIC_ROUTES: readonly {
 ];
 
 /**
- * Sitemap: static marketing/app routes; active phone pages are appended when a
- * live `DATABASE_URL` is available (e.g. production). Local `next build` in CI
- * typically has no database — static entries still publish.
+ * Sitemap: static marketing/app routes; active phone pages are appended from public data cache.
+ * Contract reference: Plan 26 WP-07 & WP-08.
  */
-let cachedPhoneEntries: {
-  readonly entries: { slug: string; updatedAt: Date | null }[];
-  readonly expiresAtMs: number;
-} | null = null;
-
-async function getCachedPhoneRows() {
-  const now = Date.now();
-  if (cachedPhoneEntries && now < cachedPhoneEntries.expiresAtMs) {
-    return cachedPhoneEntries.entries;
-  }
-  const db = getDb();
-  const rows = await db
-    .select({ slug: phones.slug, updatedAt: phones.updatedAt })
-    .from(phones)
-    .where(eq(phones.status, 'active'))
-    .orderBy(asc(phones.slug));
-
-  cachedPhoneEntries = { entries: rows, expiresAtMs: now + 3_600_000 };
-  return rows;
-}
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const site = new URL(env.NEXT_PUBLIC_SITE_URL);
   const now = new Date();
@@ -63,12 +38,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   try {
-    const rows = await getCachedPhoneRows();
+    const rows = await getActivePhoneSlugs();
 
     for (const row of rows) {
       entries.push({
         url: new URL(`/p/${row.slug}`, site).toString(),
-        lastModified: row.updatedAt ?? now,
+        lastModified: row.updatedAt ? new Date(row.updatedAt) : now,
         changeFrequency: 'weekly',
         priority: 0.5,
       });

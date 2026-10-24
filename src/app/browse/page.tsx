@@ -1,47 +1,15 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import Link from 'next/link';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
-import { parseBrowseSearchParams, type BrowseSortOption } from '@/features/browse/search-params';
-import { browseWhereFromState } from '@/features/browse/query';
+import { parseBrowseSearchParams } from '@/features/browse/search-params';
 import { getActiveRegion } from '@/lib/get-active-region';
 import { formatLocalPrice } from '@/lib/format-currency';
-import { getDb } from '@/services/db/client';
-import { phones, phoneRegionalDetails } from '@/services/db/schema';
+import { getBrowseResults, getActiveBrands } from '@/services/cache/public-data';
 
 import { BrowseFiltersForm } from './browse-filters-form';
 import { appSearchParamsToURLSearchParams } from './search-params-helpers';
-import { getCachedBrands } from './brands-cache';
 
 export const dynamic = 'force-dynamic';
-
-function getBrowseOrderBy(sort: BrowseSortOption) {
-  switch (sort) {
-    case 'price-asc':
-      return [
-        asc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '999999')::numeric`),
-        asc(phones.brand),
-        asc(phones.model),
-      ];
-    case 'price-desc':
-      return [
-        desc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '0')::numeric`),
-        asc(phones.brand),
-        asc(phones.model),
-      ];
-    case 'name-desc':
-      return [desc(phones.brand), desc(phones.model)];
-    case 'name-asc':
-      return [asc(phones.brand), asc(phones.model)];
-    case 'latest':
-    default:
-      return [
-        desc(sql`coalesce(${phones.releasedAt}, ${phones.launchDate}, ${phones.createdAt})`),
-        asc(phones.brand),
-        asc(phones.model),
-      ];
-  }
-}
 
 interface PageProps {
   readonly searchParams: Promise<Readonly<Record<string, string | string[] | undefined>>>;
@@ -53,37 +21,10 @@ export default async function BrowsePage({ searchParams }: PageProps) {
   const filter = parseBrowseSearchParams(urlParams);
 
   const activeRegion = await getActiveRegion();
-  const where = browseWhereFromState(filter, activeRegion.countryCode);
 
-  const db = getDb();
   const [rows, allBrands] = await Promise.all([
-    db
-      .select({
-        slug: phones.slug,
-        brand: phones.brand,
-        model: phones.model,
-        tagline: phones.tagline,
-        msrpUsd: phones.msrpUsd,
-        imageUrl: phones.imageUrl,
-        launchDate: phones.launchDate,
-        releasedAt: phones.releasedAt,
-        localPrice: phoneRegionalDetails.price,
-        localCurrency: phoneRegionalDetails.currency,
-        isEstimated: phoneRegionalDetails.isEstimated,
-        isAvailable: phoneRegionalDetails.isAvailable,
-      })
-      .from(phones)
-      .leftJoin(
-        phoneRegionalDetails,
-        and(
-          eq(phoneRegionalDetails.phoneId, phones.id),
-          eq(phoneRegionalDetails.countryCode, activeRegion.countryCode),
-        ),
-      )
-      .where(where)
-      .orderBy(...getBrowseOrderBy(filter.sort))
-      .limit(100),
-    getCachedBrands(),
+    getBrowseResults(filter, activeRegion.countryCode),
+    getActiveBrands(),
   ]);
 
   return (
