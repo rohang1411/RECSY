@@ -4845,3 +4845,26 @@ The security architecture is validated through automated test suites:
 - **`src/services/llm/keys/byok-parser.test.ts`**: Zero-leak BYOK parsing and key validation (7 tests).
 
 **Total Verified**: **80/80 automated security tests passing**, zero TypeScript errors across the entire codebase.
+
+## 29. API Latency, Caching & Clean System Design (Plan 26)
+
+> **Status: Planned (not started).** Master Plan: [Plan 26 v2.0.0](./ImplementationPlans/26.%20api-architecture-performance-caching-and-clean-system-design-plan.md) (v1.0.0 archived in `ImplementationPlans/archive/`). Analysis: [Report 02 v1.1](./Reports/02_API_ARCHITECTURE_DESIGN_AND_PERFORMANCE_ANALYSIS.md). ADR-0023 is written by WP-14.
+
+### 29.1 Verified findings that drive the plan
+
+- `/api/ask` does not stream model tokens: the answer is generated, persisted and settled before the first `delta` line is written (`src/services/chat/answer.ts:157`, `src/app/api/ask/route.ts:336-386`).
+- Signed-in requests make two Supabase Auth `getUser()` calls (proxy and identity); `getClaims()` can verify locally with asymmetric JWT keys.
+- The root layout reads cookies (`AppHeader` → `getActiveRegion()`), so every page is dynamic; removing `force-dynamic` alone does nothing.
+- Usage events and `llm_cache` writes are awaited on the critical path, and Gemini-served gateway calls are recorded twice.
+- Rate limiting is 2-3 sequential upserts with mixed failure policy; the advisory lock in `recsy_reserve_query` is not a bottleneck.
+- Security: `identity.ts` honours the fake-auth cookie without the production guard used by `drivers/fake.ts` (fixed in WP-02).
+
+### 29.2 Work packages
+
+WP-00 baseline harness, WP-01 runtime `perf_flags`, WP-02 auth fast path, WP-03 single-statement rate limits, WP-04/WP-05 critical-path trimming, WP-06 true token streaming with a citation guard (off → shadow → canary → on), WP-07 tagged public data cache with an HMAC revalidation endpoint, WP-08 static layout and phone pages, WP-09 route decomposition, WP-10 LLM layer hygiene, WP-11 DB hygiene, WP-12 optional gated Redis adapter, WP-13 verification, WP-14 docs. Update this section's status per WP as they merge.
+
+### 29.3 Constraints
+
+- No new paid service; WP-12 (Upstash) stays off unless Plan 25's measured gate trips and the owner approves.
+- Plan 25 rules hold: only delivered results are billed, metering order is fixed, NDJSON changes are additive (Plan 26 adds `status` and `citation` events).
+- No hosted load tests (Plan 22 DB-01). Vercel Hobby remains non-commercial; Plan 25 D2 still applies before taking money.
