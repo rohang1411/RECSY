@@ -32,7 +32,7 @@ import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
 import type { StageTimer } from '@/lib/stage-timer';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
-import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
+import type { ChatCapable, ChatMessage, ChatResult, ChatUsage } from '@/services/llm/types';
 import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/types';
@@ -44,7 +44,7 @@ export interface PhoneQnaInput {
   readonly phoneId: string;
   readonly query: string;
   readonly retriever: HybridRetriever;
-  readonly llm: LlmProvider;
+  readonly llm: ChatCapable;
   readonly log: Logger;
   readonly signal?: AbortSignal;
   /** Overrides default retrieval knobs (e.g. tests or experiments). */
@@ -150,7 +150,7 @@ function buildMessages(
 }
 
 async function chatAnswer(
-  llm: LlmProvider,
+  llm: ChatCapable,
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
   byok?: PhoneQnaInput['byok'],

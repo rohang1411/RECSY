@@ -1,3 +1,4 @@
+import { deferOrRun } from '@/lib/defer';
 import { getDb } from '@/services/db/client';
 import { llmUsageEvents } from '@/services/db/schema';
 import { logger } from '@/services/logger';
@@ -6,7 +7,17 @@ import type { LlmUsageContext } from './types';
 
 const log = logger.child({ component: 'llm-usage' });
 
-export async function recordLlmUsageEvent(input: {
+let deferTelemetryEnabled = true;
+
+/**
+ * Configure whether LLM usage events should be deferred via after() or written inline.
+ * Updated from platform perf_flags (Plan 26 WP-10).
+ */
+export function setDeferTelemetry(enabled: boolean): void {
+  deferTelemetryEnabled = enabled;
+}
+
+export type RecordUsageInput = {
   readonly provider: string;
   readonly model: string;
   readonly operation: 'chat' | 'stream' | 'structured' | 'embed';
@@ -18,7 +29,9 @@ export async function recordLlmUsageEvent(input: {
   readonly apiKeyIndex?: number;
   readonly latencyMs?: number;
   readonly errorCode?: string;
-}): Promise<void> {
+};
+
+async function insertUsageRecord(input: RecordUsageInput): Promise<void> {
   try {
     await getDb()
       .insert(llmUsageEvents)
@@ -40,6 +53,19 @@ export async function recordLlmUsageEvent(input: {
       });
   } catch (err) {
     log.warn({ err }, 'failed to persist llm usage event');
+  }
+}
+
+export async function recordLlmUsageEvent(input: RecordUsageInput): Promise<void> {
+  const shouldDefer =
+    typeof input.usageContext?.metadata?.deferTelemetry === 'boolean'
+      ? Boolean(input.usageContext.metadata.deferTelemetry)
+      : deferTelemetryEnabled;
+
+  if (shouldDefer) {
+    await deferOrRun('record-llm-usage', () => insertUsageRecord(input));
+  } else {
+    await insertUsageRecord(input);
   }
 }
 

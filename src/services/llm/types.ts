@@ -36,6 +36,8 @@ export interface ChatInput {
   readonly taskClass?: TaskClass;
   /** Override preferred execution tier. */
   readonly preferredTier?: ExecutionTier;
+  /** Optional thinking budget for grounded synthesis (Plan 26 WP-04 / WP-10). */
+  readonly thinking?: 'default' | 'low' | 'minimal';
   /** Opaque ids used by the cache key; callers can omit. */
   readonly cacheKeyExtras?: Readonly<Record<string, string | number | boolean>>;
   readonly usageContext?: LlmUsageContext;
@@ -71,6 +73,7 @@ export interface ChatDelta {
   readonly type: 'text-delta' | 'finish';
   readonly textDelta?: string;
   readonly usage?: ChatUsage;
+  readonly model?: string;
 }
 
 /**
@@ -120,3 +123,9 @@ export interface LlmProvider {
     options?: EmbedOptions,
   ): Promise<EmbedResult>;
 }
+
+/** Interface segregation: callers needing only chat, streaming, and structured extraction. */
+export type ChatCapable = Pick<LlmProvider, 'name' | 'chat' | 'chatStream' | 'structured'>;
+
+/** Interface segregation: callers needing only embedding generation. */
+export type EmbedCapable = Pick<LlmProvider, 'name' | 'embed'>;

@@ -27,7 +27,7 @@ export class ModelGatewayProvider implements LlmProvider {
   private readonly executor: CascadeExecutor;
 
   constructor() {
-    this.geminiProvider = new GeminiProvider();
+    this.geminiProvider = new GeminiProvider({ recordUsage: false });
     this.router = new ModelRouter(this.keyPool, this.circuitBreakers, this.quotaGovernor);
     this.executor = new CascadeExecutor(
       this.geminiProvider,
@@ -77,6 +77,7 @@ export class ModelGatewayProvider implements LlmProvider {
   }
 
   async *chatStream(input: ChatInput): AsyncIterable<ChatDelta> {
+    const startedAt = performance.now();
     const resolution = this.router.resolveExecutionChain({
       explicitTaskClass: input.taskClass,
       explicitTier: input.preferredTier,
@@ -84,12 +85,52 @@ export class ModelGatewayProvider implements LlmProvider {
       usageContext: input.usageContext,
     });
 
-    yield* this.executor.executeStream(
-      input,
-      resolution.candidates,
-      input.usageContext?.userByokKey,
-      input.usageContext?.userByokProvider,
-    );
+    let tokensIn = 0;
+    let tokensOut = 0;
+    let usedModel = input.model;
+    let streamError: unknown = null;
+
+    try {
+      for await (const delta of this.executor.executeStream(
+        input,
+        resolution.candidates,
+        input.usageContext?.userByokKey,
+        input.usageContext?.userByokProvider,
+      )) {
+        if (delta.model) {
+          usedModel = delta.model;
+        }
+        if (delta.usage) {
+          tokensIn = delta.usage.tokensIn;
+          tokensOut = delta.usage.tokensOut;
+        }
+        yield delta;
+      }
+    } catch (err) {
+      streamError = err;
+      throw err;
+    } finally {
+      const latencyMs = performance.now() - startedAt;
+      await recordLlmUsageEvent({
+        provider: usedModel.startsWith('gemini') ? 'gemini' : 'openai-compatible',
+        model: usedModel,
+        operation: 'stream',
+        usageContext: {
+          ...input.usageContext,
+          area: input.usageContext?.area ?? 'gateway',
+          metadata: {
+            ...input.usageContext?.metadata,
+            taskClass: resolution.taskClass,
+            tier: resolution.targetTier,
+            ...(streamError ? { error: true } : {}),
+          },
+        },
+        inputTokens: tokensIn,
+        outputTokens: tokensOut,
+        latencyMs,
+        errorCode: streamError instanceof Error ? streamError.name : undefined,
+      });
+    }
   }
 
   async structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>> {

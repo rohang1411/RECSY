@@ -4,6 +4,7 @@ import { AppError } from '@/lib/errors';
 import { logger } from '@/services/logger';
 import type { AppQueryDb } from '@/services/db/client';
 import { parsePerfFlags, type PerfFlags } from '@/services/perf/flags';
+import { setDeferTelemetry } from '@/services/llm/usage';
 import type { PlatformState } from './types';
 
 const log = logger.child({ component: 'platform-state' });
@@ -59,6 +60,7 @@ function buildPlatformState(
       ? usedTodayRaw
       : Number.parseInt(String(usedTodayRaw ?? 0), 10) || 0;
   const perf = parsePerfFlags(perfFlagsRaw);
+  setDeferTelemetry(perf.defer_telemetry);
 
   let capacity: 'ok' | 'busy' | 'paused' = 'ok';
   if (killSwitch.enabled) {

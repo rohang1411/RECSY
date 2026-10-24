@@ -22,7 +22,7 @@ import type { Logger } from 'pino';
 import type postgres from 'postgres';
 
 import { toAppError, ValidationError } from '@/lib/errors';
-import type { LlmProvider } from '@/services/llm/types';
+import type { EmbedCapable, ChatCapable } from '@/services/llm/types';
 
 import { enforceSourceCoverage } from './coverage';
 import { llmRerankChunkOrder, mergeLlmHeadWithMmrTail } from './llm-rerank';
@@ -43,7 +43,7 @@ import { DEFAULT_OPTIONS } from './types';
 export interface HybridRetrieverDeps {
   readonly vector: Retriever;
   readonly fts: Retriever;
-  readonly llm: LlmProvider;
+  readonly llm: EmbedCapable & Partial<ChatCapable>;
   readonly log: Logger;
   readonly sql?: postgres.Sql;
   /**
@@ -60,7 +60,7 @@ export interface HybridSearchInput extends Omit<RetrievalRequest, 'k' | 'queryEm
 }
 
 const QUERY_EMBEDDING_CACHE_MAX = 128;
-let providerEmbeddingCaches = new WeakMap<LlmProvider, Map<string, Promise<readonly number[]>>>();
+let providerEmbeddingCaches = new WeakMap<EmbedCapable, Map<string, Promise<readonly number[]>>>();
 let queryEmbeddingHits = 0;
 let queryEmbeddingMisses = 0;
 
@@ -231,10 +231,14 @@ export class HybridRetriever {
     let rankedForCoverage = mmrRanked;
     let llmRerankTelemetry: RetrievalDebug['llmRerank'] | undefined;
 
-    if (opts.rerank === 'llm' && mmrRanked.length >= opts.targetResults) {
+    if (
+      opts.rerank === 'llm' &&
+      this.deps.llm.structured &&
+      mmrRanked.length >= opts.targetResults
+    ) {
       const rrStart = performance.now();
       const rerank = await llmRerankChunkOrder({
-        llm: this.deps.llm,
+        llm: { name: this.deps.llm.name, structured: this.deps.llm.structured },
         query,
         pool: mmrRanked,
         targetResults: opts.targetResults,

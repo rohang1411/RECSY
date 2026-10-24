@@ -361,14 +361,39 @@ export class CascadeExecutor {
       return;
     }
 
+    let lastError: unknown = null;
+    let yieldedAny = false;
+
     // Streaming is best handled by Gemini or top candidate
     for (const candidate of candidates) {
+      const breaker = this.circuitBreakers.getBreaker(`${candidate.providerId}:${candidate.model}`);
+      if (!breaker.canAttempt()) {
+        continue;
+      }
+
       if (candidate.providerId === 'gemini') {
-        yield* this.geminiProvider.chatStream({
-          ...input,
-          model: candidate.model,
-        });
-        return;
+        try {
+          for await (const delta of this.geminiProvider.chatStream({
+            ...input,
+            model: candidate.model,
+          })) {
+            yieldedAny = true;
+            yield delta;
+          }
+          breaker.recordSuccess();
+          return;
+        } catch (err) {
+          lastError = err;
+          breaker.recordFailure();
+          if (yieldedAny) {
+            throw err;
+          }
+          log.warn(
+            { err, candidate: candidate.model },
+            'Gemini stream candidate failed before first token; falling over to next candidate',
+          );
+          continue;
+        }
       }
 
       const adapter = this.getAdapter(candidate.providerId);
@@ -378,21 +403,73 @@ export class CascadeExecutor {
           if (this.quotaGovernor.isKeyDepleted(candidate.providerId, keyEntry.keyIndex)) {
             continue;
           }
+
+          const acquired = await this.quotaGovernor.acquire(
+            candidate.providerId,
+            keyEntry.keyIndex,
+            1000,
+          );
+          if (!acquired) continue;
+
+          let streamTokensIn = 0;
           try {
-            yield* adapter.chatStream(input, candidate.model, keyEntry.apiKey);
+            for await (const delta of adapter.chatStream(input, candidate.model, keyEntry.apiKey)) {
+              yieldedAny = true;
+              if (delta.usage) {
+                streamTokensIn = delta.usage.tokensIn;
+              }
+              yield delta;
+            }
+            if (streamTokensIn > 0) {
+              this.quotaGovernor.recordMeasured(
+                candidate.providerId,
+                keyEntry.keyIndex,
+                streamTokensIn,
+              );
+            }
+            breaker.recordSuccess();
             return;
           } catch (err) {
+            lastError = err;
+            breaker.recordFailure();
+            if (yieldedAny) {
+              throw err;
+            }
+
+            if (err instanceof LlmError && err.status === 429) {
+              this.quotaGovernor.markKeyDepleted(candidate.providerId, keyEntry.keyIndex);
+              log.warn(
+                { candidate: candidate.model, key: keyEntry.id },
+                'Stream candidate key hit 429; rotating to next key',
+              );
+              continue;
+            }
+
             log.warn(
               { err, candidate: candidate.model, key: keyEntry.id },
-              'Stream candidate key failed, rotating to next key',
+              'Stream candidate key failed before first token; escalating candidate',
             );
+            break;
           }
         }
+        breaker.recordFailure();
       }
     }
 
     // Fallback to Gemini stream
-    yield* this.geminiProvider.chatStream(input);
+    try {
+      for await (const delta of this.geminiProvider.chatStream(input)) {
+        yieldedAny = true;
+        yield delta;
+      }
+    } catch (err) {
+      if (yieldedAny) {
+        throw err;
+      }
+      throw lastError instanceof LlmError
+        ? lastError
+        : new LlmError('All stream providers in cascade exhausted', {}, err ?? lastError);
+    }
   }
 
   async executeEmbed(
