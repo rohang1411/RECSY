@@ -1,6 +1,9 @@
-import { sql } from 'drizzle-orm';
 import { RateLimitError } from '@/lib/errors';
 import type { AppQueryDb } from '@/services/db/client';
+import { logger } from '@/services/logger';
+import { PostgresRateLimitStore, incrementRateLimitStoreErrors } from '@/services/rate-limit/store';
+
+const log = logger.child({ component: 'rate-limit-device' });
 
 export const DEVICE_RECOMMEND_RATE_LIMIT_MAX = 15; // 15 calls per minute
 export const DEVICE_ASK_RATE_LIMIT_MAX = 25; // 25 calls per minute
@@ -18,6 +21,7 @@ export function deviceRateLimitKey(deviceId: string, route: DeviceRateLimitRoute
  * Enforces per-device burst rate limits (Section 7.5, Section 8.7).
  * Atomically increments counter in `rate_limits` for the current minute window.
  * Throws RateLimitError when maximum threshold is exceeded.
+ * Fails open on transient database errors (rule R3).
  */
 export async function consumeDeviceRateLimit(
   db: AppQueryDb,
@@ -36,30 +40,26 @@ export async function consumeDeviceRateLimit(
         : DEVICE_READ_RATE_LIMIT_MAX;
 
   const key = deviceRateLimitKey(deviceId, route);
+  const store = new PostgresRateLimitStore(db);
+  const nowMs = Date.now();
 
   try {
-    const rows = await db.execute<{ count: number }>(sql`
-      INSERT INTO rate_limits (key, window_start, count)
-      VALUES (
-        ${key},
-        date_trunc('minute', now()),
-        1
-      )
-      ON CONFLICT (key, window_start)
-      DO UPDATE SET count = rate_limits.count + 1
-      RETURNING count;
-    `);
+    const [outcome] = await store.consume(
+      [{ key, windowMs: 60_000, max: maxAllowed, subject: 'device' }],
+      nowMs,
+    );
 
-    const currentCount = rows[0]?.count ?? 1;
-    if (currentCount > maxAllowed) {
+    if (outcome?.limited) {
       throw new RateLimitError({
         limit: maxAllowed,
-        current: currentCount,
+        current: outcome.count,
         subject: 'device',
       });
     }
   } catch (err) {
     if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route, deviceId }, 'rate_limit_store_error');
     // Fail-open on transient database rate-limiting errors to prevent blocking legitimate traffic
   }
 }

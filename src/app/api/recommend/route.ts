@@ -37,7 +37,7 @@ import { recommendationTurns } from '@/services/db/schema';
 import { getLlm } from '@/services/llm';
 import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { requestLogger } from '@/services/logger';
-import { consumeRecommendRateLimit } from '@/services/rate-limit';
+import { consumeAdmissionLimits } from '@/services/rate-limit';
 import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { runRecommendationPipeline } from '@/services/recommender/run-recommendation';
 import {
@@ -51,8 +51,6 @@ import {
   mintDeviceCookieValue,
 } from '@/services/auth/device';
 import { resolveRequestIdentity, type RequestIdentity } from '@/services/auth/identity';
-import { consumeUserRateLimit } from '@/services/metering/rate-limit-user';
-import { consumeDeviceRateLimit } from '@/services/abuse/rate-limit-device';
 import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/turnstile';
 import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
 import { getMeteringConfig } from '@/services/metering/config';
@@ -156,15 +154,16 @@ export async function POST(request: NextRequest): Promise<Response> {
   let settleMs = 0;
 
   try {
+    // 1. Same-origin check
     assertSameOrigin(request);
     const ip = getRequestClientIp(request);
-    await timer.time('rl', () => consumeRecommendRateLimit(ip));
 
+    // 2. Request body & request id parsing (fail-fast before database work)
     const json = await readRequestJson(request, 16_384);
     const body = bodySchema.parse(json);
-
     const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
+    // 3. Identity and suspension checks
     const db = getDb();
     identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
 
@@ -172,11 +171,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw new AccountRestrictedError();
     }
 
-    if (identity.userId) {
-      await timer.time('rl', () => consumeUserRateLimit(identity!.userId!, 'recommend', db));
-    }
+    // 4. Platform state (cached in-memory, read-only)
+    const platform = await timer.time('platform', () => getPlatformState(db));
+
+    // 5. Rate limiting (single-statement batch for IP, user, device)
     await timer.time('rl', () =>
-      consumeDeviceRateLimit(db, identity!.deviceId, 'POST /api/recommend'),
+      consumeAdmissionLimits({
+        db,
+        ip,
+        identity: identity!,
+        route: 'recommend',
+        singleStatement: platform.perf.admission_single_statement,
+      }),
     );
 
     await timer.time('captcha', () =>
@@ -189,7 +195,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       ),
     );
 
-    const platform = await timer.time('platform', () => getPlatformState(db));
+    // 6. Platform admission & BYOK
     const byok = extractByokFromHeaders(request.headers);
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);

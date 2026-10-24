@@ -51,10 +51,8 @@ import { getLlm } from '@/services/llm';
 import { extractByokFromHeaders } from '@/services/llm/keys/byok-parser';
 import { createHybridRetriever } from '@/services/retrieval/factory';
 import { requestLogger } from '@/services/logger';
-import { consumeAskRateLimit } from '@/services/rate-limit';
+import { consumeAdmissionLimits } from '@/services/rate-limit';
 import { resolveRequestIdentity, type RequestIdentity } from '@/services/auth/identity';
-import { consumeUserRateLimit } from '@/services/metering/rate-limit-user';
-import { consumeDeviceRateLimit } from '@/services/abuse/rate-limit-device';
 import { isTrafficRiskFlagged, verifyTurnstileToken } from '@/services/abuse/turnstile';
 import { assertPlatformAcceptsRequest, getPlatformState } from '@/services/metering/platform';
 import { getMeteringConfig } from '@/services/metering/config';
@@ -137,17 +135,16 @@ export async function POST(request: NextRequest): Promise<Response> {
   let ttfbMs = 0;
 
   try {
-    // 1. IP rate limit (cheap abuse shield first)
+    // 1. Same-origin check
     assertSameOrigin(request);
     const ip = getRequestClientIp(request);
-    await timer.time('rl', () => consumeAskRateLimit(ip));
 
-    // 2. Request body & request id parsing
+    // 2. Request body & request id parsing (fail-fast before database work)
     const json = await readRequestJson(request, 24_576);
     const body = askBodySchema.parse(json);
     const requestId = parseRequestId(request.headers.get('x-request-id')) ?? crypto.randomUUID();
 
-    // 3. Identity and abuse checks
+    // 3. Identity and suspension checks
     const db = getDb();
     identity = await timer.time('auth', () => resolveRequestIdentity(request, { db }));
 
@@ -155,10 +152,19 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw new AccountRestrictedError();
     }
 
-    if (identity.userId) {
-      await timer.time('rl', () => consumeUserRateLimit(identity!.userId!, 'ask', db));
-    }
-    await timer.time('rl', () => consumeDeviceRateLimit(db, identity!.deviceId, 'POST /api/ask'));
+    // 4. Platform state (cached in-memory, read-only)
+    const platform = await timer.time('platform', () => getPlatformState(db));
+
+    // 5. Rate limiting (single-statement batch for IP, user, device)
+    await timer.time('rl', () =>
+      consumeAdmissionLimits({
+        db,
+        ip,
+        identity: identity!,
+        route: 'ask',
+        singleStatement: platform.perf.admission_single_statement,
+      }),
+    );
 
     await timer.time('captcha', () =>
       assertCaptchaIfRiskFlagged(
@@ -170,8 +176,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       ),
     );
 
-    // 4. Platform admission & BYOK
-    const platform = await timer.time('platform', () => getPlatformState(db));
+    // 6. Platform admission & BYOK
     const byok = extractByokFromHeaders(request.headers);
     isByok = byok != null;
     assertPlatformAcceptsRequest(platform, identity, isByok);

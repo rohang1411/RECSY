@@ -1,7 +1,9 @@
-import { sql } from 'drizzle-orm';
 import { RateLimitError } from '@/lib/errors';
-import { getDb, type AppQueryDb } from '@/services/db/client';
-import { rateLimits } from '@/services/db/schema';
+import type { AppQueryDb } from '@/services/db/client';
+import { logger } from '@/services/logger';
+import { PostgresRateLimitStore, incrementRateLimitStoreErrors } from '@/services/rate-limit/store';
+
+const log = logger.child({ component: 'rate-limit-user' });
 
 export const USER_RATE_LIMIT_WINDOW_MS = 60_000;
 export const USER_RECOMMEND_RATE_LIMIT_MAX = 12;
@@ -21,6 +23,8 @@ export function userRateLimitKey(route: UserRateLimitRoute, userId: string): str
  * Recommend: 12 requests / 60 seconds.
  * Ask: 20 requests / 60 seconds.
  * Read: 60 requests / 60 seconds.
+ *
+ * Fails open on transient database errors (rule R3).
  */
 export async function consumeUserRateLimit(
   userId: string | null | undefined,
@@ -29,7 +33,6 @@ export async function consumeUserRateLimit(
 ): Promise<void> {
   if (!userId) return;
 
-  const db = customDb ?? getDb();
   const windowMs = USER_RATE_LIMIT_WINDOW_MS;
   const maxAllowed =
     route === 'recommend'
@@ -38,25 +41,28 @@ export async function consumeUserRateLimit(
         ? USER_ASK_RATE_LIMIT_MAX
         : USER_READ_RATE_LIMIT_MAX;
 
-  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
   const key = userRateLimitKey(route, userId);
+  const store = new PostgresRateLimitStore(customDb);
 
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key, windowStart, count: 1 })
-    .onConflictDoUpdate({
-      target: [rateLimits.key, rateLimits.windowStart],
-      set: { count: sql`${rateLimits.count} + 1` },
-    })
-    .returning({ count: rateLimits.count });
+  try {
+    const [outcome] = await store.consume(
+      [{ key, windowMs, max: maxAllowed, subject: 'user' }],
+      nowMs,
+    );
 
-  const count = row?.count ?? 1;
-  if (count > maxAllowed) {
-    throw new RateLimitError({
-      windowStart: windowStart.toISOString(),
-      route,
-      maxAllowed,
-      userId,
-    });
+    if (outcome?.limited) {
+      throw new RateLimitError({
+        windowStart: windowStart.toISOString(),
+        route,
+        maxAllowed,
+        userId,
+      });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route, userId }, 'rate_limit_store_error');
   }
 }

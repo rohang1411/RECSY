@@ -146,6 +146,7 @@ describe('POST /api/ask (WP-09)', () => {
     });
 
     vi.mocked(rateLimitModule.consumeAskRateLimit).mockResolvedValue(undefined);
+    vi.mocked(rateLimitModule.consumeAdmissionLimits).mockResolvedValue(undefined);
     vi.mocked(userRateLimitModule.consumeUserRateLimit).mockResolvedValue(undefined);
     vi.mocked(deviceRateLimitModule.consumeDeviceRateLimit).mockResolvedValue(undefined);
     vi.mocked(turnstileModule.isTrafficRiskFlagged).mockReturnValue(false);

@@ -108,6 +108,7 @@ describe('POST /api/recommend (WP-08)', () => {
     vi.mocked(sessionModule.nextTurnIndex).mockResolvedValue(0);
 
     vi.mocked(rateLimitModule.consumeRecommendRateLimit).mockResolvedValue(undefined);
+    vi.mocked(rateLimitModule.consumeAdmissionLimits).mockResolvedValue(undefined);
     vi.mocked(userRateLimitModule.consumeUserRateLimit).mockResolvedValue(undefined);
     vi.mocked(deviceRateLimitModule.consumeDeviceRateLimit).mockResolvedValue(undefined);
     vi.mocked(turnstileModule.isTrafficRiskFlagged).mockReturnValue(false);
