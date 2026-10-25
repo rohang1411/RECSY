@@ -74,34 +74,118 @@ export async function ensureUserProfile(
   const marketingOptIn = Boolean(metadata.marketing_opt_in);
 
   try {
-    await db.execute(sql`
-      INSERT INTO user_profiles (
-        id, email, email_normalized, display_name, avatar_url, date_of_birth,
-        terms_version, terms_accepted_at, marketing_opt_in,
-        status, billing_hold, created_at, updated_at, last_seen_at
-      ) VALUES (
-        ${userId}::uuid, ${rawEmail}, ${emailNorm}, ${displayName}, ${avatarUrl}, ${dateOfBirth}::date,
-        ${termsVersion}, ${termsAcceptedAt}::timestamptz, ${marketingOptIn},
-        'active', false, now(), now(), now()
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
-        avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
-        date_of_birth = COALESCE(EXCLUDED.date_of_birth, user_profiles.date_of_birth),
-        email = CASE
-          WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN EXCLUDED.email
-          ELSE user_profiles.email
-        END,
-        email_normalized = CASE
-          WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN EXCLUDED.email_normalized
-          ELSE user_profiles.email_normalized
-        END,
-        last_seen_at = CASE
-          WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
-          ELSE user_profiles.last_seen_at
-        END,
-        updated_at = now();
+    // 1. Look for existing profile matching either id or email_normalized
+    const existingRows = await db.execute<{
+      id: string;
+      email_normalized: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      date_of_birth: string | null;
+    }>(sql`
+      SELECT id, email_normalized, display_name, avatar_url, date_of_birth
+        FROM user_profiles
+       WHERE id = ${userId}::uuid
+          OR (${emailNorm !== ''} AND email_normalized = ${emailNorm})
+       LIMIT 1;
     `);
+
+    const existing = existingRows[0];
+
+    if (existing) {
+      if (existing.id === userId) {
+        // Direct ID match: update profile
+        await db.execute(sql`
+          UPDATE user_profiles
+             SET email = CASE
+                   WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN ${rawEmail}
+                   ELSE user_profiles.email
+                 END,
+                 email_normalized = CASE
+                   WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN ${emailNorm}
+                   ELSE user_profiles.email_normalized
+                 END,
+                 display_name = COALESCE(${displayName}, user_profiles.display_name),
+                 avatar_url = COALESCE(${avatarUrl}, user_profiles.avatar_url),
+                 date_of_birth = COALESCE(${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`}, user_profiles.date_of_birth),
+                 last_seen_at = CASE
+                   WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
+                   ELSE user_profiles.last_seen_at
+                 END,
+                 updated_at = now()
+           WHERE id = ${userId}::uuid;
+        `);
+      } else {
+        // Email matched a profile previously registered under a different UUID (e.g. OAuth link)
+        log.info(
+          { oldUserId: existing.id, newUserId: userId, email: emailNorm },
+          'reconciling user profile auth ID to new provider sub',
+        );
+
+        await db.execute(sql`
+          UPDATE user_profiles
+             SET id = ${userId}::uuid,
+                 email = ${rawEmail},
+                 email_normalized = ${emailNorm},
+                 display_name = COALESCE(${displayName}, user_profiles.display_name),
+                 avatar_url = COALESCE(${avatarUrl}, user_profiles.avatar_url),
+                 date_of_birth = COALESCE(${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`}, user_profiles.date_of_birth),
+                 last_seen_at = now(),
+                 updated_at = now()
+           WHERE id = ${existing.id}::uuid;
+        `);
+
+        // Reconcile secondary references non-fatally
+        try {
+          await db.execute(sql`
+            UPDATE recommendation_clients SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE saved_recommendations SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE checkout_sessions SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE usage_counters SET subject_id = ${userId} WHERE subject_kind = 'user' AND subject_id = ${existing.id};
+          `);
+        } catch (migErr) {
+          log.warn(
+            { migErr, oldUserId: existing.id, newUserId: userId },
+            'secondary table migration non-fatal warning',
+          );
+        }
+      }
+    } else {
+      await db.execute(sql`
+        INSERT INTO user_profiles (
+          id, email, email_normalized, display_name, avatar_url, date_of_birth,
+          terms_version, terms_accepted_at, marketing_opt_in,
+          status, billing_hold, created_at, updated_at, last_seen_at
+        ) VALUES (
+          ${userId}::uuid, ${rawEmail}, ${emailNorm}, ${displayName}, ${avatarUrl},
+          ${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`},
+          ${termsVersion}, ${termsAcceptedAt}::timestamptz, ${marketingOptIn},
+          'active', false, now(), now(), now()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
+          avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
+          date_of_birth = COALESCE(EXCLUDED.date_of_birth, user_profiles.date_of_birth),
+          email = CASE
+            WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN EXCLUDED.email
+            ELSE user_profiles.email
+          END,
+          email_normalized = CASE
+            WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN EXCLUDED.email_normalized
+            ELSE user_profiles.email_normalized
+          END,
+          last_seen_at = CASE
+            WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
+            ELSE user_profiles.last_seen_at
+          END,
+          updated_at = now();
+      `);
+    }
 
     return { id: userId, email: rawEmail, email_normalized: emailNorm };
   } catch (err) {

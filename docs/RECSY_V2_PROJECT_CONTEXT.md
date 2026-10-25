@@ -4672,6 +4672,100 @@ To eradicate these issues permanently across all environments (local, preview, a
 3. **User Profile Conflict Resolution**:
    - In `src/services/auth/profile.ts`, `ensureUserProfile` was updated to synchronize `email` and `email_normalized` on `ON CONFLICT (id) DO UPDATE SET`, ensuring user metadata remains cohesive across Google OAuth and password authentication modalities.
 
+### 27.9 Production OAuth Resilience, Multi-Account Linking, PKCE Cookie Delivery & Identity Re-attachment
+
+#### 1. Detailed Problem Statement & Diagnostic Breakdown
+
+In production testing on the deployed application (`https://recsy-pi.vercel.app`), users attempting Google Sign-In encountered two intermittent, blocking failure modes:
+
+1. **Loop back to Sign-In / 500 Server Error**:
+   - URL: `https://recsy-pi.vercel.app/login?error=server_error&next=%2F`
+   - Observable Symptom: Selecting a Google account redirected the browser back to the login page without logging in.
+2. **Redirect to Localhost with Flow State Expiration**:
+   - URL: `http://localhost:3000/?error=invalid_request&error_code=flow_state_already_used&error_description=State+has+already+been+used`
+   - Observable Symptom: The user was redirected to a dead `localhost:3000` page displaying PKCE flow state consumption errors.
+
+#### 2. Root Cause Analysis
+
+A rigorous, end-to-end trace through the GoTrue authentication protocol and PostgreSQL relational schema revealed the following interconnected mechanisms:
+
+1. **PostgreSQL Dual Unique Constraint Collision (`user_profiles_email_norm_uniq`)**:
+   - **Mechanism**: The `user_profiles` table defines two distinct uniqueness constraints: primary key `id` (UUID matching `auth.users.id`) and `UNIQUE INDEX user_profiles_email_norm_uniq (email_normalized)`.
+   - When a user previously registered via password or a legacy test account, a row existed with `id = uuid-A` and `email_normalized = 'user@gmail.com'`.
+   - When the user subsequently signed in via Google OAuth, Supabase GoTrue created or returned `sub = uuid-B`.
+   - The upsert query executed:
+     `INSERT INTO user_profiles (id, email_normalized, ...) VALUES ('uuid-B', 'user@gmail.com', ...) ON CONFLICT (id) DO UPDATE ...`
+   - Because `ON CONFLICT (id)` only handles conflicts on the primary key, PostgreSQL rejected the write with error code `23505`:
+     `error: duplicate key value violates unique constraint "user_profiles_email_norm_uniq" Key (email_normalized)=(...) already exists.`
+   - This unhandled rejection was caught by `GET /auth/callback`'s outer exception handler and redirected the user to `/login?error=server_error`.
+
+2. **Omission of PKCE Code Verifier Cookie on OAuth 302 Initiation**:
+   - **Mechanism**: In `GET /auth/google`, `client.auth.signInWithOAuth` generated a cryptographic PKCE code verifier cookie (`sb-*-auth-token-code-verifier`). However, the route handler instantiated a new `NextResponse.redirect(redirectUrl, { status: 302 })` without invoking `client.applyCookies(response)`.
+   - **Impact**: The browser followed the 302 redirect to Google OAuth without receiving the code verifier cookie. When Google redirected back to `/auth/callback?code=...`, Supabase's `client.auth.exchangeCodeForSession(code)` failed because the client could not verify the PKCE grant, redirecting the user back to `/login?error=auth_exchange_failed`.
+
+3. **Supabase Auth Project URL Misconfiguration (`flow_state_already_used`)**:
+   - **Mechanism**: Supabase Auth projects maintain a canonical **Site URL** and a **Redirect URLs** whitelist in Dashboard -> Authentication -> URL Configuration.
+   - When `Site URL` was left configured to `http://localhost:3000`, any provider-level OAuth error or user replay redirected to the Dashboard default Site URL.
+   - When a user encountered the 500 error or code exchange failure and clicked back or re-submitted, the PKCE authorization code was already consumed. Supabase Auth rejected the duplicate code with `flow_state_already_used` and redirected the error to the Dashboard's configured Site URL (`http://localhost:3000`).
+
+#### 3. Permanent Engineering Resolutions Implemented
+
+1. **Dual-Constraint Safe Upsert & Identity Reconciliation (`src/services/auth/profile.ts`)**:
+   - Replaced naive single-target `ON CONFLICT (id)` with an atomic lookup-and-reconcile pipeline:
+     - Queries `user_profiles` for an existing record matching `id = userId` OR `(email_normalized != '' AND email_normalized = emailNorm)`.
+     - **Matching ID**: Updates editable fields (`display_name`, `avatar_url`, `date_of_birth`), refreshes `last_seen_at` and `updated_at`.
+     - **Matching Normalized Email with Different ID**: Seamlessly reconciles the profile by migrating the primary key `id = userId` and updating metadata. Associated relational records (`recommendation_clients`, `saved_recommendations`, `checkout_sessions`, `usage_counters`) are updated in lockstep, guaranteeing zero data loss, zero orphaned rows, and zero constraint violations.
+     - **Null Date-of-Birth Handling**: Parameterized as `sql`NULL`` instead of casting untyped null parameters (`${null}::date`), preventing prepared statement data type inference errors.
+     - **New User**: Inserts cleanly with `ON CONFLICT (id)` fallback.
+
+2. **PKCE Cookie Delivery on OAuth Initiation (`src/app/auth/google/route.ts`)**:
+   - Passed `client` directly into `driver.getGoogleOAuthUrl(returnTo, { siteUrl, client })`.
+   - Applied all mutated cookies from `client.applyCookies(response)` onto the outgoing 302 redirect to Google, ensuring the PKCE code verifier is preserved in the browser's cookie jar before navigating off-site.
+
+3. **Active Session Pre-Check in Auth Callback (`src/app/auth/callback/route.ts`)**:
+   - Before attempting code exchange or failing on error parameters, the callback checks `getVerifiedUserWithTimeout(client)`.
+   - If an active session already exists in the request cookies (e.g. concurrent browser tabs or prior code exchange), the handler reconciles the profile and redirects to `returnTo` immediately.
+   - Gracefully handles explicit provider error query params (`error`, `error_code`, `error_description`) by redirecting to `/login` with clean query parameters rather than throwing a 500 server error.
+
+4. **Self-Healing Profile Resolution (`src/app/api/me/profile/route.ts` & `src/services/metering/entitlement.ts`)**:
+   - In `GET /api/me/profile` and `getEntitlementSnapshot`, if a user is authenticated (`identity.userId` is present) but their profile row is momentarily missing, the system automatically fetches their verified claims from Supabase and executes `ensureUserProfile` on the fly.
+   - Guaranteed that the top-right navbar (`AccountMenu`) and profile page (`/account`) always display the user's name, email, avatar photo, and date of birth immediately upon sign-in.
+
+5. **Friendly User Error Presentation (`src/components/auth/AuthForm.tsx` & `src/app/login/page.tsx`)**:
+   - Integrated error parameter forwarding from Next.js page search params into `AuthForm`.
+   - Mapped technical error codes (`flow_state_already_used`, `auth_exchange_failed`, `access_denied`, `server_error`, `missing_code`) into clear, human-readable instructions with actionable next steps.
+
+6. **Required Supabase Dashboard Configuration Checklist**:
+   - **Authentication -> URL Configuration -> Site URL**: Set to `https://recsy-pi.vercel.app` (or canonical production domain).
+   - **Authentication -> URL Configuration -> Redirect URLs**:
+     - `https://recsy-pi.vercel.app/**`
+     - `https://*.vercel.app/**`
+     - `http://localhost:3000/**`
+
+#### 4. Architectural Post-Mortem: What Was Missed and Why the Errors Occurred
+
+To document these patterns for future system design and engineering retrospectives:
+
+1. **Why `ON CONFLICT (id)` Was Insufficient (The Multi-Unique Index Blindspot)**:
+   - _What was missed_: In relational database design, developers often treat the primary key as the sole conflict target. However, `user_profiles` enforces two independent uniqueness invariants: `PRIMARY KEY (id)` (foreign identity anchor) and `UNIQUE INDEX user_profiles_email_norm_uniq (email_normalized)` (abuse defense and sybil prevention).
+   - _Why it occurred_: PostgreSQL's `ON CONFLICT (target)` clause operates on a single specified index arbiter. Specifying `ON CONFLICT (id)` left PostgreSQL completely unequipped to handle collisions on `email_normalized`. When an existing user (registered earlier via password or test seed) signed in via Google OAuth, Supabase GoTrue issued a new distinct UUID `sub`. Attempting to insert the new UUID alongside the pre-existing normalized email caused PostgreSQL to throw unhandled error `23505 (duplicate key value violates unique constraint "user_profiles_email_norm_uniq")`, crashing the callback route with a 500 server error.
+   - _Lesson_: In multi-provider identity architectures where accounts may merge across OAuth and password credentials, upserts cannot rely on simple single-column `ON CONFLICT`. Instead, a pre-insert identity resolution query must check all unique keys (`id` and `email_normalized`), dynamically executing an account-linking update or an insert based on which invariant matched.
+
+2. **Why PKCE Cookies Were Lost on 302 Redirects (The App Router Response Abstraction Trap)**:
+   - _What was missed_: In Next.js App Router (Node.js runtime), mutating cookies via `(await cookies()).set()` modifies the implicit response header stream. However, explicitly returning a newly constructed response object like `NextResponse.redirect(url)` creates an entirely detached response header collection that does **not** inherit cookies previously written to `cookieStore`.
+   - _Why it occurred_: During OAuth initiation (`GET /auth/google`), `@supabase/ssr` created the cryptographic PKCE `code_verifier` cookie in the request cookie context. Because `GET /auth/google` returned an explicit `NextResponse.redirect` without applying the mutated cookies, the `Set-Cookie` header was omitted from the 302 response to Google. The user's browser navigated to Google and back to `/auth/callback` without ever possessing the code verifier, causing `exchangeCodeForSession` to fail.
+   - _Lesson_: Any route handler that initiates external 302/303 redirects or returns custom JSON responses alongside session or PKCE mutation must explicitly serialize mutated cookies onto the outgoing `NextResponse` instance using a centralized `applyCookies(response)` helper.
+
+3. **Why Errors Diverted to `localhost:3000` (The Cloud Provider Default Fallback Mechanism)**:
+   - _What was missed_: When OAuth providers or auth proxies encounter critical errors (e.g. invalid flow states, cancelled authorization, or unwhitelisted redirect URIs), they do not trust the incoming dynamic `redirectTo` parameter for security reasons. Instead, they fall back to the statically configured **Site URL** defined in the authentication dashboard.
+   - _Why it occurred_: The Supabase project dashboard was initially initialized with the local development default `http://localhost:3000`. When a code exchange error or code re-submission occurred, Supabase Auth rejected the flow and dispatched the error payload to its default Site URL, unexpectedly transporting live production users to `http://localhost:3000/?error=invalid_request&error_code=flow_state_already_used`.
+   - _Lesson_: Multi-environment cloud configurations must explicitly separate development from production projects, or configure the production canonical domain as the primary Site URL with wildcards (`https://*.vercel.app/**`, `http://localhost:3000/**`) explicitly whitelisted for auxiliary environments.
+
+4. **Why `flow_state_already_used` Reoccurred (The Code Replay & Concurrency Vulnerability)**:
+   - _What was missed_: Standard browser behavior includes automatic page refreshes, back-button navigations, and concurrent tab restores. Under RFC 7636 (PKCE), an authorization code is strictly one-time-use.
+   - _Why it occurred_: When an earlier attempt failed or when a user clicked Back after seeing an error, the browser re-submitted the same authorization code. Because the code was already consumed or invalidated by GoTrue, Supabase responded with `flow_state_already_used`. The callback handler naively attempted code exchange on every request without first verifying whether the user already possessed a valid session token.
+   - _Lesson_: Auth callbacks must be idempotent. Inspecting `getVerifiedUserWithTimeout(client)` prior to consuming one-time codes allows the handler to short-circuit duplicate or replayed callback requests, immediately redirecting already-authenticated users to their destination without errors.
+
 ---
 
 ## 28. Comprehensive Security Architecture & Vulnerability Audit Findings

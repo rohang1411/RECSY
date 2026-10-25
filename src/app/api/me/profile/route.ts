@@ -3,7 +3,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDb } from '@/services/db/client';
 import { resolveRequestIdentity } from '@/services/auth/identity';
-import { getUserProfile, updateUserProfile } from '@/services/auth/profile';
+import { ensureUserProfile, getUserProfile, updateUserProfile } from '@/services/auth/profile';
+import {
+  createSupabaseServerClient,
+  getVerifiedUserWithTimeout,
+} from '@/services/auth/supabase-server';
 import { UnauthorizedError, ValidationError, isAppError, publicErrorMessage } from '@/lib/errors';
 import { assertSameOrigin } from '@/lib/same-origin';
 import { logger } from '@/services/logger';
@@ -33,7 +37,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       throw new UnauthorizedError('Sign-in required to access profile');
     }
 
-    const profile = await getUserProfile(db, identity.userId);
+    let profile = await getUserProfile(db, identity.userId);
+    if (!profile) {
+      try {
+        const client = await createSupabaseServerClient();
+        const user = await getVerifiedUserWithTimeout(client);
+        if (user && user.id === identity.userId) {
+          await ensureUserProfile(db, {
+            sub: user.id,
+            email: user.email,
+            user_metadata: user.user_metadata,
+          });
+          profile = await getUserProfile(db, identity.userId);
+        }
+      } catch (ensureErr) {
+        log.warn(
+          { ensureErr, userId: identity.userId },
+          'failed to auto-create missing profile in GET',
+        );
+      }
+    }
+
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }

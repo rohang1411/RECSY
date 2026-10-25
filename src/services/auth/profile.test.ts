@@ -13,7 +13,7 @@ describe('ensureUserProfile', () => {
     );
   });
 
-  it('executes upsert query with normalized email and metadata', async () => {
+  it('executes upsert query with normalized email and metadata when new', async () => {
     const mockDb = { execute: vi.fn().mockResolvedValue([]) } as unknown as AppQueryDb;
     const res = await ensureUserProfile(mockDb, {
       id: 'a0000000-0000-0000-0000-000000000001',
@@ -27,6 +27,55 @@ describe('ensureUserProfile', () => {
     expect(res.id).toBe('a0000000-0000-0000-0000-000000000001');
     expect(res.email).toBe('John.Doe+promo@gmail.com');
     expect(res.email_normalized).toBe('johndoe@gmail.com');
+    expect(mockDb.execute).toHaveBeenCalled();
+  });
+
+  it('updates profile when user id already exists', async () => {
+    const mockDb = {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            id: 'a0000000-0000-0000-0000-000000000001',
+            email_normalized: 'johndoe@gmail.com',
+          },
+        ])
+        .mockResolvedValueOnce([]),
+    } as unknown as AppQueryDb;
+
+    const res = await ensureUserProfile(mockDb, {
+      id: 'a0000000-0000-0000-0000-000000000001',
+      email: 'John.Doe@gmail.com',
+      user_metadata: { full_name: 'John Updated' },
+    });
+
+    expect(res.id).toBe('a0000000-0000-0000-0000-000000000001');
+    expect(mockDb.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconciles and migrates profile when email matches existing profile with different id', async () => {
+    const oldUserId = 'b0000000-0000-0000-0000-000000000002';
+    const newUserId = 'c0000000-0000-0000-0000-000000000003';
+
+    const mockDb = {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            id: oldUserId,
+            email_normalized: 'rohan@example.com',
+          },
+        ])
+        .mockResolvedValue([]),
+    } as unknown as AppQueryDb;
+
+    const res = await ensureUserProfile(mockDb, {
+      id: newUserId,
+      email: 'rohan@example.com',
+      user_metadata: { full_name: 'Rohan Sharma' },
+    });
+
+    expect(res.id).toBe(newUserId);
     expect(mockDb.execute).toHaveBeenCalled();
   });
 });
