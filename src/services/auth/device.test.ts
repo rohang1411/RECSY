@@ -26,6 +26,15 @@ describe('device authentication helpers', () => {
     expect(hash1).toMatch(/^[0-9a-f]{32}$/);
   });
 
+  it('derives a deterministic secure hash in production when DEVICE_ID_SECRET is unset', () => {
+    const raw = 'dGVzdC1kZXZpY2UtaWQ';
+    const hash1 = hashDeviceId(raw);
+    const hash2 = hashDeviceId(raw);
+    expect(hash1).toBe(hash2);
+    expect(hash1).toHaveLength(32);
+    expect(hash1).toMatch(/^[0-9a-f]{32}$/);
+  });
+
   it('provides cookie options with 1 year max-age, lax samesite, and httponly', () => {
     const options = getDeviceCookieOptions();
     expect(options.httpOnly).toBe(true);
