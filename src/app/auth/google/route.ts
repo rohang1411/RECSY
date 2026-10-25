@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthDriver } from '@/services/auth/driver';
+import { createSupabaseServerClient } from '@/services/auth/supabase-server';
 import { safeReturnTo } from '@/services/auth/return-to';
 import { resolveSiteUrl } from '@/lib/site-url';
 import { logger } from '@/services/logger';
@@ -14,10 +15,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const returnTo = safeReturnTo(searchParams.get('next'));
     const siteUrl = resolveSiteUrl(request);
 
-    const driver = getAuthDriver();
-    const redirectUrl = await driver.getGoogleOAuthUrl(returnTo, { siteUrl });
+    let client: Awaited<ReturnType<typeof createSupabaseServerClient>> | undefined;
+    try {
+      client = await createSupabaseServerClient();
+    } catch {
+      // In isolated mock environments where next/headers cookies() context is not present
+    }
 
-    return NextResponse.redirect(redirectUrl, { status: 302 });
+    const driver = getAuthDriver();
+    const redirectUrl = await driver.getGoogleOAuthUrl(returnTo, { siteUrl, client });
+
+    const response = NextResponse.redirect(redirectUrl, { status: 302 });
+    if (client && typeof client.applyCookies === 'function') {
+      client.applyCookies(response);
+    }
+    return response;
   } catch (err) {
     log.error({ err }, 'failed to initiate Google OAuth');
     return NextResponse.redirect(new URL('/login?error=oauth_init_failed', request.url), {

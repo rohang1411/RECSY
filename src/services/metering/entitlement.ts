@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import { env } from '@/env';
 import { logger } from '@/services/logger';
 import type { AppQueryDb } from '@/services/db/client';
-import type { UserProfileRow } from '@/services/auth/profile';
+import { getUserProfile, type UserProfileRow } from '@/services/auth/profile';
 import type { EntitlementSnapshot, MeteringConfig, PlatformState } from './types';
 import { getMeteringConfig } from './config';
 import { getPlatformState, getDefaultPlatformState } from './platform';
@@ -193,8 +193,12 @@ export async function getEntitlementSnapshot(input: {
     }
 
     let user: EntitlementSnapshot['user'] = null;
-    if (signedIn && input.profile) {
-      const p = input.profile;
+    let effectiveProfile = input.profile;
+    if (signedIn && !effectiveProfile && userId) {
+      effectiveProfile = await getUserProfile(input.db, userId).catch(() => null);
+    }
+    if (signedIn && effectiveProfile) {
+      const p = effectiveProfile;
       const names = (p.display_name ?? '').trim().split(/\s+/);
       const firstName = names[0] || (p.email ? p.email.split('@')[0] : 'Member');
       const lastName = names.slice(1).join(' ') || null;

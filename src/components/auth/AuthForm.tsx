@@ -16,8 +16,37 @@ export type AuthReason = 'anon_exhausted' | 'signin_required' | 'header' | 'purc
 export interface AuthFormProps {
   reason?: AuthReason;
   next?: string;
+  initialError?: string;
+  initialErrorDescription?: string;
   onSuccess?: () => void;
   className?: string;
+}
+
+function formatAuthErrorMessage(error?: string, desc?: string): string | null {
+  if (!error) return null;
+  const normalized = error.toLowerCase().trim();
+  if (normalized === 'flow_state_already_used') {
+    return 'Your sign-in request expired or was already used. Please click "Continue with Google" again.';
+  }
+  if (normalized === 'auth_exchange_failed') {
+    return 'Authentication could not be completed with Google. Please try again.';
+  }
+  if (normalized === 'access_denied') {
+    return 'Sign-in was cancelled. Please try again when ready.';
+  }
+  if (normalized === 'server_error') {
+    return 'A temporary server error occurred during authentication. Please try again.';
+  }
+  if (normalized === 'missing_code') {
+    return 'No authentication response was received. Please try again.';
+  }
+  if (normalized === 'oauth_init_failed') {
+    return 'Could not connect to Google sign-in. Please try again.';
+  }
+  if (desc && desc.trim().length > 0) {
+    return desc.trim();
+  }
+  return 'An error occurred during authentication. Please try again.';
 }
 
 const REASON_COPY: Record<AuthReason, { heading: string; sentence: string }> = {
@@ -43,6 +72,8 @@ const REASON_COPY: Record<AuthReason, { heading: string; sentence: string }> = {
 export function AuthForm({
   reason = 'header',
   next = '/',
+  initialError,
+  initialErrorDescription,
   onSuccess,
   className = '',
 }: AuthFormProps) {
@@ -58,7 +89,9 @@ export function AuthForm({
   const [otpCode, setOtpCode] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(() =>
+    formatAuthErrorMessage(initialError, initialErrorDescription),
+  );
   const [suggestSignUp, setSuggestSignUp] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);

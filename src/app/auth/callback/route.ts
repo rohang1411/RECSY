@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
-import { createSupabaseServerClient } from '@/services/auth/supabase-server';
+import {
+  createSupabaseServerClient,
+  getVerifiedUserWithTimeout,
+} from '@/services/auth/supabase-server';
 import { ensureUserProfile } from '@/services/auth/profile';
 import { claimAnonymousState } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
@@ -20,6 +23,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const type = (searchParams.get('type') || 'email') as EmailOtpType;
   const fakeUid = searchParams.get('fake_uid');
   const returnTo = safeReturnTo(searchParams.get('next'));
+  const authError = searchParams.get('error');
+  const authErrorCode = searchParams.get('error_code');
+  const authErrorDesc = searchParams.get('error_description');
 
   const responseRedirect = NextResponse.redirect(new URL(returnTo, request.url), { status: 302 });
 
@@ -38,8 +44,45 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return responseRedirect;
     }
 
+    const client = await createSupabaseServerClient();
+
+    // Check if the user already has a valid session (e.g. concurrent or completed exchange)
+    const existingUser = await getVerifiedUserWithTimeout(client).catch(() => null);
+    if (existingUser) {
+      log.info({ userId: existingUser.id }, 'auth callback: active session already present');
+      await ensureUserProfile(db, {
+        sub: existingUser.id,
+        email: existingUser.email,
+        user_metadata: existingUser.user_metadata,
+      });
+      await claimAnonymousState(db, existingUser.id, identity.deviceId, sessionToken);
+      if (typeof client?.applyCookies === 'function') {
+        client.applyCookies(responseRedirect);
+      }
+      return responseRedirect;
+    }
+
+    // Handle explicit errors returned by the auth provider
+    if (authError || authErrorCode) {
+      const errorKey = authErrorCode || authError;
+      log.warn(
+        { authError, authErrorCode, authErrorDesc },
+        'auth callback received provider error',
+      );
+      const redirect = NextResponse.redirect(
+        new URL(
+          `/login?error=${encodeURIComponent(errorKey ?? 'auth_error')}&error_description=${encodeURIComponent(authErrorDesc || '')}&next=${encodeURIComponent(returnTo)}`,
+          request.url,
+        ),
+        { status: 302 },
+      );
+      if (typeof client?.applyCookies === 'function') {
+        client.applyCookies(redirect);
+      }
+      return redirect;
+    }
+
     if (code || tokenHash) {
-      const client = await createSupabaseServerClient();
       let user: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null =
         null;
 
@@ -47,19 +90,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (error || !data.user) {
           log.warn({ error }, 'Supabase PKCE code exchange failed');
-          const redirect = NextResponse.redirect(
-            new URL(
-              `/login?error=auth_exchange_failed&next=${encodeURIComponent(returnTo)}`,
-              request.url,
-            ),
-            { status: 302 },
-          );
-          if (typeof client?.applyCookies === 'function') {
-            client.applyCookies(redirect);
+          const fallbackUser = await getVerifiedUserWithTimeout(client).catch(() => null);
+          if (fallbackUser) {
+            user = fallbackUser;
+          } else {
+            const redirect = NextResponse.redirect(
+              new URL(
+                `/login?error=auth_exchange_failed&next=${encodeURIComponent(returnTo)}`,
+                request.url,
+              ),
+              { status: 302 },
+            );
+            if (typeof client?.applyCookies === 'function') {
+              client.applyCookies(redirect);
+            }
+            return redirect;
           }
-          return redirect;
+        } else {
+          user = data.user;
         }
-        user = data.user;
       } else if (tokenHash) {
         const { data, error } = await client.auth.verifyOtp({
           token_hash: tokenHash,
