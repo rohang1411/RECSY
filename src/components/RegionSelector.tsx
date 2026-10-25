@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { REGIONS, type RegionConfig } from '@/lib/regions';
+import { useClientRegion } from '@/lib/region-client';
 import { Globe } from 'lucide-react';
 import { Sheet } from '@/components/ui/sheet';
 
 interface RegionSelectorProps {
-  readonly activeRegion: RegionConfig;
+  readonly activeRegion?: RegionConfig;
 }
 
-export function RegionSelector({ activeRegion }: RegionSelectorProps) {
+export function RegionSelector({ activeRegion: initialActiveRegion }: RegionSelectorProps = {}) {
+  const { region: clientRegion } = useClientRegion();
+  const activeRegion = initialActiveRegion ?? clientRegion;
   const [isOpen, setIsOpen] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
   const [liveInrRate, setLiveInrRate] = useState<number>(83.5);
@@ -55,11 +58,11 @@ export function RegionSelector({ activeRegion }: RegionSelectorProps) {
 
   return (
     <div className="relative font-mono">
-      {/* Trigger Button */}
+      {/* Trigger Button with reserved width to avoid layout shift (CLS < 0.05) */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="border-outline bg-background hover:border-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex cursor-pointer items-center gap-2 border px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-colors duration-150 focus-visible:outline-none"
+        className="border-outline bg-background hover:border-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background flex min-w-[76px] cursor-pointer items-center justify-between gap-2 border px-3 py-1 text-[11px] font-bold tracking-wider uppercase transition-colors duration-150 focus-visible:outline-none"
         aria-label={`Select region (current: ${activeRegion.label})`}
       >
         <span>

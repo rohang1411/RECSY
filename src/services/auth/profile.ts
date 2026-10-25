@@ -162,6 +162,7 @@ export async function requireUser(
   request: NextRequest,
   options?: { db?: AppQueryDb },
 ): Promise<RequestIdentity> {
+  // Plan 26 WP-02: Account and billing callers omit localClaims to enforce authoritative getUser() server round trip.
   const identity = await resolveRequestIdentity(request, options);
 
   if (!identity.userId) {

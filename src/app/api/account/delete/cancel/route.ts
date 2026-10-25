@@ -29,6 +29,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     assertSameOrigin(request);
 
     const db = getDb();
+    // Plan 26 WP-02: Deletion cancellation keeps authoritative getUser() server round trip to verify active credentials.
     const identity = await requireUser(request, { db });
     const userId = identity.userId!;
 

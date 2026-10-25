@@ -143,6 +143,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       user_metadata: data.user.user_metadata,
     });
 
+    // Plan 26 WP-02: Auth confirmation keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
     await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);

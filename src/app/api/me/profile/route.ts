@@ -26,6 +26,7 @@ const UpdateProfileSchema = z.object({
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
+    // Plan 26 WP-02: Profile mutation keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
 
     if (!identity.userId) {

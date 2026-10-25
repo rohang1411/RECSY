@@ -48,6 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     // 2. Anonymous-to-account graduation
+    // Plan 26 WP-02: OTP verification keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
     await claimAnonymousState(db, result.user.id, identity.deviceId, sessionToken);

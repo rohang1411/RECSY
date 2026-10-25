@@ -1,28 +1,42 @@
+import React from 'react';
 import type { PhoneSpec } from '@/features/phones/schema';
+import { RegionPrice } from '@/components/region/RegionPrice';
 import { formatLocalPrice } from '@/lib/format-currency';
-import type { RegionConfig } from '@/lib/regions';
+import { getRegionConfig, type RegionConfig } from '@/lib/regions';
+import type { PhoneRegionalPrice } from '@/services/cache/public-data';
 
 interface PhoneSpecSummaryProps {
   readonly spec: PhoneSpec;
-  readonly localPrice: string | null;
+  readonly regionalPrices?: Record<string, PhoneRegionalPrice>;
+  readonly msrpUsd?: string | null;
+  readonly localPrice?: string | null;
   readonly isEstimated?: boolean;
-  readonly activeRegion: RegionConfig;
+  readonly activeRegion?: RegionConfig;
 }
 
 export function PhoneSpecSummary({
   spec,
+  regionalPrices,
+  msrpUsd,
   localPrice,
   isEstimated,
   activeRegion,
 }: PhoneSpecSummaryProps) {
-  const price = formatLocalPrice(localPrice, activeRegion, { isEstimated });
   const mainCam = spec.rear_cameras?.[0];
   const camLine = mainCam
     ? `${mainCam.mp}MP${mainCam.zoom ? ` / ${mainCam.zoom}` : ''}${mainCam.type !== 'main' ? ` / ${mainCam.type}` : ''}`
     : 'N/A';
 
-  const rows: { label: string; value: string; channel: string }[] = [
-    { label: `MSRP ${activeRegion.currency}`, value: price ?? 'TBD', channel: 'Price' },
+  const priceNode: React.ReactNode = regionalPrices ? (
+    <RegionPrice regionalPrices={regionalPrices} msrpUsd={msrpUsd ?? localPrice ?? null} />
+  ) : (
+    (formatLocalPrice(localPrice ?? msrpUsd ?? null, activeRegion ?? getRegionConfig('US'), {
+      isEstimated,
+    }) ?? 'TBD')
+  );
+
+  const rows: { label: string; value: React.ReactNode; channel: string }[] = [
+    { label: 'MSRP', value: priceNode, channel: 'Price' },
     {
       label: 'Display',
       value: `${spec.display.size_in}" ${spec.display.panel_type ?? ''} / ${spec.display.resolution} / ${spec.display.refresh_rate_hz ?? '?'}Hz`,

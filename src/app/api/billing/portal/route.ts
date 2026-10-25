@@ -14,6 +14,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     assertSameOrigin(request);
 
     const db = getDb();
+    // Plan 26 WP-02: Billing portal keeps authoritative getUser() server round trip.
     const identity = await requireUser(request, { db });
     const siteUrl = resolveSiteUrl(request);
 

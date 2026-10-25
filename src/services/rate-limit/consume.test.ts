@@ -13,26 +13,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASK_RATE_LIMIT_MAX, RECOMMEND_RATE_LIMIT_MAX } from '@/lib/constants';
 import { RateLimitError } from '@/lib/errors';
 
-// Mock the DB client before importing consume.ts (which imports client at module scope)
-const mockInsert = vi.fn();
+const mockExecute = vi.fn();
 vi.mock('@/services/db/client', () => ({
   getDb: () => ({
-    insert: mockInsert,
+    execute: mockExecute,
   }),
 }));
 
-// Import after mocks are set up
 const { consumeAskRateLimit, consumeRecommendRateLimit, askRateLimitKey, recommendRateLimitKey } =
   await import('./consume');
-
-function buildInsertChain(count: number) {
-  const chain = {
-    values: vi.fn().mockReturnThis(),
-    onConflictDoUpdate: vi.fn().mockReturnThis(),
-    returning: vi.fn().mockResolvedValue([{ count }]),
-  };
-  return chain;
-}
 
 describe('askRateLimitKey', () => {
   it('prefixes with "ask:v1:"', () => {
@@ -56,27 +45,27 @@ describe('consumeAskRateLimit', () => {
   });
 
   it('succeeds when count is within the limit', async () => {
-    mockInsert.mockReturnValue(buildInsertChain(1));
+    mockExecute.mockResolvedValue([{ count: 1 }]);
     await expect(consumeAskRateLimit('1.2.3.4')).resolves.toBeUndefined();
   });
 
   it('succeeds when count equals the limit exactly', async () => {
-    mockInsert.mockReturnValue(buildInsertChain(ASK_RATE_LIMIT_MAX));
+    mockExecute.mockResolvedValue([{ count: ASK_RATE_LIMIT_MAX }]);
     await expect(consumeAskRateLimit('1.2.3.4')).resolves.toBeUndefined();
   });
 
   it('throws RateLimitError when count exceeds the limit', async () => {
-    mockInsert.mockReturnValue(buildInsertChain(ASK_RATE_LIMIT_MAX + 1));
+    mockExecute.mockResolvedValue([{ count: ASK_RATE_LIMIT_MAX + 1 }]);
     await expect(consumeAskRateLimit('1.2.3.4')).rejects.toBeInstanceOf(RateLimitError);
   });
 
   it('does not throw when returning row is missing (defaults to count=1)', async () => {
-    const chain = {
-      values: vi.fn().mockReturnThis(),
-      onConflictDoUpdate: vi.fn().mockReturnThis(),
-      returning: vi.fn().mockResolvedValue([]),
-    };
-    mockInsert.mockReturnValue(chain);
+    mockExecute.mockResolvedValue([]);
+    await expect(consumeAskRateLimit('1.2.3.4')).resolves.toBeUndefined();
+  });
+
+  it('fails open on database error (rule R3)', async () => {
+    mockExecute.mockRejectedValue(new Error('connection timeout'));
     await expect(consumeAskRateLimit('1.2.3.4')).resolves.toBeUndefined();
   });
 });
@@ -87,12 +76,17 @@ describe('consumeRecommendRateLimit', () => {
   });
 
   it('succeeds when count is within the recommend limit', async () => {
-    mockInsert.mockReturnValue(buildInsertChain(1));
+    mockExecute.mockResolvedValue([{ count: 1 }]);
     await expect(consumeRecommendRateLimit('1.2.3.4')).resolves.toBeUndefined();
   });
 
   it('throws RateLimitError when recommend count exceeds limit', async () => {
-    mockInsert.mockReturnValue(buildInsertChain(RECOMMEND_RATE_LIMIT_MAX + 1));
+    mockExecute.mockResolvedValue([{ count: RECOMMEND_RATE_LIMIT_MAX + 1 }]);
     await expect(consumeRecommendRateLimit('1.2.3.4')).rejects.toBeInstanceOf(RateLimitError);
+  });
+
+  it('fails open on database error (rule R3)', async () => {
+    mockExecute.mockRejectedValue(new Error('connection timeout'));
+    await expect(consumeRecommendRateLimit('1.2.3.4')).resolves.toBeUndefined();
   });
 });

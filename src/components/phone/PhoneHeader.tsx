@@ -1,15 +1,19 @@
 import { PhoneImage } from '@/components/phone/PhoneImage';
+import { RegionPrice } from '@/components/region/RegionPrice';
 import { formatLocalPrice } from '@/lib/format-currency';
-import type { RegionConfig } from '@/lib/regions';
+import { getRegionConfig, type RegionConfig } from '@/lib/regions';
+import type { PhoneRegionalPrice } from '@/services/cache/public-data';
 
 interface PhoneHeaderProps {
   readonly brand: string;
   readonly model: string;
   readonly tagline: string | null;
   readonly imageUrl: string | null;
-  readonly localPrice: string | null;
+  readonly regionalPrices?: Record<string, PhoneRegionalPrice>;
+  readonly msrpUsd?: string | null;
+  readonly localPrice?: string | null;
   readonly isEstimated?: boolean;
-  readonly activeRegion: RegionConfig;
+  readonly activeRegion?: RegionConfig;
 }
 
 export function PhoneHeader({
@@ -17,11 +21,12 @@ export function PhoneHeader({
   model,
   tagline,
   imageUrl,
+  regionalPrices,
+  msrpUsd,
   localPrice,
   isEstimated,
   activeRegion,
 }: PhoneHeaderProps) {
-  const price = formatLocalPrice(localPrice, activeRegion, { isEstimated });
   const label = `${brand} ${model}`;
 
   return (
@@ -47,7 +52,22 @@ export function PhoneHeader({
           <dl className="bg-outline-variant grid grid-cols-2 gap-px font-mono text-xs">
             <div className="bg-background p-4">
               <dt className="meta-label">MSRP</dt>
-              <dd className="text-primary mt-2">{price ?? 'TBD'}</dd>
+              <dd className="text-primary mt-2">
+                {regionalPrices ? (
+                  <RegionPrice
+                    regionalPrices={regionalPrices}
+                    msrpUsd={msrpUsd ?? localPrice ?? null}
+                  />
+                ) : (
+                  (formatLocalPrice(
+                    localPrice ?? msrpUsd ?? null,
+                    activeRegion ?? getRegionConfig('US'),
+                    {
+                      isEstimated,
+                    },
+                  ) ?? 'TBD')
+                )}
+              </dd>
             </div>
             <div className="bg-background p-4">
               <dt className="meta-label">STATUS</dt>

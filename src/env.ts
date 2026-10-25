@@ -28,6 +28,9 @@ export const env = createEnv({
     LLM_PROVIDER: z.enum(['gemini', 'groq', 'nvidia', 'controlled', 'gateway']).default('gemini'),
     EVAL_CONTROLLED_PROVIDER_URL: z.string().url().optional(),
     EVAL_CONTROLLED_PROVIDER_TOKEN: z.string().min(16).optional(),
+    EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD: z.string().optional(),
+    EVAL_CONTROLLED_STREAM_DELAY_MS: z.string().optional(),
+    EVAL_CONTROLLED_TTFT_MS: z.string().optional(),
     GEMINI_API_KEY: z.string().min(1),
     /** Optional backup Google AI Studio keys (separate projects). Rotated when a prior key hits quota (429 / daily cap). */
     GEMINI_API_KEY_2: z.string().optional(),
@@ -183,6 +186,8 @@ export const env = createEnv({
     ALERT_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
     USER_RATE_RECOMMEND_PER_MIN: z.coerce.number().int().min(1).default(12),
     USER_RATE_ASK_PER_MIN: z.coerce.number().int().min(1).default(20),
+    PERF_FLAGS_DEFAULT_JSON: z.string().optional(),
+    REVALIDATE_SECRET: z.string().min(32).optional(),
   },
 
   /**
@@ -216,6 +221,9 @@ export const env = createEnv({
     LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
     EVAL_CONTROLLED_PROVIDER_URL: process.env.EVAL_CONTROLLED_PROVIDER_URL,
     EVAL_CONTROLLED_PROVIDER_TOKEN: process.env.EVAL_CONTROLLED_PROVIDER_TOKEN,
+    EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD: process.env.EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD,
+    EVAL_CONTROLLED_STREAM_DELAY_MS: process.env.EVAL_CONTROLLED_STREAM_DELAY_MS,
+    EVAL_CONTROLLED_TTFT_MS: process.env.EVAL_CONTROLLED_TTFT_MS,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
     GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
@@ -327,6 +335,8 @@ export const env = createEnv({
     ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
     USER_RATE_RECOMMEND_PER_MIN: process.env.USER_RATE_RECOMMEND_PER_MIN ?? '12',
     USER_RATE_ASK_PER_MIN: process.env.USER_RATE_ASK_PER_MIN ?? '20',
+    PERF_FLAGS_DEFAULT_JSON: process.env.PERF_FLAGS_DEFAULT_JSON,
+    REVALIDATE_SECRET: process.env.REVALIDATE_SECRET,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? 'support@recsy.com',
   },
@@ -345,3 +355,12 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+if (
+  typeof window === 'undefined' &&
+  process.env.SKIP_ENV_VALIDATION !== 'true' &&
+  env.NODE_ENV === 'production' &&
+  env.AUTH_DRIVER === 'fake'
+) {
+  throw new Error('AUTH_DRIVER=fake is forbidden when NODE_ENV=production');
+}

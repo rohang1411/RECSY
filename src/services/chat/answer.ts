@@ -29,9 +29,10 @@ import {
   RETRIEVAL_TOP_K_PRE_RERANK,
 } from '@/lib/constants';
 import { IntegrationError, LlmError, ValidationError } from '@/lib/errors';
+import type { StageTimer } from '@/lib/stage-timer';
 import { getDb } from '@/services/db/client';
 import { chatQueries } from '@/services/db/schema';
-import type { ChatMessage, ChatResult, ChatUsage, LlmProvider } from '@/services/llm/types';
+import type { ChatCapable, ChatMessage, ChatResult, ChatUsage } from '@/services/llm/types';
 import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import type { HybridRetriever } from '@/services/retrieval/retriever';
 import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/types';
@@ -43,7 +44,7 @@ export interface PhoneQnaInput {
   readonly phoneId: string;
   readonly query: string;
   readonly retriever: HybridRetriever;
-  readonly llm: LlmProvider;
+  readonly llm: ChatCapable;
   readonly log: Logger;
   readonly signal?: AbortSignal;
   /** Overrides default retrieval knobs (e.g. tests or experiments). */
@@ -65,6 +66,12 @@ export interface PhoneQnaInput {
   readonly serverMode?: 'fast' | 'deep';
   /** True when user is confirmed subscriber entitled to reasoning tier. */
   readonly isSubscriber?: boolean;
+  /** Optional stage timer for latency breakdown (Plan 26 WP-00). */
+  readonly timer?: StageTimer;
+  /** Optional thinking budget override for grounded synthesis (Plan 26 WP-04). */
+  readonly thinking?: 'default' | 'low' | 'minimal';
+  /** Optional stage notifier for streaming / buffered status updates (Plan 26 WP-06). */
+  readonly onStage?: (stage: 'retrieving' | 'generating') => void;
 }
 
 export interface PhoneQnaResult {
@@ -118,7 +125,7 @@ function buildSourcesBlock(retrieval: RetrievalResult): string {
     .join('\n\n');
 }
 
-function buildMessages(
+export function buildMessages(
   query: string,
   retrieval: RetrievalResult,
   retryInvalidAnswer: string | undefined,
@@ -147,18 +154,20 @@ function buildMessages(
 }
 
 async function chatAnswer(
-  llm: LlmProvider,
+  llm: ChatCapable,
   messages: ChatMessage[],
   signal: AbortSignal | undefined,
   byok?: PhoneQnaInput['byok'],
   serverMode?: 'fast' | 'deep',
   isSubscriber?: boolean,
+  thinking?: 'default' | 'low' | 'minimal',
 ): Promise<ChatResult> {
   const result = await llm.chat({
     model: env.LLM_CHAT_MODEL,
     messages,
     temperature: 0.35,
     maxOutputTokens: 2048,
+    thinking,
     usageContext: {
       area: 'Phone Q&A',
       feature: 'Grounded answer',
@@ -250,7 +259,8 @@ function toDate(v: Date | string | null | undefined): Date | null {
  * refusal that reads like a bug to end users.
  */
 export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult> {
-  const { phoneId, query, retriever, llm, log, signal, retrievalOptions } = input;
+  const { phoneId, query, retriever, llm, log, signal, retrievalOptions, timer } = input;
+  input.onStage?.('retrieving');
 
   const qBytes = new TextEncoder().encode(query).length;
   if (qBytes > MAX_CHAT_MESSAGE_BYTES) {
@@ -268,6 +278,21 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       ...(retrievalOptions ?? {}),
     },
   });
+
+  if (timer && retrieval.debug) {
+    if (retrieval.debug.embedding?.ms) {
+      timer.record('embed', retrieval.debug.embedding.ms);
+    }
+    if (retrieval.debug.vector?.ms) {
+      timer.record('vector', retrieval.debug.vector.ms);
+    }
+    if (retrieval.debug.fts?.ms) {
+      timer.record('fts', retrieval.debug.fts.ms);
+    }
+    if (retrieval.debug.mmr?.ms) {
+      timer.record('mmrVectors', retrieval.debug.mmr.ms);
+    }
+  }
 
   if (retrieval.chunks.length === 0) {
     if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
@@ -297,15 +322,24 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   const allowed = new Set(retrieval.chunks.map((c) => c.chunkId.toLowerCase()));
 
   let messages = buildMessages(query, retrieval, undefined);
+  input.onStage?.('generating');
   const generationCalls: ChatResult[] = [];
-  let answer = await chatAnswer(
-    llm,
-    messages,
-    signal,
-    input.byok,
-    input.serverMode,
-    input.isSubscriber,
-  );
+
+  const runFirstGeneration = () =>
+    chatAnswer(
+      llm,
+      messages,
+      signal,
+      input.byok,
+      input.serverMode,
+      input.isSubscriber,
+      input.thinking,
+    );
+
+  let answer = timer
+    ? await timer.time('generate', runFirstGeneration)
+    : await runFirstGeneration();
+
   generationCalls.push(answer);
   let { text, usage, model } = answer;
 
@@ -313,14 +347,17 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
   if (!validated.ok) {
     log.warn({ invalid: validated.invalid }, 'citation validation failed; retrying');
     messages = buildMessages(query, retrieval, text);
-    answer = await chatAnswer(
-      llm,
-      messages,
-      signal,
-      input.byok,
-      input.serverMode,
-      input.isSubscriber,
-    );
+    const runRetryGeneration = () =>
+      chatAnswer(
+        llm,
+        messages,
+        signal,
+        input.byok,
+        input.serverMode,
+        input.isSubscriber,
+        input.thinking,
+      );
+    answer = timer ? await timer.time('generate', runRetryGeneration) : await runRetryGeneration();
     generationCalls.push(answer);
     ({ text, usage, model } = answer);
     validated = validateCitationTags(text, allowed);

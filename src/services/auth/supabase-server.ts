@@ -122,6 +122,63 @@ export function createSupabaseProxyClient(
   });
 }
 
+export interface VerifiedClaimsUser {
+  readonly id: string;
+  /**
+   * Advisory email verification flag derived from JWT user_metadata.
+   * Call getUser() if a trustworthy authoritative value is required.
+   */
+  readonly emailVerified: boolean;
+}
+
+/**
+ * Verifies JWT claims locally (via cached JWKS when asymmetric keys are enabled)
+ * with timeout. Returns the authenticated user claims or null. Throws on timeout to signal AUTH_UNAVAILABLE.
+ */
+export async function getVerifiedClaimsWithTimeout(
+  client: SupabaseServerClient,
+  timeoutMs = env.AUTH_VERIFY_TIMEOUT_MS,
+): Promise<VerifiedClaimsUser | null> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('AUTH_TIMEOUT'));
+    }, timeoutMs);
+  });
+
+  try {
+    const claimsPromise = (async () => {
+      const { data, error } = await client.auth.getClaims();
+      if (error || !data?.claims) {
+        return null;
+      }
+      const claims = data.claims as {
+        sub?: string;
+        user_metadata?: { email_verified?: boolean };
+        [key: string]: unknown;
+      };
+      if (!claims.sub) {
+        return null;
+      }
+      return {
+        id: claims.sub,
+        emailVerified: claims.user_metadata?.email_verified === true,
+      };
+    })();
+    const user = await Promise.race([claimsPromise, timeoutPromise]);
+    return user;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === 'AUTH_TIMEOUT') {
+      log.warn({ timeoutMs }, 'Supabase auth claims verification timed out');
+      throw err;
+    }
+    // Expired or malformed token
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Verifies JWT / user session with timeout.
  * Returns the authenticated user or null. Throws on timeout to signal AUTH_UNAVAILABLE.

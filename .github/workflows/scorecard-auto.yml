@@ -80,6 +80,8 @@ jobs:
       GEMINI_FREE_TPM_INPUT: '250000'
       GEMINI_FREE_RPD: '20'
       LOG_LEVEL: info
+      REVALIDATE_URL: ${{ secrets.REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
       SKIP_ENV_VALIDATION: 'false'
     steps:
       - name: Checkout

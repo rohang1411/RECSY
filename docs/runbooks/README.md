@@ -21,6 +21,9 @@ Every runbook follows the standard structure: **Symptoms → Check → Action �
 | 10  | **Dispute received**                      | Chargeback evidence & account hold       | [10-dispute-received.md](file:///docs/runbooks/10-dispute-received.md)             |
 | 11  | **Account deletion stuck**                | GDPR / CCPA 30-day deletion worker       | [11-account-deletion-stuck.md](file:///docs/runbooks/11-account-deletion-stuck.md) |
 | 12  | **Rollback**                              | Reversible rollout stages & flag drops   | [12-rollback.md](file:///docs/runbooks/12-rollback.md)                             |
+| 13  | **Streaming rollback**                    | Q&A streaming / citation guard rollback  | [13-streaming-rollback.md](file:///docs/runbooks/13-streaming-rollback.md)         |
+| 14  | **Stale public pages**                    | Cache revalidation & ISR refresh         | [14-stale-public-pages.md](file:///docs/runbooks/14-stale-public-pages.md)         |
+| 15  | **Rate-limit store**                      | Postgres store / single statement        | [15-rate-limit-store.md](file:///docs/runbooks/15-rate-limit-store.md)             |
 
 ---
 
