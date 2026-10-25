@@ -52,6 +52,16 @@ describe('resolveSiteUrl', () => {
     expect(resolveSiteUrl(req)).not.toContain('evil-phishing.com');
   });
 
+  it('resolves localhost origin to http by default', () => {
+    const req = new NextRequest('http://localhost:3000/auth/google');
+    expect(resolveSiteUrl(req)).toBe('http://localhost:3000');
+
+    const reqHeadersOnly = {
+      headers: new Headers({ host: 'localhost:3000' }),
+    } as unknown as Request;
+    expect(resolveSiteUrl(reqHeadersOnly)).toBe('http://localhost:3000');
+  });
+
   it('strips trailing slashes from origin', () => {
     const req = new NextRequest('https://recsy-staging.vercel.app/');
     expect(resolveSiteUrl(req)).toBe('https://recsy-staging.vercel.app');

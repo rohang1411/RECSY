@@ -75,9 +75,59 @@ export function resolveSiteUrl(request?: NextRequest | Request | null): string {
             ? directHost
             : null;
 
-      const forwardedProto = headers.get('x-forwarded-proto') || 'https';
       if (candidateHost) {
-        return `${forwardedProto}://${candidateHost}`.replace(/\/$/, '');
+        // Determine protocol:
+        // a) Explicit trusted forwarded proto header (e.g. from Vercel/reverse proxy)
+        const forwardedProto = headers.get('x-forwarded-proto')?.trim().toLowerCase();
+        if (forwardedProto && (forwardedProto === 'http' || forwardedProto === 'https')) {
+          return `${forwardedProto}://${candidateHost}`.replace(/\/$/, '');
+        }
+
+        // b) Request nextUrl protocol if present
+        if ('nextUrl' in request && request.nextUrl?.protocol) {
+          const nextProto = request.nextUrl.protocol.replace(/:$/, '').toLowerCase();
+          return `${nextProto}://${candidateHost}`.replace(/\/$/, '');
+        }
+
+        // c) Request url protocol if present
+        if (typeof request.url === 'string' && request.url.startsWith('http')) {
+          try {
+            const parsed = new URL(request.url);
+            const urlProto = parsed.protocol.replace(/:$/, '').toLowerCase();
+            return `${urlProto}://${candidateHost}`.replace(/\/$/, '');
+          } catch {
+            // Fall through
+          }
+        }
+
+        // d) Localhost / loopback hosts default to http
+        const cleanHost = candidateHost.split(':')[0]?.trim().toLowerCase();
+        if (cleanHost === 'localhost' || cleanHost === '127.0.0.1') {
+          // If NEXT_PUBLIC_SITE_URL explicitly specifies https for localhost, honor it; otherwise http
+          if (
+            env.NEXT_PUBLIC_SITE_URL?.startsWith('https://localhost') ||
+            env.NEXT_PUBLIC_SITE_URL?.startsWith('https://127.0.0.1')
+          ) {
+            return `https://${candidateHost}`.replace(/\/$/, '');
+          }
+          return `http://${candidateHost}`.replace(/\/$/, '');
+        }
+
+        // e) Configured NEXT_PUBLIC_SITE_URL matching candidateHost
+        if (env.NEXT_PUBLIC_SITE_URL) {
+          try {
+            const parsedConfigured = new URL(env.NEXT_PUBLIC_SITE_URL);
+            if (parsedConfigured.hostname.toLowerCase() === cleanHost) {
+              const configProto = parsedConfigured.protocol.replace(/:$/, '').toLowerCase();
+              return `${configProto}://${candidateHost}`.replace(/\/$/, '');
+            }
+          } catch {
+            // Fall through
+          }
+        }
+
+        // f) Default for remote trusted hosts is https
+        return `https://${candidateHost}`.replace(/\/$/, '');
       }
     }
 

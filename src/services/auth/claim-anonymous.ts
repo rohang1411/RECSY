@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { isValidUuid } from '@/lib/uuid';
 import type { AppQueryDb } from '@/services/db/client';
 import { logger } from '@/services/logger';
 
@@ -23,7 +24,7 @@ export async function claimAnonymousState(
   deviceId: string,
   sessionToken?: string | null,
 ): Promise<ClaimAnonymousResult> {
-  if (!userId || !deviceId) {
+  if (!userId || !deviceId || !isValidUuid(userId)) {
     return { success: false };
   }
 

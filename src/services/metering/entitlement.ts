@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { env } from '@/env';
 import { logger } from '@/services/logger';
+import { isValidUuid } from '@/lib/uuid';
 import type { AppQueryDb } from '@/services/db/client';
 import { getUserProfile, type UserProfileRow } from '@/services/auth/profile';
 import type { EntitlementSnapshot, MeteringConfig, PlatformState } from './types';
@@ -107,7 +108,9 @@ export async function getEntitlementSnapshot(input: {
   const platform =
     input.platform ?? (await getPlatformState(input.db).catch(() => getDefaultPlatformState()));
 
-  const userId = identity.userId ?? null;
+  const rawUserId = identity.userId?.trim() || null;
+  const userId = rawUserId;
+  const isUuid = rawUserId ? isValidUuid(rawUserId) : false;
   const deviceId = identity.deviceId ?? '';
 
   try {
@@ -118,7 +121,7 @@ export async function getEntitlementSnapshot(input: {
         (SELECT total_used FROM usage_counters WHERE subject_kind = 'device' AND subject_id = ${deviceId}       AND usage_date = (now() AT TIME ZONE 'UTC')::date) AS device_total_used,
         (SELECT anon_used  FROM usage_counters WHERE subject_kind = 'device' AND subject_id = ${deviceId}       AND usage_date = (now() AT TIME ZONE 'UTC')::date) AS device_anon_used,
         (SELECT byok_used  FROM usage_counters WHERE subject_kind = 'device' AND subject_id = ${deviceId}       AND usage_date = (now() AT TIME ZONE 'UTC')::date) AS device_byok_used,
-        (SELECT balance FROM credit_wallets WHERE user_id = ${userId ? sql`${userId}::uuid` : sql`NULL`}) AS credits,
+        (SELECT balance FROM credit_wallets WHERE user_id = ${isUuid ? sql`${userId}::uuid` : sql`NULL`}) AS credits,
         (SELECT jsonb_build_object(
                   'planCode', s.plan_code,
                   'status', s.status,
@@ -130,7 +133,7 @@ export async function getEntitlementSnapshot(input: {
                 )
            FROM subscriptions s
            LEFT JOIN subscription_usage su ON su.subscription_id = s.id AND su.period_start = s.current_period_start
-          WHERE s.user_id = ${userId ? sql`${userId}::uuid` : sql`NULL`} AND s.entitled_until > now()
+          WHERE s.user_id = ${isUuid ? sql`${userId}::uuid` : sql`NULL`} AND s.entitled_until > now()
           ORDER BY s.entitled_until DESC LIMIT 1) AS subscription;
     `);
 

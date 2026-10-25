@@ -25,26 +25,34 @@ export interface AuthFormProps {
 function formatAuthErrorMessage(error?: string, desc?: string): string | null {
   if (!error) return null;
   const normalized = error.toLowerCase().trim();
+  const cleanDesc = desc?.trim();
+
   if (normalized === 'flow_state_already_used') {
     return 'Your sign-in request expired or was already used. Please click "Continue with Google" again.';
   }
   if (normalized === 'auth_exchange_failed') {
-    return 'Authentication could not be completed with Google. Please try again.';
+    return cleanDesc
+      ? `Authentication failed: ${cleanDesc}`
+      : 'Authentication could not be completed with Google. Please try again.';
   }
   if (normalized === 'access_denied') {
     return 'Sign-in was cancelled. Please try again when ready.';
   }
   if (normalized === 'server_error') {
-    return 'A temporary server error occurred during authentication. Please try again.';
+    return cleanDesc
+      ? `Server error during authentication: ${cleanDesc}`
+      : 'A temporary server error occurred during authentication. Please try again.';
   }
   if (normalized === 'missing_code') {
     return 'No authentication response was received. Please try again.';
   }
   if (normalized === 'oauth_init_failed') {
-    return 'Could not connect to Google sign-in. Please try again.';
+    return cleanDesc
+      ? `Could not connect to Google sign-in: ${cleanDesc}`
+      : 'Could not connect to Google sign-in. Please try again.';
   }
-  if (desc && desc.trim().length > 0) {
-    return desc.trim();
+  if (cleanDesc && cleanDesc.length > 0) {
+    return cleanDesc;
   }
   return 'An error occurred during authentication. Please try again.';
 }

@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { normalizeEmail } from './email';
 import { resolveRequestIdentity, type RequestIdentity } from './identity';
 import { AccountRestrictedError, UnauthorizedError } from '@/lib/errors';
+import { isValidUuid } from '@/lib/uuid';
 import type { AppQueryDb } from '@/services/db/client';
 import { logger } from '@/services/logger';
 
@@ -43,9 +44,14 @@ export async function ensureUserProfile(
   db: AppQueryDb,
   claims: UserClaims,
 ): Promise<{ id: string; email: string; email_normalized: string }> {
-  const userId = claims.sub || claims.id;
-  if (!userId) {
+  const rawUserId = claims.sub || claims.id;
+  if (!rawUserId) {
     throw new Error('ensureUserProfile: user ID (sub/id) missing from claims');
+  }
+  const userId = rawUserId.trim();
+  if (!isValidUuid(userId)) {
+    log.error({ userId }, 'ensureUserProfile: user ID is not a valid UUID');
+    throw new Error(`ensureUserProfile: invalid UUID format for user ID: ${userId}`);
   }
 
   const rawEmail = claims.email?.trim() || '';
@@ -68,9 +74,13 @@ export async function ensureUserProfile(
   const dateOfBirth = rawDob && /^\d{4}-\d{2}-\d{2}$/.test(rawDob) ? rawDob : null;
   const termsVersion =
     (typeof metadata.terms_version === 'string' && metadata.terms_version.trim()) || '2026-10';
-  const termsAcceptedAt = metadata.terms_accepted_at
-    ? new Date(String(metadata.terms_accepted_at)).toISOString()
-    : new Date().toISOString();
+  const parsedTermsDate = metadata.terms_accepted_at
+    ? new Date(String(metadata.terms_accepted_at))
+    : null;
+  const termsAcceptedAt =
+    parsedTermsDate && !Number.isNaN(parsedTermsDate.getTime())
+      ? parsedTermsDate.toISOString()
+      : new Date().toISOString();
   const marketingOptIn = Boolean(metadata.marketing_opt_in);
 
   try {
@@ -206,6 +216,11 @@ export async function updateUserProfile(
     avatarUrl?: string | null;
   },
 ): Promise<UserProfileRow | null> {
+  if (!isValidUuid(userId)) {
+    log.warn({ userId }, 'updateUserProfile called with invalid UUID');
+    return null;
+  }
+
   await db.execute(sql`
     UPDATE user_profiles
        SET display_name = COALESCE(${data.displayName !== undefined ? data.displayName : null}, display_name),
@@ -215,7 +230,7 @@ export async function updateUserProfile(
            END,
            avatar_url = COALESCE(${data.avatarUrl !== undefined ? data.avatarUrl : null}, avatar_url),
            updated_at = now()
-     WHERE id = ${userId}::uuid;
+     WHERE id = ${userId.trim()}::uuid;
   `);
 
   return getUserProfile(db, userId);
@@ -228,13 +243,23 @@ export async function getUserProfile(
   db: AppQueryDb,
   userId: string,
 ): Promise<UserProfileRow | null> {
-  const rows = await db.execute<Record<string, unknown> & UserProfileRow>(sql`
-    SELECT *
-      FROM user_profiles
-     WHERE id = ${userId}::uuid
-     LIMIT 1;
-  `);
-  return rows[0] ?? null;
+  if (!isValidUuid(userId)) {
+    log.warn({ userId }, 'getUserProfile called with invalid UUID; returning null');
+    return null;
+  }
+
+  try {
+    const rows = await db.execute<Record<string, unknown> & UserProfileRow>(sql`
+      SELECT *
+        FROM user_profiles
+       WHERE id = ${userId.trim()}::uuid
+       LIMIT 1;
+    `);
+    return rows[0] ?? null;
+  } catch (err) {
+    log.error({ err, userId }, 'failed to get user profile from database');
+    return null;
+  }
 }
 
 /**
