@@ -12,6 +12,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { AccountRestrictedError, isAppError, publicErrorMessage } from '@/lib/errors';
+import { isValidUuid } from '@/lib/uuid';
 import { getDb } from '@/services/db/client';
 import { requestLogger } from '@/services/logger';
 import { resolveRequestIdentity } from '@/services/auth/identity';
@@ -77,11 +78,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     // Rate limiting: 60/min per identity
     if (identity.userId) {
-      await consumeUserRateLimit(identity.userId, 'read', db);
+      await consumeUserRateLimit(identity.userId, 'read', db).catch((err) => {
+        if (isAppError(err)) throw err;
+        log.warn({ err, userId: identity.userId }, 'consumeUserRateLimit non-fatal error');
+      });
     }
-    await consumeDeviceRateLimit(db, identity.deviceId, 'GET /api/me');
+    await consumeDeviceRateLimit(db, identity.deviceId, 'GET /api/me').catch((err) => {
+      if (isAppError(err)) throw err;
+      log.warn({ err, deviceId: identity.deviceId }, 'consumeDeviceRateLimit non-fatal error');
+    });
 
-    const profile = identity.userId ? await getUserProfile(db, identity.userId) : null;
+    const profile =
+      identity.userId && isValidUuid(identity.userId)
+        ? await getUserProfile(db, identity.userId).catch(() => null)
+        : null;
+
     const snapshot = await getEntitlementSnapshot({
       db,
       identity: {
@@ -138,18 +149,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    log.error({ err }, 'failed to serve entitlements');
+    log.error({ err }, 'failed to serve entitlements; returning resilient fallback snapshot');
+    const fallback = getStaticDefaultEntitlement();
     return NextResponse.json(
       {
-        code: 'INTERNAL',
-        message: 'Failed to retrieve entitlements',
-        traceId,
+        ...fallback,
+        serverNow: new Date().toISOString(),
       },
       {
-        status: 500,
+        status: 200,
         headers: {
           'Cache-Control': 'private, no-store',
           'X-Trace-Id': traceId,
+          'X-Entitlements-Degraded': 'true',
         },
       },
     );

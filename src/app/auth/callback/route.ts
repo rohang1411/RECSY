@@ -28,6 +28,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const authErrorDesc = searchParams.get('error_description');
 
   const responseRedirect = NextResponse.redirect(new URL(returnTo, request.url), { status: 302 });
+  let client: Awaited<ReturnType<typeof createSupabaseServerClient>> | undefined;
 
   try {
     const db = getDb();
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return responseRedirect;
     }
 
-    const client = await createSupabaseServerClient();
+    client = await createSupabaseServerClient({ response: responseRedirect });
 
     // Check if the user already has a valid session (e.g. concurrent or completed exchange)
     const existingUser = await getVerifiedUserWithTimeout(client).catch(() => null);
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           } else {
             const redirect = NextResponse.redirect(
               new URL(
-                `/login?error=auth_exchange_failed&next=${encodeURIComponent(returnTo)}`,
+                `/login?error=auth_exchange_failed&error_description=${encodeURIComponent(error?.message || '')}&next=${encodeURIComponent(returnTo)}`,
                 request.url,
               ),
               { status: 302 },
@@ -119,7 +120,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           log.warn({ error }, 'Supabase token hash verification failed');
           const redirect = NextResponse.redirect(
             new URL(
-              `/login?error=auth_verify_failed&next=${encodeURIComponent(returnTo)}`,
+              `/login?error=auth_verify_failed&error_description=${encodeURIComponent(error?.message || '')}&next=${encodeURIComponent(returnTo)}`,
               request.url,
             ),
             { status: 302 },
@@ -154,9 +155,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   } catch (err) {
     log.error({ err }, 'unexpected error in auth callback');
-    return NextResponse.redirect(
-      new URL(`/login?error=server_error&next=${encodeURIComponent(returnTo)}`, request.url),
+    const desc = err instanceof Error ? err.message : String(err);
+    const redirect = NextResponse.redirect(
+      new URL(
+        `/login?error=server_error&error_description=${encodeURIComponent(desc)}&next=${encodeURIComponent(returnTo)}`,
+        request.url,
+      ),
       { status: 302 },
     );
+    if (client && typeof client.applyCookies === 'function') {
+      client.applyCookies(redirect);
+    }
+    return redirect;
   }
 }
