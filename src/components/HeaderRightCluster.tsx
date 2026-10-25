@@ -9,10 +9,10 @@ import { RegionSelector } from './RegionSelector';
 import type { RegionConfig } from '@/lib/regions';
 
 export interface HeaderRightClusterProps {
-  readonly activeRegion: RegionConfig;
+  readonly activeRegion?: RegionConfig;
 }
 
-export function HeaderRightCluster({ activeRegion }: HeaderRightClusterProps) {
+export function HeaderRightCluster({ activeRegion }: HeaderRightClusterProps = {}) {
   const [isQuotaSheetOpen, setIsQuotaSheetOpen] = useState(false);
   const quota = useQuota();
 

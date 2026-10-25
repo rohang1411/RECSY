@@ -9,6 +9,7 @@ import {
   getVerifiedUserWithTimeout,
 } from '@/services/auth/supabase-server';
 import { UnauthorizedError, ValidationError, isAppError, publicErrorMessage } from '@/lib/errors';
+import { assertSameOrigin } from '@/lib/same-origin';
 import { logger } from '@/services/logger';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,7 @@ const UpdateProfileSchema = z.object({
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
+    // Plan 26 WP-02: Profile mutation keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
 
     if (!identity.userId) {
@@ -86,6 +88,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function PATCH(request: NextRequest): Promise<NextResponse> {
   try {
+    assertSameOrigin(request);
+
     const db = getDb();
     const identity = await resolveRequestIdentity(request, { db });
 

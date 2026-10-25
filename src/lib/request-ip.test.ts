@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getIpPrefix, getRequestClientIp, hashIpPrefix } from './request-ip';
+import { env } from '@/env';
 
 function makeRequest(headers: Record<string, string>): {
   headers: { get: (key: string) => string | null };
@@ -12,6 +13,15 @@ function makeRequest(headers: Record<string, string>): {
 }
 
 describe('getRequestClientIp', () => {
+  it('prefers cf-connecting-ip when present', () => {
+    const req = makeRequest({
+      'cf-connecting-ip': '198.51.100.42',
+      'x-vercel-forwarded-for': '203.0.113.195',
+      'x-forwarded-for': 'spoofed.ip',
+    });
+    expect(getRequestClientIp(req as never)).toBe('198.51.100.42');
+  });
+
   it('returns the first IP from x-forwarded-for', () => {
     const req = makeRequest({ 'x-forwarded-for': '1.2.3.4' });
     expect(getRequestClientIp(req as never)).toBe('1.2.3.4');
@@ -87,5 +97,17 @@ describe('hashIpPrefix', () => {
     expect(h1).toBe(h2);
     expect(h1).toHaveLength(32);
     expect(h1).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('throws in production if IP_HASH_SECRET is unset', () => {
+    const origEnv = { ...env };
+    const envMut = env as unknown as Record<string, unknown>;
+    try {
+      envMut.NODE_ENV = 'production';
+      envMut.IP_HASH_SECRET = undefined;
+      expect(() => hashIpPrefix('192.168.1.0/24')).toThrow('IP_HASH_SECRET must be configured');
+    } finally {
+      Object.assign(env, origEnv);
+    }
   });
 });

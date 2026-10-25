@@ -99,6 +99,29 @@ function shouldSkipStructuredSchemaRepair(err: unknown): boolean {
   return /RESOURCE_EXHAUSTED|exceeded your current quota|quota exceeded/i.test(msg);
 }
 
+function toGeminiThinkingProviderOptions(thinking?: 'default' | 'low' | 'minimal') {
+  if (!thinking || thinking === 'default') return undefined;
+  if (thinking === 'minimal') {
+    return {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
+      },
+    };
+  }
+  if (thinking === 'low') {
+    return {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 1024,
+        },
+      },
+    };
+  }
+  return undefined;
+}
+
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
   readonly isByok: boolean;
@@ -108,6 +131,7 @@ export class GeminiProvider implements LlmProvider {
   readonly evaluationBudget?: ProviderRequestBudget;
   private readonly maxRetries: number;
   private readonly timeoutMs: number;
+  private readonly shouldRecordUsage: boolean;
 
   static withKey(apiKey: string): GeminiProvider {
     return new GeminiProvider({ customApiKey: apiKey });
@@ -119,11 +143,13 @@ export class GeminiProvider implements LlmProvider {
     maxRetries?: number;
     timeoutMs?: number;
     customApiKey?: string;
+    recordUsage?: boolean;
   }) {
     this.evaluationBudget = options?.budget ? new ProviderRequestBudget(options.budget) : undefined;
     this.maxRetries = options?.maxRetries ?? 2;
     this.timeoutMs = options?.timeoutMs ?? 45_000;
     this.isByok = Boolean(options?.customApiKey);
+    this.shouldRecordUsage = options?.recordUsage ?? true;
 
     if (options?.customApiKey) {
       this.clients = [
@@ -245,6 +271,7 @@ export class GeminiProvider implements LlmProvider {
             maxOutputTokens: input.maxOutputTokens,
             abortSignal: this.requestSignal(input.signal),
             maxRetries: this.maxRetries,
+            providerOptions: toGeminiThinkingProviderOptions(input.thinking),
           });
           return {
             value: {
@@ -289,6 +316,7 @@ export class GeminiProvider implements LlmProvider {
       maxOutputTokens: input.maxOutputTokens,
       abortSignal: this.requestSignal(input.signal),
       maxRetries: this.maxRetries,
+      providerOptions: toGeminiThinkingProviderOptions(input.thinking),
     });
 
     try {
@@ -319,6 +347,7 @@ export class GeminiProvider implements LlmProvider {
 
       yield {
         type: 'finish',
+        model: input.model,
         usage: {
           tokensIn,
           tokensOut,
@@ -540,6 +569,9 @@ export class GeminiProvider implements LlmProvider {
     readonly apiKeyIndex?: number;
     readonly latencyMs: number;
   }): Promise<void> {
+    if (!this.shouldRecordUsage && input.operation !== 'embed') {
+      return Promise.resolve();
+    }
     return recordLlmUsageEvent({
       provider: this.name,
       model: input.model,

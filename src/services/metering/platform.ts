@@ -3,11 +3,20 @@ import { env } from '@/env';
 import { AppError } from '@/lib/errors';
 import { logger } from '@/services/logger';
 import type { AppQueryDb } from '@/services/db/client';
+import { parsePerfFlags, type PerfFlags } from '@/services/perf/flags';
+import { setDeferTelemetry } from '@/services/llm/usage';
 import type { PlatformState } from './types';
 
 const log = logger.child({ component: 'platform-state' });
 
 const PLATFORM_STATE_CACHE_TTL_MS = 10_000;
+
+let hits = 0;
+let misses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits, misses };
+}
 
 interface CachedState {
   state: PlatformState;
@@ -42,6 +51,7 @@ function buildPlatformState(
   killSwitchRaw: unknown,
   capRaw: unknown,
   usedTodayRaw: unknown,
+  perfFlagsRaw?: unknown,
 ): PlatformState {
   const killSwitch = parseKillSwitch(killSwitchRaw);
   const globalDailyCap = parseCap(capRaw, env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT);
@@ -49,6 +59,8 @@ function buildPlatformState(
     typeof usedTodayRaw === 'number'
       ? usedTodayRaw
       : Number.parseInt(String(usedTodayRaw ?? 0), 10) || 0;
+  const perf = parsePerfFlags(perfFlagsRaw);
+  setDeferTelemetry(perf.defer_telemetry);
 
   let capacity: 'ok' | 'busy' | 'paused' = 'ok';
   if (killSwitch.enabled) {
@@ -62,6 +74,7 @@ function buildPlatformState(
     globalDailyCap,
     usedToday,
     capacity,
+    perf,
     shedFreeFor(_identity: { userId: string | null }): boolean {
       if (globalDailyCap <= 0) return false;
       return usedToday >= 1.0 * globalDailyCap;
@@ -70,7 +83,12 @@ function buildPlatformState(
 }
 
 export function getDefaultPlatformState(): PlatformState {
-  return buildPlatformState({ enabled: false }, env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT, 0);
+  return buildPlatformState(
+    { enabled: false },
+    env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT,
+    0,
+    undefined,
+  );
 }
 
 /**
@@ -81,8 +99,11 @@ export async function getPlatformState(db: AppQueryDb): Promise<PlatformState> {
   const now = Date.now();
 
   if (cachedPlatformState && now - cachedPlatformState.cachedAt < PLATFORM_STATE_CACHE_TTL_MS) {
+    hits++;
     return cachedPlatformState.state;
   }
+
+  misses++;
 
   if (inFlightPromise) {
     return inFlightPromise;
@@ -93,11 +114,13 @@ export async function getPlatformState(db: AppQueryDb): Promise<PlatformState> {
       const result = await db.execute<{
         kill_switch: unknown;
         cap: unknown;
+        perf_flags: unknown;
         used_today: string | number;
       }>(sql`
         SELECT
           (SELECT value FROM platform_flags WHERE key = 'kill_switch')               AS kill_switch,
           (SELECT value FROM platform_flags WHERE key = 'global_daily_platform_cap') AS cap,
+          (SELECT value FROM platform_flags WHERE key = 'perf_flags')                AS perf_flags,
           (SELECT count(*) FROM query_leases
              WHERE reserved_at >= ((now() AT TIME ZONE 'UTC')::date)::timestamp AT TIME ZONE 'UTC'
                AND charge_source <> 'byok' AND status IN ('reserved','committed')) AS used_today;
@@ -106,10 +129,11 @@ export async function getPlatformState(db: AppQueryDb): Promise<PlatformState> {
       const row = result[0] ?? {
         kill_switch: null,
         cap: null,
+        perf_flags: null,
         used_today: 0,
       };
 
-      const newState = buildPlatformState(row.kill_switch, row.cap, row.used_today);
+      const newState = buildPlatformState(row.kill_switch, row.cap, row.used_today, row.perf_flags);
 
       cachedPlatformState = {
         state: newState,
@@ -172,4 +196,14 @@ export function assertPlatformAcceptsRequest(
 export function resetPlatformStateCache(): void {
   cachedPlatformState = null;
   inFlightPromise = null;
+  hits = 0;
+  misses = 0;
+}
+
+/**
+ * Returns runtime performance flags cached with platform state.
+ */
+export async function getPerfFlags(db: AppQueryDb): Promise<PerfFlags> {
+  const state = await getPlatformState(db);
+  return state.perf;
 }

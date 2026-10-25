@@ -18,6 +18,18 @@ const MAX_CACHE_SIZE = 1000; // Cap memory at ~3 MB
 
 const chunkEmbeddingCache = new Map<string, CacheEntry>();
 
+let hits = 0;
+let misses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits, misses };
+}
+
+export function resetCacheStatsForTest(): void {
+  hits = 0;
+  misses = 0;
+}
+
 /**
  * Parse a Postgres vector literal (`"[0.1,0.2,...]"`) into an array of numbers.
  */
@@ -44,8 +56,10 @@ export async function batchFetchChunkEmbeddings(
   for (const id of chunkIds) {
     const cached = chunkEmbeddingCache.get(id);
     if (cached && now < cached.expiresAt) {
+      hits++;
       result.set(id, cached.embedding);
     } else {
+      misses++;
       missingIds.push(id);
     }
   }

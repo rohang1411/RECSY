@@ -1,8 +1,21 @@
-import { and, eq, inArray, isNotNull, lte, gte, sql, or, isNull, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lte,
+  gte,
+  sql,
+  or,
+  isNull,
+  type SQL,
+} from 'drizzle-orm';
 
 import { phones, phoneRegionalDetails } from '@/services/db/schema';
 
-import type { BrowseFilterState } from './search-params';
+import type { BrowseFilterState, BrowseSortOption } from './search-params';
 
 /**
  * Build Drizzle `where` for active phones and {@link BrowseFilterState}.
@@ -40,4 +53,35 @@ export function browseWhereFromState(state: BrowseFilterState, regionCode = 'US'
     return parts[0]!;
   }
   return and(...parts)!;
+}
+
+/**
+ * Returns Drizzle order by clauses for browse sort options.
+ */
+export function getBrowseOrderBy(sort: BrowseSortOption) {
+  switch (sort) {
+    case 'price-asc':
+      return [
+        asc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '999999')::numeric`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+    case 'price-desc':
+      return [
+        desc(sql`coalesce(${phoneRegionalDetails.price}, ${phones.msrpUsd}, '0')::numeric`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+    case 'name-desc':
+      return [desc(phones.brand), desc(phones.model)];
+    case 'name-asc':
+      return [asc(phones.brand), asc(phones.model)];
+    case 'latest':
+    default:
+      return [
+        desc(sql`coalesce(${phones.releasedAt}, ${phones.launchDate}, ${phones.createdAt})`),
+        asc(phones.brand),
+        asc(phones.model),
+      ];
+  }
 }

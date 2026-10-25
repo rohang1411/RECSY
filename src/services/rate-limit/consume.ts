@@ -1,5 +1,3 @@
-import { sql } from 'drizzle-orm';
-
 import {
   ASK_RATE_LIMIT_MAX,
   ASK_RATE_LIMIT_WINDOW_MS,
@@ -7,10 +5,13 @@ import {
   RECOMMEND_RATE_LIMIT_WINDOW_MS,
 } from '@/lib/constants';
 import { RateLimitError } from '@/lib/errors';
-import { getDb } from '@/services/db/client';
-import { rateLimits } from '@/services/db/schema';
+import type { AppQueryDb } from '@/services/db/client';
+import { logger } from '@/services/logger';
 
 import { hashClientIp } from './ip-hash';
+import { PostgresRateLimitStore, incrementRateLimitStoreErrors } from './store';
+
+const log = logger.child({ component: 'rate-limit-consume' });
 
 export function askRateLimitKey(ipHash: string): string {
   return `ask:v1:${ipHash}`;
@@ -23,51 +24,57 @@ export function recommendRateLimitKey(ipHash: string): string {
 /**
  * Atomically increments the counter for this IP hash + time window.
  * Throws {@link RateLimitError} when the limit is exceeded after increment.
+ * Fails open on transient database errors (rule R3).
  */
-export async function consumeAskRateLimit(clientIp: string): Promise<void> {
+export async function consumeAskRateLimit(clientIp: string, customDb?: AppQueryDb): Promise<void> {
   const ipHash = hashClientIp(clientIp);
-  const db = getDb();
   const windowMs = ASK_RATE_LIMIT_WINDOW_MS;
-  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
   const key = askRateLimitKey(ipHash);
+  const store = new PostgresRateLimitStore(customDb);
 
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key, windowStart, count: 1 })
-    .onConflictDoUpdate({
-      target: [rateLimits.key, rateLimits.windowStart],
-      set: { count: sql`${rateLimits.count} + 1` },
-    })
-    .returning({ count: rateLimits.count });
-
-  const count = row?.count ?? 1;
-  if (count > ASK_RATE_LIMIT_MAX) {
-    throw new RateLimitError({ windowStart: windowStart.toISOString() });
+  try {
+    const [outcome] = await store.consume(
+      [{ key, windowMs, max: ASK_RATE_LIMIT_MAX, subject: 'ip' }],
+      nowMs,
+    );
+    if (outcome?.limited) {
+      throw new RateLimitError({ windowStart: windowStart.toISOString() });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route: 'ask' }, 'rate_limit_store_error');
   }
 }
 
 /**
  * Rate limit for recommender intake — separate key prefix from `/api/ask`.
  */
-export async function consumeRecommendRateLimit(clientIp: string): Promise<void> {
+export async function consumeRecommendRateLimit(
+  clientIp: string,
+  customDb?: AppQueryDb,
+): Promise<void> {
   const ipHash = hashClientIp(clientIp);
-  const db = getDb();
   const windowMs = RECOMMEND_RATE_LIMIT_WINDOW_MS;
-  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
   const key = recommendRateLimitKey(ipHash);
+  const store = new PostgresRateLimitStore(customDb);
 
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key, windowStart, count: 1 })
-    .onConflictDoUpdate({
-      target: [rateLimits.key, rateLimits.windowStart],
-      set: { count: sql`${rateLimits.count} + 1` },
-    })
-    .returning({ count: rateLimits.count });
-
-  const count = row?.count ?? 1;
-  if (count > RECOMMEND_RATE_LIMIT_MAX) {
-    throw new RateLimitError({ windowStart: windowStart.toISOString() });
+  try {
+    const [outcome] = await store.consume(
+      [{ key, windowMs, max: RECOMMEND_RATE_LIMIT_MAX, subject: 'ip' }],
+      nowMs,
+    );
+    if (outcome?.limited) {
+      throw new RateLimitError({ windowStart: windowStart.toISOString() });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route: 'recommend' }, 'rate_limit_store_error');
   }
 }
 
@@ -81,24 +88,28 @@ export function byokTestRateLimitKey(subjectKey: string): string {
 /**
  * Rate limit for BYOK validation test calls — 10 per hour per device/IP.
  */
-export async function consumeByokTestRateLimit(subjectKey: string): Promise<void> {
-  const db = getDb();
+export async function consumeByokTestRateLimit(
+  subjectKey: string,
+  customDb?: AppQueryDb,
+): Promise<void> {
   const windowMs = BYOK_TEST_RATE_LIMIT_WINDOW_MS;
-  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
   const key = byokTestRateLimitKey(subjectKey);
+  const store = new PostgresRateLimitStore(customDb);
 
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key, windowStart, count: 1 })
-    .onConflictDoUpdate({
-      target: [rateLimits.key, rateLimits.windowStart],
-      set: { count: sql`${rateLimits.count} + 1` },
-    })
-    .returning({ count: rateLimits.count });
-
-  const count = row?.count ?? 1;
-  if (count > BYOK_TEST_RATE_LIMIT_MAX) {
-    throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 3600 });
+  try {
+    const [outcome] = await store.consume(
+      [{ key, windowMs, max: BYOK_TEST_RATE_LIMIT_MAX, subject: 'ip' }],
+      nowMs,
+    );
+    if (outcome?.limited) {
+      throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 3600 });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route: 'byok:test' }, 'rate_limit_store_error');
   }
 }
 
@@ -112,24 +123,28 @@ export function cspReportRateLimitKey(ipHash: string): string {
 /**
  * Rate limit for CSP violation report receiver — 30 per minute per IP.
  */
-export async function consumeCspReportRateLimit(clientIp: string): Promise<void> {
+export async function consumeCspReportRateLimit(
+  clientIp: string,
+  customDb?: AppQueryDb,
+): Promise<void> {
   const ipHash = hashClientIp(clientIp);
-  const db = getDb();
   const windowMs = CSP_REPORT_RATE_LIMIT_WINDOW_MS;
-  const windowStart = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
   const key = cspReportRateLimitKey(ipHash);
+  const store = new PostgresRateLimitStore(customDb);
 
-  const [row] = await db
-    .insert(rateLimits)
-    .values({ key, windowStart, count: 1 })
-    .onConflictDoUpdate({
-      target: [rateLimits.key, rateLimits.windowStart],
-      set: { count: sql`${rateLimits.count} + 1` },
-    })
-    .returning({ count: rateLimits.count });
-
-  const count = row?.count ?? 1;
-  if (count > CSP_REPORT_RATE_LIMIT_MAX) {
-    throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 60 });
+  try {
+    const [outcome] = await store.consume(
+      [{ key, windowMs, max: CSP_REPORT_RATE_LIMIT_MAX, subject: 'ip' }],
+      nowMs,
+    );
+    if (outcome?.limited) {
+      throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 60 });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route: 'csp_report' }, 'rate_limit_store_error');
   }
 }

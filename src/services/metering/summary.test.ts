@@ -22,6 +22,10 @@ describe('buildMeteredRequestSummary', () => {
       costMicros: 73,
       cacheHit: false,
       httpStatus: 200,
+      stages: { rl: 5, auth: 12, reserve: 8 },
+      ttfbMs: 120.4,
+      ttfvtMs: 450.6,
+      cache: { catalog: 'hit', abuse: 'miss' },
     });
 
     expect(summary.event).toBe('metered_request');
@@ -34,6 +38,10 @@ describe('buildMeteredRequestSummary', () => {
     expect(summary.settleMs).toBe(9);
     expect(summary.totalMs).toBe(1450);
     expect(summary.httpStatus).toBe(200);
+    expect(summary.stages).toEqual({ rl: 5, auth: 12, reserve: 8 });
+    expect(summary.ttfbMs).toBe(120);
+    expect(summary.ttfvtMs).toBe(451);
+    expect(summary.cache).toEqual({ catalog: 'hit', abuse: 'miss' });
   });
 
   it('marks subjectKind as byok when byok is true', () => {

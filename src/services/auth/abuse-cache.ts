@@ -10,7 +10,19 @@ let cachedBlocks: Set<string> | null = null;
 let cachedAt = 0;
 let refreshInFlight: Promise<Set<string>> | null = null;
 
+let hits = 0;
+let misses = 0;
+
 const CACHE_TTL_MS = 30_000; // 30 seconds
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits, misses };
+}
+
+export function resetCacheStatsForTest(): void {
+  hits = 0;
+  misses = 0;
+}
 
 export function invalidateAbuseCache(): void {
   cachedBlocks = null;
@@ -46,8 +58,11 @@ async function loadActiveBlocks(db: AppQueryDb): Promise<Set<string>> {
 export async function getActiveAbuseBlocks(db?: AppQueryDb): Promise<Set<string>> {
   const now = Date.now();
   if (cachedBlocks && now - cachedAt < CACHE_TTL_MS) {
+    hits++;
     return cachedBlocks;
   }
+
+  misses++;
 
   if (!db) {
     return cachedBlocks ?? new Set<string>();

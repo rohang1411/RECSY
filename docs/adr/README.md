@@ -26,3 +26,4 @@ This directory documents key architectural decisions for RECSY.
 | [0020](file:///docs/adr/0020-identity-and-authentication.md)                         | Identity, Device Identity, and Server-Side Authentication   | Accepted | 2026-10-21 |
 | [0021](file:///docs/adr/0021-billing-architecture.md)                                | Billing Architecture, Webhook Inbox, and Stripe Integration | Accepted | 2026-10-21 |
 | [0022](file:///docs/adr/0022-multi-user-security-posture.md)                         | Multi-User Security Posture and Least-Privilege Access      | Accepted | 2026-10-21 |
+| [0023](file:///docs/adr/0023-api-latency-and-caching-architecture.md)                | API Latency, Token Streaming, and Caching Architecture      | Accepted | 2026-10-24 |

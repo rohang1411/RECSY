@@ -16,7 +16,7 @@ export const REGION_COOKIE = 'recsy_region';
  *
  * Responsibilities, in order (cookie-only, zero DB calls):
  * 1. Region detection & cookie initialization.
- * 2. Supabase session token refresh (only when `sb-*` cookies exist).
+ * 2. Supabase session token refresh (only when `sb-*` cookies exist; bypassed for POST /api/ask and POST /api/recommend).
  * 3. Device identity cookie (`__Host-recsy_did` / `recsy_did`) minting when missing.
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
@@ -44,14 +44,20 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   // 2. Supabase auth token refresh (cookie-only)
+  // Plan 26 WP-02: Bypass metered POST endpoints (/api/ask, /api/recommend);
+  // the route verifies identity directly and applies cookies to its own response.
+  // For all other matched paths, switch from getUser() to getClaims().
+  const pathname = request.nextUrl.pathname;
+  const isMeteredPost =
+    request.method === 'POST' && (pathname === '/api/ask' || pathname === '/api/recommend');
   const hasSbCookie = request.cookies
     .getAll()
     .some((c) => c.name.startsWith('sb-') && c.value.trim().length > 0);
 
-  if (hasSbCookie && env.AUTH_DRIVER !== 'fake') {
+  if (!isMeteredPost && hasSbCookie && env.AUTH_DRIVER !== 'fake') {
     try {
       const supabase = createSupabaseProxyClient(request, response);
-      await supabase.auth.getUser();
+      await supabase.auth.getClaims();
     } catch {
       // Ignored: expired or malformed cookies will be handled by route identity resolver
     }

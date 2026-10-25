@@ -141,4 +141,35 @@ describe('HybridRetriever query embedding cache', () => {
     expect(result.debug.vector.error).toContain('database vector unavailable');
     expect(result.debug.embedding?.ms).toBeGreaterThanOrEqual(0);
   });
+
+  it('starts FTS in parallel with query embedding before embed finishes', async () => {
+    let ftsStarted = false;
+    let embedStarted = false;
+    let ftsStartedBeforeEmbedFinished = false;
+
+    const ftsSearch = vi.fn().mockImplementation(async () => {
+      ftsStarted = true;
+      return [];
+    });
+
+    const embed = vi.fn().mockImplementation(async () => {
+      embedStarted = true;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      ftsStartedBeforeEmbedFinished = ftsStarted;
+      return { embeddings: [[1, 0]], model: 'stub', usage: { tokensIn: 0 } };
+    });
+
+    const retriever = new HybridRetriever({
+      vector: makeRetriever(),
+      fts: { name: 'fts', search: ftsSearch },
+      llm: { name: 'stub', chat: vi.fn(), chatStream: vi.fn(), structured: vi.fn(), embed },
+      log: makeLog() as never,
+    });
+
+    await retriever.search({ phoneId: 'p', query: 'battery' });
+
+    expect(embedStarted).toBe(true);
+    expect(ftsStarted).toBe(true);
+    expect(ftsStartedBeforeEmbedFinished).toBe(true);
+  });
 });

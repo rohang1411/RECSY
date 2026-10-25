@@ -41,6 +41,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     assertSameOrigin(request);
 
     const db = getDb();
+    // Plan 26 WP-02: Session management keeps authoritative getUser() server round trip.
     const identity = await requireUser(request, { db });
     const userId = identity.userId!;
 

@@ -98,4 +98,85 @@ describe('Operator Flags API (WP-19)', () => {
     expect(body.value.enabled).toBe(true);
     expect(mockExecute).toHaveBeenCalledTimes(2);
   });
+
+  it('POST /api/internal/flags strictly rejects invalid perf_flags payload with 400', async () => {
+    vi.mocked(authModule.isOperatorAuthorized).mockResolvedValue(true);
+
+    const request = new NextRequest('http://localhost:3000/api/internal/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'perf_flags',
+        value: {
+          ask_streaming: 'invalid_mode', // not one of off, shadow, canary, on
+        },
+        reason: 'Attempt invalid perf flags update',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+
+    const body = await response.json();
+    expect(body.code).toBe('VALIDATION');
+  });
+
+  it('POST /api/internal/flags strictly rejects perf_flags with unknown keys with 400', async () => {
+    vi.mocked(authModule.isOperatorAuthorized).mockResolvedValue(true);
+
+    const request = new NextRequest('http://localhost:3000/api/internal/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'perf_flags',
+        value: {
+          ask_streaming: 'on',
+          disallowed_unknown_key: true,
+        },
+        reason: 'Attempt unknown flag key update',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+
+    const body = await response.json();
+    expect(body.code).toBe('VALIDATION');
+  });
+
+  it('POST /api/internal/flags updates perf_flags successfully when valid', async () => {
+    vi.mocked(authModule.isOperatorAuthorized).mockResolvedValue(true);
+
+    const dbModule = await import('@/services/db/client');
+    const mockExecute = vi
+      .fn()
+      .mockResolvedValueOnce([{ value: {} }]) // fetch before
+      .mockResolvedValueOnce([]); // upsert
+
+    vi.mocked(dbModule.getDb).mockReturnValue({
+      execute: mockExecute,
+    } as unknown as AppDb);
+
+    const request = new NextRequest('http://localhost:3000/api/internal/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        key: 'perf_flags',
+        value: {
+          ask_streaming: 'canary',
+          ask_streaming_canary_pct: 10,
+        },
+        reason: 'Enable canary streaming for 10% users',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.key).toBe('perf_flags');
+    expect(body.value.ask_streaming).toBe('canary');
+    expect(body.value.ask_streaming_canary_pct).toBe(10);
+  });
 });

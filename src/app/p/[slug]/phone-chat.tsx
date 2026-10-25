@@ -20,6 +20,7 @@ import {
   CLIENT_SETTING_KEYS,
   useClientSetting,
 } from '@/lib/client-settings';
+import { readNdjson } from '@/lib/ndjson';
 import type { ResolvedCitation } from '@/services/chat/citations';
 import type { QuotaSnapshotLite } from '@/services/metering/types';
 
@@ -27,6 +28,9 @@ const CITATION_TAG =
   /\[c:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\]/gi;
 
 type StreamEvent =
+  | { type: 'status'; stage: 'retrieving' | 'generating' }
+  | { type: 'meta'; phoneId: string; retrievedChunkIds: string[] }
+  | { type: 'citation'; citation: ResolvedCitation }
   | { type: 'delta'; text: string }
   | {
       type: 'done';
@@ -36,6 +40,8 @@ type StreamEvent =
       retrievalMs: number;
       retrievalTrace?: AskRetrievalTrace;
       quota?: QuotaSnapshotLite;
+      streamed?: boolean;
+      citationRepairs?: number;
     }
   | { type: 'error'; code: string; message: string; quota?: QuotaSnapshotLite }
   | { type: 'quota'; quota: QuotaSnapshotLite };
@@ -120,6 +126,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
   const [answer, setAnswer] = useState('');
   const [citations, setCitations] = useState<ResolvedCitation[]>([]);
   const [busy, setBusy] = useState(false);
+  const [statusStage, setStatusStage] = useState<'retrieving' | 'generating' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{
     retrievalMs?: number;
@@ -141,6 +148,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     if (!q || busy) return;
     pendingQueryRef.current = q;
     setBusy(true);
+    setStatusStage(null);
     setError(null);
     setAnswer('');
     setCitations([]);
@@ -180,27 +188,31 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
       quotaStore.setPipFlash('spent');
       pendingQueryRef.current = '';
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('No response body');
+      if (!res.body) throw new Error('No response body');
 
-      const dec = new TextDecoder();
-      let buf = '';
       let assembled = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const evt = JSON.parse(line) as StreamEvent;
-          if (evt.type === 'delta') {
+      for await (const evt of readNdjson<StreamEvent>(res.body)) {
+        switch (evt.type) {
+          case 'status':
+            setStatusStage(evt.stage);
+            break;
+          case 'citation':
+            setCitations((prev) => {
+              if (
+                prev.some((c) => c.chunkId.toLowerCase() === evt.citation.chunkId.toLowerCase())
+              ) {
+                return prev;
+              }
+              return [...prev, evt.citation];
+            });
+            break;
+          case 'delta':
             assembled += evt.text;
             setAnswer(assembled);
-          } else if (evt.type === 'done') {
+            break;
+          case 'done':
+            setStatusStage(null);
             setCitations(evt.citations);
             setMeta({
               retrievalMs: evt.retrievalMs,
@@ -210,19 +222,24 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
             if (evt.quota) {
               quotaStore.updateFromQuotaLite(evt.quota);
             }
-          } else if (evt.type === 'quota') {
+            break;
+          case 'quota':
             if (evt.quota) {
               quotaStore.updateFromQuotaLite(evt.quota);
             }
-          } else if (evt.type === 'error') {
+            break;
+          case 'error':
             throw new Error(evt.message);
-          }
+          default:
+            // Unknown event types ignored for forward compatibility
+            break;
         }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setBusy(false);
+      setStatusStage(null);
     }
   }, [busy, phoneSlug, query]);
 
@@ -265,10 +282,29 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               disabled={busy || !query.trim()}
               className="border-outline text-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background inline-flex h-12 items-center justify-center border px-6 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
             >
-              {busy ? 'Thinking' : 'Ask'}
+              {busy
+                ? statusStage === 'generating'
+                  ? 'Writing...'
+                  : statusStage === 'retrieving'
+                    ? 'Searching...'
+                    : 'Thinking...'
+                : 'Ask'}
             </button>
           </div>
         </div>
+
+        {busy && !answer ? (
+          <div className="border-outline-variant text-muted-foreground flex items-center gap-2 border-t p-5 font-mono text-xs">
+            <span className="bg-primary size-2 animate-pulse rounded-none" />
+            <span>
+              {statusStage === 'generating'
+                ? 'Writing answer...'
+                : statusStage === 'retrieving'
+                  ? 'Searching reviews...'
+                  : 'Thinking...'}
+            </span>
+          </div>
+        ) : null}
 
         {error ? (
           <p

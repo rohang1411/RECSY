@@ -70,6 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Ensure profile & claim anonymous state
+    // Plan 26 WP-02: Password signin keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
 

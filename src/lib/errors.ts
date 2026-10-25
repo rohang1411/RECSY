@@ -137,6 +137,17 @@ export class RateLimitError extends AppError {
   }
 }
 
+export class LlmTimeoutError extends AppError {
+  constructor(
+    message = 'LLM operation timed out',
+    context?: Record<string, unknown>,
+    cause?: unknown,
+  ) {
+    super('LLM_TIMEOUT', message, { context, cause });
+    this.name = 'LlmTimeoutError';
+  }
+}
+
 export class LlmError extends AppError {
   constructor(message: string, context?: Record<string, unknown>, cause?: unknown) {
     super('LLM_ERROR', message, { context, cause });
@@ -221,22 +232,22 @@ export class QuotaDeniedError extends AppError {
   constructor(
     code: ErrorCode,
     message: string,
-    options: {
+    options?: {
       status?: number;
-      quota: Record<string, unknown>;
+      quota?: Record<string, unknown>;
       actions?: readonly string[];
       context?: Record<string, unknown>;
       cause?: unknown;
     },
   ) {
     super(code, message, {
-      status: options.status ?? DEFAULT_STATUS[code],
-      context: options.context,
-      cause: options.cause,
+      status: options?.status ?? DEFAULT_STATUS[code],
+      context: options?.context,
+      cause: options?.cause,
     });
     this.name = 'QuotaDeniedError';
-    this.quota = Object.freeze({ ...options.quota });
-    this.actions = Object.freeze([...(options.actions ?? [])]);
+    this.quota = Object.freeze({ ...(options?.quota ?? {}) });
+    this.actions = Object.freeze([...(options?.actions ?? [])]);
   }
 }
 

@@ -21,6 +21,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     assertSameOrigin(request);
 
     const db = getDb();
+    // Plan 26 WP-02: Billing checkout keeps authoritative getUser() server round trip to verify paying user identity.
     const identity = await requireUser(request, { db });
     const profile = await getUserProfile(db, identity.userId!);
     const email = profile?.email ?? '';

@@ -159,6 +159,10 @@ CRITICAL: Return ONLY valid, minified JSON conforming to schema "${input.schemaN
     };
   }
 
+  /**
+   * Embeddings are not supported by Groq in RECSY (database requires 768-dim Gemini Matryoshka embeddings).
+   * Callers needing embedding capabilities should require `EmbedCapable` and route embeddings to Gemini.
+   */
   async embed(
     _texts: readonly string[],
     _model?: string,

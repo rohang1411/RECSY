@@ -13,12 +13,12 @@
  * Cache hits bump a `hits` counter and refresh `last_hit_at` for observability.
  */
 import { eq } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 
+import { deferOrRun } from '@/lib/defer';
 import { getDb } from '@/services/db/client';
 import { llmCache } from '@/services/db/schema';
 import { logger } from '@/services/logger';
-
-import { createHash } from 'node:crypto';
 
 import type {
   ChatDelta,
@@ -34,17 +34,44 @@ import type {
 
 const log = logger.child({ component: 'llm-cache' });
 
-/** sha256 of the canonicalised request. */
-function hashRequest(input: {
-  model: string;
-  messages: readonly { role: string; content: string }[];
-  temperature?: number;
-  maxOutputTokens?: number;
-  extras?: Readonly<Record<string, string | number | boolean>>;
-  schemaName?: string;
-}): string {
-  const canonical = JSON.stringify(input);
-  return createHash('sha256').update(canonical).digest('hex');
+const CACHE_KEY_VERSION = 'v2';
+
+/**
+ * Derives a canonical sha256 cache key including all inputs that affect the output (Plan 26 WP-10).
+ * Excludes sensitive credentials (BYOK key) while incorporating routing parameters (userMode, taskClass).
+ */
+export function buildCacheKey(input: ChatInput | StructuredInput<unknown>): string {
+  const extras: Record<string, string | number | boolean> = {
+    ...(input.cacheKeyExtras ?? {}),
+  };
+
+  if (input.taskClass) extras.taskClass = input.taskClass;
+  if (input.preferredTier) extras.preferredTier = input.preferredTier;
+  if (input.usageContext?.userMode) extras.userMode = input.usageContext.userMode;
+  if (input.thinking) extras.thinking = input.thinking;
+  if (input.usageContext?.userByokProvider) {
+    extras.byokProvider = input.usageContext.userByokProvider;
+  }
+
+  const payload: Record<string, unknown> = {
+    v: CACHE_KEY_VERSION,
+    model: input.model,
+    messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
+  };
+
+  if (input.temperature !== undefined) payload.temperature = input.temperature;
+  if (input.maxOutputTokens !== undefined) payload.maxOutputTokens = input.maxOutputTokens;
+  if ('schemaName' in input && input.schemaName) payload.schemaName = input.schemaName;
+
+  if (Object.keys(extras).length > 0) {
+    const sortedExtras: Record<string, string | number | boolean> = {};
+    for (const k of Object.keys(extras).sort()) {
+      sortedExtras[k] = extras[k]!;
+    }
+    payload.extras = sortedExtras;
+  }
+
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
 export class CachedLlmProvider implements LlmProvider {
@@ -61,13 +88,7 @@ export class CachedLlmProvider implements LlmProvider {
   async chat(input: ChatInput): Promise<ChatResult> {
     if (!this.enabled) return this.inner.chat(input);
 
-    const key = hashRequest({
-      model: input.model,
-      messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxOutputTokens !== undefined && { maxOutputTokens: input.maxOutputTokens }),
-      ...(input.cacheKeyExtras !== undefined && { extras: input.cacheKeyExtras }),
-    });
+    const key = buildCacheKey(input);
 
     const pending = this.inFlight.get(key);
     if (pending) return pending as Promise<ChatResult>;
@@ -80,7 +101,10 @@ export class CachedLlmProvider implements LlmProvider {
       }
 
       const result = await this.inner.chat(input);
-      await this.writeCache(key, input.model, serialiseInput(input), result);
+      // Asynchronous cache write after response via deferOrRun (Plan 26 WP-10)
+      void deferOrRun('write-llm-cache-chat', async () => {
+        await this.writeCache(key, input.model, serialiseInput(input), result);
+      });
       return result;
     })().finally(() => {
       this.inFlight.delete(key);
@@ -95,17 +119,35 @@ export class CachedLlmProvider implements LlmProvider {
     return this.inner.chatStream(input);
   }
 
+  /**
+   * Looks up cached chat response without executing the model (Plan 26 WP-06 / WP-10).
+   */
+  async lookupChat(input: ChatInput): Promise<ChatResult | null> {
+    if (!this.enabled) return null;
+    const key = buildCacheKey(input);
+    const cached = await this.readCache(key);
+    if (cached !== null) {
+      log.debug({ model: input.model, key: key.slice(0, 12) }, 'chat stream lookup hit');
+      return { ...(cached as ChatResult), cached: true };
+    }
+    return null;
+  }
+
+  /**
+   * Stores completed chat result into cache asynchronously via deferOrRun (Plan 26 WP-06 / WP-10).
+   */
+  storeChat(input: ChatInput, result: ChatResult): void {
+    if (!this.enabled) return;
+    const key = buildCacheKey(input);
+    void deferOrRun('store-llm-cache-stream', async () => {
+      await this.writeCache(key, input.model, serialiseInput(input), result);
+    });
+  }
+
   async structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>> {
     if (!this.enabled) return this.inner.structured(input);
 
-    const key = hashRequest({
-      model: input.model,
-      messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
-      ...(input.temperature !== undefined && { temperature: input.temperature }),
-      ...(input.maxOutputTokens !== undefined && { maxOutputTokens: input.maxOutputTokens }),
-      schemaName: input.schemaName,
-      ...(input.cacheKeyExtras !== undefined && { extras: input.cacheKeyExtras }),
-    });
+    const key = buildCacheKey(input);
 
     const pending = this.inFlight.get(key);
     if (pending) return pending as Promise<StructuredResult<T>>;
@@ -127,7 +169,10 @@ export class CachedLlmProvider implements LlmProvider {
       }
 
       const result = await this.inner.structured(input);
-      await this.writeCache(key, input.model, serialiseStructuredInput(input), result);
+      // Asynchronous cache write after response via deferOrRun (Plan 26 WP-10)
+      void deferOrRun('write-llm-cache-structured', async () => {
+        await this.writeCache(key, input.model, serialiseStructuredInput(input), result);
+      });
       return result;
     })().finally(() => {
       this.inFlight.delete(key);

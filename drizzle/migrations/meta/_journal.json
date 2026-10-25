@@ -120,6 +120,13 @@
       "when": 1792655000000,
       "tag": "0016_user_profile_dob",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792700000000,
+      "tag": "0017_rate_limits_hot_path",
+      "breakpoints": true
     }
   ]
 }

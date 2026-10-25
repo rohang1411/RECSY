@@ -17,6 +17,7 @@ import { getDb } from '@/services/db/client';
 import { requestLogger } from '@/services/logger';
 import { isOperatorAuthorized } from '@/services/internal/auth';
 import { resetPlatformStateCache } from '@/services/metering/platform';
+import { PERF_FLAGS_KEY, perfFlagsSchema } from '@/services/perf/flags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -110,6 +111,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const { key, value, reason } = parsed.data;
+
+    // Validate perf_flags payload strictly against perfFlagsSchema (Plan 26 WP-01)
+    if (key === PERF_FLAGS_KEY) {
+      const perfParsed = perfFlagsSchema.safeParse(value);
+      if (!perfParsed.success) {
+        throw new AppError('VALIDATION', 'Invalid perf_flags payload', {
+          status: 400,
+          context: { errors: perfParsed.error.issues },
+        });
+      }
+    }
+
     const db = getDb();
 
     // 1. Fetch current value for audit delta

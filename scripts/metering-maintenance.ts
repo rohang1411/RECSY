@@ -49,12 +49,7 @@ async function runMaintenance(): Promise<void> {
     `);
     log.info({ pruned: leasePruneRes }, 'pruned old expired/no_charge leases older than 30 days');
 
-    // 4. Prune stale rate limits older than 1 day
-    const rateLimitPruneRes = await db.execute(sql`
-      DELETE FROM rate_limits
-       WHERE window_start < now() - interval '1 day';
-    `);
-    log.info({ pruned: rateLimitPruneRes }, 'pruned rate limits older than 1 day');
+    // Note: rate_limits retention pruning is owned solely by scripts/db-prune.ts (Plan 26 WP-11)
 
     log.info('metering maintenance completed successfully');
   } catch (err) {
