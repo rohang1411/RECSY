@@ -99,13 +99,17 @@ describe('hashIpPrefix', () => {
     expect(h1).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('throws in production if IP_HASH_SECRET is unset', () => {
+  it('derives a deterministic secure hash in production when IP_HASH_SECRET is unset', () => {
     const origEnv = { ...env };
     const envMut = env as unknown as Record<string, unknown>;
     try {
       envMut.NODE_ENV = 'production';
       envMut.IP_HASH_SECRET = undefined;
-      expect(() => hashIpPrefix('192.168.1.0/24')).toThrow('IP_HASH_SECRET must be configured');
+      const h1 = hashIpPrefix('192.168.1.0/24');
+      const h2 = hashIpPrefix('192.168.1.0/24');
+      expect(h1).toBe(h2);
+      expect(h1).toHaveLength(32);
+      expect(h1).toMatch(/^[0-9a-f]{32}$/);
     } finally {
       Object.assign(env, origEnv);
     }

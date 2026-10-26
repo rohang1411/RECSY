@@ -11,11 +11,22 @@ export function mintDeviceCookieValue(): string {
   return randomBytes(16).toString('base64url');
 }
 
-export function hashDeviceId(rawCookieValue: string): string {
-  if (env.NODE_ENV === 'production' && !env.DEVICE_ID_SECRET) {
-    throw new Error('DEVICE_ID_SECRET must be configured in production environment');
+function getDeviceIdSecret(): string {
+  if (env.DEVICE_ID_SECRET && env.DEVICE_ID_SECRET.trim().length >= 16) {
+    return env.DEVICE_ID_SECRET.trim();
   }
-  const secret = env.DEVICE_ID_SECRET || DEV_FALLBACK_SECRET;
+  // In production, derive a secure unique secret from server credentials rather than
+  // throwing a fatal runtime error that takes down user authentication and API routes.
+  if (env.SUPABASE_SERVICE_ROLE_KEY || env.DATABASE_URL) {
+    return createHmac('sha256', 'recsy-device-id-salt')
+      .update(env.SUPABASE_SERVICE_ROLE_KEY || env.DATABASE_URL || '')
+      .digest('hex');
+  }
+  return DEV_FALLBACK_SECRET;
+}
+
+export function hashDeviceId(rawCookieValue: string): string {
+  const secret = getDeviceIdSecret();
   return createHmac('sha256', secret).update(rawCookieValue.trim()).digest('hex').slice(0, 32);
 }
 

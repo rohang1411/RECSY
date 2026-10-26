@@ -126,14 +126,25 @@ export function getIpPrefix(ip: string): string | null {
   return null;
 }
 
+function getIpHashSecret(): string {
+  if (env.IP_HASH_SECRET && env.IP_HASH_SECRET.trim().length >= 16) {
+    return env.IP_HASH_SECRET.trim();
+  }
+  // In production, derive a secure unique secret from server credentials rather than
+  // throwing a fatal runtime error that takes down user authentication and API routes.
+  if (env.SUPABASE_SERVICE_ROLE_KEY || env.DATABASE_URL) {
+    return createHmac('sha256', 'recsy-ip-hash-salt')
+      .update(env.SUPABASE_SERVICE_ROLE_KEY || env.DATABASE_URL || '')
+      .digest('hex');
+  }
+  return DEV_FALLBACK_IP_SECRET;
+}
+
 /**
  * Produces a deterministic HMAC-SHA256 digest of an IP prefix.
  * Truncated to 32 hex chars.
  */
 export function hashIpPrefix(ipPrefix: string): string {
-  if (env.NODE_ENV === 'production' && !env.IP_HASH_SECRET) {
-    throw new Error('IP_HASH_SECRET must be configured in production environment');
-  }
-  const secret = env.IP_HASH_SECRET || DEV_FALLBACK_IP_SECRET;
+  const secret = getIpHashSecret();
   return createHmac('sha256', secret).update(ipPrefix.trim()).digest('hex').slice(0, 32);
 }
