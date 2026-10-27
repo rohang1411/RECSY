@@ -74,9 +74,9 @@ const NOT_IOS_RE =
   /\b(?:not|no|avoid|exclude|without|don't want|do not want)\s+(?:an?\s+)?(?:iphone|ios)\b/i;
 
 const BRAND_ALIASES: readonly { brand: string; aliases: readonly string[] }[] = [
-  { brand: 'Apple', aliases: ['apple', 'iphone'] },
-  { brand: 'Samsung', aliases: ['samsung', 'galaxy'] },
-  { brand: 'Google', aliases: ['google', 'pixel'] },
+  { brand: 'Apple', aliases: ['apple', 'iphone', 'iphoen', 'iphne'] },
+  { brand: 'Samsung', aliases: ['samsung', 'samsnug', 'galaxy'] },
+  { brand: 'Google', aliases: ['google', 'pixel', 'pixle'] },
   { brand: 'OnePlus', aliases: ['oneplus', 'one plus'] },
   { brand: 'Xiaomi', aliases: ['xiaomi', 'redmi'] },
   { brand: 'Nothing', aliases: ['nothing'] },
@@ -95,6 +95,7 @@ const ASPECT_KEYWORDS: readonly {
     useCase: 'camera',
     patterns: [
       /\bcamera(?:s)?\b/i,
+      /\bcamra(?:s)?\b/i,
       /\bphoto(?:s|graphy)?\b/i,
       /\bvideo\b/i,
       /\bzoom\b/i,
@@ -115,6 +116,7 @@ const ASPECT_KEYWORDS: readonly {
     useCase: 'performance',
     patterns: [
       /\bperformance\b/i,
+      /\bprformnce\b/i,
       /\bgaming\b/i,
       /\bgames?\b/i,
       /\bfast\b/i,
@@ -255,10 +257,10 @@ function platformLabel(platform: PlatformPreference): string {
 }
 
 function extractPriorities(message: string): MessageFacts['priorities'] {
-  const positiveMessage = message.replace(
-    /\b(?:don't|do not|never)\s+(?:take|need|use)\s+(?:photos?|a camera)\b/gi,
-    '',
-  );
+  const positiveMessage = message
+    .replace(/\b(?:don't|do not|never)\s+(?:take|need|use)\s+(?:photos?|a camera)\b/gi, '')
+    .replace(/\b(?:unlimited|no|without|any)\s+budget\b/gi, '')
+    .replace(/\bmoney is no (?:object|issue|limit|problem)\b/gi, '');
   const out: { aspect: AspectName; weight: number }[] = [];
   for (const item of ASPECT_KEYWORDS) {
     if (item.patterns.some((pattern) => pattern.test(positiveMessage))) {

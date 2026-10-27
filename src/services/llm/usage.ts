@@ -47,7 +47,7 @@ async function insertUsageRecord(input: RecordUsageInput): Promise<void> {
         requestCount: input.requestCount ?? 1,
         cached: input.cached ?? false,
         apiKeyIndex: input.apiKeyIndex,
-        latencyMs: input.latencyMs,
+        latencyMs: input.latencyMs != null ? safeInt(input.latencyMs) : undefined,
         errorCode: input.errorCode,
         metadata: (input.usageContext?.metadata ?? {}) as Record<string, unknown>,
       });
