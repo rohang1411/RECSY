@@ -13,6 +13,7 @@ import type { AppQueryDb } from '@/services/db/client';
 import type * as EnvModule from '@/env';
 import { admitMeteredRequest, assertCaptchaIfRiskFlagged } from './admission';
 import type { PlatformState, MeteringConfig } from './types';
+import { DEFAULT_PERF_FLAGS } from '@/services/perf/flags';
 
 vi.mock('@/services/auth/identity');
 vi.mock('@/services/metering/platform');
@@ -42,6 +43,7 @@ describe('admitMeteredRequest', () => {
     capacity: 'ok',
     shedFreeFor: () => false,
     perf: {
+      ...DEFAULT_PERF_FLAGS,
       ask_streaming: 'off',
       ask_streaming_canary_pct: 0,
       auth_local_claims: false,

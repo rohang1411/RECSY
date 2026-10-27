@@ -485,10 +485,19 @@ export const recommendationSessions = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => recommendationClients.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    deviceId: text('device_id'),
     title: text('title').notNull().default('New Recommendation'),
+    titleSource: text('title_source').notNull().default('default'),
+    firstMessage: text('first_message'),
     primaryIntent: text('primary_intent'),
     isPinned: boolean('is_pinned').notNull().default(false),
     status: sessionStatusEnum('status').notNull().default('active'),
+    turnCount: integer('turn_count').notNull().default(0),
+    nextTurnIndex: integer('next_turn_index').notNull().default(0),
+    lastTurnAt: timestamp('last_turn_at', { withTimezone: true }).notNull().defaultNow(),
+    lastPicksSummary:
+      jsonb('last_picks_summary').$type<Array<{ brand: string; model: string; slug: string }>>(),
     metadata: jsonb('metadata')
       .$type<{
         regionCode?: string;
@@ -500,14 +509,31 @@ export const recommendationSessions = pgTable(
     sessionCookie: text('session_cookie').notNull().unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'recommendation_sessions_title_source_chk',
+      sql`${t.titleSource} in ('default','heuristic','llm','user')`,
+    ),
     index('idx_recommendation_sessions_client_status_updated').on(
       t.clientId,
       t.status,
       t.updatedAt,
     ),
     index('idx_recommendation_sessions_updated_at').on(t.updatedAt),
+    index('rs_user_recent_idx')
+      .on(t.userId, t.lastTurnAt.desc(), t.id.desc())
+      .where(sql`${t.userId} is not null and ${t.status} in ('active','archived')`),
+    index('rs_device_recent_idx')
+      .on(t.deviceId, t.lastTurnAt.desc(), t.id.desc())
+      .where(
+        sql`${t.userId} is null and ${t.deviceId} is not null and ${t.status} in ('active','archived')`,
+      ),
+    index('rs_deleted_purge_idx')
+      .on(t.deletedAt)
+      .where(sql`${t.status} = 'deleted'`),
   ],
 );
 
@@ -528,6 +554,16 @@ export const recommendationTurns = pgTable(
       .default(sql`'{}'`),
     picks: jsonb('picks').$type<unknown[]>(),
     clarifyingQuestion: text('clarifying_question'),
+    resultMeta: jsonb('result_meta').$type<{
+      v: 1;
+      relaxed?: string[];
+      refined?: boolean;
+      scoresTied?: boolean;
+      scorecardMissing?: boolean;
+      topAspects?: string[];
+      regionCode?: string;
+      currency?: string;
+    }>(),
     latencyMs: integer('latency_ms'),
     leaseId: uuid('lease_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

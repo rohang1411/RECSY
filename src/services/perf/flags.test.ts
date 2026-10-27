@@ -31,7 +31,30 @@ describe('Runtime Performance Flags (WP-01)', () => {
         defer_telemetry: true,
         redis_rate_limit: false,
         grounded_thinking: 'default',
+        recommend_sessions: 'off',
+        recommend_sessions_internal_user_ids: [],
+        recommend_session_llm_titles: false,
       });
+    });
+
+    it('validates recommend_sessions product flags (Plan 27 WP-02)', () => {
+      expect(perfFlagsSchema.safeParse({ recommend_sessions: 'off' }).success).toBe(true);
+      expect(perfFlagsSchema.safeParse({ recommend_sessions: 'internal' }).success).toBe(true);
+      expect(perfFlagsSchema.safeParse({ recommend_sessions: 'on' }).success).toBe(true);
+      expect(perfFlagsSchema.safeParse({ recommend_sessions: 'invalid' }).success).toBe(false);
+
+      expect(
+        perfFlagsSchema.safeParse({
+          recommend_sessions_internal_user_ids: ['a0000000-0000-4000-8000-000000000001'],
+        }).success,
+      ).toBe(true);
+      expect(
+        perfFlagsSchema.safeParse({
+          recommend_sessions_internal_user_ids: ['not-a-uuid'],
+        }).success,
+      ).toBe(false);
+
+      expect(perfFlagsSchema.safeParse({ recommend_session_llm_titles: true }).success).toBe(true);
     });
 
     it('strictly rejects unknown keys during direct schema validation', () => {
