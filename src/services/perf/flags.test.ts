@@ -31,7 +31,7 @@ describe('Runtime Performance Flags (WP-01)', () => {
         defer_telemetry: true,
         redis_rate_limit: false,
         grounded_thinking: 'default',
-        recommend_sessions: 'off',
+        recommend_sessions: 'on',
         recommend_sessions_internal_user_ids: [],
         recommend_session_llm_titles: false,
       });

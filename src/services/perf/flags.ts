@@ -25,8 +25,8 @@ export const perfFlagsSchema = z
     defer_telemetry: z.boolean().default(true),
     redis_rate_limit: z.boolean().default(false),
     grounded_thinking: z.enum(['default', 'low', 'minimal']).default('default'),
-    // Plan 27 WP-02: Product flags housed in the perf flag blob to reuse its 10s in-memory cache and admin route
-    recommend_sessions: z.enum(['off', 'internal', 'on']).default('off'),
+    // Plan 27: Product flags housed in the perf flag blob to reuse its 10s in-memory cache and admin route
+    recommend_sessions: z.enum(['off', 'internal', 'on']).default('on'),
     recommend_sessions_internal_user_ids: z.array(z.string().uuid()).default([]),
     recommend_session_llm_titles: z.boolean().default(false),
   })
