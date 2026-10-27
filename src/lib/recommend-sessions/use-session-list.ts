@@ -228,11 +228,12 @@ export function useSessionList(options: UseSessionListOptions = {}) {
     sessions,
     pinnedSessions,
     guestImportAvailable,
-    renameSession: renameMutation.mutateAsync,
-    pinSession: pinMutation.mutateAsync,
-    archiveSession: archiveMutation.mutateAsync,
-    deleteSession: deleteMutation.mutateAsync,
-    restoreSession: restoreMutation.mutateAsync,
+    renameSession: (id: string, title: string) => renameMutation.mutateAsync({ id, title }),
+    pinSession: (id: string, isPinned: boolean) => pinMutation.mutateAsync({ id, isPinned }),
+    archiveSession: (id: string, status: 'active' | 'archived') =>
+      archiveMutation.mutateAsync({ id, status }),
+    deleteSession: (id: string) => deleteMutation.mutateAsync(id),
+    restoreSession: (id: string) => restoreMutation.mutateAsync(id),
     isMutating:
       renameMutation.isPending ||
       pinMutation.isPending ||
