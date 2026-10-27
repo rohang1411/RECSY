@@ -56,7 +56,7 @@ UPDATE "recommendation_sessions" s
 --> statement-breakpoint
 UPDATE "recommendation_sessions" SET "last_turn_at" = "created_at" WHERE "turn_count" = 0;
 --> statement-breakpoint
-UPDATE "recommendation_sessions" SET "deleted_at" = "updated_at" WHERE "status" = 'deleted' AND "deleted_at" IS NULL;
+UPDATE "recommendation_sessions" SET "deleted_at" = "updated_at" WHERE "status"::text = 'deleted' AND "deleted_at" IS NULL;
 --> statement-breakpoint
 
 -- Indexes
