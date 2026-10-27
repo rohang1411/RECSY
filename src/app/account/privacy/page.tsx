@@ -264,6 +264,48 @@ export default function AccountPrivacyPage() {
         </div>
       </section>
 
+      {/* Retention Policy (Plan 27 D27-1, D27-2, D27-3) */}
+      <section aria-labelledby="retention-heading" className="space-y-4">
+        <div>
+          <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+            Retention Policy
+          </div>
+          <h2 id="retention-heading" className="text-foreground text-xl font-bold">
+            Recommendation History & Retention
+          </h2>
+          <p className="text-muted-foreground mt-1 font-mono text-xs">
+            How your conversations, prompts, and recommendations are managed and retained.
+          </p>
+        </div>
+
+        <div className="border-border-hairline bg-surface text-muted-foreground space-y-3 border p-6 font-mono text-xs leading-relaxed">
+          <div className="flex gap-2">
+            <span className="text-accent font-bold">•</span>
+            <p>
+              <strong className="text-foreground">Signed-in Accounts:</strong> Your recommendation
+              sessions and conversation history are retained indefinitely for as long as your
+              account exists.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-accent font-bold">•</span>
+            <p>
+              <strong className="text-foreground">Deleted Conversations:</strong> When you delete a
+              conversation, it is immediately hidden from your history. You can restore it within 30
+              days; after 30 days, it is permanently purged.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-accent font-bold">•</span>
+            <p>
+              <strong className="text-foreground">Guest Browsing:</strong> Guest conversations are
+              tied to your browser and kept for 30 days of inactivity before automatic pruning. You
+              can import them permanently at any time by signing in.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Danger Zone */}
       <section
         aria-labelledby="danger-heading"

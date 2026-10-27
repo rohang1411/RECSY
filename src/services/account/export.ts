@@ -30,14 +30,19 @@ export interface UserExportData {
   sessions: Array<{
     id: string;
     title: string;
+    titleSource?: string;
+    status?: string;
+    isPinned?: boolean;
     createdAt: string;
     updatedAt: string;
+    lastTurnAt?: string;
     turns: Array<{
       turnIndex: number;
       userMessage: string;
       intent: string;
       clarifyingQuestion: string | null;
       picks: unknown;
+      resultMeta?: unknown;
       createdAt: string;
     }>;
   }>;
@@ -86,14 +91,19 @@ export async function exportUserData(db: AppQueryDb, userId: string): Promise<Us
   type SessionRow = {
     id: string;
     title: string;
+    title_source: string;
+    status: string;
+    is_pinned: boolean;
     created_at: Date | string;
     updated_at: Date | string;
+    last_turn_at: Date | string;
   };
   const sessionRows = await db.execute<SessionRow>(sql`
-    SELECT s.id, s.title, s.created_at, s.updated_at
+    SELECT s.id, s.title, s.title_source, s.status, s.is_pinned,
+           s.created_at, s.updated_at, s.last_turn_at
       FROM recommendation_sessions s
-      JOIN recommendation_clients c ON s.client_id = c.id
-     WHERE c.user_id = ${userId}::uuid
+      LEFT JOIN recommendation_clients c ON s.client_id = c.id
+     WHERE s.user_id = ${userId}::uuid OR c.user_id = ${userId}::uuid
      ORDER BY s.created_at ASC;
   `);
 
@@ -104,15 +114,16 @@ export async function exportUserData(db: AppQueryDb, userId: string): Promise<Us
     intent: string;
     clarifying_question: string | null;
     picks: unknown;
+    result_meta: unknown;
     created_at: Date | string;
   };
   const turnRows = await db.execute<TurnRow>(sql`
     SELECT t.session_id, t.turn_index, t.user_message, t.intent,
-           t.clarifying_question, t.picks, t.created_at
+           t.clarifying_question, t.picks, t.result_meta, t.created_at
       FROM recommendation_turns t
       JOIN recommendation_sessions s ON t.session_id = s.id
-      JOIN recommendation_clients c ON s.client_id = c.id
-     WHERE c.user_id = ${userId}::uuid
+      LEFT JOIN recommendation_clients c ON s.client_id = c.id
+     WHERE s.user_id = ${userId}::uuid OR c.user_id = ${userId}::uuid
      ORDER BY t.session_id, t.turn_index ASC;
   `);
 
@@ -126,6 +137,9 @@ export async function exportUserData(db: AppQueryDb, userId: string): Promise<Us
   const sessions = sessionRows.map((s) => ({
     id: s.id,
     title: s.title,
+    titleSource: s.title_source,
+    status: s.status,
+    isPinned: s.is_pinned,
     createdAt:
       s.created_at instanceof Date
         ? s.created_at.toISOString()
@@ -134,12 +148,17 @@ export async function exportUserData(db: AppQueryDb, userId: string): Promise<Us
       s.updated_at instanceof Date
         ? s.updated_at.toISOString()
         : new Date(s.updated_at).toISOString(),
+    lastTurnAt:
+      s.last_turn_at instanceof Date
+        ? s.last_turn_at.toISOString()
+        : new Date(s.last_turn_at).toISOString(),
     turns: (turnsBySession.get(s.id) ?? []).map((t) => ({
       turnIndex: t.turn_index,
       userMessage: t.user_message,
       intent: t.intent,
       clarifyingQuestion: t.clarifying_question,
       picks: t.picks,
+      resultMeta: t.result_meta,
       createdAt:
         t.created_at instanceof Date
           ? t.created_at.toISOString()

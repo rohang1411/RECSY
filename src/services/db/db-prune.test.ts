@@ -4,16 +4,14 @@ import type { getPostgres } from '@/services/db/client';
 
 type SqlMock = ReturnType<typeof getPostgres>;
 
-describe('db-prune retention logic (Plan 27 WP-01)', () => {
+describe('db-prune retention logic (Plan 27 WP-01 & WP-11)', () => {
   it('counts candidates without deleting when dryRun=true', async () => {
     const executedQueries: string[] = [];
 
-    // Tagged template mock
     const mockSql = vi.fn((strings: TemplateStringsArray, ..._values: unknown[]) => {
       const query = strings.join('?').trim();
       executedQueries.push(query);
 
-      // Return count of 5 for count queries
       if (query.includes('count(*)')) {
         return Promise.resolve([{ n: 5 }]);
       }
@@ -22,7 +20,9 @@ describe('db-prune retention logic (Plan 27 WP-01)', () => {
 
     const results = await pruneRetention(mockSql, { dryRun: true, batchSize: 100 });
 
-    expect(results.inactiveRecommendationSessions).toBe(5);
+    expect(results.deletedRecommendationSessions).toBe(5);
+    expect(results.inactiveGuestSessions).toBe(5);
+    expect(results.orphanedRecommendationClients).toBe(5);
     expect(results.expiredLlmCache).toBe(5);
     expect(results.expiredRateLimits).toBe(5);
 
@@ -31,7 +31,7 @@ describe('db-prune retention logic (Plan 27 WP-01)', () => {
     expect(deleteQueries).toHaveLength(0);
   });
 
-  it('prunes inactive anonymous sessions in batches until done in live mode', async () => {
+  it('prunes soft-deleted sessions older than 30 days in batches', async () => {
     const executedQueries: string[] = [];
     let deleteBatchCall = 0;
 
@@ -39,13 +39,53 @@ describe('db-prune retention logic (Plan 27 WP-01)', () => {
       const query = strings.join('?').trim();
       executedQueries.push(query);
 
+      if (query.includes("status = 'deleted'") && query.includes('count(*)')) {
+        return Promise.resolve([{ n: 150 }]);
+      }
       if (query.includes('count(*)')) {
-        return Promise.resolve([{ n: 250 }]);
+        return Promise.resolve([{ n: 0 }]);
       }
 
-      if (query.startsWith('DELETE FROM recommendation_sessions')) {
+      if (query.includes("status = 'deleted'") && query.startsWith('DELETE')) {
         deleteBatchCall += 1;
-        // Batch 1 returns 100 rows, batch 2 returns 100 rows, batch 3 returns 50 rows (< 100, terminates loop)
+        if (deleteBatchCall === 1) return Promise.resolve(new Array(100).fill({ id: 's1' }));
+        return Promise.resolve(new Array(50).fill({ id: 's2' }));
+      }
+
+      return Promise.resolve([]);
+    }) as unknown as SqlMock;
+
+    const results = await pruneRetention(mockSql, { dryRun: false, batchSize: 100 });
+
+    expect(results.deletedRecommendationSessions).toBe(150);
+    expect(deleteBatchCall).toBe(2);
+
+    const softDeleteQueries = executedQueries.filter((q) => q.includes("status = 'deleted'"));
+    for (const q of softDeleteQueries) {
+      expect(q).toContain("deleted_at < now() - interval '30 days'");
+    }
+  });
+
+  it('prunes inactive guest sessions older than 30 days while protecting signed-in sessions', async () => {
+    const executedQueries: string[] = [];
+    let deleteBatchCall = 0;
+
+    const mockSql = vi.fn((strings: TemplateStringsArray, ..._values: unknown[]) => {
+      const query = strings.join('?').trim();
+      executedQueries.push(query);
+
+      if (query.includes('s.user_id IS NULL') && query.includes('count(*)')) {
+        return Promise.resolve([{ n: 250 }]);
+      }
+      if (query.includes('count(*)')) {
+        return Promise.resolve([{ n: 0 }]);
+      }
+
+      if (
+        query.includes('s.user_id IS NULL') &&
+        query.startsWith('DELETE FROM recommendation_sessions')
+      ) {
+        deleteBatchCall += 1;
         if (deleteBatchCall === 1) return Promise.resolve(new Array(100).fill({ id: 's1' }));
         if (deleteBatchCall === 2) return Promise.resolve(new Array(100).fill({ id: 's2' }));
         return Promise.resolve(new Array(50).fill({ id: 's3' }));
@@ -56,44 +96,49 @@ describe('db-prune retention logic (Plan 27 WP-01)', () => {
 
     const results = await pruneRetention(mockSql, { dryRun: false, batchSize: 100 });
 
-    expect(results.inactiveRecommendationSessions).toBe(250);
+    expect(results.inactiveGuestSessions).toBe(250);
     expect(deleteBatchCall).toBe(3);
 
-    // Verify SQL query structure for step 7
-    const sessionQueries = executedQueries.filter((q) => q.includes('recommendation_sessions'));
-    expect(sessionQueries.length).toBeGreaterThanOrEqual(2);
+    const guestQueries = executedQueries.filter((q) => q.includes('s.user_id IS NULL'));
+    expect(guestQueries.length).toBeGreaterThanOrEqual(2);
 
-    for (const q of sessionQueries) {
-      // Must join recommendation_clients to verify ownership
-      expect(q).toContain('recommendation_clients c ON s.client_id = c.id');
-      // Must explicitly enforce that user_id is NULL (signed-in user history protected!)
+    for (const q of guestQueries) {
+      expect(q).toContain('s.user_id IS NULL');
       expect(q).toContain('c.user_id IS NULL');
-      // Must use activity via COALESCE(max(t.created_at), s.updated_at, s.created_at)
-      expect(q).toContain('COALESCE');
-      expect(q).toContain('max(t.created_at)');
-      expect(q).toContain("interval '90 days'");
+      expect(q).toContain("interval '30 days'");
     }
   });
 
-  it('does not issue DELETE for sessions if candidate count is 0', async () => {
+  it('prunes orphaned recommendation clients with no sessions', async () => {
     const executedQueries: string[] = [];
 
     const mockSql = vi.fn((strings: TemplateStringsArray, ..._values: unknown[]) => {
       const query = strings.join('?').trim();
       executedQueries.push(query);
 
+      if (query.includes('NOT EXISTS') && query.includes('count(*)')) {
+        return Promise.resolve([{ n: 10 }]);
+      }
       if (query.includes('count(*)')) {
         return Promise.resolve([{ n: 0 }]);
       }
+
+      if (query.includes('DELETE FROM recommendation_clients')) {
+        return Promise.resolve(new Array(10).fill({ id: 'c1' }));
+      }
+
       return Promise.resolve([]);
     }) as unknown as SqlMock;
 
     const results = await pruneRetention(mockSql, { dryRun: false, batchSize: 100 });
 
-    expect(results.inactiveRecommendationSessions).toBe(0);
-    const sessionDeleteQueries = executedQueries.filter((q) =>
-      q.startsWith('DELETE FROM recommendation_sessions'),
+    expect(results.orphanedRecommendationClients).toBe(10);
+    const clientQueries = executedQueries.filter((q) =>
+      q.includes('FROM recommendation_clients c'),
     );
-    expect(sessionDeleteQueries).toHaveLength(0);
+    for (const q of clientQueries) {
+      expect(q).toContain('NOT EXISTS');
+      expect(q).toContain('recommendation_sessions s WHERE s.client_id = c.id');
+    }
   });
 });

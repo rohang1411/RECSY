@@ -5,24 +5,61 @@ import { loadBillingDashboardData } from './billing-dashboard';
 
 describe('Operations Dashboards Loaders (WP-19)', () => {
   it('loadUsageDashboardData loads capacity, flags, outcomes, and alerts', async () => {
+    let callIndex = 0;
     const mockDb = {
-      execute: vi
-        .fn()
-        .mockResolvedValueOnce([
-          {
-            key: 'kill_switch',
-            value: { enabled: false },
-            updated_at: '2026-10-21',
-            updated_by: 'op',
-          },
-        ]) // flags
-        .mockResolvedValueOnce([{ cap: 5000, used: 1200, kill_enabled: false }]) // cap
-        .mockResolvedValueOnce([{ outcome: 'committed', count: 1200 }]) // outcome
-        .mockResolvedValueOnce([{ source: 'daily_free', count: 1000 }]) // source
-        .mockResolvedValueOnce([{ reason: 'QUOTA_EXHAUSTED', count: 15 }]) // denial
-        .mockResolvedValueOnce([{ device_id: 'dev-1', count: 50 }]) // top devices
-        .mockResolvedValueOnce([]) // abuse blocks
-        .mockResolvedValue([]), // alerts queries
+      execute: vi.fn((query: unknown) => {
+        callIndex++;
+        // The top-level Promise.all runs 9 items
+        // 1: flags
+        if (callIndex === 1) {
+          return Promise.resolve([
+            {
+              key: 'kill_switch',
+              value: { enabled: false },
+              updated_at: '2026-10-21',
+              updated_by: 'op',
+            },
+          ]);
+        }
+        // 2: cap & usage
+        if (callIndex === 2) {
+          return Promise.resolve([{ cap: 5000, used: 1200, kill_enabled: false }]);
+        }
+        // 3: leases by outcome
+        if (callIndex === 3) {
+          return Promise.resolve([{ outcome: 'committed', count: 1200 }]);
+        }
+        // 4: leases by source
+        if (callIndex === 4) {
+          return Promise.resolve([{ source: 'daily_free', count: 1000 }]);
+        }
+        // 5: denial reasons
+        if (callIndex === 5) {
+          return Promise.resolve([{ reason: 'QUOTA_EXHAUSTED', count: 15 }]);
+        }
+        // 6: top devices
+        if (callIndex === 6) {
+          return Promise.resolve([{ device_id: 'dev-1', count: 50 }]);
+        }
+        // 7: abuse blocks
+        if (callIndex === 7) {
+          return Promise.resolve([]);
+        }
+        const raw = JSON.stringify(query);
+        if (raw.includes('recommendation_sessions')) {
+          return Promise.resolve([
+            {
+              created_today: 10,
+              active_users_with_history: 5,
+              avg_turns: 3.2,
+              legacy_count: 2,
+              total_sessions: 20,
+            },
+          ]);
+        }
+        // 8 and any other queries from evaluateAllAlertRules
+        return Promise.resolve([{ count: 0, committed: 0, late: 0, distinct_uids: 0 }]);
+      }),
     };
 
     const data = await loadUsageDashboardData(mockDb as unknown as AppQueryDb);
@@ -31,6 +68,10 @@ describe('Operations Dashboards Loaders (WP-19)', () => {
     expect(data.cap.rung).toBe('ok');
     expect(data.flags.kill_switch).toBeDefined();
     expect(data.leasesByOutcome).toHaveLength(1);
+    expect(data.sessionsStats?.createdToday).toBe(10);
+    expect(data.sessionsStats?.activeUsersWithHistory).toBe(5);
+    expect(data.sessionsStats?.avgTurns).toBe(3.2);
+    expect(data.sessionsStats?.legacyShare).toBe(10);
   });
 
   it('loadBillingDashboardData loads revenue, subscriptions, and recent orders', async () => {

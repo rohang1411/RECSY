@@ -26,6 +26,9 @@ export interface PruneResults {
   oldScorecardRuns: number;
   failedScorecardRunsOlderThan90d: number;
   oldIngestRuns: number;
+  deletedRecommendationSessions: number;
+  inactiveGuestSessions: number;
+  orphanedRecommendationClients: number;
   inactiveRecommendationSessions: number;
 }
 
@@ -43,6 +46,9 @@ export async function pruneRetention(
     oldScorecardRuns: 0,
     failedScorecardRunsOlderThan90d: 0,
     oldIngestRuns: 0,
+    deletedRecommendationSessions: 0,
+    inactiveGuestSessions: 0,
+    orphanedRecommendationClients: 0,
     inactiveRecommendationSessions: 0,
   };
 
@@ -148,37 +154,25 @@ export async function pruneRetention(
     `;
   }
 
-  // 7. Inactive anonymous recommendation sessions older than 90 days
-  // Plan 27 WP-01: Signed-in users' sessions are NEVER pruned by this step (c.user_id must be NULL).
-  // Activity is measured by the latest turn's created_at, or updated_at / created_at if no turns.
-  const [sessionsOldCount] = await sql`
+  // 7. Soft-deleted recommendation sessions older than 30 days (Plan 27 D27-2)
+  const [deletedSessionsCount] = await sql`
     SELECT count(*)::int as n
-    FROM recommendation_sessions s
-    JOIN recommendation_clients c ON s.client_id = c.id
-    WHERE c.user_id IS NULL
-      AND COALESCE(
-        (SELECT max(t.created_at) FROM recommendation_turns t WHERE t.session_id = s.id),
-        s.updated_at,
-        s.created_at
-      ) < now() - interval '90 days'
+    FROM recommendation_sessions
+    WHERE status = 'deleted'
+      AND deleted_at < now() - interval '30 days'
   `;
-  results.inactiveRecommendationSessions = Number(sessionsOldCount?.n ?? 0);
+  results.deletedRecommendationSessions = Number(deletedSessionsCount?.n ?? 0);
 
-  if (!dryRun && results.inactiveRecommendationSessions > 0) {
+  if (!dryRun && results.deletedRecommendationSessions > 0) {
     let totalPruned = 0;
     while (true) {
       const deletedBatch = await sql<{ id: string }[]>`
         DELETE FROM recommendation_sessions
         WHERE id IN (
-          SELECT s.id
-          FROM recommendation_sessions s
-          JOIN recommendation_clients c ON s.client_id = c.id
-          WHERE c.user_id IS NULL
-            AND COALESCE(
-              (SELECT max(t.created_at) FROM recommendation_turns t WHERE t.session_id = s.id),
-              s.updated_at,
-              s.created_at
-            ) < now() - interval '90 days'
+          SELECT id
+          FROM recommendation_sessions
+          WHERE status = 'deleted'
+            AND deleted_at < now() - interval '30 days'
           LIMIT ${batchSize}
         )
         RETURNING id
@@ -188,7 +182,78 @@ export async function pruneRetention(
         break;
       }
     }
+    results.deletedRecommendationSessions = totalPruned;
+  }
+
+  // 8. Inactive anonymous guest sessions older than 30 days (Plan 27 D27-3)
+  // Signed-in users' sessions are NEVER pruned (s.user_id must be NULL and c.user_id must be NULL).
+  const [guestSessionsCount] = await sql`
+    SELECT count(*)::int as n
+    FROM recommendation_sessions s
+    LEFT JOIN recommendation_clients c ON s.client_id = c.id
+    WHERE s.user_id IS NULL
+      AND (c.user_id IS NULL OR s.client_id IS NULL)
+      AND COALESCE(s.last_turn_at, s.updated_at, s.created_at) < now() - interval '30 days'
+  `;
+  results.inactiveGuestSessions = Number(guestSessionsCount?.n ?? 0);
+  results.inactiveRecommendationSessions = results.inactiveGuestSessions;
+
+  if (!dryRun && results.inactiveGuestSessions > 0) {
+    let totalPruned = 0;
+    while (true) {
+      const deletedBatch = await sql<{ id: string }[]>`
+        DELETE FROM recommendation_sessions
+        WHERE id IN (
+          SELECT s.id
+          FROM recommendation_sessions s
+          LEFT JOIN recommendation_clients c ON s.client_id = c.id
+          WHERE s.user_id IS NULL
+            AND (c.user_id IS NULL OR s.client_id IS NULL)
+            AND COALESCE(s.last_turn_at, s.updated_at, s.created_at) < now() - interval '30 days'
+          LIMIT ${batchSize}
+        )
+        RETURNING id
+      `;
+      totalPruned += deletedBatch.length;
+      if (deletedBatch.length < batchSize) {
+        break;
+      }
+    }
+    results.inactiveGuestSessions = totalPruned;
     results.inactiveRecommendationSessions = totalPruned;
+  }
+
+  // 9. Orphaned recommendation clients with no associated sessions (Plan 27 WP-11)
+  const [orphanedClientsCount] = await sql`
+    SELECT count(*)::int as n
+    FROM recommendation_clients c
+    WHERE NOT EXISTS (
+      SELECT 1 FROM recommendation_sessions s WHERE s.client_id = c.id
+    )
+  `;
+  results.orphanedRecommendationClients = Number(orphanedClientsCount?.n ?? 0);
+
+  if (!dryRun && results.orphanedRecommendationClients > 0) {
+    let totalPruned = 0;
+    while (true) {
+      const deletedBatch = await sql<{ id: string }[]>`
+        DELETE FROM recommendation_clients
+        WHERE id IN (
+          SELECT c.id
+          FROM recommendation_clients c
+          WHERE NOT EXISTS (
+            SELECT 1 FROM recommendation_sessions s WHERE s.client_id = c.id
+          )
+          LIMIT ${batchSize}
+        )
+        RETURNING id
+      `;
+      totalPruned += deletedBatch.length;
+      if (deletedBatch.length < batchSize) {
+        break;
+      }
+    }
+    results.orphanedRecommendationClients = totalPruned;
   }
 
   return results;

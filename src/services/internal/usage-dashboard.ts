@@ -33,6 +33,12 @@ export interface UsageDashboardData {
     expiresAt: string | null;
   }[];
   alerts: AlertResult[];
+  sessionsStats?: {
+    createdToday: number;
+    activeUsersWithHistory: number;
+    avgTurns: number;
+    legacyShare: number;
+  };
 }
 
 export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<UsageDashboardData> {
@@ -45,23 +51,32 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
     updated_by: string | null;
   };
 
-  const [flagRows, capRows, outcomeRows, sourceRows, denialRows, deviceRows, blockRows, alerts] =
-    await Promise.all([
-      // 1. Flags
-      db.execute<FlagRow>(sql`
+  const [
+    flagRows,
+    capRows,
+    outcomeRows,
+    sourceRows,
+    denialRows,
+    deviceRows,
+    blockRows,
+    alerts,
+    sessionMetricsRows,
+  ] = await Promise.all([
+    // 1. Flags
+    db.execute<FlagRow>(sql`
       SELECT key, value, updated_at::text, updated_by FROM platform_flags ORDER BY key ASC;
     `),
 
-      // 2. Cap & usage today
-      db.execute<{ cap: number | null; used: number | null; kill_enabled: boolean | null }>(sql`
+    // 2. Cap & usage today
+    db.execute<{ cap: number | null; used: number | null; kill_enabled: boolean | null }>(sql`
       SELECT
         (SELECT (value->>'cap')::int FROM platform_flags WHERE key = 'global_daily_platform_cap') AS cap,
         (SELECT SUM(queries_used)::int FROM usage_counters WHERE usage_date = (now() AT TIME ZONE 'UTC')::date) AS used,
         (SELECT (value->>'enabled')::boolean FROM platform_flags WHERE key = 'kill_switch') AS kill_enabled;
     `),
 
-      // 3. Leases by outcome (24h)
-      db.execute<{ outcome: string; count: number }>(sql`
+    // 3. Leases by outcome (24h)
+    db.execute<{ outcome: string; count: number }>(sql`
       SELECT status AS outcome, COUNT(*)::int AS count
       FROM query_leases
       WHERE created_at >= (now() - interval '24 hours')
@@ -69,8 +84,8 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       ORDER BY count DESC;
     `),
 
-      // 4. Leases by source (24h)
-      db.execute<{ source: string; count: number }>(sql`
+    // 4. Leases by source (24h)
+    db.execute<{ source: string; count: number }>(sql`
       SELECT charge_source AS source, COUNT(*)::int AS count
       FROM query_leases
       WHERE created_at >= (now() - interval '24 hours')
@@ -78,8 +93,8 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       ORDER BY count DESC;
     `),
 
-      // 5. Denial reasons (24h)
-      db.execute<{ reason: string; count: number }>(sql`
+    // 5. Denial reasons (24h)
+    db.execute<{ reason: string; count: number }>(sql`
       SELECT denial_reason AS reason, COUNT(*)::int AS count
       FROM query_leases
       WHERE status = 'denied'
@@ -90,8 +105,8 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       LIMIT 10;
     `),
 
-      // 6. Top device digests (24h)
-      db.execute<{ device_id: string; count: number }>(sql`
+    // 6. Top device digests (24h)
+    db.execute<{ device_id: string; count: number }>(sql`
       SELECT device_id, COUNT(*)::int AS count
       FROM query_leases
       WHERE created_at >= (now() - interval '24 hours')
@@ -100,15 +115,15 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       LIMIT 10;
     `),
 
-      // 7. Abuse blocks
-      db.execute<{
-        id: string;
-        kind: string;
-        value: string;
-        reason: string | null;
-        created_at: string;
-        expires_at: string | null;
-      }>(sql`
+    // 7. Abuse blocks
+    db.execute<{
+      id: string;
+      kind: string;
+      value: string;
+      reason: string | null;
+      created_at: string;
+      expires_at: string | null;
+    }>(sql`
       SELECT
         id::text,
         kind,
@@ -121,14 +136,32 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       LIMIT 20;
     `),
 
-      // 8. Alerts
-      evaluateAllAlertRules(db, {
-        quotaMode: env.QUOTA_MODE,
-        isProduction: env.NODE_ENV === 'production',
-        launchActive: true,
-        defaultCap: env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT,
-      }),
-    ]);
+    // 8. Alerts
+    evaluateAllAlertRules(db, {
+      quotaMode: env.QUOTA_MODE,
+      isProduction: env.NODE_ENV === 'production',
+      launchActive: true,
+      defaultCap: env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT,
+    }),
+
+    // 9. Recommendation sessions metrics (Plan 27 Section 18)
+    db.execute<{
+      created_today: number;
+      active_users_with_history: number;
+      avg_turns: number;
+      legacy_count: number;
+      total_sessions: number;
+    }>(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at >= (now() AT TIME ZONE 'UTC')::date)::int AS created_today,
+          COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL)::int AS active_users_with_history,
+          COALESCE(ROUND(AVG(turn_count)::numeric, 1), 0)::float AS avg_turns,
+          COUNT(*) FILTER (WHERE user_id IS NULL AND device_id IS NULL)::int AS legacy_count,
+          COUNT(*)::int AS total_sessions
+        FROM recommendation_sessions
+        WHERE status != 'deleted';
+      `),
+  ]);
 
   const flags: Record<
     string,
@@ -144,6 +177,10 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
 
   const ratio = cap > 0 ? used / cap : 0;
   const rung: 'ok' | 'busy' | 'paused' = isKilled ? 'paused' : ratio >= 0.8 ? 'busy' : 'ok';
+
+  const totalSessions = sessionMetricsRows[0]?.total_sessions ?? 0;
+  const legacyCount = sessionMetricsRows[0]?.legacy_count ?? 0;
+  const legacyShare = totalSessions > 0 ? Math.round((legacyCount / totalSessions) * 100) : 0;
 
   return {
     cap: { used, cap, ratio, rung },
@@ -161,5 +198,11 @@ export async function loadUsageDashboardData(dbOverride?: AppQueryDb): Promise<U
       expiresAt: b.expires_at,
     })),
     alerts,
+    sessionsStats: {
+      createdToday: sessionMetricsRows[0]?.created_today ?? 0,
+      activeUsersWithHistory: sessionMetricsRows[0]?.active_users_with_history ?? 0,
+      avgTurns: sessionMetricsRows[0]?.avg_turns ?? 0,
+      legacyShare,
+    },
   };
 }

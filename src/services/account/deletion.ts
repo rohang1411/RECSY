@@ -120,7 +120,11 @@ export async function executeDeletion(
     return { completed: false, reason: 'billing_hold active' };
   }
 
-  // FK cascades clean up recommendation sessions, turns, and feedback
+  // Clean up recommendation sessions directly owned by user as well as clients
+  await db.execute(sql`
+    DELETE FROM recommendation_sessions WHERE user_id = ${userId}::uuid;
+  `);
+
   await db.execute(sql`
     DELETE FROM recommendation_clients WHERE user_id = ${userId}::uuid;
   `);
