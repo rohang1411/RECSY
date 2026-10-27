@@ -148,3 +148,60 @@ export async function consumeCspReportRateLimit(
     log.warn({ err, store: store.name, route: 'csp_report' }, 'rate_limit_store_error');
   }
 }
+
+export const SESSIONS_LIST_RATE_LIMIT_MAX = 60;
+export const SESSIONS_LIST_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export const SESSIONS_DETAIL_RATE_LIMIT_MAX = 120;
+export const SESSIONS_DETAIL_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export const SESSIONS_MUTATE_RATE_LIMIT_MAX = 30;
+export const SESSIONS_MUTATE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export type SessionRateLimitRoute = 'sessions:list' | 'sessions:detail' | 'sessions:mutate';
+
+export function sessionRateLimitKey(route: SessionRateLimitRoute, subject: string): string {
+  return `${route}:v1:${subject}`;
+}
+
+/**
+ * Rate limits for recommendation session endpoints (Plan 27 Section 9).
+ * - sessions:list: 60/min
+ * - sessions:detail: 120/min
+ * - sessions:mutate: 30/min
+ */
+export async function consumeSessionRateLimit(
+  route: SessionRateLimitRoute,
+  subject: string,
+  customDb?: AppQueryDb,
+): Promise<void> {
+  const windowMs =
+    route === 'sessions:list'
+      ? SESSIONS_LIST_RATE_LIMIT_WINDOW_MS
+      : route === 'sessions:detail'
+        ? SESSIONS_DETAIL_RATE_LIMIT_WINDOW_MS
+        : SESSIONS_MUTATE_RATE_LIMIT_WINDOW_MS;
+
+  const max =
+    route === 'sessions:list'
+      ? SESSIONS_LIST_RATE_LIMIT_MAX
+      : route === 'sessions:detail'
+        ? SESSIONS_DETAIL_RATE_LIMIT_MAX
+        : SESSIONS_MUTATE_RATE_LIMIT_MAX;
+
+  const nowMs = Date.now();
+  const windowStart = new Date(Math.floor(nowMs / windowMs) * windowMs);
+  const key = sessionRateLimitKey(route, subject);
+  const store = new PostgresRateLimitStore(customDb);
+
+  try {
+    const [outcome] = await store.consume([{ key, windowMs, max, subject: 'ip' }], nowMs);
+    if (outcome?.limited) {
+      throw new RateLimitError({ windowStart: windowStart.toISOString(), retryAfter: 60 });
+    }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err;
+    incrementRateLimitStoreErrors();
+    log.warn({ err, store: store.name, route }, 'rate_limit_store_error');
+  }
+}

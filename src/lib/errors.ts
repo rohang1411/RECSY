@@ -44,7 +44,10 @@ export type ErrorCode =
   | 'NO_BILLING_ACCOUNT'
   | 'BILLING_UNAVAILABLE'
   | 'REAUTH_REQUIRED'
-  | 'INVALID_CODE';
+  | 'INVALID_CODE'
+  | 'PIN_LIMIT_EXCEEDED'
+  | 'SESSION_NOT_FOUND'
+  | 'SESSION_TURN_LIMIT';
 
 const DEFAULT_STATUS: Record<ErrorCode, number> = {
   VALIDATION: 400,
@@ -82,6 +85,9 @@ const DEFAULT_STATUS: Record<ErrorCode, number> = {
   BILLING_UNAVAILABLE: 503,
   REAUTH_REQUIRED: 401,
   INVALID_CODE: 400,
+  PIN_LIMIT_EXCEEDED: 409,
+  SESSION_NOT_FOUND: 404,
+  SESSION_TURN_LIMIT: 409,
 };
 
 export class AppError extends Error {
