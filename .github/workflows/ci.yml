@@ -13,7 +13,7 @@ concurrency:
 jobs:
   quality:
     name: typecheck · lint · test · build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # Tests and type-checking touch @/env but do NOT require live services.
       # `SKIP_ENV_VALIDATION` short-circuits the Zod schema so CI can run offline.
@@ -64,7 +64,7 @@ jobs:
 
   e2e:
     name: Playwright (phone page + mocked ask)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [quality]
     services:
       postgres:
@@ -134,7 +134,7 @@ jobs:
   # query embedding. Entire job is skipped when `GEMINI_API_KEY` secret is unset.
   retrieval-gate:
     name: Check GEMINI for retrieval eval
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       configured: ${{ steps.check.outputs.configured }}
     steps:
@@ -154,7 +154,7 @@ jobs:
     name: eval · retrieval (optional, Gemini)
     needs: [quality, retrieval-gate]
     if: needs.retrieval-gate.outputs.configured == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -226,7 +226,7 @@ jobs:
   # Require: "CI / CI success (required)" — do not require optional retrieval-eval.
   ci-success:
     name: CI success (required)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [quality, e2e]
     if: always()
     steps:
