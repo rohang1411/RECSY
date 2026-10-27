@@ -219,6 +219,14 @@ export async function settleTurnInDb(
   const resultMetaJson = params.resultMeta ? JSON.stringify(params.resultMeta) : null;
   const candidatePhoneIds = params.candidatePhoneIds ?? [];
 
+  const candidatePhoneIdsSql =
+    candidatePhoneIds.length > 0
+      ? sql`ARRAY[${sql.join(
+          candidatePhoneIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )}]::uuid[]`
+      : sql`'{}'::uuid[]`;
+
   // Atomic turn index allocation with row-lock serialization
   const updateRows = await tx.execute<{
     turnIndex: number;
@@ -232,16 +240,16 @@ export async function settleTurnInDb(
            last_turn_at       = now(),
            updated_at         = now(),
            first_message      = COALESCE(s.first_message, left(${params.userMessage}, 160)),
-           last_picks_summary = CASE WHEN ${params.hasPicks} AND ${picksSummaryJson}::jsonb IS NOT NULL
-                                     THEN ${picksSummaryJson}::jsonb
+           last_picks_summary = CASE WHEN ${params.hasPicks} AND ${picksSummaryJson ? sql`${picksSummaryJson}::jsonb` : sql`NULL::jsonb`} IS NOT NULL
+                                     THEN ${picksSummaryJson ? sql`${picksSummaryJson}::jsonb` : sql`NULL::jsonb`}
                                      ELSE s.last_picks_summary END,
-           title              = CASE WHEN s.title_source IN ('default', 'heuristic') AND ${params.title ?? null} IS NOT NULL
-                                     THEN ${params.title}
+           title              = CASE WHEN s.title_source IN ('default', 'heuristic') AND ${params.title ?? null}::text IS NOT NULL
+                                     THEN ${params.title ?? null}::text
                                      ELSE s.title END,
-           title_source       = CASE WHEN s.title_source IN ('default', 'heuristic') AND ${params.title ?? null} IS NOT NULL
+           title_source       = CASE WHEN s.title_source IN ('default', 'heuristic') AND ${params.title ?? null}::text IS NOT NULL
                                      THEN 'heuristic'
                                      ELSE s.title_source END,
-           primary_intent     = COALESCE(s.primary_intent, ${params.intent})
+           primary_intent     = COALESCE(s.primary_intent, ${params.intent}::text)
      WHERE s.id = ${params.sessionId}::uuid
        AND ${ownerPred}
        AND s.status = 'active'
@@ -273,11 +281,11 @@ export async function settleTurnInDb(
       ${params.sessionId}::uuid,
       ${updated.turnIndex},
       ${params.userMessage},
-      ${params.intent},
+      ${params.intent}::recommendation_intent,
       ${extractedRequirementsJson ? sql`${extractedRequirementsJson}::jsonb` : null},
-      ${candidatePhoneIds},
+      ${candidatePhoneIdsSql},
       ${picksJson ? sql`${picksJson}::jsonb` : null},
-      ${params.clarifyingQuestion ?? null},
+      ${params.clarifyingQuestion ?? null}::text,
       ${params.leaseId ? sql`${params.leaseId}::uuid` : null},
       ${resultMetaJson ? sql`${resultMetaJson}::jsonb` : null}
     );
