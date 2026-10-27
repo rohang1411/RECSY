@@ -2,35 +2,30 @@
 
 import { ArrowRight, Loader2, Scale } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { toast } from 'sonner';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
+import { QuotaSheet } from '@/components/quota/QuotaSheet';
+import { quotaStore } from '@/components/quota/quota-store';
 import {
   CLIENT_SETTING_DEFAULTS,
   CLIENT_SETTING_KEYS,
   useClientSetting,
 } from '@/lib/client-settings';
 import { formatLocalPrice } from '@/lib/format-currency';
-import type { RegionConfig } from '@/lib/regions';
-import {
-  readRecommendSession,
-  type RecommendationSnapshot,
-  writeRecommendSession,
-} from '@/lib/recommend-session';
-import { cn } from '@/lib/utils';
-import { QuotaMeter } from '@/components/quota/QuotaMeter';
-import { QuotaSheet } from '@/components/quota/QuotaSheet';
-import { quotaStore } from '@/components/quota/quota-store';
-import {
-  handleMeteredError,
-  createMeteredRequestInit,
-  type MeteredErrorResponse,
-} from '@/lib/metered-fetch';
+import { handleMeteredError, type MeteredErrorResponse } from '@/lib/metered-fetch';
 import { savePendingIntent } from '@/lib/pending-intent';
-import { toast } from 'sonner';
+import { buildAssistantLines, type RecommendTurnLike } from '@/lib/recommend-lines';
+import { clearDraft, getDraft, setDraft } from '@/lib/recommend-sessions/drafts';
+import { useSendTurn } from '@/lib/recommend-sessions/use-send-turn';
+import { useSession } from '@/lib/recommend-sessions/use-session';
+import type { SessionDetail, SessionDetailTurn } from '@/lib/recommend-sessions/api';
+import type { RegionConfig } from '@/lib/regions';
 import type { QuotaSnapshotLite } from '@/services/metering/types';
+import { cn } from '@/lib/utils';
 
-type ApiPick = {
+export interface ApiPick {
   readonly phoneId: string;
   readonly slug: string;
   readonly brand: string;
@@ -41,9 +36,9 @@ type ApiPick = {
   readonly localPrice: string | null;
   readonly localCurrency: string | null;
   readonly imageUrl: string | null;
-};
+}
 
-interface ChatLine {
+export interface ChatLine {
   readonly role: 'user' | 'assistant';
   readonly text: string;
 }
@@ -62,44 +57,60 @@ function rankLabel(index: number): string {
   return `Rank ${index + 1}`;
 }
 
-function formatSavedAt(savedAt: number): string {
-  const diffMs = Date.now() - savedAt;
+function formatSavedAt(timeMsOrIso: number | string): string {
+  const time = typeof timeMsOrIso === 'string' ? new Date(timeMsOrIso).getTime() : timeMsOrIso;
+  const diffMs = Date.now() - time;
   const diffH = Math.floor(diffMs / (1000 * 60 * 60));
   if (diffH < 1) return 'earlier this session';
   if (diffH === 1) return '1 hour ago';
-  return `${diffH} hours ago`;
+  if (diffH < 24) return `${diffH} hours ago`;
+  const diffDays = Math.floor(diffH / 24);
+  return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
 }
 
-function makeSnapshotId(): string {
-  return `answer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+function formatPickPrice(
+  pick: ApiPick,
+  activeRegion: RegionConfig,
+  turnCreatedAt?: string | number | null,
+): string | null {
+  const price = formatLocalPrice(pick.localPrice ?? pick.msrpUsd, activeRegion);
+  if (!price) return null;
+  if (!turnCreatedAt) return price;
+  const time =
+    typeof turnCreatedAt === 'string' ? new Date(turnCreatedAt).getTime() : turnCreatedAt;
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  if (Date.now() - time > SEVEN_DAYS_MS) {
+    const dateStr = new Date(time).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    return `${price} (as of ${dateStr})`;
+  }
+  return price;
 }
 
-function legacySnapshotFromSession(
-  session: ReturnType<typeof readRecommendSession>,
-): RecommendationSnapshot[] {
-  if (!session?.picks || session.picks.length === 0) return [];
-  const query =
-    [...session.lines].reverse().find((line) => line.role === 'user')?.text ?? 'Previous request';
-  const assistantText =
-    [...session.lines].reverse().find((line) => line.role === 'assistant')?.text ??
-    'Recommendations are ready.';
-  return [
-    {
-      id: `restored-${session.savedAt}`,
-      query,
-      assistantText,
-      picks: session.picks,
-      relaxed: session.relaxed ?? [],
-      refined: session.refined,
-      scoresTied: session.scoresTied,
-      scorecardMissing: session.scorecardMissing,
-      topAspects: session.topAspects,
-      savedAt: session.savedAt,
-    },
-  ];
+/** Reconstructs conversation chat lines from stored session turns. */
+function reconstructLinesFromTurns(
+  turns: SessionDetailTurn[],
+  activeRegion: RegionConfig,
+): ChatLine[] {
+  if (!turns || turns.length === 0) {
+    return getInitialLines(activeRegion.symbol, activeRegion.countryCode);
+  }
+
+  const lines: ChatLine[] = [];
+  for (const turn of turns) {
+    lines.push({ role: 'user', text: turn.userMessage });
+    const assistantTexts = buildAssistantLines(turn as RecommendTurnLike);
+    for (const text of assistantTexts) {
+      lines.push({ role: 'assistant', text });
+    }
+  }
+  return lines;
 }
 
-/** SSR-safe client mount gate (same pattern as `useClientSetting`). */
+/** SSR-safe client mount gate. */
 function useClientMounted(): boolean {
   return useSyncExternalStore(
     () => () => {},
@@ -108,11 +119,17 @@ function useClientMounted(): boolean {
   );
 }
 
-interface RecommendClientProps {
+export interface RecommendClientProps {
   readonly activeRegion: RegionConfig;
+  readonly sessionId?: string;
+  readonly initialSession?: SessionDetail | null;
 }
 
-export function RecommendClient({ activeRegion }: RecommendClientProps) {
+export function RecommendClient({
+  activeRegion,
+  sessionId,
+  initialSession,
+}: RecommendClientProps): React.JSX.Element {
   const mounted = useClientMounted();
   if (!mounted) {
     return (
@@ -126,271 +143,171 @@ export function RecommendClient({ activeRegion }: RecommendClientProps) {
       </div>
     );
   }
-  return <RecommendClientLoaded activeRegion={activeRegion} />;
+
+  return (
+    <RecommendClientLoaded
+      key={sessionId ?? 'new'}
+      activeRegion={activeRegion}
+      sessionId={sessionId}
+      initialSession={initialSession}
+    />
+  );
 }
 
-function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
-  const session = readRecommendSession();
-  const initialSnapshots = session?.snapshots?.length
-    ? [...session.snapshots]
-    : legacySnapshotFromSession(session);
-  const initialActiveSnapshotId =
-    session?.activeSnapshotId &&
-    initialSnapshots.some((snapshot) => snapshot.id === session.activeSnapshotId)
-      ? session.activeSnapshotId
-      : (initialSnapshots[0]?.id ?? null);
-  const [input, setInput] = useState('');
-  const [lines, setLines] = useState<ChatLine[]>(() => [
-    ...(session?.lines?.length
-      ? (session.lines as ChatLine[])
-      : getInitialLines(activeRegion.symbol, activeRegion.countryCode)),
-  ]);
-  const [picks, setPicks] = useState<readonly ApiPick[] | null>(
-    (initialSnapshots[0]?.picks as ApiPick[]) ?? (session?.picks as ApiPick[]) ?? null,
+function RecommendClientLoaded({
+  activeRegion,
+  sessionId: propSessionId,
+  initialSession,
+}: RecommendClientProps): React.JSX.Element {
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(propSessionId);
+  const sessionQuery = useSession(currentSessionId, {
+    initialData: initialSession ?? undefined,
+    enabled: Boolean(currentSessionId),
+  });
+
+  const sendTurnMutation = useSendTurn();
+
+  // Active session turns
+  const sessionData = sessionQuery.data ?? initialSession ?? null;
+  const turns = useMemo(() => sessionData?.turns ?? [], [sessionData?.turns]);
+  const turnCount = sessionData?.turnCount ?? turns.length;
+
+  // Answers switcher: each turn with picks
+  const answerTurns = useMemo(
+    () => turns.filter((turn) => Array.isArray(turn.picks) && turn.picks.length > 0),
+    [turns],
   );
-  const [relaxed, setRelaxed] = useState<readonly string[] | null>(
-    initialSnapshots[0]?.relaxed ?? session?.relaxed ?? null,
+  const latestAnswerTurn = answerTurns[answerTurns.length - 1] ?? null;
+
+  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
+  const activeAnswerId = selectedAnswerId ?? latestAnswerTurn?.id ?? null;
+
+  const selectedAnswerTurn = answerTurns.find((t) => t.id === activeAnswerId) ?? latestAnswerTurn;
+
+  // Derived lines from turns plus any in-flight optimistic message
+  const [optimisticLines, setOptimisticLines] = useState<ChatLine[]>([]);
+  const baseLines = useMemo(
+    () => reconstructLinesFromTurns(turns, activeRegion),
+    [turns, activeRegion],
   );
-  const [refined, setRefined] = useState<boolean>(
-    initialSnapshots[0]?.refined ?? session?.refined ?? false,
-  );
-  const [scoresTied, setScoresTied] = useState<boolean>(
-    initialSnapshots[0]?.scoresTied ?? session?.scoresTied ?? false,
-  );
-  const [scorecardMissing, setScorecardMissing] = useState<boolean>(
-    initialSnapshots[0]?.scorecardMissing ?? session?.scorecardMissing ?? false,
-  );
-  const [topAspects, setTopAspects] = useState<readonly string[]>(
-    initialSnapshots[0]?.topAspects ?? session?.topAspects ?? [],
-  );
-  const [snapshots, setSnapshots] = useState<readonly RecommendationSnapshot[]>(initialSnapshots);
-  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(initialActiveSnapshotId);
+  const lines = useMemo(() => [...baseLines, ...optimisticLines], [baseLines, optimisticLines]);
+
+  // Input & Draft state
+  const [input, setInput] = useState(() => getDraft(currentSessionId));
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const conversationEndRef = useRef<HTMLLIElement | null>(null);
   const pendingMessageRef = useRef<string>('');
   const [isQuotaSheetOpen, setIsQuotaSheetOpen] = useState(false);
   const [quotaReason, setQuotaReason] = useState<'free_exhausted' | 'sub_exhausted' | 'device_cap'>(
     'free_exhausted',
   );
+
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
   );
 
-  const skipNextWriteRef = useRef(true);
+  // Debounced draft saving
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDraft(currentSessionId, input);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentSessionId, input]);
 
   useEffect(() => {
-    if (skipNextWriteRef.current) {
-      skipNextWriteRef.current = false;
-      return;
-    }
-    writeRecommendSession({
-      savedAt: Date.now(),
-      lines,
-      picks,
-      relaxed,
-      refined,
-      scoresTied,
-      scorecardMissing,
-      topAspects,
-      snapshots,
-      activeSnapshotId,
-    });
-  }, [
-    lines,
-    picks,
-    relaxed,
-    refined,
-    scoresTied,
-    scorecardMissing,
-    topAspects,
-    snapshots,
-    activeSnapshotId,
-  ]);
+    conversationEndRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [sendTurnMutation.isPending, lines]);
 
-  useEffect(() => {
-    conversationEndRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [busy, lines]);
+  const busy = sendTurnMutation.isPending;
 
-  async function send() {
+  async function handleSend() {
     const message = input.trim();
     if (!message || busy) return;
+
+    // Check turn limit (50 cap)
+    if (turnCount >= 50) {
+      toast.error('This conversation has reached the 50-turn limit.');
+      return;
+    }
+
     pendingMessageRef.current = message;
     setInput('');
+    clearDraft(currentSessionId);
     setError(null);
-    setPicks(null);
-    setRelaxed(null);
-    setRefined(false);
-    setScoresTied(false);
-    setScorecardMissing(false);
-    setTopAspects([]);
-    setActiveSnapshotId(null);
     setPendingQuery(message);
-    setLines((prev) => [...prev, { role: 'user', text: message }]);
-    setBusy(true);
+    setOptimisticLines([{ role: 'user', text: message }]);
     quotaStore.setPipFlash('pulse');
 
-    try {
-      const res = await fetch(
-        '/api/recommend',
-        createMeteredRequestInit({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message }),
-        }),
-      );
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) {
-        const action = handleMeteredError(
-          res.status,
-          data as MeteredErrorResponse,
-          res.headers.get('Retry-After'),
-        );
-        quotaStore.setPipFlash('restored');
-        setInput(pendingMessageRef.current);
-        setLines((prev) =>
-          prev.length > 0 && prev[prev.length - 1]?.role === 'user' ? prev.slice(0, -1) : prev,
-        );
-        setPendingQuery(null);
-
-        if (action.kind === 'quota') {
-          setQuotaReason(action.reason);
-          setIsQuotaSheetOpen(true);
-        } else if (action.kind === 'auth') {
-          savePendingIntent({ text: pendingMessageRef.current, route: '/recommend' });
-          window.location.href = '/login';
-        } else if (action.kind === 'toast') {
-          toast.error(action.message);
-        } else {
-          setError(action.message);
-        }
-        return;
+    // Section 11.1: If new conversation, generate UUID and update URL
+    let targetSessionId = currentSessionId;
+    if (!targetSessionId) {
+      targetSessionId = crypto.randomUUID();
+      setCurrentSessionId(targetSessionId);
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `/recommend/${targetSessionId}`);
       }
+    }
+
+    try {
+      const response = await sendTurnMutation.mutateAsync({
+        message,
+        sessionId: targetSessionId,
+      });
 
       quotaStore.setPipFlash('spent');
       pendingMessageRef.current = '';
 
-      if (data && typeof data === 'object' && 'quota' in data && data.quota) {
-        quotaStore.updateFromQuotaLite(data.quota as unknown as QuotaSnapshotLite);
+      if (response.quota) {
+        quotaStore.updateFromQuotaLite(response.quota as unknown as QuotaSnapshotLite);
       }
-      if (!data || typeof data !== 'object' || !('kind' in data)) {
-        throw new Error('Invalid response');
-      }
-      const kind = (data as { kind: unknown }).kind;
-      if (kind === 'clarify') {
-        const raw = data as unknown as { clarifyingQuestion?: unknown };
-        const q =
-          typeof raw.clarifyingQuestion === 'string'
-            ? raw.clarifyingQuestion
-            : 'Tell me a bit more about what you need.';
-        setLines((prev) => [...prev, { role: 'assistant', text: q }]);
-      } else if (kind === 'results') {
-        const rawPicks = (data as { picks?: unknown }).picks;
-        const pickList = Array.isArray(rawPicks) ? (rawPicks as ApiPick[]) : [];
-        const rawRelaxed = (data as { relaxed?: unknown }).relaxed;
-        const relaxedList = Array.isArray(rawRelaxed)
-          ? (rawRelaxed as string[]).filter((s): s is string => typeof s === 'string')
-          : [];
-        const rawRefined = (data as { refined?: unknown }).refined === true;
-        const rawScoresTied = (data as { scoresTied?: unknown }).scoresTied === true;
-        const rawScorecardMissing =
-          (data as { scorecardMissing?: unknown }).scorecardMissing === true;
-        const rawTopAspects = (data as { topAspects?: unknown }).topAspects;
-        const topAspectsList = Array.isArray(rawTopAspects)
-          ? (rawTopAspects as string[]).filter((s): s is string => typeof s === 'string')
-          : [];
-        setPicks(pickList);
-        setRelaxed(relaxedList);
-        setRefined(rawRefined);
-        setScoresTied(rawScoresTied);
-        setScorecardMissing(rawScorecardMissing);
-        setTopAspects(topAspectsList);
-        if (pickList.length === 0) {
-          setLines((prev) => [
-            ...prev,
-            {
-              role: 'assistant',
-              text: 'No catalog entries matched those preferences. Try relaxing one must-have or changing the budget, then ask again.',
-            },
-          ]);
-        } else {
-          const countLabel =
-            pickList.length === 1
-              ? 'one match'
-              : pickList.length === 2
-                ? 'two picks'
-                : `top ${pickList.length}`;
-          const base = rawRefined
-            ? `Updated your recommendations. Returning ${countLabel}.`
-            : `Recommendations are ready. Returning ${countLabel}.`;
-          const intro =
-            relaxedList.length > 0 ? `${base} Adjusted: ${relaxedList.join(', ')}.` : base;
-          setLines((prev) => [...prev, { role: 'assistant', text: intro }]);
-          const snapshot: RecommendationSnapshot = {
-            id: makeSnapshotId(),
-            query: message,
-            assistantText: intro,
-            picks: pickList,
-            relaxed: relaxedList,
-            refined: rawRefined,
-            scoresTied: rawScoresTied,
-            scorecardMissing: rawScorecardMissing,
-            topAspects: topAspectsList,
-            savedAt: Date.now(),
-          };
-          setSnapshots((prev) =>
-            [snapshot, ...prev.filter((item) => item.id !== snapshot.id)].slice(0, 8),
-          );
-          setActiveSnapshotId(snapshot.id);
 
-          if (rawScoresTied && pickList.length > 1) {
-            const priorityHint =
-              topAspectsList.length >= 2
-                ? ` on ${topAspectsList[0]} and ${topAspectsList[1]}`
-                : topAspectsList[0]
-                  ? ` on ${topAspectsList[0]}`
-                  : '';
-            const topNames = pickList
-              .slice(0, 2)
-              .map((p) => `${p.brand} ${p.model}`)
-              .join(' and ');
-            setLines((prev) => [
-              ...prev,
-              {
-                role: 'assistant',
-                text: `It's a tie between ${topNames}${priorityHint}. Their performance across what you said matters is effectively identical, so both are presented side-by-side as top picks!`,
-              },
-            ]);
-          } else if (rawScorecardMissing && pickList.length > 0) {
-            setLines((prev) => [
-              ...prev,
-              {
-                role: 'assistant',
-                text: 'No reviewer scorecard has been ingested yet, so this ranking is specs- and priorities-only.',
-              },
-            ]);
-          }
-        }
-      } else {
-        throw new Error('Unknown response kind');
+      // If results returned, update active answer turn
+      if (response.kind === 'results' && response.picks && response.picks.length > 0) {
+        setSelectedAnswerId(`turn-${response.turnIndex}`);
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+    } catch (err: unknown) {
+      quotaStore.setPipFlash('restored');
+      // Restore input and draft on error
+      setInput(pendingMessageRef.current);
+      setDraft(targetSessionId, pendingMessageRef.current);
+
+      const status = (err as { status?: number })?.status ?? 500;
+      const errorData = (err as { details?: MeteredErrorResponse })?.details;
+      const action = handleMeteredError(status, errorData, null);
+
+      if (action.kind === 'quota') {
+        setQuotaReason(action.reason);
+        setIsQuotaSheetOpen(true);
+      } else if (action.kind === 'auth') {
+        savePendingIntent({
+          text: pendingMessageRef.current,
+          route: targetSessionId ? `/recommend/${targetSessionId}` : '/recommend',
+          sessionId: targetSessionId,
+        });
+        window.location.href = '/login';
+      } else if (action.kind === 'toast') {
+        toast.error(action.message);
+      } else {
+        setError(action.message);
+      }
     } finally {
+      setOptimisticLines([]);
       setPendingQuery(null);
-      setBusy(false);
     }
   }
 
-  const activeSnapshot = snapshots.find((snapshot) => snapshot.id === activeSnapshotId) ?? null;
-  const displayPicks = (activeSnapshot?.picks as ApiPick[]) ?? picks;
-  const displayRelaxed = activeSnapshot?.relaxed ?? relaxed;
-  const displayRefined = activeSnapshot?.refined ?? refined;
-  const displayScoresTied = activeSnapshot?.scoresTied ?? scoresTied;
-  const displayScorecardMissing = activeSnapshot?.scorecardMissing ?? scorecardMissing;
-  const displayTopAspects = activeSnapshot?.topAspects ?? topAspects;
+  // Display picks from the selected answer turn
+  const displayPicks = (selectedAnswerTurn?.picks as ApiPick[]) ?? null;
+  const meta = selectedAnswerTurn?.resultMeta;
+  const displayRelaxed = meta?.relaxed ?? [];
+  const displayRefined = meta?.refined ?? false;
+  const displayScoresTied = meta?.scoresTied ?? false;
+  const displayScorecardMissing = meta?.scorecardMissing ?? false;
+  const displayTopAspects = meta?.topAspects ?? [];
+
   const topPick = displayPicks?.[0] ?? null;
   const runnerUps = displayPicks?.slice(1) ?? [];
 
@@ -399,13 +316,23 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
       ? 'Under ₹60,000, great camera, long battery, not too heavy...'
       : 'Under $700, great camera, long battery, not too heavy...';
 
+  const isFull = turnCount >= 50;
+  const isNearLimit = turnCount >= 45 && !isFull;
+
   return (
     <div className="px-grid-margin py-10">
       <div className="grid gap-8 xl:grid-cols-12">
+        {/* Conversation Column */}
         <section className="border-outline-variant bg-background border xl:col-span-5">
-          <div className="border-outline-variant border-b p-5">
+          <div className="border-outline-variant flex items-center justify-between border-b p-5">
             <p className="meta-label text-primary">Conversation</p>
+            {sessionData?.title ? (
+              <span className="text-muted-foreground max-w-[200px] truncate font-mono text-xs">
+                {sessionData.title}
+              </span>
+            ) : null}
           </div>
+
           <ul className="divide-outline-variant max-h-[min(520px,55vh)] divide-y overflow-y-auto">
             {lines.map((line, i) => (
               <li key={i} ref={i === lines.length - 1 ? conversationEndRef : null} className="p-4">
@@ -439,66 +366,105 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
             </p>
           ) : null}
 
+          {isNearLimit ? (
+            <div className="border-outline-variant bg-surface-container/60 border-t p-3 text-center">
+              <p className="text-muted-foreground font-mono text-xs">
+                Turn {turnCount}/50. Conversations are capped at 50 turns.
+              </p>
+            </div>
+          ) : null}
+
           <div className="border-outline-variant border-t p-5">
-            <label className="sr-only" htmlFor="rec-input">
-              Your message
-            </label>
-            <textarea
-              id="rec-input"
-              rows={4}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (enterToSend && e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder={placeholderText}
-              className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-none border-b px-0 py-3 font-mono text-base focus-visible:ring-0 focus-visible:outline-none md:text-sm"
-              disabled={busy}
-            />
-            <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={busy || !input.trim()}
-              className="border-outline text-primary hover:bg-primary hover:text-background focus-visible:bg-primary focus-visible:text-background mt-4 inline-flex items-center gap-2 border px-5 py-3 font-mono text-[11px] tracking-[0.18em] uppercase transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40"
-            >
-              {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-              Recommend
-            </button>
+            {isFull ? (
+              <div className="space-y-3 py-4 text-center">
+                <p className="text-foreground font-mono text-sm">
+                  This conversation is full (50 turns).
+                </p>
+                <p className="text-muted-foreground font-mono text-xs">
+                  Start a new conversation to continue exploring.
+                </p>
+                <Link
+                  href="/recommend"
+                  className="border-primary bg-primary/10 text-primary hover:bg-primary inline-flex items-center gap-2 border px-5 py-2 font-mono text-xs uppercase transition-colors hover:text-black"
+                >
+                  Start new recommendation
+                </Link>
+              </div>
+            ) : (
+              <>
+                <label className="sr-only" htmlFor="rec-input">
+                  Your message
+                </label>
+                <textarea
+                  id="rec-input"
+                  rows={4}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && enterToSend) {
+                      e.preventDefault();
+                      void handleSend();
+                    }
+                  }}
+                  disabled={busy}
+                  placeholder={placeholderText}
+                  className="border-outline-variant bg-surface-container text-foreground placeholder:text-muted-foreground w-full resize-none border p-3 font-mono text-sm focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSend()}
+                  disabled={busy || !input.trim()}
+                  className="border-primary bg-primary text-background hover:bg-primary/90 mt-3 inline-flex w-full items-center justify-center gap-2 border py-2.5 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:opacity-50"
+                >
+                  {busy ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      Thinking…
+                    </>
+                  ) : (
+                    'Send message'
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </section>
 
+        {/* Results Column */}
         <section className="xl:col-span-7">
-          {snapshots.length > 0 ? (
+          {/* Answer timeline / switcher */}
+          {answerTurns.length > 1 ? (
             <div className="mb-5">
               <p className="meta-label text-primary mb-3">Answer timeline</p>
               <div className="bg-outline-variant grid gap-px md:grid-cols-2">
-                {snapshots.map((snapshot, index) => (
-                  <button
-                    key={snapshot.id}
-                    type="button"
-                    onClick={() => setActiveSnapshotId(snapshot.id)}
-                    aria-current={activeSnapshotId === snapshot.id ? 'true' : undefined}
-                    className={cn(
-                      'interactive-panel p-4 text-left',
-                      activeSnapshotId === snapshot.id && 'border-accent bg-surface-container',
-                    )}
-                  >
-                    <span className="meta-label text-accent">
-                      {index === 0 ? 'Latest answer' : `Previous answer ${index}`}
-                    </span>
-                    <span className="text-primary mt-2 block truncate font-mono text-xs">
-                      {snapshot.query}
-                    </span>
-                    <span className="text-muted-foreground mt-2 block font-mono text-[10px] tracking-[0.12em] uppercase">
-                      {snapshot.picks[0]?.model ?? 'No picks'} / {snapshot.picks.length} picks /{' '}
-                      {formatSavedAt(snapshot.savedAt)}
-                    </span>
-                  </button>
-                ))}
+                {answerTurns.map((turn, index) => {
+                  const turnPicks = (turn.picks as ApiPick[]) ?? [];
+                  const isLatest = index === answerTurns.length - 1;
+                  const isSelected = activeAnswerId === turn.id;
+                  return (
+                    <button
+                      key={turn.id}
+                      type="button"
+                      onClick={() => setSelectedAnswerId(turn.id)}
+                      aria-current={isSelected ? 'true' : undefined}
+                      className={cn(
+                        'interactive-panel p-4 text-left transition-colors',
+                        isSelected && 'border-accent bg-surface-container',
+                      )}
+                    >
+                      <span className="meta-label text-accent">
+                        {isLatest ? 'Latest answer' : `Answer ${index + 1}`}
+                      </span>
+                      <span className="text-primary mt-2 block truncate font-mono text-xs">
+                        {turn.userMessage}
+                      </span>
+                      <span className="text-muted-foreground mt-2 block font-mono text-[10px] tracking-[0.12em] uppercase">
+                        {turnPicks[0]?.model ?? 'No picks'} / {turnPicks.length} picks /{' '}
+                        {formatSavedAt(turn.createdAt)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -506,7 +472,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
           {displayPicks && displayPicks.length > 0 ? (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <p className="meta-label text-primary">
-                {activeSnapshot ? 'Selected recommendations' : 'Recommendations'}
+                {answerTurns.length > 1 ? 'Selected recommendations' : 'Recommendations'}
               </p>
               {displayPicks.length >= 2 && displayPicks[0] != null && displayPicks[1] != null ? (
                 <Link
@@ -519,6 +485,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
               ) : null}
             </div>
           ) : null}
+
           {displayScoresTied || displayScorecardMissing ? (
             <div
               role="note"
@@ -562,6 +529,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                     featured
                     className="col-span-1"
                     activeRegion={activeRegion}
+                    turnCreatedAt={selectedAnswerTurn?.createdAt}
                   />
                   <RecommendationCard
                     pick={displayPicks[1]!}
@@ -569,6 +537,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                     featured
                     className="col-span-1"
                     activeRegion={activeRegion}
+                    turnCreatedAt={selectedAnswerTurn?.createdAt}
                   />
                 </div>
                 {displayPicks.length > 2 ? (
@@ -579,6 +548,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                         pick={pick}
                         index={index + 2}
                         activeRegion={activeRegion}
+                        turnCreatedAt={selectedAnswerTurn?.createdAt}
                       />
                     ))}
                   </div>
@@ -593,6 +563,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                     featured
                     className="lg:col-span-8"
                     activeRegion={activeRegion}
+                    turnCreatedAt={selectedAnswerTurn?.createdAt}
                   />
                 ) : null}
                 <div className="bg-outline-variant grid gap-px lg:col-span-4">
@@ -602,6 +573,7 @@ function RecommendClientLoaded({ activeRegion }: RecommendClientProps) {
                       pick={pick}
                       index={index + 1}
                       activeRegion={activeRegion}
+                      turnCreatedAt={selectedAnswerTurn?.createdAt}
                     />
                   ))}
                 </div>
@@ -648,14 +620,16 @@ function RecommendationCard({
   featured = false,
   className,
   activeRegion,
+  turnCreatedAt,
 }: {
   readonly pick: ApiPick;
   readonly index: number;
   readonly featured?: boolean;
   readonly className?: string;
   readonly activeRegion: RegionConfig;
+  readonly turnCreatedAt?: string | number | null;
 }) {
-  const price = formatLocalPrice(pick.localPrice ?? pick.msrpUsd, activeRegion);
+  const price = formatPickPrice(pick, activeRegion, turnCreatedAt);
   return (
     <Link
       href={`/p/${pick.slug}`}
@@ -669,14 +643,10 @@ function RecommendationCard({
       <div
         className={cn('border-outline-variant border-b p-5', featured ? 'min-h-72' : 'min-h-36')}
       >
-        <div className="flex items-start justify-between gap-4">
-          <span className="border-primary text-primary border px-2 py-1 font-mono text-[10px] tracking-[0.16em]">
-            {rankLabel(index)}
-          </span>
-          <span className="text-primary font-mono text-xs tabular-nums">
-            {pick.score.toFixed(2)}
-          </span>
-        </div>
+        <span className="meta-label border-primary border-l-2 pl-3">
+          {rankLabel(index)}
+          {pick.score != null ? ` / Score ${(pick.score * 10).toFixed(1)}` : ''}
+        </span>
         <PhoneImage
           src={pick.imageUrl}
           label={`${pick.brand} ${pick.model}`}
