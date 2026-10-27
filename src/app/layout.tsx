@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
-import { Hanken_Grotesk, Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 
 import { AnalyticsClient } from '@/components/AnalyticsClient';
 import { AppHeader } from '@/components/AppHeader';
@@ -18,11 +19,11 @@ const inter = Inter({
   display: 'swap',
 });
 
-const hanken = Hanken_Grotesk({
-  subsets: ['latin'],
+const hanken = localFont({
+  src: './fonts/HankenGrotesk-VariableFont_wght.woff2',
   variable: '--font-hanken',
   display: 'swap',
-  weight: ['700', '800'],
+  weight: '100 900',
 });
 
 const jetbrains = JetBrains_Mono({
