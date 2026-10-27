@@ -107,6 +107,23 @@ export function AuthForm({
   const copy = REASON_COPY[reason] || REASON_COPY.header;
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getSessionIdToClaim = useCallback(() => {
+    const intent = readPendingIntent();
+    if (intent?.sessionId) return intent.sessionId;
+    const match = next?.match(
+      /\/recommend\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    );
+    return match ? match[1] : undefined;
+  }, [next]);
+
+  const intentSessionId = readPendingIntent()?.sessionId;
+  const effectiveNext =
+    next && next !== '/' && next !== '/recommend'
+      ? next
+      : intentSessionId
+        ? `/recommend/${intentSessionId}`
+        : next;
+
   const handleAuthSuccess = useCallback(
     (userEmail: string) => {
       setStep('success');
@@ -115,19 +132,26 @@ export function AuthForm({
 
       // Check pending intent for automated refill / submission
       const intent = readPendingIntent();
-      if (intent) {
+      if (intent && !intent.route?.startsWith('/recommend')) {
         clearPendingIntent();
       }
+
+      const targetUrl =
+        effectiveNext && effectiveNext !== window.location.pathname
+          ? effectiveNext
+          : next && next !== window.location.pathname
+            ? next
+            : null;
 
       setTimeout(() => {
         if (onSuccess) {
           onSuccess();
-        } else if (next && next !== window.location.pathname) {
-          window.location.assign(next);
+        } else if (targetUrl) {
+          window.location.assign(targetUrl);
         }
       }, 600);
     },
-    [next, onSuccess],
+    [effectiveNext, next, onSuccess],
   );
 
   // BroadcastChannel listener for multi-tab sync
@@ -181,7 +205,12 @@ export function AuthForm({
       const res = await fetch('/auth/password/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password }),
+        body: JSON.stringify({
+          email: cleanEmail,
+          password,
+          sessionId: getSessionIdToClaim(),
+          next: effectiveNext,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -233,6 +262,8 @@ export function AuthForm({
           email: cleanEmail,
           password,
           dateOfBirth: dateOfBirth.trim() || undefined,
+          sessionId: getSessionIdToClaim(),
+          next: effectiveNext,
         }),
       });
 
@@ -304,6 +335,8 @@ export function AuthForm({
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           token: codeToVerify,
+          sessionId: getSessionIdToClaim(),
+          next: effectiveNext,
         }),
       });
 
@@ -424,7 +457,7 @@ export function AuthForm({
         /* Form Step (Sign In / Sign Up) */
         <div className="space-y-5">
           {/* Google OAuth Option (Always 1-Click Available) */}
-          <GoogleButton next={next} disabled={loading} />
+          <GoogleButton next={effectiveNext} disabled={loading} />
 
           {/* Divider */}
           <div className="relative flex items-center justify-center">

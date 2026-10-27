@@ -15,7 +15,7 @@ import {
 } from '@/lib/client-settings';
 import { formatLocalPrice } from '@/lib/format-currency';
 import { handleMeteredError, type MeteredErrorResponse } from '@/lib/metered-fetch';
-import { savePendingIntent } from '@/lib/pending-intent';
+import { savePendingIntent, readPendingIntent, clearPendingIntent } from '@/lib/pending-intent';
 import { buildAssistantLines, type RecommendTurnLike } from '@/lib/recommend-lines';
 import { clearDraft, getDraft, setDraft } from '@/lib/recommend-sessions/drafts';
 import { useSendTurn } from '@/lib/recommend-sessions/use-send-turn';
@@ -193,7 +193,16 @@ function RecommendClientLoaded({
   const lines = useMemo(() => [...baseLines, ...optimisticLines], [baseLines, optimisticLines]);
 
   // Input & Draft state
-  const [input, setInput] = useState(() => getDraft(currentSessionId));
+  const [input, setInput] = useState(() => {
+    const draft = getDraft(currentSessionId);
+    if (draft) return draft;
+    const intent = readPendingIntent();
+    if (intent?.text && (!intent.sessionId || intent.sessionId === currentSessionId)) {
+      clearPendingIntent();
+      return intent.text;
+    }
+    return '';
+  });
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

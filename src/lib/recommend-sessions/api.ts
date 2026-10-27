@@ -192,7 +192,7 @@ export async function restoreSession(id: string): Promise<SessionSummary> {
 /**
  * Claim guest sessions from the current device for the authenticated user.
  */
-export async function claimGuestSessions(deviceToken?: string): Promise<{ claimedCount: number }> {
+export async function claimGuestSessions(sessionIds?: string[]): Promise<{ claimed: number }> {
   const res = await fetch('/api/recommend/sessions/claim', {
     method: 'POST',
     headers: {
@@ -200,9 +200,9 @@ export async function claimGuestSessions(deviceToken?: string): Promise<{ claime
       Accept: 'application/json',
     },
     credentials: 'include',
-    body: JSON.stringify(deviceToken ? { deviceToken } : {}),
+    body: JSON.stringify(sessionIds && sessionIds.length > 0 ? { sessionIds } : {}),
   });
-  return handleResponse<{ claimedCount: number }>(res);
+  return handleResponse<{ claimed: number }>(res);
 }
 
 /**

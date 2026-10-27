@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/services/auth/supabase-server';
 import { ensureUserProfile } from '@/services/auth/profile';
-import { claimAnonymousState } from '@/services/auth/claim-anonymous';
+import { claimAnonymousState, extractSessionIdFromReturnTo } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { normalizeEmail } from '@/services/auth/email';
 import { getDb } from '@/services/db/client';
@@ -16,6 +16,8 @@ const log = logger.child({ route: 'POST /auth/password/signin' });
 const SignInSchema = z.object({
   email: z.string().trim().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  sessionId: z.string().uuid().optional(),
+  next: z.string().optional(),
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -80,7 +82,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       user_metadata: data.user.user_metadata,
     });
 
-    await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);
+    const presentedSessionId =
+      parsed.data.sessionId || extractSessionIdFromReturnTo(parsed.data.next);
+    const presentedSessionIds = presentedSessionId ? [presentedSessionId] : null;
+    await claimAnonymousState(
+      db,
+      data.user.id,
+      identity.deviceId,
+      sessionToken,
+      presentedSessionIds,
+    );
 
     const response = NextResponse.json({
       ok: true,

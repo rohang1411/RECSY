@@ -10,6 +10,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 import {
+  claimGuestSessions as claimGuestSessionsApi,
   deleteSession as deleteSessionApi,
   fetchSessionList,
   restoreSession as restoreSessionApi,
@@ -223,6 +224,17 @@ export function useSessionList(options: UseSessionListOptions = {}) {
     },
   });
 
+  // Mutation: Claim guest sessions
+  const claimMutation = useMutation({
+    mutationFn: async (sessionIds?: string[]) => {
+      return claimGuestSessionsApi(sessionIds);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+      broadcastSessionChange({ type: 'changed', ownerKey });
+    },
+  });
+
   return {
     ...query,
     sessions,
@@ -234,10 +246,12 @@ export function useSessionList(options: UseSessionListOptions = {}) {
       archiveMutation.mutateAsync({ id, status }),
     deleteSession: (id: string) => deleteMutation.mutateAsync(id),
     restoreSession: (id: string) => restoreMutation.mutateAsync(id),
+    claimGuestSessions: (sessionIds?: string[]) => claimMutation.mutateAsync(sessionIds),
     isMutating:
       renameMutation.isPending ||
       pinMutation.isPending ||
       archiveMutation.isPending ||
-      deleteMutation.isPending,
+      deleteMutation.isPending ||
+      claimMutation.isPending,
   };
 }

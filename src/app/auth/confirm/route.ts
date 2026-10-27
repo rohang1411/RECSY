@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/services/auth/supabase-server';
 import { ensureUserProfile } from '@/services/auth/profile';
-import { claimAnonymousState } from '@/services/auth/claim-anonymous';
+import { claimAnonymousState, extractSessionIdFromReturnTo } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { safeReturnTo } from '@/services/auth/return-to';
 import { assertSameOrigin } from '@/lib/same-origin';
@@ -146,7 +146,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Plan 26 WP-02: Auth confirmation keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
-    await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);
+    const presentedSessionId = extractSessionIdFromReturnTo(returnTo);
+    const presentedSessionIds = presentedSessionId ? [presentedSessionId] : null;
+    await claimAnonymousState(
+      db,
+      data.user.id,
+      identity.deviceId,
+      sessionToken,
+      presentedSessionIds,
+    );
 
     const redirect = NextResponse.redirect(new URL(returnTo, request.url), { status: 302 });
     if (typeof client?.applyCookies === 'function') {
