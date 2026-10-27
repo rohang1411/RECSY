@@ -48,6 +48,7 @@ export async function insertRecommendationSession(
     ipHash: string | null;
     userAgent: string | null;
     userId?: string | null;
+    deviceId?: string | null;
   },
 ): Promise<RecommendationSessionRow> {
   // Ownership is established on the product path, atomically with the session.
@@ -65,7 +66,13 @@ export async function insertRecommendationSession(
     if (!client) throw new Error('Failed to establish recommendation session ownership');
     const [row] = await tx
       .insert(recommendationSessions)
-      .values({ clientId: client.id, sessionCookie: input.sessionCookie })
+      .values({
+        clientId: client.id,
+        sessionCookie: input.sessionCookie,
+        userId: input.userId ?? undefined,
+        deviceId: input.deviceId ?? undefined,
+        lastTurnAt: new Date(),
+      })
       .returning();
     if (!row) throw new Error('Failed to insert recommendation session');
     return row;
