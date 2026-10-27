@@ -4,6 +4,7 @@ import type { RequestIdentity } from '@/services/auth/identity';
 export type SessionOwner =
   | { kind: 'user'; userId: string; deviceId?: string }
   | { kind: 'device'; deviceId: string }
+  | { kind: 'legacy'; sessionCookie: string; userId?: string | null }
   | { kind: 'none' };
 
 /**
@@ -47,6 +48,12 @@ export function buildOwnerPredicate(owner: SessionOwner, tableAlias = 's'): SQL 
   }
   if (owner.kind === 'device') {
     return sql`${sql.raw(prefix)}user_id IS NULL AND ${sql.raw(prefix)}device_id = ${owner.deviceId}`;
+  }
+  if (owner.kind === 'legacy') {
+    if (owner.userId) {
+      return sql`(${sql.raw(prefix)}user_id = ${owner.userId}::uuid OR ${sql.raw(prefix)}session_cookie = ${owner.sessionCookie})`;
+    }
+    return sql`${sql.raw(prefix)}session_cookie = ${owner.sessionCookie}`;
   }
   return sql`1 = 0`;
 }

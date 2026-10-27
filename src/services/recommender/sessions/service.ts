@@ -38,7 +38,7 @@ export async function resolveOrCreateSession(
 }
 
 export async function settleTurn(
-  tx: AppDb,
+  tx: AppQueryDb,
   params: SettleTurnParams,
 ): Promise<SettleTurnResult | null> {
   return settleTurnInDb(tx, params);

@@ -14,6 +14,7 @@ import type { ChargeSource, QuotaSnapshotLite } from '@/services/metering/types'
 export interface ReplayTurnResult {
   turnId: string;
   sessionId: string;
+  turnIndex: number;
   userMessage: string;
   intent: string;
   extractedRequirements: Record<string, unknown> | null;
@@ -77,6 +78,7 @@ export async function findReplayTurn(
     .select({
       turnId: recommendationTurns.id,
       sessionId: recommendationTurns.sessionId,
+      turnIndex: recommendationTurns.turnIndex,
       userMessage: recommendationTurns.userMessage,
       intent: recommendationTurns.intent,
       extractedRequirements: recommendationTurns.extractedRequirements,
@@ -101,6 +103,7 @@ export async function findReplayTurn(
   return {
     turnId: turn.turnId,
     sessionId: turn.sessionId,
+    turnIndex: turn.turnIndex,
     userMessage: turn.userMessage,
     intent: turn.intent,
     extractedRequirements: turn.extractedRequirements as Record<string, unknown> | null,

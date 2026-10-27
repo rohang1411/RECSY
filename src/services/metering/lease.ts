@@ -123,7 +123,7 @@ export class QueryLease {
   }
 
   async noCharge(
-    reason: 'clarify' | 'no_results' | 'no_context' | 'client_abort',
+    reason: 'clarify' | 'no_results' | 'no_context' | 'client_abort' | 'session_gone',
     tx?: AppQueryDb,
   ): Promise<LeaseStatus> {
     if (this._settled && this._settleOutcome) {

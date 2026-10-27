@@ -150,3 +150,17 @@ export async function getPerfFlags(db: AppQueryDb): Promise<PerfFlags> {
   const state = await getPlatformState(db);
   return state.perf;
 }
+
+/**
+ * Checks if recommendation sessions v2 is enabled for the caller.
+ * - 'on': enabled for everyone
+ * - 'internal': enabled only if userId is in recommend_sessions_internal_user_ids
+ * - 'off': disabled for everyone
+ */
+export function isRecommendSessionsEnabled(flags: PerfFlags, userId?: string | null): boolean {
+  if (flags.recommend_sessions === 'on') return true;
+  if (flags.recommend_sessions === 'internal') {
+    return Boolean(userId && flags.recommend_sessions_internal_user_ids.includes(userId));
+  }
+  return false;
+}

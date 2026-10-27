@@ -206,7 +206,7 @@ export async function resolveOrCreateSessionInDb(
 }
 
 export async function settleTurnInDb(
-  tx: AppDb,
+  tx: AppQueryDb,
   params: SettleTurnParams,
 ): Promise<SettleTurnResult | null> {
   const ownerPred = buildOwnerPredicate(params.owner, 's');

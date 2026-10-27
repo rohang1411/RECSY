@@ -12,6 +12,7 @@ import * as userRateLimitModule from '@/services/metering/rate-limit-user';
 import * as deviceRateLimitModule from '@/services/abuse/rate-limit-device';
 import * as turnstileModule from '@/services/abuse/turnstile';
 import * as sessionModule from '@/services/recommender/session';
+import * as sessionServiceModule from '@/services/recommender/sessions/service';
 import * as summaryModule from '@/services/metering/summary';
 import * as replayModule from '@/services/metering/replay';
 import { DEFAULT_PERF_FLAGS } from '@/services/perf/flags';
@@ -41,6 +42,7 @@ vi.mock('@/services/metering/rate-limit-user');
 vi.mock('@/services/abuse/rate-limit-device');
 vi.mock('@/services/abuse/turnstile');
 vi.mock('@/services/recommender/session');
+vi.mock('@/services/recommender/sessions/service');
 vi.mock('@/services/metering/replay');
 vi.mock('@/services/metering/summary', async (importOriginal) => {
   const actual = await importOriginal<typeof summaryModule>();
@@ -106,6 +108,25 @@ describe('POST /api/recommend (WP-08)', () => {
       fakeSession as unknown as sessionModule.RecommendationSessionRow,
     );
     vi.mocked(sessionModule.nextTurnIndex).mockResolvedValue(0);
+
+    vi.mocked(sessionServiceModule.settleTurn).mockResolvedValue({
+      turnIndex: 0,
+      session: {
+        title: 'New Recommendation',
+        titleSource: 'default',
+        turnCount: 1,
+      },
+    });
+    vi.mocked(sessionServiceModule.resolveOrCreateSession).mockResolvedValue({
+      session: {
+        id: '00000000-0000-4000-8000-000000000001',
+        title: 'New Recommendation',
+        titleSource: 'default',
+        turnCount: 0,
+        status: 'active',
+      },
+      created: true,
+    });
 
     vi.mocked(rateLimitModule.consumeRecommendRateLimit).mockResolvedValue(undefined);
     vi.mocked(rateLimitModule.consumeAdmissionLimits).mockResolvedValue(undefined);
@@ -492,6 +513,7 @@ describe('POST /api/recommend (WP-08)', () => {
       vi.mocked(replayModule.findReplayTurn).mockResolvedValue({
         turnId: 'turn-replay-1',
         sessionId: 'sess-replay-1',
+        turnIndex: 0,
         userMessage: 'best battery phone under 500',
         intent: 'recommend',
         extractedRequirements: { battery: 5000 },
@@ -547,6 +569,7 @@ describe('POST /api/recommend (WP-08)', () => {
       vi.mocked(replayModule.findReplayTurn).mockResolvedValue({
         turnId: 'turn-replay-2',
         sessionId: 'sess-replay-2',
+        turnIndex: 0,
         userMessage: 'phone with good camera',
         intent: 'clarify',
         extractedRequirements: {},
@@ -706,6 +729,268 @@ describe('POST /api/recommend (WP-08)', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.quota.chargeSource).toBe('byok');
+    });
+  });
+
+  describe('Session Mode Integration (Plan 27 WP-04)', () => {
+    const validSessionId = '123e4567-e89b-12d3-a456-426614174000';
+
+    it('executes in session mode when flag is on and sessionId is provided', async () => {
+      vi.mocked(platformModule.getPlatformState).mockResolvedValue({
+        killSwitch: { enabled: false },
+        globalDailyCap: 5000,
+        usedToday: 10,
+        capacity: 'ok',
+        shedFreeFor: () => false,
+        perf: { ...DEFAULT_PERF_FLAGS, recommend_sessions: 'on' },
+      });
+
+      const lease = new QueryLease({
+        id: 'lease-test-1',
+        chargeSource: 'anon_free',
+        quota: {
+          remaining: 1,
+          freeRemaining: 1,
+          creditBalance: 0,
+          subRemaining: 0,
+          resetAt: new Date().toISOString(),
+        },
+        requestId: '00000000-0000-4000-8000-000000000002',
+        route: 'POST /api/recommend',
+        deviceId: 'dev_test_123',
+        userId: null,
+        traceId: 'trace_test_123',
+      });
+      vi.mocked(reserveModule.reserveQuery).mockResolvedValue(lease);
+
+      vi.mocked(recommenderPipeline.runRecommendationPipeline).mockResolvedValue({
+        kind: 'results',
+        requirements: {} as unknown as recommenderPipeline.UserRequirements,
+        picks: [
+          {
+            phoneId: 'p1',
+            slug: 's1',
+            brand: 'B',
+            model: 'M',
+            score: 90,
+          } as unknown as recommenderPipeline.RecommendApiPick,
+        ],
+        relaxed: [],
+        refined: false,
+        scoresTied: false,
+        scorecardMissing: false,
+        topAspects: ['camera'],
+      });
+
+      vi.mocked(sessionServiceModule.resolveOrCreateSession).mockResolvedValue({
+        session: {
+          id: validSessionId,
+          title: 'Camera phone',
+          titleSource: 'heuristic',
+          turnCount: 1,
+          status: 'active',
+        },
+        created: false,
+      });
+
+      vi.mocked(sessionServiceModule.settleTurn).mockResolvedValue({
+        turnIndex: 1,
+        session: {
+          title: 'Camera phone',
+          titleSource: 'heuristic',
+          turnCount: 2,
+        },
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': '00000000-0000-4000-8000-000000000002',
+        },
+        body: JSON.stringify({ message: 'great battery phone', sessionId: validSessionId }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.sessionId).toBe(validSessionId);
+      expect(data.turnIndex).toBe(1);
+      expect(data.session.title).toBe('Camera phone');
+      expect(data.session.turnCount).toBe(2);
+      expect(data.session.created).toBe(false);
+      expect(data.replayed).toBe(false);
+
+      // Verify pipeline was called with explicit sessionId
+      expect(recommenderPipeline.runRecommendationPipeline).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: validSessionId }),
+      );
+    });
+
+    it('returns 404 SESSION_NOT_FOUND and releases lease with session_gone when session is foreign or deleted', async () => {
+      vi.mocked(platformModule.getPlatformState).mockResolvedValue({
+        killSwitch: { enabled: false },
+        globalDailyCap: 5000,
+        usedToday: 10,
+        capacity: 'ok',
+        shedFreeFor: () => false,
+        perf: { ...DEFAULT_PERF_FLAGS, recommend_sessions: 'on' },
+      });
+
+      const lease = new QueryLease({
+        id: 'lease-test-404',
+        chargeSource: 'anon_free',
+        quota: {
+          remaining: 1,
+          freeRemaining: 1,
+          creditBalance: 0,
+          subRemaining: 0,
+          resetAt: new Date().toISOString(),
+        },
+        requestId: '00000000-0000-4000-8000-000000000003',
+        route: 'POST /api/recommend',
+        deviceId: 'dev_test_123',
+        userId: null,
+        traceId: 'trace_test_123',
+      });
+      vi.mocked(reserveModule.reserveQuery).mockResolvedValue(lease);
+      const noChargeSpy = vi.spyOn(lease, 'noCharge');
+
+      vi.mocked(sessionServiceModule.resolveOrCreateSession).mockResolvedValue(null);
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': '00000000-0000-4000-8000-000000000003',
+        },
+        body: JSON.stringify({ message: 'great battery phone', sessionId: validSessionId }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(404);
+
+      const data = await res.json();
+      expect(data.code).toBe('SESSION_NOT_FOUND');
+      expect(noChargeSpy).toHaveBeenCalledWith('session_gone');
+      expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 SESSION_TURN_LIMIT and releases lease when conversation has reached 50 turns', async () => {
+      vi.mocked(platformModule.getPlatformState).mockResolvedValue({
+        killSwitch: { enabled: false },
+        globalDailyCap: 5000,
+        usedToday: 10,
+        capacity: 'ok',
+        shedFreeFor: () => false,
+        perf: { ...DEFAULT_PERF_FLAGS, recommend_sessions: 'on' },
+      });
+
+      const lease = new QueryLease({
+        id: 'lease-test-409',
+        chargeSource: 'anon_free',
+        quota: {
+          remaining: 1,
+          freeRemaining: 1,
+          creditBalance: 0,
+          subRemaining: 0,
+          resetAt: new Date().toISOString(),
+        },
+        requestId: '00000000-0000-4000-8000-000000000004',
+        route: 'POST /api/recommend',
+        deviceId: 'dev_test_123',
+        userId: null,
+        traceId: 'trace_test_123',
+      });
+      vi.mocked(reserveModule.reserveQuery).mockResolvedValue(lease);
+      const noChargeSpy = vi.spyOn(lease, 'noCharge');
+
+      vi.mocked(sessionServiceModule.resolveOrCreateSession).mockResolvedValue({
+        session: {
+          id: validSessionId,
+          title: 'Full Conversation',
+          titleSource: 'user',
+          turnCount: 50,
+          status: 'active',
+        },
+        created: false,
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': '00000000-0000-4000-8000-000000000004',
+        },
+        body: JSON.stringify({ message: 'turn 51 prompt', sessionId: validSessionId }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(409);
+
+      const data = await res.json();
+      expect(data.code).toBe('SESSION_TURN_LIMIT');
+      expect(noChargeSpy).toHaveBeenCalledWith('session_gone');
+      expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('ignores sessionId and uses legacy path when recommend_sessions flag is off', async () => {
+      vi.mocked(platformModule.getPlatformState).mockResolvedValue({
+        killSwitch: { enabled: false },
+        globalDailyCap: 5000,
+        usedToday: 10,
+        capacity: 'ok',
+        shedFreeFor: () => false,
+        perf: { ...DEFAULT_PERF_FLAGS, recommend_sessions: 'off' },
+      });
+
+      const lease = new QueryLease({
+        id: 'lease-test-legacy',
+        chargeSource: 'anon_free',
+        quota: {
+          remaining: 1,
+          freeRemaining: 1,
+          creditBalance: 0,
+          subRemaining: 0,
+          resetAt: new Date().toISOString(),
+        },
+        requestId: '00000000-0000-4000-8000-000000000005',
+        route: 'POST /api/recommend',
+        deviceId: 'dev_test_123',
+        userId: null,
+        traceId: 'trace_test_123',
+      });
+      vi.mocked(reserveModule.reserveQuery).mockResolvedValue(lease);
+
+      vi.mocked(recommenderPipeline.runRecommendationPipeline).mockResolvedValue({
+        kind: 'results',
+        requirements: {} as unknown as recommenderPipeline.UserRequirements,
+        picks: [],
+        relaxed: [],
+        refined: false,
+        scoresTied: false,
+        scorecardMissing: false,
+        topAspects: [],
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: 'recsy_rec_session=test-cookie',
+          'x-request-id': '00000000-0000-4000-8000-000000000005',
+        },
+        body: JSON.stringify({ message: 'legacy mode test', sessionId: validSessionId }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+
+      // In legacy mode, resolveOrCreateSession is NOT called
+      expect(sessionServiceModule.resolveOrCreateSession).not.toHaveBeenCalled();
+      // findSessionByCookie is used instead
+      expect(sessionModule.findSessionByCookie).toHaveBeenCalled();
     });
   });
 });
