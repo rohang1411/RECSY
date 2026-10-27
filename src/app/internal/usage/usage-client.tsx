@@ -237,6 +237,52 @@ export function UsageDashboardClient({ initialData }: { initialData: UsageDashbo
         </div>
       </section>
 
+      {/* Recommendation Sessions Metric Tile (Plan 27 Section 18) */}
+      {data.sessionsStats && (
+        <section className="border-border-hairline bg-surface space-y-4 border p-6">
+          <div>
+            <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+              Conversations & History
+            </div>
+            <h2 className="text-foreground text-xl font-bold">Recommendation Sessions</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="border-border-hairline bg-surface-elevated border p-4">
+              <span className="text-muted-foreground block font-mono text-[11px] uppercase">
+                Created Today
+              </span>
+              <span className="text-foreground font-mono text-2xl font-bold">
+                {data.sessionsStats.createdToday.toLocaleString()}
+              </span>
+            </div>
+            <div className="border-border-hairline bg-surface-elevated border p-4">
+              <span className="text-muted-foreground block font-mono text-[11px] uppercase">
+                Active Users w/ History
+              </span>
+              <span className="text-foreground font-mono text-2xl font-bold">
+                {data.sessionsStats.activeUsersWithHistory.toLocaleString()}
+              </span>
+            </div>
+            <div className="border-border-hairline bg-surface-elevated border p-4">
+              <span className="text-muted-foreground block font-mono text-[11px] uppercase">
+                Avg Turns / Session
+              </span>
+              <span className="text-foreground font-mono text-2xl font-bold">
+                {data.sessionsStats.avgTurns}
+              </span>
+            </div>
+            <div className="border-border-hairline bg-surface-elevated border p-4">
+              <span className="text-muted-foreground block font-mono text-[11px] uppercase">
+                Legacy Share
+              </span>
+              <span className="text-foreground font-mono text-2xl font-bold">
+                {data.sessionsStats.legacyShare}%
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* 2. Platform Flags Operator Panel */}
       <section className="border-border-hairline bg-surface space-y-6 border p-6">
         <div>

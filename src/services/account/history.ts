@@ -12,7 +12,17 @@ export async function deleteUserHistory(
   db: AppQueryDb,
   userId: string,
 ): Promise<{ deleted: number }> {
-  // 1. Delete recommendation clients (cascades sessions, turns, feedback)
+  // 1. Delete recommendation sessions directly owned by user (cascades turns and feedback)
+  const sessionRows = await db.execute<{ count: number }>(sql`
+    WITH deleted AS (
+      DELETE FROM recommendation_sessions
+       WHERE user_id = ${userId}::uuid
+      RETURNING id
+    )
+    SELECT count(*)::int AS count FROM deleted;
+  `);
+
+  // 2. Delete recommendation clients owned by user
   const clientRows = await db.execute<{ count: number }>(sql`
     WITH deleted AS (
       DELETE FROM recommendation_clients
@@ -22,7 +32,7 @@ export async function deleteUserHistory(
     SELECT count(*)::int AS count FROM deleted;
   `);
 
-  // 2. Delete phone Q&A chat queries
+  // 3. Delete phone Q&A chat queries
   const chatRows = await db.execute<{ count: number }>(sql`
     WITH deleted AS (
       DELETE FROM chat_queries
@@ -32,6 +42,7 @@ export async function deleteUserHistory(
     SELECT count(*)::int AS count FROM deleted;
   `);
 
-  const totalDeleted = (clientRows[0]?.count ?? 0) + (chatRows[0]?.count ?? 0);
+  const totalDeleted =
+    (sessionRows[0]?.count ?? 0) + (clientRows[0]?.count ?? 0) + (chatRows[0]?.count ?? 0);
   return { deleted: totalDeleted };
 }

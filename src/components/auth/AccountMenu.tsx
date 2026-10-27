@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { openAuthSheet } from './AuthSheet';
 import { toast } from 'sonner';
 import { quotaStore } from '@/components/quota/quota-store';
+import { purgeClientSessionState } from '@/lib/recommend-sessions/purge';
 
 export interface AccountMenuProps {
   email?: string | null;
@@ -63,10 +64,11 @@ export function AccountMenu({
     try {
       const res = await fetch('/auth/signout', { method: 'POST' });
       if (res.ok) {
+        purgeClientSessionState();
         toast.success('Signed out');
         setOpen(false);
         quotaStore.refresh();
-        window.location.assign('/');
+        window.location.assign('/recommend');
       } else {
         throw new Error('Failed to sign out');
       }

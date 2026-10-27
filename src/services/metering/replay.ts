@@ -14,6 +14,7 @@ import type { ChargeSource, QuotaSnapshotLite } from '@/services/metering/types'
 export interface ReplayTurnResult {
   turnId: string;
   sessionId: string;
+  turnIndex: number;
   userMessage: string;
   intent: string;
   extractedRequirements: Record<string, unknown> | null;
@@ -21,7 +22,7 @@ export interface ReplayTurnResult {
   picks: unknown[] | null;
   clarifyingQuestion: string | null;
   latencyMs: number | null;
-  quota: QuotaSnapshotLite;
+  quota: QuotaSnapshotLite | null;
 }
 
 export interface ReplayQueryResult {
@@ -77,6 +78,7 @@ export async function findReplayTurn(
     .select({
       turnId: recommendationTurns.id,
       sessionId: recommendationTurns.sessionId,
+      turnIndex: recommendationTurns.turnIndex,
       userMessage: recommendationTurns.userMessage,
       intent: recommendationTurns.intent,
       extractedRequirements: recommendationTurns.extractedRequirements,
@@ -95,19 +97,13 @@ export async function findReplayTurn(
   const turn = turns[0];
   if (!turn) return null;
 
-  const quota: QuotaSnapshotLite = {
-    outcome: 'committed',
-    chargeSource: (turn.leaseChargeSource as ChargeSource) ?? 'daily_free',
-    remaining: 0,
-    freeRemaining: 0,
-    creditBalance: 0,
-    subRemaining: 0,
-    resetAt: new Date(Date.now() + 86400000).toISOString(),
-  };
-
+  // Plan 27 WP-01: Settled leases in Postgres do not store remaining quota balances.
+  // Rather than fabricating artificial zero quotas that clear the client's quota display,
+  // we return quota: null so the client preserves its last known authoritative quota.
   return {
     turnId: turn.turnId,
     sessionId: turn.sessionId,
+    turnIndex: turn.turnIndex,
     userMessage: turn.userMessage,
     intent: turn.intent,
     extractedRequirements: turn.extractedRequirements as Record<string, unknown> | null,
@@ -115,7 +111,7 @@ export async function findReplayTurn(
     picks: turn.picks as unknown[] | null,
     clarifyingQuestion: turn.clarifyingQuestion,
     latencyMs: turn.latencyMs,
-    quota,
+    quota: null,
   };
 }
 

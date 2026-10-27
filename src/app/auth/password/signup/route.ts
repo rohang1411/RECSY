@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/services/auth/supabase-server';
 import { ensureUserProfile } from '@/services/auth/profile';
-import { claimAnonymousState } from '@/services/auth/claim-anonymous';
+import { claimAnonymousState, extractSessionIdFromReturnTo } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { normalizeEmail } from '@/services/auth/email';
 import { getDb } from '@/services/db/client';
@@ -22,6 +22,8 @@ const SignUpSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be in YYYY-MM-DD format')
     .optional()
     .nullable(),
+  sessionId: z.string().uuid().optional(),
+  next: z.string().optional(),
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -93,7 +95,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
     });
 
-    await claimAnonymousState(db, data.user.id, identity.deviceId, sessionToken);
+    const presentedSessionId =
+      parsed.data.sessionId || extractSessionIdFromReturnTo(parsed.data.next);
+    const presentedSessionIds = presentedSessionId ? [presentedSessionId] : null;
+    await claimAnonymousState(
+      db,
+      data.user.id,
+      identity.deviceId,
+      sessionToken,
+      presentedSessionIds,
+    );
 
     const response = NextResponse.json({
       ok: true,

@@ -1,5 +1,5 @@
 /**
- * Use case: Conversational recommendation turn execution (`/api/recommend`) (Plan 26 WP-09).
+ * Use case: Conversational recommendation turn execution (`/api/recommend`) (Plan 26 WP-09, Plan 27 WP-04).
  *
  * Encapsulates session acquisition/insertion, reasoning mode resolution, recommender
  * pipeline invocation, atomic turn insertion + lease settlement transaction, and cookie management.
@@ -14,7 +14,6 @@ import { RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
 import type { StageTimer } from '@/lib/stage-timer';
 import type { AppDb } from '@/services/db/client';
-import { recommendationTurns } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
 import type { AdmittedRequest } from '@/services/metering/admission';
 import type { QueryLease } from '@/services/metering/lease';
@@ -22,11 +21,20 @@ import { resolveReasoningMode } from '@/services/metering/mode';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
 import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { runRecommendationPipeline } from '@/services/recommender/run-recommendation';
+import { deferOrRun } from '@/lib/defer';
+import { buildSessionTitle } from '@/services/recommender/session-title';
+import { polishSessionTitleLlm } from '@/services/recommender/session-title-llm';
 import {
   insertRecommendationSession,
-  nextTurnIndex,
   type RecommendationSessionRow,
 } from '@/services/recommender/session';
+import type { SessionOwner } from '@/services/recommender/sessions/owner';
+import { settleTurn } from '@/services/recommender/sessions/service';
+import type {
+  ResolveOrCreateSessionResult,
+  SessionResultMeta,
+  SettleTurnResult,
+} from '@/services/recommender/sessions/types';
 import {
   getDeviceCookieName,
   getDeviceCookieOptions,
@@ -43,9 +51,14 @@ export interface RecommendUseCaseDeps {
 export interface RecommendTurnInput {
   readonly request: NextRequest;
   readonly message: string;
+  readonly sessionId?: string;
+  readonly isSessionMode: boolean;
   readonly admitted: AdmittedRequest;
   readonly lease: QueryLease;
-  readonly sessionLookupPromise: Promise<RecommendationSessionRow | null>;
+  readonly sessionLookupPromise?: Promise<RecommendationSessionRow | null>;
+  readonly sessionResolution?: ResolveOrCreateSessionResult;
+  readonly owner: SessionOwner;
+  readonly mintedDeviceCookie?: string | null;
   readonly traceId: string;
   readonly requestId: string;
   readonly t0: number;
@@ -83,9 +96,13 @@ export class RecommendTurnUseCase {
     const {
       request,
       message,
+      isSessionMode,
       admitted,
       lease,
       sessionLookupPromise,
+      sessionResolution,
+      owner,
+      mintedDeviceCookie,
       traceId,
       requestId: _requestId,
       t0,
@@ -93,25 +110,36 @@ export class RecommendTurnUseCase {
     } = input;
     const { identity, ip, byok, isByok, config } = admitted;
 
-    let session = await sessionLookupPromise;
-    let sessionToken = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
+    let sessionId: string;
+    let created = false;
+    let sessionToken: string | null = null;
     let setSessionCookie = false;
 
-    if (!session) {
-      sessionToken = randomBytes(24).toString('base64url');
-      session = await timer.time('session', () =>
-        insertRecommendationSession(db, {
-          sessionCookie: sessionToken!,
-          ipHash: hashSessionIp(ip),
-          userAgent: request.headers.get('user-agent'),
-          userId: identity.userId,
-        }),
-      );
-      setSessionCookie = true;
+    if (isSessionMode && sessionResolution) {
+      sessionId = sessionResolution.session.id;
+      created = sessionResolution.created;
+    } else {
+      let session = sessionLookupPromise ? await sessionLookupPromise : null;
+      sessionToken = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
+
+      if (!session) {
+        sessionToken = randomBytes(24).toString('base64url');
+        session = await timer.time('session', () =>
+          insertRecommendationSession(db, {
+            sessionCookie: sessionToken!,
+            ipHash: hashSessionIp(ip),
+            userAgent: request.headers.get('user-agent'),
+            userId: identity.userId,
+            deviceId: owner.kind === 'device' ? owner.deviceId : undefined,
+          }),
+        );
+        setSessionCookie = true;
+        created = true;
+      }
+      sessionId = session.id;
     }
 
     const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
-    const sessionId = session.id;
 
     const rawRequestedMode = request.headers.get('x-recsy-user-mode')?.trim().toLowerCase() as
       | 'fast'
@@ -144,34 +172,55 @@ export class RecommendTurnUseCase {
     const reason: 'clarify' | 'no_results' = result.kind === 'clarify' ? 'clarify' : 'no_results';
     const leaseIdForDb = lease.isNoop || lease.id === 'off' ? null : lease.id;
 
-    const tSettleStart = performance.now();
-    await timer.time('settle', async () => {
-      await db.transaction(async (tx) => {
-        const turnIndex = await nextTurnIndex(tx, sessionId);
+    const resultMeta: SessionResultMeta = {
+      v: 1,
+      relaxed: result.kind === 'results' ? [...result.relaxed] : [],
+      refined: result.kind === 'results' ? result.refined : false,
+      scoresTied: result.kind === 'results' ? result.scoresTied : false,
+      scorecardMissing: result.kind === 'results' ? result.scorecardMissing : false,
+      topAspects: result.kind === 'results' ? [...result.topAspects] : [],
+      regionCode,
+      currency: 'USD',
+    };
 
-        if (result.kind === 'clarify') {
-          await tx.insert(recommendationTurns).values({
-            sessionId,
-            turnIndex,
-            userMessage: message,
-            intent: 'clarify',
-            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-            clarifyingQuestion: result.clarifyingQuestion,
-            latencyMs,
-            leaseId: leaseIdForDb,
-          });
-        } else {
-          await tx.insert(recommendationTurns).values({
-            sessionId,
-            turnIndex,
-            userMessage: message,
-            intent: 'recommend',
-            extractedRequirements: result.requirements as unknown as Record<string, unknown>,
-            candidatePhoneIds: result.picks.map((p) => p.phoneId),
-            picks: result.picks as unknown[],
-            latencyMs,
-            leaseId: leaseIdForDb,
-          });
+    const picksSummary =
+      result.kind === 'results' && result.picks.length > 0
+        ? result.picks.slice(0, 3).map((p) => ({
+            brand: p.brand,
+            model: p.model,
+            slug: p.slug,
+          }))
+        : null;
+
+    const settleOwner: SessionOwner = isSessionMode
+      ? owner
+      : { kind: 'legacy', sessionCookie: sessionToken ?? '', userId: identity.userId };
+
+    const heuristicTitle = buildSessionTitle(result.requirements, message, regionCode);
+
+    const tSettleStart = performance.now();
+    const settledResult = await timer.time('settle', async () => {
+      return db.transaction(async (tx) => {
+        const res = await settleTurn(tx, {
+          sessionId,
+          owner: settleOwner,
+          userMessage: message,
+          intent: result.kind === 'clarify' ? 'clarify' : 'recommend',
+          title: heuristicTitle,
+          hasPicks: isSuccessPicks,
+          picksSummary,
+          extractedRequirements:
+            (result.requirements as unknown as Record<string, unknown>) ?? null,
+          candidatePhoneIds: result.kind === 'results' ? result.picks.map((p) => p.phoneId) : [],
+          picks: result.kind === 'results' ? (result.picks as unknown[]) : null,
+          clarifyingQuestion: result.kind === 'clarify' ? result.clarifyingQuestion : null,
+          leaseId: leaseIdForDb,
+          resultMeta,
+        });
+
+        if (!res) {
+          await lease.noCharge('session_gone', tx);
+          return null;
         }
 
         if (outcome === 'commit') {
@@ -187,9 +236,22 @@ export class RecommendTurnUseCase {
         } else {
           await lease.noCharge(reason, tx);
         }
+
+        return res;
       });
     });
     const settleMs = Math.round(performance.now() - tSettleStart);
+
+    if (!settledResult) {
+      return NextResponse.json(
+        {
+          code: 'SESSION_NOT_FOUND',
+          message: 'Session not found or deleted',
+          traceId,
+        },
+        { status: 404, headers: { 'Cache-Control': 'private, no-store', 'X-Trace-Id': traceId } },
+      );
+    }
 
     const totalMs = Math.round(performance.now() - t0);
     emitMeteredRequestSummary({
@@ -229,14 +291,48 @@ export class RecommendTurnUseCase {
         scorecardMissing: result.kind === 'results' ? result.scorecardMissing : undefined,
         topAspects: result.kind === 'results' ? result.topAspects : undefined,
         quota: lease.projectedQuota(outcome),
+        sessionId,
+        turnIndex: settledResult.turnIndex,
+        session: {
+          title: settledResult.session.title,
+          titleSource: settledResult.session.titleSource,
+          turnCount: settledResult.session.turnCount,
+          created,
+        },
+        topicShift: false,
+        replayed: false,
       },
       { status: 200, headers: responseHeaders },
     );
 
-    if (setSessionCookie && sessionToken) {
-      res.cookies.set(RECOMMEND_SESSION_COOKIE, sessionToken, sessionCookieOptions());
+    if (!isSessionMode) {
+      if (setSessionCookie && sessionToken) {
+        res.cookies.set(RECOMMEND_SESSION_COOKIE, sessionToken, sessionCookieOptions());
+      }
+      attachDeviceCookieIfNeeded(res, request);
+    } else {
+      if (mintedDeviceCookie) {
+        res.cookies.set(getDeviceCookieName(), mintedDeviceCookie, getDeviceCookieOptions());
+      } else {
+        attachDeviceCookieIfNeeded(res, request);
+      }
     }
-    attachDeviceCookieIfNeeded(res, request);
+
+    if (
+      isSessionMode &&
+      result.kind === 'results' &&
+      admitted.platform.perf.recommend_session_llm_titles &&
+      !admitted.platform.shedFreeFor(admitted.identity)
+    ) {
+      void deferOrRun('session-title-llm', async () => {
+        await polishSessionTitleLlm(db, {
+          sessionId,
+          heuristicTitle,
+          requirements: result.requirements,
+          llm: this.deps.llm,
+        });
+      });
+    }
 
     return res;
   }

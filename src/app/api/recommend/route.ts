@@ -1,5 +1,5 @@
 /**
- * POST /api/recommend — conversational recommender pipeline (Plan 26 WP-09).
+ * POST /api/recommend — conversational recommender pipeline (Plan 26 WP-09, Plan 27 WP-04).
  *
  * Thin controller delegating to `admitMeteredRequest`, `RecommendTurnUseCase`,
  * and `meteredErrorResponse`.
@@ -25,6 +25,12 @@ import { findReplayTurn, type ReplayTurnResult } from '@/services/metering/repla
 import type { QueryLease } from '@/services/metering/lease';
 import { admitMeteredRequest, type AdmittedRequest } from '@/services/metering/admission';
 import { meteredErrorResponse } from '@/services/metering/http-errors';
+import { isRecommendSessionsEnabled } from '@/services/perf/flags';
+import { hashSessionIp } from '@/services/rate-limit/ip-hash';
+import { hashDeviceId, mintDeviceCookieValue } from '@/services/auth/device';
+import { ownerFromIdentity, type SessionOwner } from '@/services/recommender/sessions/owner';
+import { resolveOrCreateSession } from '@/services/recommender/sessions/service';
+import type { ResolveOrCreateSessionResult } from '@/services/recommender/sessions/types';
 import { RecommendTurnUseCase } from '@/services/recommender/recommend-use-case';
 
 export { parseRequestId };
@@ -42,6 +48,7 @@ const bodySchema = z.object({
       (m) => new TextEncoder().encode(m).length <= MAX_RECOMMENDER_MESSAGE_BYTES,
       'message too long',
     ),
+  sessionId: z.string().uuid().optional(),
 });
 
 function createReplayResponse(
@@ -59,15 +66,28 @@ function createReplayResponse(
   if (shouldEmitServerTiming(request)) {
     replayHeaders['Server-Timing'] = timer.serverTiming();
   }
+  const kind = replay.intent === 'clarify' ? 'clarify' : 'results';
   return NextResponse.json(
     {
+      kind,
       message: replay.userMessage,
-      intent: replay.intent,
-      requirements: replay.extractedRequirements,
-      picks: replay.picks ?? [],
-      clarifyingQuestion: replay.clarifyingQuestion ?? undefined,
-      quota: replay.quota,
+      clarifyingQuestion: kind === 'clarify' ? (replay.clarifyingQuestion ?? undefined) : undefined,
+      picks: kind === 'results' ? (replay.picks ?? []) : undefined,
+      relaxed: [],
+      refined: false,
+      scoresTied: false,
+      scorecardMissing: false,
+      topAspects: [],
+      quota: replay.quota ?? undefined,
       sessionId: replay.sessionId,
+      turnIndex: replay.turnIndex ?? 0,
+      session: {
+        title: 'Recommendation',
+        titleSource: 'default',
+        turnCount: (replay.turnIndex ?? 0) + 1,
+        created: false,
+      },
+      topicShift: false,
       replayed: true,
     },
     { headers: replayHeaders },
@@ -93,16 +113,52 @@ export async function POST(request: NextRequest): Promise<Response> {
     const db = getDb();
     admitted = await admitMeteredRequest(request, 'POST /api/recommend', { db }, timer);
 
-    // 3. Start read-only session lookup in parallel with reservation
-    const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
-    const sessionLookupPromise = cookieVal
-      ? timer.time('session', () =>
-          findSessionByCookie(db, cookieVal, { userId: admitted!.identity.userId }),
-        )
-      : Promise.resolve(null);
-    sessionLookupPromise.catch(() => undefined); // avoid unhandled rejection if reservation throws
+    // 3. Determine execution mode (Session mode vs Legacy cookie mode)
+    const sessionsFlagEnabled = isRecommendSessionsEnabled(
+      admitted.platform.perf,
+      admitted.identity.userId,
+    );
+    const isSessionMode = Boolean(body.sessionId) && sessionsFlagEnabled;
 
-    // 4. Reserve quota BEFORE pipeline execution
+    let owner: SessionOwner = ownerFromIdentity(admitted.identity);
+    let mintedDeviceCookie: string | null = null;
+
+    let sessionLookupPromise:
+      | Promise<import('@/services/recommender/session').RecommendationSessionRow | null>
+      | undefined;
+    let sessionResolutionPromise: Promise<ResolveOrCreateSessionResult | null> | undefined;
+
+    if (isSessionMode) {
+      if (owner.kind === 'none') {
+        // Mint device cookie for anonymous session owner before creation (Plan 27 Section 7.4)
+        mintedDeviceCookie = mintDeviceCookieValue();
+        const mintedDeviceId = hashDeviceId(mintedDeviceCookie);
+        owner = { kind: 'device', deviceId: mintedDeviceId };
+      }
+
+      const regionCode = request.cookies.get('recsy_region')?.value ?? 'US';
+      sessionResolutionPromise = timer.time('session', () =>
+        resolveOrCreateSession(db, {
+          id: body.sessionId!,
+          owner,
+          ipHash: hashSessionIp(admitted!.ip),
+          userAgent: request.headers.get('user-agent'),
+          regionCode,
+        }),
+      );
+      sessionResolutionPromise.catch(() => undefined);
+    } else {
+      // Legacy cookie path
+      const cookieVal = request.cookies.get(RECOMMEND_SESSION_COOKIE)?.value ?? null;
+      sessionLookupPromise = cookieVal
+        ? timer.time('session', () =>
+            findSessionByCookie(db, cookieVal, { userId: admitted!.identity.userId }),
+          )
+        : Promise.resolve(null);
+      sessionLookupPromise.catch(() => undefined);
+    }
+
+    // 4. Reserve quota in parallel with session resolution BEFORE pipeline execution
     const tReserveStart = performance.now();
     try {
       lease = await timer.time('reserve', () =>
@@ -135,7 +191,39 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw err;
     }
 
-    // 5. Execute recommendation turn use case
+    // 5. If session mode, wait for session resolution and enforce 404 / 409 before pipeline
+    let sessionResolution: ResolveOrCreateSessionResult | undefined;
+    if (isSessionMode && sessionResolutionPromise) {
+      const resolved = await sessionResolutionPromise;
+      if (!resolved) {
+        await lease.noCharge('session_gone');
+        return NextResponse.json(
+          {
+            code: 'SESSION_NOT_FOUND',
+            message: 'Session not found or deleted',
+            traceId,
+          },
+          { status: 404, headers: { 'Cache-Control': 'private, no-store', 'X-Trace-Id': traceId } },
+        );
+      }
+
+      // Check turn limit (Plan 27 D27-7)
+      if (resolved.session.turnCount >= 50) {
+        await lease.noCharge('session_gone');
+        return NextResponse.json(
+          {
+            code: 'SESSION_TURN_LIMIT',
+            message: 'This conversation has reached the 50-turn limit',
+            traceId,
+          },
+          { status: 409, headers: { 'Cache-Control': 'private, no-store', 'X-Trace-Id': traceId } },
+        );
+      }
+
+      sessionResolution = resolved;
+    }
+
+    // 6. Execute recommendation turn use case
     const useCase = new RecommendTurnUseCase({
       db,
       llm: getLlm(),
@@ -146,9 +234,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     return await useCase.execute({
       request,
       message: body.message,
+      sessionId: body.sessionId,
+      isSessionMode,
       admitted,
       lease,
       sessionLookupPromise,
+      sessionResolution,
+      owner,
+      mintedDeviceCookie,
       traceId,
       requestId: admitted.requestId,
       t0,

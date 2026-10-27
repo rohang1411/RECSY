@@ -236,6 +236,7 @@ describe('POST /api/recommend Characterisation Suite (WP-09)', () => {
     vi.mocked(replayModule.findReplayTurn).mockResolvedValueOnce({
       turnId: 'turn_replay_123',
       sessionId: fakeSession.id,
+      turnIndex: 0,
       userMessage: 'best camera phone',
       intent: 'recommend',
       extractedRequirements: { camera: true },

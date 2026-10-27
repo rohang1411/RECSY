@@ -127,6 +127,13 @@
       "when": 1792700000000,
       "tag": "0017_rate_limits_hot_path",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792750000000,
+      "tag": "0018_recommendation_sessions_v2",
+      "breakpoints": true
     }
   ]
 }

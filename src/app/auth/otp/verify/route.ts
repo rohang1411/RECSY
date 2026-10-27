@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getAuthDriver } from '@/services/auth/driver';
 import { ensureUserProfile } from '@/services/auth/profile';
-import { claimAnonymousState } from '@/services/auth/claim-anonymous';
+import { claimAnonymousState, extractSessionIdFromReturnTo } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { readRequestJson } from '@/lib/request-json';
 import { ValidationError } from '@/lib/errors';
@@ -51,7 +51,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Plan 26 WP-02: OTP verification keeps authoritative getUser() server round trip.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
-    await claimAnonymousState(db, result.user.id, identity.deviceId, sessionToken);
+    const presentedSessionId =
+      typeof body.sessionId === 'string' && body.sessionId.trim()
+        ? body.sessionId.trim()
+        : extractSessionIdFromReturnTo(
+            typeof body.next === 'string'
+              ? body.next
+              : typeof body.returnTo === 'string'
+                ? body.returnTo
+                : null,
+          );
+    const presentedSessionIds = presentedSessionId ? [presentedSessionId] : null;
+    await claimAnonymousState(
+      db,
+      result.user.id,
+      identity.deviceId,
+      sessionToken,
+      presentedSessionIds,
+    );
 
     return NextResponse.json({
       ok: true,

@@ -190,14 +190,12 @@ export default function AccountHistoryPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/recommend?session=${session.id}`}
-                  className="border-border-hairline bg-surface-elevated text-foreground hover:border-foreground border px-3 py-1.5 font-mono text-xs tracking-wider uppercase transition-colors"
-                >
-                  Open
-                </Link>
-              </div>
+              <Link
+                href={`/recommend/${session.id}`}
+                className="border-accent/40 bg-accent/10 text-accent hover:bg-accent border px-3 py-1 font-mono text-[11px] uppercase transition-colors hover:text-black"
+              >
+                Open
+              </Link>
             </div>
           ))}
         </div>

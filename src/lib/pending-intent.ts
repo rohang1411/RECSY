@@ -9,15 +9,21 @@ const TTL_MS = 30 * 60 * 1000; // 30 minutes
 export interface PendingIntent {
   readonly text: string;
   readonly route: string;
+  readonly sessionId?: string;
   readonly savedAt: number;
 }
 
-export function savePendingIntent(intent: { text: string; route: string }): void {
+export function savePendingIntent(intent: {
+  text: string;
+  route: string;
+  sessionId?: string;
+}): void {
   if (typeof window === 'undefined') return;
   try {
     const payload: PendingIntent = {
       text: intent.text,
       route: intent.route,
+      sessionId: intent.sessionId,
       savedAt: Date.now(),
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -47,7 +53,13 @@ export function readPendingIntent(): PendingIntent | null {
       return null;
     }
 
-    return parsed as PendingIntent;
+    const result: PendingIntent = {
+      text: parsed.text,
+      route: parsed.route,
+      savedAt: parsed.savedAt,
+      ...(typeof parsed.sessionId === 'string' ? { sessionId: parsed.sessionId } : {}),
+    };
+    return result;
   } catch {
     return null;
   }

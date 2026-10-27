@@ -5,7 +5,7 @@ import {
   getVerifiedUserWithTimeout,
 } from '@/services/auth/supabase-server';
 import { ensureUserProfile } from '@/services/auth/profile';
-import { claimAnonymousState } from '@/services/auth/claim-anonymous';
+import { claimAnonymousState, extractSessionIdFromReturnTo } from '@/services/auth/claim-anonymous';
 import { resolveRequestIdentity } from '@/services/auth/identity';
 import { safeReturnTo } from '@/services/auth/return-to';
 import { getDb } from '@/services/db/client';
@@ -35,6 +35,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Plan 26 WP-02: Auth callback keeps authoritative getUser() server round trip for identity verification.
     const identity = await resolveRequestIdentity(request, { db });
     const sessionToken = request.cookies.get('recsy_rec_session')?.value;
+    const presentedSessionId = extractSessionIdFromReturnTo(returnTo);
+    const presentedSessionIds = presentedSessionId ? [presentedSessionId] : null;
 
     if (env.AUTH_DRIVER === 'fake' && fakeUid) {
       await ensureUserProfile(db, {
@@ -42,7 +44,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         email: 'test-user@localhost',
         user_metadata: { full_name: 'Test User' },
       });
-      await claimAnonymousState(db, fakeUid, identity.deviceId, sessionToken);
+      await claimAnonymousState(db, fakeUid, identity.deviceId, sessionToken, presentedSessionIds);
       return responseRedirect;
     }
 
@@ -57,7 +59,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         email: existingUser.email,
         user_metadata: existingUser.user_metadata,
       });
-      await claimAnonymousState(db, existingUser.id, identity.deviceId, sessionToken);
+      await claimAnonymousState(
+        db,
+        existingUser.id,
+        identity.deviceId,
+        sessionToken,
+        presentedSessionIds,
+      );
       if (typeof client?.applyCookies === 'function') {
         client.applyCookies(responseRedirect);
       }
@@ -140,7 +148,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           user_metadata: user.user_metadata,
         });
 
-        await claimAnonymousState(db, user.id, identity.deviceId, sessionToken);
+        await claimAnonymousState(
+          db,
+          user.id,
+          identity.deviceId,
+          sessionToken,
+          presentedSessionIds,
+        );
         if (typeof client?.applyCookies === 'function') {
           client.applyCookies(responseRedirect);
         }

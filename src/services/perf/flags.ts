@@ -25,6 +25,10 @@ export const perfFlagsSchema = z
     defer_telemetry: z.boolean().default(true),
     redis_rate_limit: z.boolean().default(false),
     grounded_thinking: z.enum(['default', 'low', 'minimal']).default('default'),
+    // Plan 27 WP-02: Product flags housed in the perf flag blob to reuse its 10s in-memory cache and admin route
+    recommend_sessions: z.enum(['off', 'internal', 'on']).default('off'),
+    recommend_sessions_internal_user_ids: z.array(z.string().uuid()).default([]),
+    recommend_session_llm_titles: z.boolean().default(false),
   })
   .strict();
 
@@ -145,4 +149,18 @@ export async function getPerfFlags(db: AppQueryDb): Promise<PerfFlags> {
   const { getPlatformState } = await import('@/services/metering/platform');
   const state = await getPlatformState(db);
   return state.perf;
+}
+
+/**
+ * Checks if recommendation sessions v2 is enabled for the caller.
+ * - 'on': enabled for everyone
+ * - 'internal': enabled only if userId is in recommend_sessions_internal_user_ids
+ * - 'off': disabled for everyone
+ */
+export function isRecommendSessionsEnabled(flags: PerfFlags, userId?: string | null): boolean {
+  if (flags.recommend_sessions === 'on') return true;
+  if (flags.recommend_sessions === 'internal') {
+    return Boolean(userId && flags.recommend_sessions_internal_user_ids.includes(userId));
+  }
+  return false;
 }
