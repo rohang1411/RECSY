@@ -210,3 +210,6 @@ legacy/ios/Runner/GeneratedPluginRegistrant.*
 .rocketride/
 
 scratch/
+
+# --- Docs / Other Docs (local / untracked documentation) -----------------------
+docs/other_docs/
