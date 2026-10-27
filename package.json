@@ -38,6 +38,7 @@
     "db:reset": "tsx --env-file=.env.local scripts/db-reset.ts",
     "db:smoke": "tsx --env-file=.env.local scripts/db-smoke.ts",
     "db:prune": "tsx --env-file=.env.local scripts/db-prune.ts",
+    "backfill:titles": "tsx --env-file=.env.local scripts/backfill-session-titles.ts",
     "retrieval:smoke": "tsx --env-file=.env.local scripts/retrieval-smoke.ts",
     "ci:retrieval-fixture": "tsx scripts/seed-retrieval-eval-fixture.ts",
     "eval:ci-gate": "tsx scripts/ci-retrieval-gate.ts",

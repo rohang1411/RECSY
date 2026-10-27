@@ -21,6 +21,9 @@ import { resolveReasoningMode } from '@/services/metering/mode';
 import { emitMeteredRequestSummary } from '@/services/metering/summary';
 import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { runRecommendationPipeline } from '@/services/recommender/run-recommendation';
+import { deferOrRun } from '@/lib/defer';
+import { buildSessionTitle } from '@/services/recommender/session-title';
+import { polishSessionTitleLlm } from '@/services/recommender/session-title-llm';
 import {
   insertRecommendationSession,
   type RecommendationSessionRow,
@@ -193,6 +196,8 @@ export class RecommendTurnUseCase {
       ? owner
       : { kind: 'legacy', sessionCookie: sessionToken ?? '', userId: identity.userId };
 
+    const heuristicTitle = buildSessionTitle(result.requirements, message, regionCode);
+
     const tSettleStart = performance.now();
     const settledResult = await timer.time('settle', async () => {
       return db.transaction(async (tx) => {
@@ -201,7 +206,7 @@ export class RecommendTurnUseCase {
           owner: settleOwner,
           userMessage: message,
           intent: result.kind === 'clarify' ? 'clarify' : 'recommend',
-          title: null, // Heuristic title provided in WP-06
+          title: heuristicTitle,
           hasPicks: isSuccessPicks,
           picksSummary,
           extractedRequirements:
@@ -311,6 +316,22 @@ export class RecommendTurnUseCase {
       } else {
         attachDeviceCookieIfNeeded(res, request);
       }
+    }
+
+    if (
+      isSessionMode &&
+      result.kind === 'results' &&
+      admitted.platform.perf.recommend_session_llm_titles &&
+      !admitted.platform.shedFreeFor(admitted.identity)
+    ) {
+      void deferOrRun('session-title-llm', async () => {
+        await polishSessionTitleLlm(db, {
+          sessionId,
+          heuristicTitle,
+          requirements: result.requirements,
+          llm: this.deps.llm,
+        });
+      });
     }
 
     return res;
