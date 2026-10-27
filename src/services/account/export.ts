@@ -151,7 +151,9 @@ export async function exportUserData(db: AppQueryDb, userId: string): Promise<Us
     lastTurnAt:
       s.last_turn_at instanceof Date
         ? s.last_turn_at.toISOString()
-        : new Date(s.last_turn_at).toISOString(),
+        : s.last_turn_at
+          ? new Date(s.last_turn_at).toISOString()
+          : undefined,
     turns: (turnsBySession.get(s.id) ?? []).map((t) => ({
       turnIndex: t.turn_index,
       userMessage: t.user_message,

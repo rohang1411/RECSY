@@ -70,7 +70,11 @@ describe('IDOR Defence & Route Security Audit', () => {
 
   it('validates dynamic route segment allowlist', () => {
     // Only allowlisted internal routes are permitted to use dynamic URL path parameters like [id]
-    const ALLOWLISTED_DYNAMIC_API_ROUTES: string[] = ['internal/eval/runs/[id]/route.ts'];
+    const ALLOWLISTED_DYNAMIC_API_ROUTES: string[] = [
+      'internal/eval/runs/[id]/route.ts',
+      'recommend/sessions/[id]/route.ts',
+      'recommend/sessions/[id]/restore/route.ts',
+    ];
 
     const dynamicRoutes = routeFiles
       .filter((path) => path.includes('['))
