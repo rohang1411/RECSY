@@ -524,10 +524,56 @@ describe('POST /api/recommend (WP-08)', () => {
 
       const body = await res.json();
       expect(body.replayed).toBe(true);
+      expect(body.kind).toBe('results');
       expect(body.message).toBe('best battery phone under 500');
       expect(body.picks).toHaveLength(1);
+      expect(body.relaxed).toEqual([]);
+      expect(body.refined).toBe(false);
       expect(body.quota.outcome).toBe('committed');
       // Zero model pipeline executions on replay
+      expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('replay on committed clarify turn: returns kind: clarify with clarifyingQuestion', async () => {
+      vi.mocked(reserveModule.reserveQuery).mockRejectedValue(
+        new QuotaDeniedError('DUPLICATE_REQUEST', 'Duplicate request in flight.', {
+          status: 409,
+          context: { leaseId: 'lease-replay-clarify' },
+          quota: { remaining: 1 },
+          actions: [],
+        }),
+      );
+
+      vi.mocked(replayModule.findReplayTurn).mockResolvedValue({
+        turnId: 'turn-replay-2',
+        sessionId: 'sess-replay-2',
+        userMessage: 'phone with good camera',
+        intent: 'clarify',
+        extractedRequirements: {},
+        candidatePhoneIds: [],
+        picks: null,
+        clarifyingQuestion: 'What is your budget?',
+        latencyMs: 250,
+        quota: null,
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/recommend', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'a0000000-0000-4000-8000-000000000002',
+        },
+        body: JSON.stringify({ message: 'phone with good camera' }),
+      });
+
+      const res = await POST(request);
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.replayed).toBe(true);
+      expect(body.kind).toBe('clarify');
+      expect(body.clarifyingQuestion).toBe('What is your budget?');
+      expect(body.picks).toBeUndefined();
       expect(recommenderPipeline.runRecommendationPipeline).not.toHaveBeenCalled();
     });
 

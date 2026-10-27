@@ -38,14 +38,14 @@ export async function claimAnonymousState(
     // 2. Claim unowned recommendation client if present
     let clientClaimed = false;
     if (sessionToken?.trim()) {
-      const updateRes = await db.execute(sql`
+      const updateRes = await db.execute<{ id: string }>(sql`
         UPDATE recommendation_clients
            SET user_id = ${userId}::uuid
          WHERE client_token = ${sessionToken.trim()}
-           AND user_id IS NULL;
+           AND user_id IS NULL
+        RETURNING id;
       `);
-      // In postgres-js, update result returns row count if available
-      clientClaimed = Boolean(updateRes.length ?? true);
+      clientClaimed = (updateRes.length ?? 0) > 0;
     }
 
     log.info({ userId, deviceId, freeUsedMerged, clientClaimed }, 'claimed anonymous state');

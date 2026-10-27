@@ -59,14 +59,19 @@ function createReplayResponse(
   if (shouldEmitServerTiming(request)) {
     replayHeaders['Server-Timing'] = timer.serverTiming();
   }
+  const kind = replay.intent === 'clarify' ? 'clarify' : 'results';
   return NextResponse.json(
     {
+      kind,
       message: replay.userMessage,
-      intent: replay.intent,
-      requirements: replay.extractedRequirements,
-      picks: replay.picks ?? [],
-      clarifyingQuestion: replay.clarifyingQuestion ?? undefined,
-      quota: replay.quota,
+      clarifyingQuestion: kind === 'clarify' ? (replay.clarifyingQuestion ?? undefined) : undefined,
+      picks: kind === 'results' ? (replay.picks ?? []) : undefined,
+      relaxed: [],
+      refined: false,
+      scoresTied: false,
+      scorecardMissing: false,
+      topAspects: [],
+      quota: replay.quota ?? undefined,
       sessionId: replay.sessionId,
       replayed: true,
     },

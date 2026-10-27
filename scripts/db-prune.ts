@@ -5,42 +5,46 @@
  * Implements bounded, idempotent retention pruning across disposable telemetry,
  * expired LLM cache, completed queue logs, and expired rate limits.
  *
+ * Normative reference: Plan 27 WP-01 Hotfixes (Step 7: Inactive anonymous recommendation sessions).
+ *
  * Usage:
  *   pnpm db:prune [--dry-run] [--batch-size=500]
  */
 import { parseArgs } from 'node:util';
+import type postgres from 'postgres';
 import { getPostgres } from '../src/services/db/client';
 
-async function main() {
-  const { values: args } = parseArgs({
-    args: process.argv.slice(2),
-    options: {
-      'dry-run': { type: 'boolean', default: false },
-      'batch-size': { type: 'string', default: '500' },
-      help: { type: 'boolean', short: 'h', default: false },
-    },
-    allowPositionals: false,
-  });
+export interface PruneOptions {
+  readonly dryRun?: boolean;
+  readonly batchSize?: number;
+}
 
-  if (args.help) {
-    console.log(`
-Usage: pnpm db:prune [options]
+export interface PruneResults {
+  expiredLlmCache: number;
+  expiredRateLimits: number;
+  completedCrawlQueue: number;
+  oldScorecardRuns: number;
+  failedScorecardRunsOlderThan90d: number;
+  oldIngestRuns: number;
+  inactiveRecommendationSessions: number;
+}
 
-Options:
-  --dry-run          Count eligible records without deleting
-  --batch-size N     Max rows to delete per table in one pass (default: 500)
-  --help             Show help
-`);
-    process.exit(0);
-  }
+export async function pruneRetention(
+  sql: ReturnType<typeof getPostgres>,
+  options: PruneOptions = {},
+): Promise<PruneResults> {
+  const dryRun = Boolean(options.dryRun);
+  const batchSize = Math.max(10, options.batchSize ?? 500);
 
-  const dryRun = Boolean(args['dry-run']);
-  const batchSize = Math.max(10, parseInt(args['batch-size'] ?? '500', 10));
-
-  console.log(`[db:prune] Starting retention pruning (dryRun=${dryRun}, batchSize=${batchSize})`);
-  const sql = getPostgres();
-
-  const results: Record<string, number> = {};
+  const results: PruneResults = {
+    expiredLlmCache: 0,
+    expiredRateLimits: 0,
+    completedCrawlQueue: 0,
+    oldScorecardRuns: 0,
+    failedScorecardRunsOlderThan90d: 0,
+    oldIngestRuns: 0,
+    inactiveRecommendationSessions: 0,
+  };
 
   // 1. LLM cache older than 30 days
   const [llmCacheCount] = await sql`
@@ -145,21 +149,81 @@ Options:
   }
 
   // 7. Inactive anonymous recommendation sessions older than 90 days
+  // Plan 27 WP-01: Signed-in users' sessions are NEVER pruned by this step (c.user_id must be NULL).
+  // Activity is measured by the latest turn's created_at, or updated_at / created_at if no turns.
   const [sessionsOldCount] = await sql`
-    SELECT count(*)::int as n FROM recommendation_sessions
-    WHERE created_at < now() - interval '90 days'
+    SELECT count(*)::int as n
+    FROM recommendation_sessions s
+    JOIN recommendation_clients c ON s.client_id = c.id
+    WHERE c.user_id IS NULL
+      AND COALESCE(
+        (SELECT max(t.created_at) FROM recommendation_turns t WHERE t.session_id = s.id),
+        s.updated_at,
+        s.created_at
+      ) < now() - interval '90 days'
   `;
   results.inactiveRecommendationSessions = Number(sessionsOldCount?.n ?? 0);
+
   if (!dryRun && results.inactiveRecommendationSessions > 0) {
-    await sql`
-      DELETE FROM recommendation_sessions
-      WHERE id IN (
-        SELECT id FROM recommendation_sessions
-        WHERE created_at < now() - interval '90 days'
-        LIMIT ${batchSize}
-      )
-    `;
+    let totalPruned = 0;
+    while (true) {
+      const deletedBatch = await sql<{ id: string }[]>`
+        DELETE FROM recommendation_sessions
+        WHERE id IN (
+          SELECT s.id
+          FROM recommendation_sessions s
+          JOIN recommendation_clients c ON s.client_id = c.id
+          WHERE c.user_id IS NULL
+            AND COALESCE(
+              (SELECT max(t.created_at) FROM recommendation_turns t WHERE t.session_id = s.id),
+              s.updated_at,
+              s.created_at
+            ) < now() - interval '90 days'
+          LIMIT ${batchSize}
+        )
+        RETURNING id
+      `;
+      totalPruned += deletedBatch.length;
+      if (deletedBatch.length < batchSize) {
+        break;
+      }
+    }
+    results.inactiveRecommendationSessions = totalPruned;
   }
+
+  return results;
+}
+
+async function main() {
+  const { values: args } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      'dry-run': { type: 'boolean', default: false },
+      'batch-size': { type: 'string', default: '500' },
+      help: { type: 'boolean', short: 'h', default: false },
+    },
+    allowPositionals: false,
+  });
+
+  if (args.help) {
+    console.log(`
+Usage: pnpm db:prune [options]
+
+Options:
+  --dry-run          Count eligible records without deleting
+  --batch-size N     Max rows to delete per table in one pass (default: 500)
+  --help             Show help
+`);
+    process.exit(0);
+  }
+
+  const dryRun = Boolean(args['dry-run']);
+  const batchSize = Math.max(10, parseInt(args['batch-size'] ?? '500', 10));
+
+  console.log(`[db:prune] Starting retention pruning (dryRun=${dryRun}, batchSize=${batchSize})`);
+  const sql = getPostgres();
+
+  const results = await pruneRetention(sql, { dryRun, batchSize });
 
   console.log('[db:prune] Summary of candidates:');
   for (const [category, count] of Object.entries(results)) {
@@ -173,7 +237,9 @@ Options:
   }
 }
 
-main().catch((err) => {
-  console.error('[db:prune] Failed:', err);
-  process.exit(1);
-});
+if (process.argv[1]?.endsWith('db-prune.ts')) {
+  main().catch((err) => {
+    console.error('[db:prune] Failed:', err);
+    process.exit(1);
+  });
+}

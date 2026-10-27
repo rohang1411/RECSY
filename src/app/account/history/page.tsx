@@ -190,14 +190,7 @@ export default function AccountHistoryPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/recommend?session=${session.id}`}
-                  className="border-border-hairline bg-surface-elevated text-foreground hover:border-foreground border px-3 py-1.5 font-mono text-xs tracking-wider uppercase transition-colors"
-                >
-                  Open
-                </Link>
-              </div>
+              {/* Plan 27 WP-01: Session open link hidden until WP-08 connects /recommend/[id] routing */}
             </div>
           ))}
         </div>

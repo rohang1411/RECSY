@@ -15,7 +15,7 @@ describe('claimAnonymousState', () => {
       execute: vi
         .fn()
         .mockResolvedValueOnce([{ recsy_link_device_to_user: 2 }]) // link call
-        .mockResolvedValueOnce([{ rowCount: 1 }]), // update client call
+        .mockResolvedValueOnce([{ id: 'c-1' }]), // update client call with RETURNING id
     } as unknown as AppQueryDb;
 
     const res = await claimAnonymousState(
@@ -29,6 +29,25 @@ describe('claimAnonymousState', () => {
     expect(res.freeUsedMerged).toBe(2);
     expect(res.clientClaimed).toBe(true);
     expect(mockDb.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks clientClaimed as false when no unowned client matched the token', async () => {
+    const mockDb = {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce([{ recsy_link_device_to_user: 0 }])
+        .mockResolvedValueOnce([]), // 0 rows updated
+    } as unknown as AppQueryDb;
+
+    const res = await claimAnonymousState(
+      mockDb,
+      'a0000000-0000-0000-0000-000000000001',
+      'dev-123',
+      'token-unmatched',
+    );
+
+    expect(res.success).toBe(true);
+    expect(res.clientClaimed).toBe(false);
   });
 
   it('does not throw when database operation fails, returning failure safely', async () => {

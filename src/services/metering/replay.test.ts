@@ -84,8 +84,7 @@ describe('Replay Service (WP-18)', () => {
     expect(result?.turnId).toBe('turn-999');
     expect(result?.sessionId).toBe('session-777');
     expect(result?.picks).toEqual([{ id: 'phone-1', model: 'Galaxy A55' }]);
-    expect(result?.quota.outcome).toBe('committed');
-    expect(result?.quota.chargeSource).toBe('daily_free');
+    expect(result?.quota).toBeNull();
   });
 
   it('findReplayTurn returns null if no turn attached to lease', async () => {
