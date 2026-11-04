@@ -12,6 +12,7 @@ const TEST_ENV_DEFAULTS: Record<string, string> = {
   SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
   GEMINI_API_KEY: 'test-gemini-key',
   NODE_ENV: 'development',
+  QUOTA_MODE: 'off',
 };
 for (const [k, v] of Object.entries(TEST_ENV_DEFAULTS)) {
   // eslint-disable-next-line no-restricted-syntax -- test bootstrap must seed process env before @/env import

@@ -135,7 +135,7 @@ export const env = createEnv({
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
 
     // --- plan25: metering, auth, billing ---
-    QUOTA_MODE: z.enum(['off', 'shadow', 'enforce']).default('off'),
+    QUOTA_MODE: z.enum(['off', 'shadow', 'enforce']).default('enforce'),
     QUOTA_TEST_OVERRIDE: z.string().optional(),
     FREE_DAILY_QUERIES: z.coerce.number().int().min(0).default(2),
     ANON_DAILY_QUERIES: z.coerce.number().int().min(0).default(2),
@@ -290,7 +290,7 @@ export const env = createEnv({
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000',
 
     // --- plan25: metering, auth, billing ---
-    QUOTA_MODE: process.env.QUOTA_MODE ?? 'off',
+    QUOTA_MODE: process.env.QUOTA_MODE ?? 'enforce',
     QUOTA_TEST_OVERRIDE: process.env.QUOTA_TEST_OVERRIDE,
     FREE_DAILY_QUERIES: process.env.FREE_DAILY_QUERIES ? Number(process.env.FREE_DAILY_QUERIES) : 2,
     ANON_DAILY_QUERIES: process.env.ANON_DAILY_QUERIES ? Number(process.env.ANON_DAILY_QUERIES) : 2,

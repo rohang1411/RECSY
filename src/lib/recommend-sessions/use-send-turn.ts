@@ -26,6 +26,8 @@ import { sessionKeys } from './keys';
 import { clearDraft } from './drafts';
 import { writeCachedSession } from './local-cache';
 import { broadcastSessionChange } from './broadcast';
+import { quotaStore } from '@/components/quota/quota-store';
+import type { QuotaSnapshotLite } from '@/services/metering/types';
 
 export interface SendTurnVariables {
   message: string;
@@ -212,6 +214,12 @@ export function useSendTurn() {
         id: responseSessionId,
         ownerKey,
       });
+
+      // 5. Update quota store and trigger fresh sync
+      if (data.quota) {
+        quotaStore.updateFromQuotaLite(data.quota as unknown as QuotaSnapshotLite);
+      }
+      void quotaStore.refresh();
     },
   });
 }

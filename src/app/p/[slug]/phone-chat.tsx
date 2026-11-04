@@ -183,11 +183,13 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
             if (evt.quota) {
               quotaStore.updateFromQuotaLite(evt.quota);
             }
+            void quotaStore.refresh();
             break;
           case 'quota':
             if (evt.quota) {
               quotaStore.updateFromQuotaLite(evt.quota);
             }
+            void quotaStore.refresh();
             break;
           case 'error':
             throw new Error(evt.message);
@@ -201,6 +203,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     } finally {
       setBusy(false);
       setStatusStage(null);
+      void quotaStore.refresh();
     }
   }, [busy, phoneSlug, query]);
 
@@ -208,20 +211,33 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     <section className="px-grid-margin py-10">
       <div className="border-outline-variant bg-background border">
         <div className="border-outline-variant border-b p-5">
-          <p className="meta-label">Ask a question</p>
-          <h2 className="font-display text-primary mt-3 text-4xl font-extrabold tracking-normal uppercase">
-            Ask About This Phone
-          </h2>
-          <p className="text-muted-foreground mt-3 max-w-3xl text-sm leading-6">
-            Excerpts are scoped to this device. For cross-device picks, use the recommender or
-            Browse catalog.
-          </p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="meta-label">Ask a question</p>
+              <h2 className="font-display text-primary mt-3 text-4xl font-extrabold tracking-normal uppercase">
+                Ask About This Phone
+              </h2>
+              <p className="text-muted-foreground mt-3 max-w-3xl text-sm leading-6">
+                Excerpts are scoped to this device. For cross-device picks, use the recommender or
+                Browse catalog.
+              </p>
+            </div>
+            <div className="shrink-0 sm:self-start">
+              <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
+            </div>
+          </div>
         </div>
 
         <div className="bg-outline-variant grid gap-px lg:grid-cols-[1fr_auto]">
-          <label className="bg-background p-5">
-            <span className="sr-only">Your question</span>
+          <div className="bg-background p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="phone-ask-query" className="meta-label text-[10px]">
+                Your question
+              </label>
+              <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} compact />
+            </div>
             <textarea
+              id="phone-ask-query"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -235,7 +251,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               className="border-outline bg-background placeholder:text-muted-foreground text-primary focus-visible:border-primary w-full resize-y border-b px-0 py-3 font-mono text-base focus-visible:ring-0 focus-visible:outline-none disabled:opacity-50 md:text-sm"
               disabled={busy}
             />
-          </label>
+          </div>
           <div className="bg-background flex p-5 lg:items-end">
             <button
               type="button"
@@ -317,9 +333,6 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
             ) : null}
           </article>
         ) : null}
-      </div>
-      <div className="mt-3">
-        <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
       </div>
       <QuotaSheet
         isOpen={isQuotaSheetOpen}
