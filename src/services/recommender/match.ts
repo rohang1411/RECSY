@@ -46,6 +46,10 @@ export interface ScoredCandidate {
   readonly imageUrl: string | null;
   readonly score: number;
   readonly summary: string;
+  readonly aspectScores?: ReadonlyMap<AspectName, number>;
+  readonly aspectConfidences?: ReadonlyMap<AspectName, number>;
+  readonly specSemanticBonus?: number;
+  readonly brandBonus?: number;
 }
 
 /**
@@ -504,12 +508,15 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
   const scoringMustHaves = ctx.requirements.must_haves.filter((m) => !isPlatformRequirement(m));
   const ratio = mustHaveMatchRatio(haystack, scoringMustHaves);
   score = score * (0.72 + 0.28 * ratio);
-  score += specSemanticBonus(entry, ctx.queryEmbedding);
+  const specBonus = specSemanticBonus(entry, ctx.queryEmbedding);
+  score += specBonus;
 
+  let brandBonus = 0;
   for (const l of ctx.requirements.brand_preference.liked) {
     const t = l.trim().toLowerCase();
     if (t && haystack.includes(t)) {
-      score += RECOMMEND_LIKED_BRAND_BONUS;
+      brandBonus = RECOMMEND_LIKED_BRAND_BONUS;
+      score += brandBonus;
       break;
     }
   }
@@ -560,6 +567,10 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
     imageUrl: entry.imageUrl,
     score,
     summary: pickSummaryLine(entry, ctx.summary),
+    aspectScores: entry.aspectScores,
+    aspectConfidences: entry.aspectConfidences,
+    specSemanticBonus: specBonus,
+    brandBonus,
   };
 }
 
@@ -596,6 +607,12 @@ export interface RankResult {
   readonly scorecardMissing: boolean;
   /** Normalised aspect weights used for this ranking. */
   readonly weights: ReadonlyMap<AspectName, number>;
+  readonly funnel?: {
+    readonly catalogCount: number;
+    readonly budgetEligibleCount: number;
+    readonly specEligibleCount: number;
+    readonly finalPicksCount: number;
+  };
 }
 
 export function rankCandidates(
@@ -641,7 +658,20 @@ export function rankCandidates(
   const scorecardMissing =
     picks.length > 0 && picks.every((p) => !hasRealAspectDataForPhoneId(catalog, p.phoneId));
 
-  return { picks, relaxed, scoresTied, scorecardMissing, weights };
+  const budgetEligibleCount = catalog.filter((c) =>
+    passesHardFilters(c, requirements, {
+      relaxBudgetMax: false,
+      ignoreFoldable: false,
+      now: ctx.now,
+    }),
+  ).length;
+  const funnel = {
+    catalogCount: catalog.length,
+    budgetEligibleCount,
+    specEligibleCount: ranked.length,
+    finalPicksCount: picks.length,
+  };
+  return { picks, relaxed, scoresTied, scorecardMissing, weights, funnel };
 }
 
 function detectTopScoreTie(picks: readonly ScoredCandidate[]): boolean {

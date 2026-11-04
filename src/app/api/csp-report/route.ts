@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
+import { env } from '@/env';
 import { getRequestClientIp } from '@/lib/request-ip';
 import { RateLimitError } from '@/lib/errors';
 import { consumeCspReportRateLimit } from '@/services/rate-limit';
@@ -31,17 +32,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const clientIp = getRequestClientIp(request);
 
-  // Rate limit per IP hash (30 reports/min)
-  try {
-    await consumeCspReportRateLimit(clientIp);
-  } catch (err) {
-    if (err instanceof RateLimitError) {
-      return new NextResponse('Too Many Requests', {
-        status: 429,
-        headers: { 'Retry-After': '60' },
-      });
+  // Rate limit per IP hash (30 reports/min) in production
+  if (env.NODE_ENV === 'production') {
+    try {
+      await consumeCspReportRateLimit(clientIp);
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        return new NextResponse('Too Many Requests', {
+          status: 429,
+          headers: { 'Retry-After': '60' },
+        });
+      }
+      // Fail-open on database transient errors for telemetry ingestion
     }
-    // Fail-open on database transient errors for telemetry ingestion
   }
 
   let text = '';

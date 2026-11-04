@@ -207,7 +207,7 @@ export class AskQuestionUseCase {
               citationRepairs: finalResult.citationRepairs,
               persistenceMs,
               retrievalMs: finalResult.retrieval.debug.totalMs,
-              retrievalTrace: buildAskRetrievalTrace(finalResult.retrieval),
+              retrievalTrace: buildAskRetrievalTrace(finalResult.retrieval, finalResult.citations),
               quota: lease.projectedQuota(outcome!),
             });
 
@@ -348,7 +348,7 @@ export class AskQuestionUseCase {
               citationRepairs: 0,
               persistenceMs,
               retrievalMs: result.retrieval.debug.totalMs,
-              retrievalTrace: buildAskRetrievalTrace(result.retrieval),
+              retrievalTrace: buildAskRetrievalTrace(result.retrieval, result.citations),
               quota: lease.projectedQuota(outcome!),
             });
 

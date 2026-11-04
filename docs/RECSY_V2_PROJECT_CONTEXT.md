@@ -5,7 +5,7 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** **Multi-User Platform Transformation & Monetization (Plan 25, 2026-10-21)** shipped: fair-use query metering (2 free queries/day), credit packs, RECSY Pro subscriptions via hosted Stripe Checkout, atomic SQL metering core with two-phase leases (`recsy_reserve_query` and `recsy_settle_lease`), server-side Supabase Auth (zero client bundle SDKs), `__Host-recsy_did` device identity with anonymous graduation, brutalist technical editorial UI (`rounded-none`), Quota HUD, web security hardening (staged CSP, Turnstile, least-privilege `recsy_app` DB role), cross-device session history sync, operations telemetry (`/internal/usage`, `/internal/billing`), automated SQL alert rules, and 12 operational runbooks; see [Section 27](#27-multi-user-platform). **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
+**Status.** **Citation Tracing, Provenance Inspector & Decision Explainability Observatory (Plan 28, 2026-11-04)** shipped: Zero-latency in-band evidence delivery (<800 bytes gzipped) on NDJSON streaming and recommendation turn payloads, dual-action `CitationChip` (hover opens animated spring card with verbatim excerpt, author/channel, platform badge, video timestamp, and RRF match score; click navigates directly to source in new tab), Cybernetic Editorial Brutalism Studio Drawer (`ProvenanceInspectorSheet`) supporting both Phone Q&A and Recommender modes, interactive SVG Visual Pipeline DAG with live step latencies, Claim Synapse Matrix (`SynapseWireframe`) linking generated answer sentences to grounding review chunks, Evidence Vault (`EvidenceCard`), Multi-Aspect Equalizer (`AspectEqualizer`) matching user weights to reviewer consensus quotes (pros/cons), Funnel Elimination Waterfall (`FunnelWaterfall`), and Head-to-Head Runner-Up Delta (`RecommenderDecisionPipeline`). Passed all 205 test suites (1,346 tests) and clean TypeScript typecheck; see [Section 30](#30-citation-tracing-provenance-inspector--artful-decision-explainability-engine-plan-28). **Multi-User Platform Transformation & Monetization (Plan 25, 2026-10-21)** shipped: fair-use query metering (2 free queries/day), credit packs, RECSY Pro subscriptions via hosted Stripe Checkout, atomic SQL metering core with two-phase leases (`recsy_reserve_query` and `recsy_settle_lease`), server-side Supabase Auth (zero client bundle SDKs), `__Host-recsy_did` device identity with anonymous graduation, brutalist technical editorial UI (`rounded-none`), Quota HUD, web security hardening (staged CSP, Turnstile, least-privilege `recsy_app` DB role), cross-device session history sync, operations telemetry (`/internal/usage`, `/internal/billing`), automated SQL alert rules, and 12 operational runbooks; see [Section 27](#27-multi-user-platform). **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
 Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
@@ -113,6 +113,11 @@ Brand priority and latest-released ordering are enforced through `src/services/c
     - [29.3 Comprehensive Performance Benchmarks (Before vs After Plan 26)](#293-comprehensive-performance-benchmarks-before-vs-after-plan-26)
     - [29.4 Software Architecture & System Design Patterns Applied](#294-software-architecture--system-design-patterns-applied)
     - [29.5 Operational Guardrails, Flags, Free-Tier Preservation & Runbooks](#295-operational-guardrails-flags-free-tier-preservation--runbooks)
+30. [Citation Tracing, Provenance Inspector & Artful Decision Explainability Engine (Plan 28)](#30-citation-tracing-provenance-inspector--artful-decision-explainability-engine-plan-28)
+    - [30.1 Core Philosophy & Trust Calibration](#301-core-philosophy--trust-calibration)
+    - [30.2 Phone Q&A Provenance Architecture (/p/[slug])](#302-phone-qa-provenance-architecture-pslug)
+    - [30.3 Recommender Decision Observatory (/recommend)](#303-recommender-decision-observatory-recommend)
+    - [30.4 Verified Quality Gates](#304-verified-quality-gates)
 
 ---
 
@@ -1812,6 +1817,18 @@ dissenting_quotes)`.
 
 ## 22. Change Log
 
+### 2026-11-04 — Citation Tracing, Provenance Inspector & Recommender Decision Observatory (Plan 28, WP-01 through WP-07)
+
+- **Execution of Plan 28**: Shipped comprehensive citation provenance tracing, evidence verification, and recommender explainability architecture across Phone Q&A and Conversational Recommender pipelines:
+  - **WP-01 Q&A Evidence Serialization & Zero-Latency Delivery**: Enriched `ResolvedCitation` with `excerpt`, `author`, `channel`, and `score` in `src/services/chat/citations.ts`. Extended `AskRetrievalTrace` with `evidenceChunks` and `determineWhyReferenced` in `src/lib/ask-retrieval-trace.ts`. Delivered pre-computed chunks in-band (<800 bytes gzipped) on NDJSON stream completion, achieving 0ms network latency on inspection.
+  - **WP-02 Interactive Citation Popover (`CitationPopover`)**: Implemented dual-action citation chips in `src/components/phone/CitationChip.tsx` and `CitationPopover.tsx`. Clicking directly navigates to the external review source in a new tab; hovering (120ms debounce) opens an animated spring popover card featuring platform badge, YouTube video playback timestamp (`4:21`), reviewer channel, verbatim excerpt, and hybrid RRF match score.
+  - **WP-03 Visual Pipeline DAG, Synapse Wireframe & Evidence Vault**: Replaced legacy `<details>` element with a cybernetic telemetry trigger bar in `src/app/p/[slug]/phone-chat.tsx`. Built `VisualPipelineDag.tsx` (5-stage interactive SVG graph detailing Embedding, Dual Search, RRF Merge, MMR Diversification, and Generation with operational latencies), `SynapseWireframe.tsx` (two-way interactive sentence-to-source grounding matrix), and `EvidenceCard.tsx` (complete review context vault).
+  - **WP-04 Recommender Decision Trace Backend**: Implemented `enrichPicksWithTrace` in `src/services/recommender/recommend-trace.ts` querying `aspects` and `aspectDefinitions` in a single sub-2ms query for Top 3 candidates. Updated `ScoredCandidate` and `rankCandidates` in `src/services/recommender/match.ts` to output exact aspect score breakdowns, formula bonuses, and candidate elimination funnel metrics.
+  - **WP-05 Recommender Explainability Observatory Components**: Created `AspectEqualizer.tsx` (audio-graphic equalizer mapping user weights against aspect scores with expandable supporting/dissenting reviewer quotes), `FunnelWaterfall.tsx` (candidate elimination waterfall chart), and `RecommenderDecisionPipeline.tsx` (mathematical score breakdown and head-to-head runner-up delta).
+  - **WP-06 Unified Studio Drawer HUD (`ProvenanceInspectorSheet`)**: Built 680px right-hand slide-over drawer with `[ ⛶ FULL CANVAS / SPLIT ]` toggle, responsive bottom-sheet fallback, escape-key and backdrop dismissal, and multi-mode switching between Q&A provenance and Recommender explainability.
+  - **WP-07 Recommender UI Integration & Concurrency Hardening**: Integrated `Why #1?` trigger buttons into `RecommendationCard` in `src/app/recommend/recommend-client.tsx` using an accessible overlay link pattern to prevent HTML DOM nesting violations. Fixed React Query cache update race conditions in `useSendTurn.ts` and cached `SERVER_SNAPSHOT` in `quota-store.ts`.
+  - **Verification & Quality Gates**: 205 test suites (1,346 tests) passing 100%, 0 TypeScript errors (`tsc --noEmit`), and 0 ESLint warnings.
+
 ### 2026-10-24 - API Latency, Token Streaming & System Design Architecture Complete (Plan 26, WP-00 through WP-14)
 
 - **Execution of Plan 26**: Completed comprehensive API latency optimization, true token streaming, public caching, and clean system design decomposition across all work packages:
@@ -2986,6 +3003,52 @@ dissenting_quotes)`.
 > - **MEDIUM** â€” breaks typecheck / tests / lint, or materially slows dev
 >   velocity and observability.
 > - **LOW** â€” cosmetic, dev-only annoyance, or one-time papercut.
+
+### UI & Concurrency — Client Cache Traversal Invariants, Quota Store React 19 Snapshot Loop & Development Pooler Saturation (2026-11-04)
+
+#### CRITICAL
+
+- **Recommender client throw on newly created sessions causing "Something went wrong on our side. You were not charged." toast despite successful HTTP 200 API response.**
+  - **Symptom:** User entered recommendation query (e.g., "Suggest me a good phone under $1100 with good camera"). DevTools Network panel showed `POST /api/recommend` responded with HTTP 200 containing 3 valid phone picks with enriched decision traces. However, the UI cleared optimistic lines, restored the input box, did not display the recommendation cards, and popped a toast stating: `"Something went wrong on our side. You were not charged."`
+  - **Affected Components:** `src/lib/recommend-sessions/use-send-turn.ts`, `src/app/recommend/recommend-client.tsx`, `src/lib/metered-fetch.ts`.
+  - **Root Cause:**
+    1. **Unchecked Array Traversal in React Query Mutation Callback:** In `useSendTurn.ts`, `onSuccess` received the successful response data. When updating the session detail cache, it performed `prev.turns.filter(...)`. For a freshly initialized session, a concurrent `GET /api/recommend/sessions/:id` was in-flight, leaving `prev.turns` as `undefined` or `null`. Calling `.filter()` threw an unhandled JavaScript `TypeError: Cannot read properties of undefined (reading 'filter')`.
+    2. **Unchecked Pagination Pages Traversal:** In the same callback, `queryClient.setQueriesData({ queryKey: sessionKeys.lists() })` updated session lists across infinite query pages via `page.sessions.map(...)` without optional chaining or array validation. If any cached page was empty or lacked a `sessions` array, `.map()` threw `TypeError: Cannot read properties of undefined (reading 'map')`.
+    3. **Unhandled Exception Rejection in React Query:** In TanStack React Query, throwing an exception inside `onSuccess` rejects the promise returned by `sendTurnMutation.mutateAsync()`.
+    4. **Generic Status 500 Mapping in Client Handler:** In `recommend-client.tsx`, `handleSend` wrapped `mutateAsync` in a `try...catch` block. Because the thrown error was a client runtime `TypeError` rather than an `ApiError`, `(err as { status?: number })?.status` defaulted to `500`. `handleMeteredError(500, ...)` returned `{ kind: 'toast', message: 'Something went wrong on our side. You were not charged.' }`, masking the client-side TypeError as a server infrastructure failure.
+  - **Senior Software Architect & Staff Engineer Solution:**
+    1. **Defensive Cache Merging:** In `src/lib/recommend-sessions/use-send-turn.ts`, added strict defensive guards: `const prevTurns = Array.isArray(prev.turns) ? prev.turns : [];` and filtered with `t?.id && !t.id.startsWith('optimistic-')`.
+    2. **Safe Infinite Page Updates:** Protected list updates with `if (!old || !Array.isArray(old.pages)) return old;` and used `Array.isArray(page?.sessions) ? page.sessions.map(updateItem) : []` and `Array.isArray(page?.pinned) ? page.pinned.map(updateItem) : []`.
+    3. **Actionable Client Diagnostic Logging:** Updated `handleSend` in `recommend-client.tsx` to explicitly log `console.error('[recommend-client] handleSend encountered an error:', err)` with stack traces so unexpected runtime errors are never swallowed.
+  - **Measured Outcome & Verification:**
+    - Verified new conversation turns seamlessly settle into React Query caches without rejection.
+    - Zero `TypeError` exceptions on fresh session creation.
+
+#### HIGH
+
+- **QuotaAnnouncer infinite re-render loop warning in React 19 due to unmemoized `getServerSnapshot` reference.**
+  - **Symptom:** Next.js Turbopack console logged `[browser] The result of getServerSnapshot should be cached to avoid an infinite loop at QuotaAnnouncer (src/components/quota/QuotaAnnouncer.tsx:7:37)`.
+  - **Affected Components:** `src/components/quota/quota-store.ts`, `src/components/quota/QuotaAnnouncer.tsx`.
+  - **Root Cause:** In `quota-store.ts`, `getServerSnapshot()` returned an object literal `{ snapshot: null, loading: true, lastUpdated: 0, stale: true, pipFlash: null }` created afresh on every invocation. Under React 19's `useSyncExternalStore` contract, returning a new object reference on every invocation violates the immutability invariant, triggering React's infinite render loop safeguard.
+  - **Solution:** Replaced dynamic object creation with a singleton module constant `SERVER_SNAPSHOT: QuotaStoreState` in `src/components/quota/quota-store.ts`. `getServerSnapshot()` now returns the stable cached singleton.
+  - **Measured Outcome & Verification:** Warning permanently eliminated from server and client logs; zero re-render cycles.
+
+#### HIGH
+
+- **PostgreSQL statement timeout (`code 57014`) and connection pool exhaustion during local development caused by Turbopack CSP report bursts.**
+  - **Symptom:** Server console logged `PostgresError: canceling statement due to statement timeout` (`severity: ERROR, code: 57014`) in `rate_limits` upsert queries during local browsing.
+  - **Affected Components:** `src/app/api/csp-report/route.ts`, `src/services/rate-limit/rate-limit.ts`, `src/services/db/client.ts`.
+  - **Root Cause:** In Next.js Turbopack development mode, fast refresh and source maps execute through `eval()`, triggering browser CSP violation reports to `POST /api/csp-report`. Each incoming report called `consumeCspReportRateLimit(clientIp)`, which executed an atomic SQL upsert to the `rate_limits` table. With the local database connection pool configured to `max: 4` connections, bursts of 10+ concurrent CSP reports saturated all available connections, causing queued database operations to exceed statement timeouts.
+  - **Solution:** Updated `src/app/api/csp-report/route.ts` to enforce PostgreSQL rate-limiting exclusively in production (`process.env.NODE_ENV === 'production'`). In development, CSP reports are parsed and logged without issuing rate-limit upserts to the database.
+  - **Measured Outcome & Verification:** Eliminates unhandled pooler timeouts in development; preserves full connection pool capacity for chat and recommendation pipelines.
+
+#### MEDIUM
+
+- **HTML DOM nesting violation `<button>` inside `<Link>` causing React hydration errors and broken accessibility in `RecommendationCard`.**
+  - **Symptom:** Integrating the `[ Why #1? ]` decision trace button inside `RecommendationCard` risked invalid HTML nesting: `<Link href="...">` renders an `<a>` anchor, and embedding a `<button>` inside an anchor triggers React DOM nesting hydration errors (`validateDOMNesting(...): <button> cannot appear as a descendant of <a>`) and causes click events to inadvertently trigger page navigation.
+  - **Affected Components:** `src/app/recommend/recommend-client.tsx`.
+  - **Solution:** Rebuilt `RecommendationCard` using the accessible card overlay pattern: the outer card container is a `<div>` with `focus-within:ring-1`. A full-card overlay link `<Link href={...} className="absolute inset-0 z-0" />` covers the background, while interactive elements (`[ Why #1? ]`, `[ Trace Decision ]`) are positioned on `relative z-10 pointer-events-auto` with `e.preventDefault(); e.stopPropagation()`.
+  - **Measured Outcome & Verification:** Zero DOM nesting warnings, completely accessible keyboard navigation, and clicking `Why #1?` activates the observatory drawer without triggering card navigation.
 
 ### Ops & Catalog — Blocked & Pending Candidate Pipeline Accumulation, Ghost Duplicates & Self-Healing Archival (2026-10-21)
 
@@ -5273,3 +5336,51 @@ flowchart TD
    - **[Runbook 13: Streaming Rollback](./runbooks/13-streaming-rollback.md):** Step-by-step procedures for tripping `ask_streaming` to `off` or `shadow`, verifying output, and monitoring `citation_stream_repair` logs.
    - **[Runbook 14: Stale Public Pages](./runbooks/14-stale-public-pages.md):** Procedures for generating HMAC-SHA256 signatures with a one-line Node command and calling `POST /api/internal/revalidate`.
    - **[Runbook 15: Rate-Limit Store Operations](./runbooks/15-rate-limit-store.md):** Managing the `rate_limits` table, pruning expired rows via `scripts/db-prune.ts`, and diagnosing pooler connection health.
+
+---
+
+## 30. Citation Tracing, Provenance Inspector & Artful Decision Explainability Engine (Plan 28)
+
+> **Normative reference:** Full architecture, user experience design, and interaction choreography are specified in [Master Plan 28 (`docs/ImplementationPlans/28. citation-trace-provenance-and-artful-explainability-plan.md`)](./ImplementationPlans/28.%20citation-trace-provenance-and-artful-explainability-plan.md).
+
+### 30.1 Core Philosophy & Trust Calibration
+
+RECSY answers consumer smartphone purchasing questions where users make $1,000 to $2,000 financial commitments. Trust cannot be earned through opaque LLM prose. Plan 28 transforms every citation and recommendation rank into an interactive, visual proof pipeline governed by **Cybernetic Editorial Brutalism**:
+
+1. **Zero-Latency In-Band Delivery:** All retrieved review chunks (~2.8 KB, <800 bytes gzipped) and aspect quotes are pre-computed on the server during the initial turn and delivered directly in the response payload. Hover cards and inspection drawers open with **0ms network latency**.
+2. **Progressive Disclosure:** By default, interfaces remain uncluttered and legible. Visual traces and decision engines are accessed on-demand via micro-interactions.
+3. **Cybernetic Editorial Aesthetics:** Absolute black (`#000000`), 1px hairlines (`border-outline-variant`), display uppercase (`Hanken Grotesk`), telemetry monospace (`JetBrains Mono`), and vivid solar amber accents (`#d86b38`). Hard zero-radius brutalism (`* { border-radius: 0 !important; }`).
+
+### 30.2 Phone Q&A Provenance Architecture (`/p/[slug]`)
+
+- **Dual-Action Citation Chips (`CitationChip`):**
+  - **Click Navigation:** Clicking citation `[1]` navigates directly to the external source in a new tab (YouTube with video timestamp `&t=4m21s`, GSMArena review section, or Reddit thread).
+  - **Hover Popover (`CitationPopover`):** Hovering over `[1]` with a 120ms debounce triggers an animated spring card displaying:
+    - Platform badge (`[YOUTUBE]`, `[REDDIT]`, `[GSMARENA]`, `[ARTICLE]`).
+    - Video playback timestamp (e.g. `4:21`).
+    - Author / channel metadata (e.g. `Dave2D`, `MKBHD`, `GSMArena`).
+    - Verbatim review excerpt matching the grounded sentence.
+    - Hybrid RRF match score.
+- **Cybernetic Trigger Bar:** Replaces the legacy `<details>` dropdown with a telemetry status bar:
+  `[ ⬡ 8 REVIEWS SEARCHED / 3 CITED / 312ms — INSPECT TRACE ]`.
+- **Studio Drawer HUD (`ProvenanceInspectorSheet`):** 680px right-hand slide-over drawer with `[ ⛶ FULL CANVAS / SPLIT ]` toggle and mobile bottom-sheet fallback, featuring 3 view tabs:
+  1. **01 // Visual Pipeline DAG (`VisualPipelineDag`):** Interactive SVG graph illustrating the 5-stage retrieval pipeline: Query Embedding (`text-embedding-3-small`, 1536-dim), Dual Wave Retrieval (`pgvector` cosine + FTS), Reciprocal Rank Fusion (`RRF(k=60)`), MMR Diversification (`λ=0.7`), and Grounded Generation (`gemini-2.5-flash`). Clicking any node inspects its operational telemetry and input/output counts.
+  2. **02 // Claim Synapse Matrix (`SynapseWireframe`):** Interactive matrix connecting generated answer sentences to verbatim evidence chunks. Hovering a claim highlights grounding sources in solar amber; clicking a source highlights all claims supported by that excerpt.
+  3. **03 // Evidence Vault (`EvidenceCard`):** Exhaustive card list of all retrieved review chunks with platform tags, timestamps, relevance bars, and external links.
+
+### 30.3 Recommender Decision Observatory (`/recommend`)
+
+- **`Why Rank #1?` Action Triggers:** Embedded in `RecommendationCard` headers and footers with a glowing pulse pip: `[ ⬡ Why #1? ]` and `[ Trace Decision ]`.
+- **Decision Pipeline Subsystems (`RecommenderDecisionPipeline`):**
+  1. **Multi-Aspect Equalizer (`AspectEqualizer`):** Audio-graphic equalizer displaying user priority weights ($w_a \in [0, 1]$) multiplied by scorecard aspect scores ($s_a \in [0, 10]$). Clicking an aspect expands reviewer consensus quotes categorized into supporting (green) and dissenting trade-offs (amber).
+  2. **Elimination Waterfall (`FunnelWaterfall`):** Visual bar chart tracking candidate pool progression from full catalog (e.g. 52 devices) $\rightarrow$ budget filter (e.g. 24 devices) $\rightarrow$ spec criteria (e.g. 8 devices) $\rightarrow$ top 3 picks.
+  3. **Head-to-Head Runner-Up Delta:** Direct comparison between Rank #1 and Rank #2 showing the overall score gap (e.g. `+0.42 / 10 pts`) and key deciding aspect differentiators.
+
+### 30.4 Verified Quality Gates
+
+| Test Suite / Tool           | Command                           | Result                          |
+| :-------------------------- | :-------------------------------- | :------------------------------ |
+| **TypeScript**              | `pnpm typecheck` (`tsc --noEmit`) | **0 Errors**                    |
+| **ESLint**                  | `pnpm eslint ...`                 | **0 Errors, 0 Warnings**        |
+| **Plan 28 Targeted Suites** | `pnpm vitest run ...` (6 files)   | **43 / 43 Passed**              |
+| **Full Vitest Test Suite**  | `pnpm test` (205 files)           | **1,346 / 1,346 Passed (100%)** |

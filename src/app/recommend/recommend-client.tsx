@@ -23,6 +23,8 @@ import { useSession } from '@/lib/recommend-sessions/use-session';
 import type { SessionDetail, SessionDetailTurn } from '@/lib/recommend-sessions/api';
 import type { RegionConfig } from '@/lib/regions';
 import type { QuotaSnapshotLite } from '@/services/metering/types';
+import type { RecommendPickTrace } from '@/services/recommender/recommend-trace';
+import { ProvenanceInspectorSheet } from '@/components/trace/ProvenanceInspectorSheet';
 import { cn } from '@/lib/utils';
 
 export interface ApiPick {
@@ -36,6 +38,7 @@ export interface ApiPick {
   readonly localPrice: string | null;
   readonly localCurrency: string | null;
   readonly imageUrl: string | null;
+  readonly trace?: RecommendPickTrace;
 }
 
 export interface ChatLine {
@@ -212,6 +215,7 @@ function RecommendClientLoaded({
   const [quotaReason, setQuotaReason] = useState<'free_exhausted' | 'sub_exhausted' | 'device_cap'>(
     'free_exhausted',
   );
+  const [activeTracePick, setActiveTracePick] = useState<ApiPick | null>(null);
 
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
@@ -278,6 +282,7 @@ function RecommendClientLoaded({
         setSelectedAnswerId(`turn-${response.turnIndex}`);
       }
     } catch (err: unknown) {
+      console.error('[recommend-client] handleSend encountered an error:', err);
       quotaStore.setPipFlash('restored');
       // Restore input and draft on error
       setInput(pendingMessageRef.current);
@@ -539,6 +544,7 @@ function RecommendClientLoaded({
                     className="col-span-1"
                     activeRegion={activeRegion}
                     turnCreatedAt={selectedAnswerTurn?.createdAt}
+                    onInspectTrace={setActiveTracePick}
                   />
                   <RecommendationCard
                     pick={displayPicks[1]!}
@@ -547,6 +553,7 @@ function RecommendClientLoaded({
                     className="col-span-1"
                     activeRegion={activeRegion}
                     turnCreatedAt={selectedAnswerTurn?.createdAt}
+                    onInspectTrace={setActiveTracePick}
                   />
                 </div>
                 {displayPicks.length > 2 ? (
@@ -558,6 +565,7 @@ function RecommendClientLoaded({
                         index={index + 2}
                         activeRegion={activeRegion}
                         turnCreatedAt={selectedAnswerTurn?.createdAt}
+                        onInspectTrace={setActiveTracePick}
                       />
                     ))}
                   </div>
@@ -573,6 +581,7 @@ function RecommendClientLoaded({
                     className="lg:col-span-8"
                     activeRegion={activeRegion}
                     turnCreatedAt={selectedAnswerTurn?.createdAt}
+                    onInspectTrace={setActiveTracePick}
                   />
                 ) : null}
                 <div className="bg-outline-variant grid gap-px lg:col-span-4">
@@ -583,6 +592,7 @@ function RecommendClientLoaded({
                       index={index + 1}
                       activeRegion={activeRegion}
                       turnCreatedAt={selectedAnswerTurn?.createdAt}
+                      onInspectTrace={setActiveTracePick}
                     />
                   ))}
                 </div>
@@ -611,6 +621,14 @@ function RecommendClientLoaded({
         </section>
       </div>
 
+      <ProvenanceInspectorSheet
+        isOpen={Boolean(activeTracePick)}
+        onClose={() => setActiveTracePick(null)}
+        recommendTrace={activeTracePick?.trace}
+        pickModel={activeTracePick?.model}
+        pickBrand={activeTracePick?.brand}
+      />
+
       <QuotaSheet
         isOpen={isQuotaSheetOpen}
         onClose={() => setIsQuotaSheetOpen(false)}
@@ -630,6 +648,7 @@ function RecommendationCard({
   className,
   activeRegion,
   turnCreatedAt,
+  onInspectTrace,
 }: {
   readonly pick: ApiPick;
   readonly index: number;
@@ -637,33 +656,63 @@ function RecommendationCard({
   readonly className?: string;
   readonly activeRegion: RegionConfig;
   readonly turnCreatedAt?: string | number | null;
+  readonly onInspectTrace?: (pick: ApiPick) => void;
 }) {
   const price = formatPickPrice(pick, activeRegion, turnCreatedAt);
   return (
-    <Link
-      href={`/p/${pick.slug}`}
+    <div
       className={cn(
-        'interactive-panel group relative overflow-hidden focus-visible:outline-none',
+        'interactive-panel group focus-within:ring-primary relative overflow-hidden focus-within:ring-1',
         featured ? 'min-h-[520px]' : 'min-h-64',
         className,
       )}
     >
-      <span className="from-accent/40 pointer-events-none absolute inset-x-0 top-0 h-px scale-x-0 bg-gradient-to-r to-transparent transition-transform duration-300 group-hover:scale-x-100 group-focus-visible:scale-x-100" />
+      <Link
+        href={`/p/${pick.slug}`}
+        className="absolute inset-0 z-0 focus-visible:outline-none"
+        aria-label={`View ${pick.brand} ${pick.model} details`}
+      />
+      <span className="from-accent/40 pointer-events-none absolute inset-x-0 top-0 h-px scale-x-0 bg-gradient-to-r to-transparent transition-transform duration-300 group-focus-within:scale-x-100 group-hover:scale-x-100" />
       <div
-        className={cn('border-outline-variant border-b p-5', featured ? 'min-h-72' : 'min-h-36')}
+        className={cn(
+          'border-outline-variant relative z-10 border-b p-5',
+          featured ? 'min-h-72' : 'min-h-36',
+        )}
       >
-        <span className="meta-label border-primary border-l-2 pl-3">
-          {rankLabel(index)}
-          {pick.score != null ? ` / Score ${(pick.score * 10).toFixed(1)}` : ''}
-        </span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="meta-label border-primary border-l-2 pl-3">
+            {rankLabel(index)}
+            {pick.score != null ? ` / Score ${(pick.score * 10).toFixed(1)}` : ''}
+          </span>
+          {pick.trace ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onInspectTrace?.(pick);
+              }}
+              title={`Inspect rank #${index + 1} decision trace`}
+              className="border-primary/40 bg-surface-container/90 text-primary hover:border-primary hover:bg-primary/20 pointer-events-auto inline-flex items-center gap-1.5 border px-2.5 py-1 font-mono text-[10px] tracking-wider uppercase shadow-sm transition-all"
+            >
+              <span className="bg-primary size-1.5 animate-pulse" aria-hidden="true" />
+              <span>Why #{index + 1}?</span>
+            </button>
+          ) : null}
+        </div>
         <PhoneImage
           src={pick.imageUrl}
           label={`${pick.brand} ${pick.model}`}
           size={featured ? 260 : 132}
-          className={cn('mx-auto mt-4', featured ? 'h-64 w-64' : 'h-32 w-32')}
+          className={cn('pointer-events-none mx-auto mt-4', featured ? 'h-64 w-64' : 'h-32 w-32')}
         />
       </div>
-      <div className={cn('p-5', featured ? 'grid gap-5 lg:grid-cols-2' : '')}>
+      <div
+        className={cn(
+          'pointer-events-none relative z-10 p-5',
+          featured ? 'grid gap-5 lg:grid-cols-2' : '',
+        )}
+      >
         <div>
           <p className="text-muted-foreground font-mono text-[11px] tracking-[0.16em] uppercase">
             {pick.brand}
@@ -680,15 +729,30 @@ function RecommendationCard({
         </div>
         <div>
           <p className="text-muted-foreground text-sm leading-6">{pick.summary}</p>
-          <p className="text-primary mt-5 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] uppercase">
-            Phone details
-            <ArrowRight
-              className="size-3.5 transition-transform duration-200 group-hover:translate-x-1 group-focus-visible:translate-x-1"
-              aria-hidden
-            />
-          </p>
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <span className="text-primary inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.18em] uppercase">
+              Phone details
+              <ArrowRight
+                className="size-3.5 transition-transform duration-200 group-focus-within:translate-x-1 group-hover:translate-x-1"
+                aria-hidden
+              />
+            </span>
+            {pick.trace ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onInspectTrace?.(pick);
+                }}
+                className="border-outline-variant bg-surface-container/70 text-muted-foreground hover:border-primary hover:text-primary pointer-events-auto border px-2.5 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
+              >
+                [ Trace Decision ]
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }

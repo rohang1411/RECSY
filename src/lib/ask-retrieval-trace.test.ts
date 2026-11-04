@@ -54,4 +54,51 @@ describe('buildAskRetrievalTrace', () => {
     const t = buildAskRetrievalTrace(retrieval);
     expect(t.stages.some((s) => s.name.startsWith('LLM rerank'))).toBe(true);
   });
+
+  it('populates evidenceChunks with citations and whyReferenced', () => {
+    const youtubeChunk = {
+      chunkId: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380b22',
+      sourceId: 'src-yt',
+      text: 'Low light zoom test reveals crisp edges and minimal color noise.',
+      score: 0.88,
+      source: {
+        id: 'src-yt',
+        url: 'https://youtube.com/watch?v=123',
+        title: 'Camera Shootout',
+        type: 'youtube' as const,
+        author: 'Marques Brownlee',
+        channel: 'MKBHD',
+        publishedAt: null,
+      },
+      startTs: 142,
+    };
+    const retrieval: RetrievalResult = {
+      chunks: [chunk, youtubeChunk],
+      debug: { ...baseDebug },
+    };
+    const citations = [
+      {
+        chunkId: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380b22',
+        sourceUrl: 'https://youtube.com/watch?v=123&t=142',
+        title: 'Camera Shootout',
+        type: 'youtube' as const,
+        anchor: null,
+        startTs: 142,
+      },
+    ];
+    const trace = buildAskRetrievalTrace(retrieval, citations);
+    expect(trace.evidenceChunks).toHaveLength(2);
+
+    const ytEvidence = trace.evidenceChunks.find((e) => e.chunkId === youtubeChunk.chunkId);
+    expect(ytEvidence).toBeDefined();
+    expect(ytEvidence?.isCited).toBe(true);
+    expect(ytEvidence?.citationIndices).toEqual([1]);
+    expect(ytEvidence?.channel).toBe('MKBHD');
+    expect(ytEvidence?.whyReferenced).toContain('MKBHD');
+    expect(ytEvidence?.sourceUrl).toContain('t=142');
+
+    const uncitedEvidence = trace.evidenceChunks.find((e) => e.chunkId === chunk.chunkId);
+    expect(uncitedEvidence?.isCited).toBe(false);
+    expect(uncitedEvidence?.citationIndices).toEqual([]);
+  });
 });
