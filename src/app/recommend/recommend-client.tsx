@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { toast } from 'sonner';
 
 import { PhoneImage } from '@/components/phone/PhoneImage';
+import { QuotaMeter } from '@/components/quota/QuotaMeter';
 import { QuotaSheet } from '@/components/quota/QuotaSheet';
 import { quotaStore } from '@/components/quota/quota-store';
 import {
@@ -310,6 +311,7 @@ function RecommendClientLoaded({
     } finally {
       setOptimisticLines([]);
       setPendingQuery(null);
+      void quotaStore.refresh();
     }
   }
 
@@ -338,13 +340,17 @@ function RecommendClientLoaded({
       <div className="grid gap-8 xl:grid-cols-12">
         {/* Conversation Column */}
         <section className="border-outline-variant bg-background border xl:col-span-5">
-          <div className="border-outline-variant flex items-center justify-between border-b p-5">
-            <p className="meta-label text-primary">Conversation</p>
-            {sessionData?.title ? (
-              <span className="text-muted-foreground max-w-[200px] truncate font-mono text-xs">
-                {sessionData.title}
-              </span>
-            ) : null}
+          <div className="border-outline-variant flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:p-5">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="meta-label text-primary shrink-0">Conversation</p>
+              {sessionData?.title ? (
+                <span className="text-muted-foreground truncate font-mono text-xs">
+                  {'// '}
+                  {sessionData.title}
+                </span>
+              ) : null}
+            </div>
+            <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} />
           </div>
 
           <ul className="divide-outline-variant max-h-[min(520px,55vh)] divide-y overflow-y-auto">
@@ -406,9 +412,12 @@ function RecommendClientLoaded({
               </div>
             ) : (
               <>
-                <label className="sr-only" htmlFor="rec-input">
-                  Your message
-                </label>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="meta-label text-[10px]" htmlFor="rec-input">
+                    Your message
+                  </label>
+                  <QuotaMeter onOpenOptions={() => setIsQuotaSheetOpen(true)} compact />
+                </div>
                 <textarea
                   id="rec-input"
                   rows={4}

@@ -5384,3 +5384,65 @@ RECSY answers consumer smartphone purchasing questions where users make $1,000 t
 | **ESLint**                  | `pnpm eslint ...`                 | **0 Errors, 0 Warnings**        |
 | **Plan 28 Targeted Suites** | `pnpm vitest run ...` (6 files)   | **43 / 43 Passed**              |
 | **Full Vitest Test Suite**  | `pnpm test` (205 files)           | **1,346 / 1,346 Passed (100%)** |
+
+---
+
+## 31. Quota Enforcement, Usage Telemetry & In-Window Meter Integration
+
+### 31.1 Incident Analysis: Quota Stuck at Zero & Empty 30-Day Usage History
+
+- **Symptoms**:
+  - `GET /api/me/entitlements` continuously reported `free.used = 0` and `free.remaining = 2` regardless of queries executed.
+  - `GET /api/me/usage` returned 0 daily charged rows and empty recent leases list on `/account/usage`.
+  - Quota meters and chips were hidden from the UI.
+- **Root Cause**:
+  1. `src/env.ts` configured `QUOTA_MODE` with default `'off'`:
+     `QUOTA_MODE: z.enum(['off', 'shadow', 'enforce']).default('off')` and `QUOTA_MODE: process.env.QUOTA_MODE ?? 'off'`.
+  2. When not explicitly configured in production/staging environments, `config.mode` resolved to `'off'`.
+  3. In `src/services/metering/reserve.ts`:
+     When `config.mode === 'off'`, `reserveQuery` immediately returns a dummy no-op lease (`id: 'off', isNoop: true, freeRemaining: 999`) with **zero DB calls**.
+  4. `lease.commit(...)` no-ops when `isNoop === true`, completely bypassing the `recsy_settle_lease` PostgreSQL stored procedure.
+  5. As a result, no rows were inserted into `query_leases` and `usage_counters.free_used` was never incremented.
+  6. Furthermore, `QuotaChip` and `QuotaMeter` contained invariants: `if (snapshot.mode === 'off' || snapshot.mode === 'shadow') return null;`, hiding all quota telemetry from the user.
+
+### 31.2 Root Cause Fix: Default Enforce & Test Isolation
+
+1. **`src/env.ts`**:
+   - Updated `QUOTA_MODE` schema default from `'off'` to `'enforce'`.
+   - Updated `QUOTA_MODE` runtimeEnv fallback from `'off'` to `'enforce'`.
+2. **`test/setup.ts`**:
+   - Added `QUOTA_MODE: 'off'` to `TEST_ENV_DEFAULTS` so that unit tests running without testcontainers or mock DBs maintain fast, deterministic isolation without unmocked stored procedure attempts.
+3. **Database Verification**:
+   - Verified that live Supabase Postgres stored procedures `recsy_reserve_query` and `recsy_settle_lease` execute atomically, updating `usage_counters` and recording settled leases into `query_leases`.
+
+### 31.3 Quota State Synchronization
+
+- **`src/lib/recommend-sessions/use-send-turn.ts`**:
+  - In `onSuccess`, integrated `quotaStore.updateFromQuotaLite(data.quota)` and background `quotaStore.refresh()` on every successful recommendation turn.
+- **`src/app/recommend/recommend-client.tsx`**:
+  - In `finally` block of `handleSend`, guaranteed `quotaStore.refresh()` is called to synchronize authoritative viewer entitlements after turn settlement or error.
+- **`src/app/p/[slug]/phone-chat.tsx`**:
+  - In `case 'done'` and in `finally` of `ask()`, added `quotaStore.refresh()` to sync quota on phone Q&A completions and aborts.
+
+### 31.4 In-Window Meter Integration & RECSY Editorial Design System
+
+- **`src/components/quota/QuotaMeter.tsx`**:
+  - Added support for `compact?: boolean` prop for snug placement inside input composer headers and toolbars.
+  - Visualized `QuotaPips` (spent vs remaining query pips) with flash animations (`pulse`, `spent`, `restored`).
+  - Standardized label display:
+    - Free users: `${remaining}/${allowance} free left` (or `Free queries used (0/${allowance})` when exhausted).
+    - Credit users: `${credits} credits left`.
+    - Pro users: `PRO` badge with remaining period queries and renewal countdown.
+  - Action Triggers:
+    - When active: Clickable `[Get more]` / `+ Top Up` trigger to open `QuotaSheet` and browse credit packs / Pro upgrade at any time.
+    - When exhausted: High-visibility accent button `[Buy Credits / Upgrade ↗]` with hover transitions, directing users directly to credit packs (25 credits for $3, 100 credits for $9), Pro subscription ($9.99/mo), or BYOK setup.
+- **Recommendation Window (`/recommend` & `/recommend/[id]`)**:
+  - Full `QuotaMeter` placed in Conversation Column header opposite title.
+  - Compact `QuotaMeter` placed directly above the input textarea opposite `Your message`.
+- **Phone Q&A Window (`/p/[slug]`)**:
+  - Full `QuotaMeter` placed in `Ask About This Phone` section header opposite title.
+  - Compact `QuotaMeter` placed directly above the input textarea opposite `Your question`.
+- **Zero Border Radius & Monospace Aesthetics**:
+  - Hard 0px corners (`rounded-none`).
+  - Monospace typography (`font-mono`, `text-xs`, `text-[10px]`) for telemetry data.
+  - 1px hairline borders matching the RECSY cybernetic technical-editorial style.
