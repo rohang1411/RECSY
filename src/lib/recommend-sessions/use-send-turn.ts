@@ -141,7 +141,8 @@ export function useSendTurn() {
           return newDetail;
         }
 
-        const filteredTurns = prev.turns.filter((t) => !t.id.startsWith('optimistic-'));
+        const prevTurns = Array.isArray(prev.turns) ? prev.turns : [];
+        const filteredTurns = prevTurns.filter((t) => t?.id && !t.id.startsWith('optimistic-'));
         const updatedDetail: SessionDetail = {
           ...prev,
           title: data.session?.title ?? prev.title,
@@ -166,9 +167,9 @@ export function useSendTurn() {
       queryClient.setQueriesData<InfiniteData<ListSessionsResult>>(
         { queryKey: sessionKeys.lists() },
         (old) => {
-          if (!old) return old;
+          if (!old || !Array.isArray(old.pages)) return old;
           const updateItem = (item: SessionSummary): SessionSummary => {
-            if (item.id === responseSessionId) {
+            if (item && item.id === responseSessionId) {
               return {
                 ...item,
                 title: data.session?.title ?? item.title,
@@ -191,8 +192,8 @@ export function useSendTurn() {
             ...old,
             pages: old.pages.map((page) => ({
               ...page,
-              pinned: page.pinned?.map(updateItem),
-              sessions: page.sessions.map(updateItem),
+              pinned: Array.isArray(page?.pinned) ? page.pinned.map(updateItem) : [],
+              sessions: Array.isArray(page?.sessions) ? page.sessions.map(updateItem) : [],
             })),
           };
         },

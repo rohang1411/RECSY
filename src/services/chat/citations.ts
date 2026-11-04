@@ -25,6 +25,10 @@ export interface ResolvedCitation {
   readonly type: RetrievedChunk['source']['type'];
   readonly anchor: string | null;
   readonly startTs: number | null;
+  readonly excerpt?: string;
+  readonly author?: string | null;
+  readonly channel?: string | null;
+  readonly score?: number;
 }
 
 export function extractCitationIds(answer: string): string[] {
@@ -92,6 +96,10 @@ export function resolveCitations(
       type: ch.source.type,
       anchor: ch.anchor ?? null,
       startTs: ch.startTs ?? null,
+      excerpt: ch.text.slice(0, 360).trim(),
+      author: ch.source.author ?? null,
+      channel: ch.source.channel ?? null,
+      score: ch.score,
     });
   }
   return out;

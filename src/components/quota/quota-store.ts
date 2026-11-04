@@ -79,19 +79,21 @@ function initBroadcastChannel() {
   }
 }
 
+const SERVER_SNAPSHOT: QuotaStoreState = {
+  snapshot: null,
+  loading: true,
+  lastUpdated: 0,
+  stale: true,
+  pipFlash: null,
+};
+
 export const quotaStore = {
   getSnapshot(): QuotaStoreState {
     return state;
   },
 
   getServerSnapshot(): QuotaStoreState {
-    return {
-      snapshot: null,
-      loading: true,
-      lastUpdated: 0,
-      stale: true,
-      pipFlash: null,
-    };
+    return SERVER_SNAPSHOT;
   },
 
   subscribe(listener: () => void): () => void {

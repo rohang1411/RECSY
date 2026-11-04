@@ -35,6 +35,8 @@ export type { UserRequirements };
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 import { unsupportedHardFeatures } from './hard-features';
+import { enrichPicksWithTrace, type RecommendPickTrace } from './recommend-trace';
+export type { RecommendPickTrace };
 
 export type RecommendApiPick = {
   readonly phoneId: string;
@@ -49,6 +51,7 @@ export type RecommendApiPick = {
   readonly localCurrency: string | null;
   /** `phones.image_url` */
   readonly imageUrl: string | null;
+  readonly trace?: RecommendPickTrace;
 };
 
 export type RecommendPipelineResult =
@@ -88,21 +91,6 @@ function buildDefaultAspectWeights(
     sum += safe;
   }
   return new Map([...raw].map(([k, v]) => [k, v / sum]));
-}
-
-function toApiPicks(picks: readonly ScoredCandidate[]): RecommendApiPick[] {
-  return picks.map((p) => ({
-    phoneId: p.phoneId,
-    slug: p.slug,
-    brand: p.brand,
-    model: p.model,
-    score: Math.round(p.score * 100) / 100,
-    summary: p.summary,
-    msrpUsd: p.msrpUsd,
-    localPrice: p.localPrice ?? null,
-    localCurrency: p.localCurrency ?? null,
-    imageUrl: p.imageUrl,
-  }));
 }
 
 function hasActionableRecommendationInput(requirements: UserRequirements): boolean {
@@ -310,10 +298,26 @@ export async function runRecommendationPipeline(input: {
     'recommender results',
   );
 
+  const funnel = result.funnel ?? {
+    catalogCount: fullCatalog.length,
+    budgetEligibleCount: fullCatalog.length,
+    specEligibleCount: picks.length,
+    finalPicksCount: picks.length,
+  };
+
+  const enrichedPicks = await enrichPicksWithTrace({
+    db: input.db,
+    candidates: picks,
+    catalog: fullCatalog,
+    requirements,
+    weights: result.weights,
+    funnel,
+  });
+
   return {
     kind: 'results',
     requirements,
-    picks: toApiPicks(picks),
+    picks: enrichedPicks,
     relaxed,
     refined,
     scoresTied: result.scoresTied,

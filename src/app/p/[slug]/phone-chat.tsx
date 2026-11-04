@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { QuotaMeter } from '@/components/quota/QuotaMeter';
 import { QuotaSheet } from '@/components/quota/QuotaSheet';
@@ -14,6 +14,7 @@ import { savePendingIntent } from '@/lib/pending-intent';
 import { toast } from 'sonner';
 
 import { CitationChip } from '@/components/phone/CitationChip';
+import { ProvenanceInspectorSheet } from '@/components/trace/ProvenanceInspectorSheet';
 import type { AskRetrievalTrace } from '@/lib/ask-retrieval-trace';
 import {
   CLIENT_SETTING_DEFAULTS,
@@ -80,47 +81,6 @@ function AnswerBody({ text, citations }: { text: string; citations: ResolvedCita
   return <div className="text-primary text-base leading-7 whitespace-pre-wrap">{parts}</div>;
 }
 
-function RetrievalTracePanel({ trace }: { readonly trace: AskRetrievalTrace }) {
-  return (
-    <div className="border-outline-variant bg-background mt-4 border text-left">
-      <p className="meta-label border-outline-variant text-primary border-b p-3">Retrieval trace</p>
-      <ol className="divide-outline-variant text-muted-foreground divide-y font-mono text-xs">
-        {trace.stages.map((s) => (
-          <li key={s.name} className="flex flex-wrap items-baseline justify-between gap-2 p-3">
-            <span className="text-primary">{s.name}</span>
-            <span>
-              {s.count != null ? `${s.count} hit${s.count === 1 ? '' : 's'} / ` : ''}
-              {s.ms} ms
-            </span>
-          </li>
-        ))}
-      </ol>
-      <p className="border-outline-variant text-muted-foreground border-t p-3 font-mono text-xs">
-        Final context: {trace.chunkCount} excerpts / {trace.distinctSourceCount} sources / hybrid
-        total {trace.totalMs} ms
-        {trace.coverageRelaxed ? ' / source diversity limit relaxed' : ''}
-      </p>
-      {trace.sources.length > 0 ? (
-        <ul className="border-outline-variant divide-outline-variant divide-y border-t font-mono text-xs">
-          {trace.sources.map((s) => (
-            <li key={s.url} className="truncate p-3">
-              <a
-                href={s.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-                title={s.title}
-              >
-                [{s.type}] {s.title}
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
 export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
   const [query, setQuery] = useState('');
   const [answer, setAnswer] = useState('');
@@ -133,6 +93,7 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
     model?: string;
     retrievalTrace?: AskRetrievalTrace;
   } | null>(null);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [enterToSend] = useClientSetting<boolean>(
     CLIENT_SETTING_KEYS.enterToSend,
     CLIENT_SETTING_DEFAULTS[CLIENT_SETTING_KEYS.enterToSend],
@@ -326,15 +287,33 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
               </p>
             ) : null}
             {meta?.retrievalTrace ? (
-              <details className="group mt-4">
-                <summary className="text-muted-foreground hover:text-primary cursor-pointer list-none font-mono text-[11px] tracking-[0.16em] uppercase [&::-webkit-details-marker]:hidden">
-                  <span className="inline-flex items-center gap-2">
-                    <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
-                    Show Retrieval Pipeline
-                  </span>
-                </summary>
-                <RetrievalTracePanel trace={meta.retrievalTrace} />
-              </details>
+              <div className="border-outline-variant mt-5 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsInspectorOpen(true)}
+                  className="group border-outline-variant bg-surface-container-low hover:border-accent hover:bg-surface-container relative flex w-full items-center justify-between border p-4 text-left transition-all duration-200 hover:shadow-[0_0_24px_rgba(216,107,56,0.12)]"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="border-accent/40 bg-accent/10 text-accent flex size-7 items-center justify-center border font-mono text-xs font-bold">
+                      ⬡
+                    </span>
+                    <div>
+                      <p className="text-primary group-hover:text-accent font-mono text-xs font-bold tracking-[0.16em] uppercase transition-colors">
+                        Inspect Visual Retrieval Pipeline & Synthesis
+                      </p>
+                      <p className="text-muted-foreground mt-0.5 font-mono text-[11px]">
+                        Trace how {meta.retrievalTrace.distinctSourceCount} sources &{' '}
+                        {meta.retrievalTrace.chunkCount} excerpts were retrieved, filtered, and
+                        synthesized.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-accent flex items-center gap-2 font-mono text-[11px] font-semibold tracking-wider uppercase">
+                    <span className="hidden sm:inline">Explore Pipeline</span>
+                    <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+                  </div>
+                </button>
+              </div>
             ) : null}
           </article>
         ) : null}
@@ -350,6 +329,16 @@ export function PhoneChat({ phoneSlug }: { phoneSlug: string }) {
           window.location.href = `/pricing?product=${code}`;
         }}
       />
+      {meta?.retrievalTrace ? (
+        <ProvenanceInspectorSheet
+          isOpen={isInspectorOpen}
+          onClose={() => setIsInspectorOpen(false)}
+          trace={meta.retrievalTrace}
+          query={query}
+          answerText={answer}
+          phoneTitle={`Evidence Trace // ${phoneSlug}`}
+        />
+      ) : null}
     </section>
   );
 }
