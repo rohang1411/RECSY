@@ -305,4 +305,77 @@ describe('ModelRouter - Context Window, Circuit Breaker, Quota & Fallback', () =
     const uniqueKeys = new Set(resolution.candidates.map((c) => `${c.providerId}:${c.model}`));
     expect(resolution.candidates.length).toBe(uniqueKeys.size);
   });
+
+  describe('WP-13: Server-side Deep Reasoning Router Entitlement Gate', () => {
+    it('downgrades non-entitled callers requesting deep mode and never routes to reasoning tier', () => {
+      const keyPool = new KeyPoolRegistry();
+      const breakers = new CircuitBreakerRegistry();
+      const governor = new MultiProviderQuotaGovernor();
+      const router = new ModelRouter(keyPool, breakers, governor);
+
+      // Caller sends userMode: deep without BYOK key or subscriber status
+      const resolution = router.resolveExecutionChain({
+        explicitTaskClass: 'GROUNDED_SYNTHESIS',
+        messages: [{ role: 'user', content: 'Explain phone battery' }],
+        usageContext: {
+          area: 'chat',
+          userMode: 'deep',
+          isSubscriber: false,
+          userByokKey: undefined,
+        },
+      });
+
+      // Must be downgraded
+      expect(resolution.targetTier).not.toBe('reasoning');
+      expect(resolution.targetTier).toBe('fast');
+      // Must not contain deep-tier models
+      const models = resolution.candidates.map((c) => c.model);
+      expect(models).not.toContain('gemini-2.5-pro');
+      expect(models).not.toContain('deepseek-ai/deepseek-r1');
+    });
+
+    it('allows Pro subscribers to reach reasoning tier when requesting deep mode', () => {
+      const keyPool = new KeyPoolRegistry();
+      const breakers = new CircuitBreakerRegistry();
+      const governor = new MultiProviderQuotaGovernor();
+      const router = new ModelRouter(keyPool, breakers, governor);
+
+      const resolution = router.resolveExecutionChain({
+        explicitTaskClass: 'GROUNDED_SYNTHESIS',
+        messages: [{ role: 'user', content: 'Explain phone battery' }],
+        usageContext: {
+          area: 'chat',
+          userMode: 'deep',
+          isSubscriber: true,
+        },
+      });
+
+      expect(resolution.targetTier).toBe('reasoning');
+      const models = resolution.candidates.map((c) => c.model);
+      expect(models).toContain('gemini-2.5-pro');
+    });
+
+    it('allows BYOK users to reach reasoning tier on their provider when requesting deep mode', () => {
+      const keyPool = new KeyPoolRegistry();
+      const breakers = new CircuitBreakerRegistry();
+      const governor = new MultiProviderQuotaGovernor();
+      const router = new ModelRouter(keyPool, breakers, governor);
+
+      const resolution = router.resolveExecutionChain({
+        explicitTaskClass: 'GROUNDED_SYNTHESIS',
+        messages: [{ role: 'user', content: 'Explain phone battery' }],
+        usageContext: {
+          area: 'chat',
+          userMode: 'deep',
+          userByokKey: 'test-user-gemini-key',
+          userByokProvider: 'gemini',
+        },
+      });
+
+      expect(resolution.targetTier).toBe('reasoning');
+      expect(resolution.candidates.length).toBeGreaterThan(0);
+      expect(resolution.candidates[0]!.providerId).toBe('gemini');
+      expect(resolution.candidates[0]!.model).toBe('gemini-2.5-pro');
+    });
+  });
 });

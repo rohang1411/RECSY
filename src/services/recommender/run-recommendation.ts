@@ -18,20 +18,25 @@
 import type { Logger } from 'pino';
 
 import { ASPECT_NAMES, RECOMMENDER_CLARIFY_THRESHOLD, type AspectName } from '@/lib/constants';
+import type { StageTimer } from '@/lib/stage-timer';
 import type { AppQueryDb } from '@/services/db/client';
-import { aspectDefinitions } from '@/services/db/schema';
 import type { LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import { latestAspectDefinitionsByAspect } from '@/services/scorecard/definitions';
 import type { AspectDefinitionRow } from '@/services/scorecard/types';
 
-import { getCachedRecommendationCatalog } from './catalog-cache';
+import { getCachedRecommendationCatalog, shouldEmbedForRegion } from './catalog-cache';
+import { getCachedAspectDefinitions } from './aspect-definitions-cache';
 import { extractUserRequirements } from './extract-requirements';
 import { aspectsByWeight, rankCandidates, type RankResult, type ScoredCandidate } from './match';
 import { detectRefineIntent } from './refine-intent';
 import type { UserRequirements } from './requirements-schema';
+export type { UserRequirements };
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 import { unsupportedHardFeatures } from './hard-features';
+import { enrichPicksWithTrace, type RecommendPickTrace } from './recommend-trace';
+export type { RecommendPickTrace };
 
 export type RecommendApiPick = {
   readonly phoneId: string;
@@ -46,6 +51,7 @@ export type RecommendApiPick = {
   readonly localCurrency: string | null;
   /** `phones.image_url` */
   readonly imageUrl: string | null;
+  readonly trace?: RecommendPickTrace;
 };
 
 export type RecommendPipelineResult =
@@ -87,21 +93,6 @@ function buildDefaultAspectWeights(
   return new Map([...raw].map(([k, v]) => [k, v / sum]));
 }
 
-function toApiPicks(picks: readonly ScoredCandidate[]): RecommendApiPick[] {
-  return picks.map((p) => ({
-    phoneId: p.phoneId,
-    slug: p.slug,
-    brand: p.brand,
-    model: p.model,
-    score: Math.round(p.score * 100) / 100,
-    summary: p.summary,
-    msrpUsd: p.msrpUsd,
-    localPrice: p.localPrice ?? null,
-    localCurrency: p.localCurrency ?? null,
-    imageUrl: p.imageUrl,
-  }));
-}
-
 function hasActionableRecommendationInput(requirements: UserRequirements): boolean {
   const hasBudget =
     requirements.budget_usd?.max != null ||
@@ -140,25 +131,33 @@ export async function runRecommendationPipeline(input: {
   readonly sessionId: string;
   readonly userMessage: string;
   readonly regionCode?: string;
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
+  readonly serverMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
+  readonly leaseId?: string | null;
   readonly log: Logger;
+  readonly timer?: StageTimer;
 }): Promise<RecommendPipelineResult> {
   const [previous, priorPickIds] = await Promise.all([
     getLatestRequirementsForSession(input.db, input.sessionId),
     getLatestRecommendPickIds(input.db, input.sessionId),
   ]);
 
-  const extracted = await extractUserRequirements({
-    llm: input.llm,
-    userMessage: input.userMessage,
-    previous,
-    regionCode: input.regionCode ?? 'US',
-    byok: input.byok,
-  });
+  const runExtract = () =>
+    extractUserRequirements({
+      llm: input.llm,
+      userMessage: input.userMessage,
+      previous,
+      regionCode: input.regionCode ?? 'US',
+      byok: input.byok,
+      serverMode: input.serverMode,
+      isSubscriber: input.isSubscriber,
+    });
+
+  const extracted = input.timer
+    ? await input.timer.time('extract', runExtract)
+    : await runExtract();
+
   const hadPriorClarify = previous != null && previous.confidence < RECOMMENDER_CLARIFY_THRESHOLD;
   const requirements = promoteRequirements(extracted, { forceAfterClarify: hadPriorClarify });
   const unsupported = unsupportedHardFeatures(requirements);
@@ -181,15 +180,14 @@ export async function runRecommendationPipeline(input: {
   const refineDetection = detectRefineIntent(input.userMessage);
   const refineEligible = refineDetection.refine && priorPickIds != null && priorPickIds.length > 0;
 
-  const defRows = await input.db.select().from(aspectDefinitions);
-  const defaultW = buildDefaultAspectWeights(defRows);
-  const fullCatalog = await getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
-
-  const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
-  let queryEmbedding: readonly number[] | undefined;
-  if (hasSpecEmb) {
-    const qtext = buildRecommenderQueryText(requirements);
-    const emb = await input.llm.embed(
+  // Parallel independent loads after requirements are extracted:
+  // 1. Query embedding (if catalog has spec embeddings or on cold instance)
+  // 2. Aspect definitions (cached, 10-minute TTL)
+  // 3. Recommendation catalog (cached, 10-minute TTL)
+  const qtext = buildRecommenderQueryText(requirements);
+  const shouldEmbed = shouldEmbedForRegion(input.regionCode ?? 'US');
+  const runEmbed = () =>
+    input.llm.embed(
       [qtext],
       undefined,
       {
@@ -199,8 +197,32 @@ export async function runRecommendationPipeline(input: {
       },
       { taskType: 'RETRIEVAL_QUERY' },
     );
-    queryEmbedding = emb.embeddings[0];
+
+  const embedPromise = shouldEmbed
+    ? (input.timer ? input.timer.time('embed', runEmbed) : runEmbed()).then(
+        (emb) => emb.embeddings[0],
+      )
+    : Promise.resolve(undefined);
+  embedPromise.catch(() => undefined);
+
+  const runAspectDefs = () => getCachedAspectDefinitions(input.db);
+  const runCatalog = () => getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');
+
+  const [defRows, fullCatalog] = await Promise.all([
+    input.timer ? input.timer.time('aspectDefs', runAspectDefs) : runAspectDefs(),
+    input.timer ? input.timer.time('catalog', runCatalog) : runCatalog(),
+  ]);
+
+  const defaultW = buildDefaultAspectWeights(defRows);
+  const hasSpecEmb = fullCatalog.some((c) => c.specEmbedding && c.specEmbedding.length > 0);
+  let queryEmbedding: readonly number[] | undefined;
+
+  if (hasSpecEmb) {
+    queryEmbedding = await embedPromise;
   } else {
+    if (shouldEmbed) {
+      input.log.warn('recommender_embed_discarded');
+    }
     input.log.info(
       'no phones.spec_embedding rows — skipping query embed (run pnpm spec-embed:backfill)',
     );
@@ -214,10 +236,15 @@ export async function runRecommendationPipeline(input: {
     const priorIdSet = new Set(priorPickIds);
     const narrowed = fullCatalog.filter((entry) => priorIdSet.has(entry.phoneId));
     if (narrowed.length > 0) {
-      const res = rankCandidates(narrowed, requirements, defaultW, {
-        queryEmbedding,
-        refined: true,
-      });
+      const runRankRefined = async () =>
+        rankCandidates(narrowed, requirements, defaultW, {
+          queryEmbedding,
+          refined: true,
+        });
+      const res = input.timer
+        ? await input.timer.time('rank', runRankRefined)
+        : await runRankRefined();
+
       if (res.picks.length > 0) {
         picks = res.picks;
         rankResult = res;
@@ -248,7 +275,9 @@ export async function runRecommendationPipeline(input: {
   }
 
   if (!refined) {
-    const res = rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
+    const runRankFull = async () =>
+      rankCandidates(fullCatalog, requirements, defaultW, { queryEmbedding });
+    const res = input.timer ? await input.timer.time('rank', runRankFull) : await runRankFull();
     picks = res.picks;
     rankResult = res;
   }
@@ -269,10 +298,26 @@ export async function runRecommendationPipeline(input: {
     'recommender results',
   );
 
+  const funnel = result.funnel ?? {
+    catalogCount: fullCatalog.length,
+    budgetEligibleCount: fullCatalog.length,
+    specEligibleCount: picks.length,
+    finalPicksCount: picks.length,
+  };
+
+  const enrichedPicks = await enrichPicksWithTrace({
+    db: input.db,
+    candidates: picks,
+    catalog: fullCatalog,
+    requirements,
+    weights: result.weights,
+    funnel,
+  });
+
   return {
     kind: 'results',
     requirements,
-    picks: toApiPicks(picks),
+    picks: enrichedPicks,
     relaxed,
     refined,
     scoresTied: result.scoresTied,

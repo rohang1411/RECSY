@@ -222,6 +222,11 @@ export class OpenAiCompatibleAdapter implements ModelAdapter {
       body.max_tokens = input.maxOutputTokens;
     }
 
+    const timeoutMs = 45_000;
+    const signal = input.signal
+      ? AbortSignal.any([input.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
+
     const response = await fetch(this.buildUrl('/chat/completions'), {
       method: 'POST',
       headers: {
@@ -230,7 +235,7 @@ export class OpenAiCompatibleAdapter implements ModelAdapter {
         ...this.defaultHeaders,
       },
       body: JSON.stringify(body),
-      signal: input.signal,
+      signal,
     });
 
     if (!response.ok || !response.body) {
@@ -244,6 +249,7 @@ export class OpenAiCompatibleAdapter implements ModelAdapter {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let lastUsage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
 
     try {
       while (true) {
@@ -257,7 +263,18 @@ export class OpenAiCompatibleAdapter implements ModelAdapter {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith(':')) continue;
           if (trimmed === 'data: [DONE]') {
-            yield { type: 'finish' };
+            yield {
+              type: 'finish',
+              model,
+              ...(lastUsage
+                ? {
+                    usage: {
+                      tokensIn: lastUsage.prompt_tokens ?? 0,
+                      tokensOut: lastUsage.completion_tokens ?? 0,
+                    },
+                  }
+                : {}),
+            };
             return;
           }
           if (trimmed.startsWith('data: ')) {
@@ -266,6 +283,9 @@ export class OpenAiCompatibleAdapter implements ModelAdapter {
                 choices?: Array<{ delta?: { content?: string } }>;
                 usage?: { prompt_tokens?: number; completion_tokens?: number };
               };
+              if (data.usage) {
+                lastUsage = data.usage;
+              }
               const deltaText = data.choices?.[0]?.delta?.content;
               if (deltaText) {
                 yield { type: 'text-delta', textDelta: deltaText };

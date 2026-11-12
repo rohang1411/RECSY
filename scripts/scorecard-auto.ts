@@ -113,6 +113,7 @@ Options:
     failures = 0;
   let quotaExhausted = false;
   let timeBudgetExhausted = false;
+  const rescoredPhoneIds: string[] = [];
 
   for (const phone of picked) {
     if (shouldStopForTime()) {
@@ -155,8 +156,10 @@ Options:
       );
       if (result.updated + result.skipped >= ASPECT_NAMES.length && result.failed === 0) {
         await markScorecardComplete(db, { phoneId: phone.id });
-        if (result.updated > 0) scored++;
-        else skipped++;
+        if (result.updated > 0) {
+          scored++;
+          rescoredPhoneIds.push(phone.id);
+        } else skipped++;
       } else if (result.stopped) {
         timeBudgetExhausted = true;
         log.warn(
@@ -203,6 +206,12 @@ Options:
         'scorecard failed',
       );
     }
+  }
+
+  if (rescoredPhoneIds.length > 0) {
+    const { revalidatePublicTags } = await import('./lib/revalidate-client');
+    const tags = rescoredPhoneIds.map((id) => `scorecard:${id}`);
+    await revalidatePublicTags(tags, 'scorecard:auto');
   }
 
   console.log(

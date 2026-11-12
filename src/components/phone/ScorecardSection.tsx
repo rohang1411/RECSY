@@ -1,27 +1,12 @@
-import { eq } from 'drizzle-orm';
-
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';
-import { getDb } from '@/services/db/client';
-import { aspectDefinitions, aspects } from '@/services/db/schema';
+import { getScorecard } from '@/services/cache/public-data';
 
 function labelForAspect(aspect: AspectName): string {
   return aspect.charAt(0).toUpperCase() + aspect.slice(1);
 }
 
 export async function ScorecardSection({ phoneId }: { readonly phoneId: string }) {
-  const db = getDb();
-  const rows = await db
-    .select({
-      aspect: aspectDefinitions.aspect,
-      score: aspects.score,
-      confidence: aspects.confidence,
-      summary: aspects.summary,
-      nSupporting: aspects.nSupporting,
-      nDissenting: aspects.nDissenting,
-    })
-    .from(aspects)
-    .innerJoin(aspectDefinitions, eq(aspects.aspectDefinitionId, aspectDefinitions.id))
-    .where(eq(aspects.phoneId, phoneId));
+  const rows = await getScorecard(phoneId);
 
   if (rows.length === 0) {
     return null;
@@ -64,7 +49,7 @@ export async function ScorecardSection({ phoneId }: { readonly phoneId: string }
                 </li>
               );
             }
-            const confPct = Math.round(Number.parseFloat(row.confidence) * 100);
+            const confPct = Math.round(Number.parseFloat(String(row.confidence)) * 100);
             return (
               <li key={key} className="bg-outline-variant grid gap-px sm:grid-cols-12">
                 <div className="bg-background p-4 sm:col-span-3">

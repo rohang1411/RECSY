@@ -78,6 +78,8 @@ jobs:
       REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
       REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
       LOG_LEVEL: info
+      REVALIDATE_URL: ${{ secrets.REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
       SKIP_ENV_VALIDATION: 'false'
     steps:
       - name: Checkout
@@ -106,11 +108,14 @@ jobs:
 
       - name: Run resume ingestion
         shell: bash
+        env:
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          MATRIX_SHARD: ${{ matrix.shard }}
         run: |
-          LIMIT="${{ github.event.inputs.limit || '20' }}"
+          LIMIT="${INPUT_LIMIT:-20}"
           pnpm exec tsx scripts/ingest-auto.ts \
             --tier all \
             --limit "$LIMIT" \
             --resume-failed \
-            --shard "${{ matrix.shard }}" \
+            --shard "$MATRIX_SHARD" \
             --total-shards 4

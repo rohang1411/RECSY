@@ -1,7 +1,14 @@
 import type { ExecutionTier, LlmUsageContext, TaskClass } from '../types';
 
 export interface ModelCandidate {
-  readonly providerId: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'github' | 'openrouter';
+  readonly providerId:
+    | 'gemini'
+    | 'groq'
+    | 'nvidia'
+    | 'cerebras'
+    | 'openai'
+    | 'github'
+    | 'openrouter';
   readonly model: string;
   readonly maxTokens: number;
   readonly contextWindow: number;
@@ -115,6 +122,12 @@ export const TIER_MODEL_POOLS: Record<ExecutionTier, readonly ModelCandidate[]> 
       contextWindow: 8_192,
     },
     {
+      providerId: 'openai',
+      model: 'gpt-4o-mini',
+      maxTokens: 4096,
+      contextWindow: 128_000,
+    },
+    {
       providerId: 'gemini',
       model: 'gemini-3-flash-preview',
       maxTokens: 8192,
@@ -146,6 +159,12 @@ export const TIER_MODEL_POOLS: Record<ExecutionTier, readonly ModelCandidate[]> 
       maxTokens: 4096,
       contextWindow: 128_000,
     },
+    {
+      providerId: 'openai',
+      model: 'gpt-4o-mini',
+      maxTokens: 4096,
+      contextWindow: 128_000,
+    },
   ],
   reasoning: [
     {
@@ -153,6 +172,12 @@ export const TIER_MODEL_POOLS: Record<ExecutionTier, readonly ModelCandidate[]> 
       model: 'gemini-2.5-pro',
       maxTokens: 8192,
       contextWindow: 1_000_000,
+    },
+    {
+      providerId: 'openai',
+      model: 'gpt-4o',
+      maxTokens: 4096,
+      contextWindow: 128_000,
     },
     {
       providerId: 'nvidia',

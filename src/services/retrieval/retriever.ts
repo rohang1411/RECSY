@@ -22,7 +22,7 @@ import type { Logger } from 'pino';
 import type postgres from 'postgres';
 
 import { toAppError, ValidationError } from '@/lib/errors';
-import type { LlmProvider } from '@/services/llm/types';
+import type { EmbedCapable, ChatCapable } from '@/services/llm/types';
 
 import { enforceSourceCoverage } from './coverage';
 import { llmRerankChunkOrder, mergeLlmHeadWithMmrTail } from './llm-rerank';
@@ -43,7 +43,7 @@ import { DEFAULT_OPTIONS } from './types';
 export interface HybridRetrieverDeps {
   readonly vector: Retriever;
   readonly fts: Retriever;
-  readonly llm: LlmProvider;
+  readonly llm: EmbedCapable & Partial<ChatCapable>;
   readonly log: Logger;
   readonly sql?: postgres.Sql;
   /**
@@ -60,10 +60,18 @@ export interface HybridSearchInput extends Omit<RetrievalRequest, 'k' | 'queryEm
 }
 
 const QUERY_EMBEDDING_CACHE_MAX = 128;
-let providerEmbeddingCaches = new WeakMap<LlmProvider, Map<string, Promise<readonly number[]>>>();
+let providerEmbeddingCaches = new WeakMap<EmbedCapable, Map<string, Promise<readonly number[]>>>();
+let queryEmbeddingHits = 0;
+let queryEmbeddingMisses = 0;
+
+export function getCacheStats(): { hits: number; misses: number } {
+  return { hits: queryEmbeddingHits, misses: queryEmbeddingMisses };
+}
 
 export function resetHybridRetrieverQueryEmbeddingCache(): void {
   providerEmbeddingCaches = new WeakMap();
+  queryEmbeddingHits = 0;
+  queryEmbeddingMisses = 0;
 }
 
 export class HybridRetriever {
@@ -83,58 +91,61 @@ export class HybridRetriever {
     const log = this.deps.log.child({ phoneId, retriever: 'hybrid' });
     log.debug({ opts }, 'hybrid retrieval begin');
 
-    // Step 1: embed the query. Done up-front so vector + FTS can run in
-    // parallel with the same input object.
+    // Step 1: launch FTS immediately in parallel with query embedding.
+    // FTS only requires raw query text, so running it concurrently with the
+    // embedding model HTTP call saves 50-100ms on the critical path.
+    const ftsPromise = (async () => {
+      const stageStart = performance.now();
+      try {
+        const chunks = await this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever });
+        return {
+          chunks,
+          ms: performance.now() - stageStart,
+          error: undefined as string | undefined,
+        };
+      } catch (err) {
+        const error = toAppError(err).message;
+        log.warn({ err: error }, 'fts retriever failed');
+        return {
+          chunks: [] as readonly RetrievedChunk[],
+          ms: performance.now() - stageStart,
+          error,
+        };
+      }
+    })();
+
+    // Step 2: embed the query.
     const embeddingStart = performance.now();
     const queryEmbedding = await this.embedQuery(query);
     const embeddingMs = performance.now() - embeddingStart;
 
-    // Step 2: parallel vector + FTS.
-    const [vectorResult, ftsResult] = await Promise.all([
-      (async () => {
-        const stageStart = performance.now();
-        try {
-          const chunks = await this.deps.vector.search({
-            phoneId,
-            query,
-            k: opts.kPerRetriever,
-            queryEmbedding,
-          });
-          return {
-            chunks,
-            ms: performance.now() - stageStart,
-            error: undefined as string | undefined,
-          };
-        } catch (err) {
-          const error = toAppError(err).message;
-          log.warn({ err: error }, 'vector retriever failed');
-          return {
-            chunks: [] as readonly RetrievedChunk[],
-            ms: performance.now() - stageStart,
-            error,
-          };
-        }
-      })(),
-      (async () => {
-        const stageStart = performance.now();
-        try {
-          const chunks = await this.deps.fts.search({ phoneId, query, k: opts.kPerRetriever });
-          return {
-            chunks,
-            ms: performance.now() - stageStart,
-            error: undefined as string | undefined,
-          };
-        } catch (err) {
-          const error = toAppError(err).message;
-          log.warn({ err: error }, 'fts retriever failed');
-          return {
-            chunks: [] as readonly RetrievedChunk[],
-            ms: performance.now() - stageStart,
-            error,
-          };
-        }
-      })(),
-    ]);
+    // Step 3: launch vector search with query embedding, then await both vector and FTS.
+    const vectorPromise = (async () => {
+      const stageStart = performance.now();
+      try {
+        const chunks = await this.deps.vector.search({
+          phoneId,
+          query,
+          k: opts.kPerRetriever,
+          queryEmbedding,
+        });
+        return {
+          chunks,
+          ms: performance.now() - stageStart,
+          error: undefined as string | undefined,
+        };
+      } catch (err) {
+        const error = toAppError(err).message;
+        log.warn({ err: error }, 'vector retriever failed');
+        return {
+          chunks: [] as readonly RetrievedChunk[],
+          ms: performance.now() - stageStart,
+          error,
+        };
+      }
+    })();
+
+    const [vectorResult, ftsResult] = await Promise.all([vectorPromise, ftsPromise]);
     const qualityStart = performance.now();
     const excludedChunkIds = [
       ...new Set(
@@ -223,10 +234,14 @@ export class HybridRetriever {
     let rankedForCoverage = mmrRanked;
     let llmRerankTelemetry: RetrievalDebug['llmRerank'] | undefined;
 
-    if (opts.rerank === 'llm' && mmrRanked.length >= opts.targetResults) {
+    if (
+      opts.rerank === 'llm' &&
+      this.deps.llm.structured &&
+      mmrRanked.length >= opts.targetResults
+    ) {
       const rrStart = performance.now();
       const rerank = await llmRerankChunkOrder({
-        llm: this.deps.llm,
+        llm: { name: this.deps.llm.name, structured: this.deps.llm.structured },
         query,
         pool: mmrRanked,
         targetResults: opts.targetResults,
@@ -304,7 +319,10 @@ export class HybridRetriever {
     const key = `${embeddingModel ?? 'default'}\0RETRIEVAL_QUERY\0${query}`;
     let cached = queryEmbeddingCache.get(key);
 
-    if (!cached) {
+    if (cached) {
+      queryEmbeddingHits++;
+    } else {
+      queryEmbeddingMisses++;
       cached = llm
         .embed(
           [query],

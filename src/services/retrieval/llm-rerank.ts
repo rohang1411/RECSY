@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 import { env } from '@/env';
-import type { LlmProvider } from '@/services/llm/types';
+import type { ChatCapable } from '@/services/llm/types';
 
 import type { RetrievedChunk } from './types';
 
@@ -20,7 +20,7 @@ export function createRerankChunkOrderSchema(targetResults: number) {
 }
 
 export interface LlmRerankInput<T extends RetrievedChunk = RetrievedChunk> {
-  readonly llm: LlmProvider;
+  readonly llm: Pick<ChatCapable, 'name' | 'structured'>;
   readonly query: string;
   readonly pool: readonly T[];
   readonly targetResults: number;

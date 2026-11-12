@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
       await new Promise((r) => setTimeout(r, 1800));
     }
     if (
-      (mode === 'chat-fail' && req.url === '/chat') ||
+      (mode === 'chat-fail' && (req.url === '/chat' || req.url === '/stream')) ||
       (mode === 'embed-fail' && req.url === '/embed') ||
       (mode === 'structured-fail' && req.url === '/structured')
     ) {
@@ -64,6 +64,43 @@ const server = createServer(async (req, res) => {
         usage: { tokensIn: 0, tokensOut: 0 },
         model: 'controlled-test-no-quality',
       });
+    } else if (req.url === '/stream') {
+      const result = await provider.chat(input as ChatInput);
+      const fullText =
+        mode === 'invalid-citations'
+          ? 'An unsupported test statement [c:00000000-0000-0000-0000-000000000000].'
+          : result.text;
+
+      const ttftMs = Math.max(0, Number(process.env.EVAL_CONTROLLED_TTFT_MS ?? 0));
+      const streamDelayMs = Math.max(0, Number(process.env.EVAL_CONTROLLED_STREAM_DELAY_MS ?? 0));
+
+      if (ttftMs > 0) {
+        await new Promise((r) => setTimeout(r, ttftMs));
+      }
+
+      res.writeHead(200, {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+
+      // Split text into tokens / word chunks for realistic streaming
+      const words = fullText.split(/(\s+)/);
+      for (const word of words) {
+        if (!word) continue;
+        if (streamDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, streamDelayMs));
+        }
+        res.write(JSON.stringify({ type: 'text-delta', textDelta: word }) + '\n');
+      }
+
+      res.write(
+        JSON.stringify({
+          type: 'finish',
+          usage: { tokensIn: 0, tokensOut: 0 },
+          model: 'controlled-test-no-quality',
+        }) + '\n',
+      );
+      res.end();
     } else if (req.url === '/structured') {
       const result = await provider.structured({
         ...input,

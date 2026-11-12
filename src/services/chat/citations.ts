@@ -25,6 +25,10 @@ export interface ResolvedCitation {
   readonly type: RetrievedChunk['source']['type'];
   readonly anchor: string | null;
   readonly startTs: number | null;
+  readonly excerpt?: string;
+  readonly author?: string | null;
+  readonly channel?: string | null;
+  readonly score?: number;
 }
 
 export function extractCitationIds(answer: string): string[] {
@@ -47,9 +51,12 @@ export function validateCitationTags(
   return { ok: true };
 }
 
-function buildCitationUrl(chunk: RetrievedChunk): string {
+export function buildCitationUrl(chunk: RetrievedChunk): string {
   try {
     const u = new URL(chunk.source.url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return '#';
+    }
     if (chunk.source.type === 'youtube' && chunk.startTs != null && !Number.isNaN(chunk.startTs)) {
       u.searchParams.set('t', String(Math.max(0, Math.floor(chunk.startTs))));
     }
@@ -58,7 +65,7 @@ function buildCitationUrl(chunk: RetrievedChunk): string {
     }
     return u.toString();
   } catch {
-    return chunk.source.url;
+    return '#';
   }
 }
 
@@ -89,6 +96,10 @@ export function resolveCitations(
       type: ch.source.type,
       anchor: ch.anchor ?? null,
       startTs: ch.startTs ?? null,
+      excerpt: ch.text.slice(0, 360).trim(),
+      author: ch.source.author ?? null,
+      channel: ch.source.channel ?? null,
+      score: ch.score,
     });
   }
   return out;

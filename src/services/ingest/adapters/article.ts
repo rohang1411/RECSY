@@ -81,7 +81,6 @@ export class ArticleAdapter implements SourceAdapter {
           seen.add(candidate.url);
           candidates.push(candidate);
         }
-        if (discovered.length > 0) break;
       }
 
       this.log.info(
@@ -185,6 +184,19 @@ function articleDiscoveryQueries(phone: PhoneRef): string[] {
   add(`${phone.brand} ${phone.model} review`);
   add(`${phone.model} review`);
   add(`${phone.brand} ${phone.model}`);
+
+  if (phone.launchDate) {
+    const ageDays = (Date.now() - new Date(phone.launchDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays >= 150) {
+      add(`${phone.brand} ${phone.model} 6 months later`);
+      add(`${phone.brand} ${phone.model} long term review`);
+    }
+    if (ageDays >= 330) {
+      add(`${phone.brand} ${phone.model} 1 year later`);
+      add(`${phone.brand} ${phone.model} still worth it`);
+    }
+  }
+
   return [...values];
 }
 

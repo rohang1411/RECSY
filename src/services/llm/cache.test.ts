@@ -24,7 +24,7 @@ vi.mock('@/services/db/client', () => ({
   }),
 }));
 
-const { CachedLlmProvider } = await import('./cache');
+const { CachedLlmProvider, buildCacheKey } = await import('./cache');
 
 const mockUsage = { tokensIn: 10, tokensOut: 20 };
 
@@ -227,5 +227,121 @@ describe('CachedLlmProvider — structured schema revalidation', () => {
     expect(inner.chat).toHaveBeenCalledOnce();
     expect(res1.text).toBe('coalesced-response');
     expect(res2.text).toBe('coalesced-response');
+  });
+
+  describe('Cache Key Correctness (Plan 26 WP-10)', () => {
+    it('produces different keys for fast vs deep userMode with same prompt', () => {
+      const base = {
+        model: 'gemini',
+        messages: [{ role: 'user' as const, content: 'tell me about phone X' }],
+      };
+
+      const keyFast = buildCacheKey({
+        ...base,
+        usageContext: { area: 'chat', userMode: 'fast' },
+      });
+
+      const keyDeep = buildCacheKey({
+        ...base,
+        usageContext: { area: 'chat', userMode: 'deep' },
+      });
+
+      expect(keyFast).not.toBe(keyDeep);
+    });
+
+    it('produces different keys for different taskClass and thinking settings', () => {
+      const base = {
+        model: 'gemini',
+        messages: [{ role: 'user' as const, content: 'tell me about phone X' }],
+      };
+
+      const keyExtraction = buildCacheKey({ ...base, taskClass: 'EXTRACTION' });
+      const keySynthesis = buildCacheKey({ ...base, taskClass: 'GROUNDED_SYNTHESIS' });
+      expect(keyExtraction).not.toBe(keySynthesis);
+
+      const keyMinimalThinking = buildCacheKey({ ...base, thinking: 'minimal' });
+      const keyDefaultThinking = buildCacheKey({ ...base, thinking: 'default' });
+      expect(keyMinimalThinking).not.toBe(keyDefaultThinking);
+    });
+
+    it('includes byok provider name in key but never the secret API key', () => {
+      const base = {
+        model: 'gemini',
+        messages: [{ role: 'user' as const, content: 'hello' }],
+      };
+
+      const keyGroq = buildCacheKey({
+        ...base,
+        usageContext: {
+          area: 'chat',
+          userByokProvider: 'groq',
+          userByokKey: 'super-secret-key-1',
+        },
+      });
+
+      const keyGemini = buildCacheKey({
+        ...base,
+        usageContext: {
+          area: 'chat',
+          userByokProvider: 'gemini',
+          userByokKey: 'super-secret-key-1',
+        },
+      });
+
+      const keyGroqKey2 = buildCacheKey({
+        ...base,
+        usageContext: {
+          area: 'chat',
+          userByokProvider: 'groq',
+          userByokKey: 'different-secret-key-2',
+        },
+      });
+
+      // Different BYOK providers have different cache keys
+      expect(keyGroq).not.toBe(keyGemini);
+      // Same BYOK provider with different user key shares cache key (API key not in hash)
+      expect(keyGroq).toBe(keyGroqKey2);
+    });
+  });
+
+  describe('lookupChat and storeChat (Plan 26 WP-06 / WP-10)', () => {
+    it('returns null on cache miss and cached result on hit', async () => {
+      makeDbMiss();
+      const inner = makeInner();
+      const provider = new CachedLlmProvider(inner, true);
+
+      const miss = await provider.lookupChat({
+        model: 'gemini',
+        messages: [{ role: 'user', content: 'test-lookup' }],
+      });
+      expect(miss).toBeNull();
+
+      makeDbHit({ text: 'stored-result', cached: false, usage: mockUsage, model: 'gemini' });
+      const hit = await provider.lookupChat({
+        model: 'gemini',
+        messages: [{ role: 'user', content: 'test-lookup' }],
+      });
+      expect(hit).not.toBeNull();
+      expect(hit?.text).toBe('stored-result');
+      expect(hit?.cached).toBe(true);
+    });
+
+    it('stores chat result asynchronously via deferOrRun without throwing', () => {
+      const insertChain = {
+        values: vi.fn().mockReturnThis(),
+        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+      };
+      mockInsert.mockReturnValue(insertChain);
+
+      const inner = makeInner();
+      const provider = new CachedLlmProvider(inner, true);
+
+      expect(() => {
+        provider.storeChat(
+          { model: 'gemini', messages: [{ role: 'user', content: 'test-store' }] },
+          { text: 'result-to-store', cached: false, usage: mockUsage, model: 'gemini' },
+        );
+      }).not.toThrow();
+    });
   });
 });

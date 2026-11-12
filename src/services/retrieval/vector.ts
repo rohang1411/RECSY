@@ -57,12 +57,14 @@ interface VectorSearchRow {
   readonly start_ts: number | null;
   readonly anchor: string | null;
   readonly embedding: string | null;
+  readonly metadata?: Record<string, unknown> | null;
   readonly src_url: string;
   readonly src_title: string;
   readonly src_type: 'youtube' | 'reddit' | 'article';
   readonly src_author: string | null;
   readonly src_channel: string | null;
   readonly src_published_at: Date | string | null;
+  readonly src_temporal_category?: string | null;
 }
 
 export interface VectorSearchDeps {
@@ -123,12 +125,14 @@ export class VectorSearch implements Retriever {
                  c.start_ts                   AS start_ts,
                  c.anchor                     AS anchor,
                  c.embedding::text            AS embedding,
+                 c.metadata                   AS metadata,
                  s.url                        AS src_url,
                  s.title                      AS src_title,
                  s.type                       AS src_type,
                  s.author                     AS src_author,
                  s.channel                    AS src_channel,
-                 s.published_at               AS src_published_at
+                 s.published_at               AS src_published_at,
+                 s.temporal_category          AS src_temporal_category
             FROM chunks c
             JOIN sources s ON s.id = c.source_id
            WHERE c.phone_id = ${phoneId}
@@ -144,12 +148,14 @@ export class VectorSearch implements Retriever {
                  c.start_ts                   AS start_ts,
                  c.anchor                     AS anchor,
                  NULL::text                   AS embedding,
+                 c.metadata                   AS metadata,
                  s.url                        AS src_url,
                  s.title                      AS src_title,
                  s.type                       AS src_type,
                  s.author                     AS src_author,
                  s.channel                    AS src_channel,
-                 s.published_at               AS src_published_at
+                 s.published_at               AS src_published_at,
+                 s.temporal_category          AS src_temporal_category
             FROM chunks c
             JOIN sources s ON s.id = c.source_id
            WHERE c.phone_id = ${phoneId}
@@ -174,6 +180,7 @@ export class VectorSearch implements Retriever {
       startTs: r.start_ts,
       anchor: r.anchor,
       embedding: parseVectorLiteral(r.embedding),
+      metadata: (r.metadata as Record<string, unknown>) ?? undefined,
       source: {
         id: r.source_id,
         url: r.src_url,
@@ -182,6 +189,7 @@ export class VectorSearch implements Retriever {
         author: r.src_author,
         channel: r.src_channel,
         publishedAt: toRetrievedPublishedAt(r.src_published_at),
+        temporalCategory: r.src_temporal_category ?? null,
       },
     }));
   }

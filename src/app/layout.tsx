@@ -1,10 +1,14 @@
 import type { Metadata, Viewport } from 'next';
-import { Hanken_Grotesk, Inter, JetBrains_Mono } from 'next/font/google';
-import { Toaster } from 'sonner';
+import Link from 'next/link';
+import { Inter, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 
 import { AnalyticsClient } from '@/components/AnalyticsClient';
 import { AppHeader } from '@/components/AppHeader';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { EntitlementProvider } from '@/components/quota/EntitlementProvider';
+import { AuthSheet } from '@/components/auth/AuthSheet';
+import { Toaster } from '@/components/ui/toaster';
 import { env } from '@/env';
 
 import './globals.css';
@@ -15,11 +19,11 @@ const inter = Inter({
   display: 'swap',
 });
 
-const hanken = Hanken_Grotesk({
-  subsets: ['latin'],
+const hanken = localFont({
+  src: './fonts/HankenGrotesk-VariableFont_wght.woff2',
   variable: '--font-hanken',
   display: 'swap',
-  weight: ['700', '800'],
+  weight: '100 900',
 });
 
 const jetbrains = JetBrains_Mono({
@@ -67,17 +71,41 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${inter.variable} ${hanken.variable} ${jetbrains.variable} bg-background text-foreground font-sans antialiased`}
       >
         <ThemeProvider forcedTheme="dark" enableSystem={false}>
-          <div className="flex min-h-dvh flex-col">
-            <AppHeader />
-            <main className="flex-1">{children}</main>
-            <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
-              <div className="px-grid-margin mx-auto max-w-7xl">
-                © {new Date().getFullYear()} RECSY
-              </div>
-            </footer>
-          </div>
-          <Toaster position="top-right" richColors closeButton />
-          <AnalyticsClient />
+          <EntitlementProvider>
+            <div className="flex min-h-dvh flex-col">
+              <AppHeader />
+              <main className="flex-1">{children}</main>
+              <footer className="border-outline-variant bg-background text-muted-foreground border-t py-6 text-center font-mono text-[11px] tracking-[0.14em] uppercase">
+                <div className="px-grid-margin mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+                  <div>© {new Date().getFullYear()} RECSY</div>
+                  <nav className="flex flex-wrap items-center gap-4 text-[10px]">
+                    <Link href="/pricing" className="hover:text-foreground transition-colors">
+                      Pricing
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/terms" className="hover:text-foreground transition-colors">
+                      Terms
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/privacy" className="hover:text-foreground transition-colors">
+                      Privacy
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/refunds" className="hover:text-foreground transition-colors">
+                      Refunds
+                    </Link>
+                    <span className="text-border-hairline">·</span>
+                    <Link href="/contact" className="hover:text-foreground transition-colors">
+                      Contact
+                    </Link>
+                  </nav>
+                </div>
+              </footer>
+            </div>
+            <AuthSheet />
+            <Toaster />
+            <AnalyticsClient />
+          </EntitlementProvider>
         </ThemeProvider>
       </body>
     </html>

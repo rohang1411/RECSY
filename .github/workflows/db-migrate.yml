@@ -1,0 +1,49 @@
+name: Database Migration (Production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "MIGRATE" to confirm running database setup against production'
+        required: true
+        default: ''
+
+concurrency:
+  group: db-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Run db:setup against production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'MIGRATE' }}
+        run: |
+          echo "Migration cancelled: Confirmation input did not match 'MIGRATE'."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run database setup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: pnpm db:setup
+
+      - name: Run database smoke test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: pnpm db:smoke

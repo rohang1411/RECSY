@@ -118,13 +118,22 @@ export async function isOperatorAuthorized(): Promise<boolean> {
   }
 
   const secret = getOperatorSecret();
-  // In development, if no secret is configured, allow local operator convenience
-  if (env.NODE_ENV !== 'production' && !secret) {
-    return true;
+
+  // In local development ONLY on loopback interface without a secret, allow local operator convenience
+  if (env.NODE_ENV === 'development' && !secret) {
+    try {
+      const h = await headers();
+      const host = h.get('host')?.split(':')[0]?.toLowerCase();
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   if (!secret) {
-    return false; // Fail closed in production when secret is missing
+    return false; // Fail closed when secret is missing
   }
 
   // Check header for automated/CLI callers

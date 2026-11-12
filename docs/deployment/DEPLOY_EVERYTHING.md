@@ -521,6 +521,8 @@ Add these at minimum:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `GEMINI_API_KEY`
+- `REVALIDATE_SECRET`
+- `REVALIDATE_URL`
 - `LLM_PROVIDER`
 - `LLM_CHAT_MODEL`
 - `LLM_REASONING_MODEL`
@@ -529,6 +531,8 @@ Add these at minimum:
 - `RETRIEVAL_LLM_RERANK`
 - `LOG_LEVEL`
 - `NEXT_PUBLIC_SITE_URL`
+- `REVALIDATE_SECRET` (used to sign HMAC tokens for `/api/internal/revalidate`)
+- `REVALIDATE_URL` (e.g. `https://recsy.app/api/internal/revalidate`)
 
 Optional:
 
@@ -542,6 +546,20 @@ Important:
 - Do not rely on `.env.local` in Vercel.
 - Environment variable changes only affect new deployments.
 - If you change values later, trigger a new deployment.
+
+### 10.3.1 Performance Runtime Flags (platform_flags.perf_flags)
+
+Plan 26 introduced dynamic performance flags stored in PostgreSQL table `platform_flags` under key `perf_flags`.
+These flags allow zero-downtime operational toggling via `POST /api/internal/flags`:
+
+```json
+{
+  "ask_streaming": "canary", // "off" | "shadow" | "canary" | "on"
+  "admission_single_statement": true, // batched single-statement rate limiting
+  "auth_local_claims": true, // local JWT claims verification
+  "redis_rate_limit": false // external Redis store (default: false)
+}
+```
 
 ### 10.4 Preview first
 

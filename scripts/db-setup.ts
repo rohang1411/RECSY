@@ -26,7 +26,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import type postgres from 'postgres';
 
 import { createPostgresClient } from '../src/services/db/connection';
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     await ensureExtensions(client);
 
     STEP(2, 'applying migrations');
-    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+    await applyMigrations(client, MIGRATIONS_DIR);
 
     STEP(3, 'applying FTS indexes');
     const ftsSQL = await readFile(FTS_SQL, 'utf8');
@@ -94,6 +94,55 @@ async function main(): Promise<void> {
     log('\n[db:setup] OK - all five steps completed.');
   } finally {
     await client.end({ timeout: 5 });
+  }
+}
+
+/**
+ * Apply migrations individually per transaction, tracking applied state in
+ * `drizzle.__drizzle_migrations`.
+ *
+ * Why custom per-migration transactions instead of Drizzle's `migrate()` helper?
+ * Drizzle ORM's built-in `migrate()` wraps all unapplied migrations into a single
+ * transaction block. In PostgreSQL (including PG 16), any enum value added via
+ * `ALTER TYPE ... ADD VALUE` (e.g. migration 0009 or 0010) cannot be used in queries
+ * or partial index predicates (e.g. migration 0018) within the same transaction:
+ * "ERROR: unsafe use of new value ... of enum type ... New enum values must be committed
+ * before they can be used."
+ *
+ * Committing each migration file in its own transaction resolves this cleanly while
+ * maintaining full schema and hash compatibility with `drizzle.__drizzle_migrations`.
+ */
+async function applyMigrations(sql: postgres.Sql, migrationsFolder: string): Promise<void> {
+  const migrations = readMigrationFiles({ migrationsFolder });
+  await sql`CREATE SCHEMA IF NOT EXISTS drizzle`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at bigint
+    )
+  `.simple();
+
+  const lastRows = await sql<{ id: number; hash: string; created_at: string }[]>`
+    SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1
+  `;
+  const lastDbMigration = lastRows[0];
+
+  for (const migration of migrations) {
+    if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis) {
+      await sql.begin(async (tx) => {
+        for (const stmt of migration.sql) {
+          const trimmed = stmt.trim();
+          if (trimmed) {
+            await tx.unsafe(trimmed);
+          }
+        }
+        await tx`
+          INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at")
+          VALUES (${migration.hash}, ${migration.folderMillis})
+        `;
+      });
+    }
   }
 }
 

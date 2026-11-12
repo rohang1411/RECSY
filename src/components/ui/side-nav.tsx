@@ -12,7 +12,15 @@ const links = [
   { href: '/settings', label: 'Settings', icon: Settings2 },
 ] as const;
 
-export function SideNav({ active }: { readonly active?: string }) {
+export function SideNav({
+  active,
+  children,
+}: {
+  readonly active?: string;
+  readonly children?: React.ReactNode;
+}) {
+  const isRecommend = active === '/recommend';
+
   return (
     <aside className="border-outline-variant bg-background sticky top-0 hidden h-dvh w-64 shrink-0 border-r lg:flex lg:flex-col">
       <div className="border-outline-variant border-b p-6">
@@ -28,7 +36,10 @@ export function SideNav({ active }: { readonly active?: string }) {
         </div>
       </div>
 
-      <nav className="border-outline-variant flex-1 border-b p-4" aria-label="Workspace">
+      <nav
+        className={cn('border-outline-variant border-b p-4', isRecommend ? 'shrink-0' : 'flex-1')}
+        aria-label="Workspace"
+      >
         {links.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.href;
@@ -50,14 +61,18 @@ export function SideNav({ active }: { readonly active?: string }) {
         })}
       </nav>
 
-      <div className="p-4">
-        <Link
-          href="/recommend"
-          className="border-outline text-primary hover:bg-primary hover:text-background block border px-3 py-3 text-center font-mono text-[11px] tracking-[0.18em] uppercase transition-colors duration-150"
-        >
-          New recommendation
-        </Link>
-      </div>
+      {children ? (
+        <div className="flex-1 overflow-hidden">{children}</div>
+      ) : (
+        <div className="p-4">
+          <Link
+            href="/recommend"
+            className="border-outline text-primary hover:bg-primary hover:text-background block border px-3 py-3 text-center font-mono text-[11px] tracking-[0.18em] uppercase transition-colors duration-150"
+          >
+            New recommendation
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }

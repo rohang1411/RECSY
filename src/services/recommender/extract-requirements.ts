@@ -14,6 +14,7 @@
  */
 import { env } from '@/env';
 import type { LlmProvider } from '@/services/llm/types';
+import type { UserByokConfig } from '@/services/llm/keys/byok-parser';
 import { getRegionConfig, type RegionConfig } from '@/lib/regions';
 
 import {
@@ -69,11 +70,9 @@ export async function extractUserRequirements(input: {
   readonly userMessage: string;
   readonly previous: UserRequirements | null;
   readonly regionCode?: string;
-  readonly byok?: {
-    readonly apiKey: string;
-    readonly provider: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
-    readonly userMode?: 'fast' | 'deep';
-  } | null;
+  readonly byok?: UserByokConfig | null;
+  readonly serverMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
 }): Promise<UserRequirements> {
   const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const config = getRegionConfig(input.regionCode ?? 'US');
@@ -92,7 +91,8 @@ export async function extractUserRequirements(input: {
       taskClass: 'EXTRACTION',
       userByokKey: input.byok?.apiKey,
       userByokProvider: input.byok?.provider,
-      userMode: input.byok?.userMode,
+      userMode: input.serverMode ?? input.byok?.userMode,
+      isSubscriber: input.isSubscriber,
     },
   });
   return mergeUserRequirements({

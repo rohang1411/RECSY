@@ -3,11 +3,24 @@ import type { NextConfig } from 'next';
 /**
  * Next.js configuration.
  *
- * Security headers follow OWASP's secure-headers recommendations. The CSP is
- * intentionally strict for the app origin — relax it per-route rather than
- * globally. Inline scripts are forbidden; Next.js uses nonces for its own
- * runtime injected HTML, which is respected automatically.
+ * Security headers follow OWASP secure-headers recommendations (Plan 25 Section 10.3).
+ * Phase 1 CSP is deployed in Report-Only mode, sending violation reports to /api/csp-report.
  */
+const cspDirectives = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://upload.wikimedia.org",
+  "font-src 'self' data:",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com",
+  'frame-src https://challenges.cloudflare.com',
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  'report-uri /api/csp-report',
+].join('; ');
+
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -19,6 +32,9 @@ const securityHeaders = [
   // HSTS is set by Vercel at the edge in production; duplicate here for parity
   // with self-hosted deployments.
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-site' },
+  { key: 'Content-Security-Policy-Report-Only', value: cspDirectives },
 ] as const;
 
 const nextConfig: NextConfig = {
@@ -38,6 +54,26 @@ const nextConfig: NextConfig = {
       {
         source: '/:path*',
         headers: [...securityHeaders],
+      },
+      {
+        source: '/api/me/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/api/account/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/api/billing/:path((?!catalog$).*)',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/auth/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/account/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
       },
     ];
   },

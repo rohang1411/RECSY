@@ -90,6 +90,9 @@ jobs:
     steps:
       - id: plan
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TIER: ${{ github.event.inputs.tier }}
         run: |
           # Select which tiers to run.
           # - On workflow_dispatch, respect the user's choice.
@@ -97,8 +100,8 @@ jobs:
           #     * hot  → every day
           #     * warm → even days (or Mon/Wed/Fri/Sat for denser coverage)
           #     * cold → Sunday only
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            case "${{ github.event.inputs.tier }}" in
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            case "$INPUT_TIER" in
               hot)  echo 'tiers=["hot"]'  >> "$GITHUB_OUTPUT" ;;
               warm) echo 'tiers=["warm"]' >> "$GITHUB_OUTPUT" ;;
               cold) echo 'tiers=["cold"]' >> "$GITHUB_OUTPUT" ;;
@@ -153,6 +156,8 @@ jobs:
       REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
       REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
       LOG_LEVEL: info
+      REVALIDATE_URL: ${{ secrets.REVALIDATE_URL }}
+      REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
       SKIP_ENV_VALIDATION: 'false'
     steps:
       - name: Checkout
@@ -181,12 +186,17 @@ jobs:
 
       - name: Run tiered ingestion
         shell: bash
+        env:
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+          INPUT_PER_PHONE_LIMIT: ${{ github.event.inputs.per_phone_limit }}
+          MATRIX_TIER: ${{ matrix.tier }}
+          MATRIX_SHARD: ${{ matrix.shard }}
         run: |
-          LIMIT="${{ github.event.inputs.limit || '15' }}"
-          PER_PHONE_LIMIT="${{ github.event.inputs.per_phone_limit || '5' }}"
+          LIMIT="${INPUT_LIMIT:-15}"
+          PER_PHONE_LIMIT="${INPUT_PER_PHONE_LIMIT:-5}"
           pnpm exec tsx scripts/ingest-auto.ts \
-            --tier "${{ matrix.tier }}" \
+            --tier "$MATRIX_TIER" \
             --limit "$LIMIT" \
             --per-phone-limit "$PER_PHONE_LIMIT" \
-            --shard "${{ matrix.shard }}" \
+            --shard "$MATRIX_SHARD" \
             --total-shards 4

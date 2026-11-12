@@ -16,7 +16,7 @@ export const env = createEnv({
    * Accessible in route handlers, server components, and server actions.
    */
   server: {
-    NODE_ENV: z.enum(['development', 'preview', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'preview', 'production', 'test']).default('development'),
 
     DATABASE_URL: z.string().url(),
     DATABASE_SCHEMA: z
@@ -28,6 +28,9 @@ export const env = createEnv({
     LLM_PROVIDER: z.enum(['gemini', 'groq', 'nvidia', 'controlled', 'gateway']).default('gemini'),
     EVAL_CONTROLLED_PROVIDER_URL: z.string().url().optional(),
     EVAL_CONTROLLED_PROVIDER_TOKEN: z.string().min(16).optional(),
+    EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD: z.string().optional(),
+    EVAL_CONTROLLED_STREAM_DELAY_MS: z.string().optional(),
+    EVAL_CONTROLLED_TTFT_MS: z.string().optional(),
     GEMINI_API_KEY: z.string().min(1),
     /** Optional backup Google AI Studio keys (separate projects). Rotated when a prior key hits quota (429 / daily cap). */
     GEMINI_API_KEY_2: z.string().optional(),
@@ -130,6 +133,61 @@ export const env = createEnv({
 
     LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
     SENTRY_DSN: z.string().url().optional().or(z.literal('')),
+
+    // --- plan25: metering, auth, billing ---
+    QUOTA_MODE: z.enum(['off', 'shadow', 'enforce']).default('enforce'),
+    QUOTA_TEST_OVERRIDE: z.string().optional(),
+    FREE_DAILY_QUERIES: z.coerce.number().int().min(0).default(2),
+    ANON_DAILY_QUERIES: z.coerce.number().int().min(0).default(2),
+    ANON_IP_DAILY_CAP: z.coerce.number().int().min(0).default(30),
+    DEVICE_ACCOUNT_CAP: z.coerce.number().int().min(1).default(3),
+    BYOK_DAILY_CAP: z.coerce.number().int().min(0).default(100),
+    CLARIFY_FREE_CAP: z.coerce.number().int().min(0).default(10),
+    MAX_INFLIGHT_FREE: z.coerce.number().int().min(1).default(1),
+    MAX_INFLIGHT_PRO: z.coerce.number().int().min(1).default(2),
+    LEASE_TTL_SECONDS: z.coerce.number().int().min(30).default(75),
+    METERING_DB_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+    AUTH_VERIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+    GLOBAL_DAILY_PLATFORM_CAP_DEFAULT: z.coerce.number().int().min(0).default(0),
+    DEVICE_ID_SECRET: z.string().min(32).optional(),
+    IP_HASH_SECRET: z.string().min(32).optional(),
+    TRUST_PROXY_HEADER: z.string().optional(),
+    SIGNUPS_ENABLED: z
+      .string()
+      .default('true')
+      .transform((v) => v.toLowerCase() !== 'false'),
+    AUTH_DRIVER: z.enum(['supabase', 'fake']).default('supabase'),
+    MAINTENANCE_MODE: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+    TURNSTILE_SECRET_KEY: z.string().optional(),
+    BILLING_ENABLED: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+    BILLING_ALLOWLIST_EMAILS: z.string().optional(),
+    BILLING_PROVIDER: z.enum(['stripe', 'fake']).default('stripe'),
+    STRIPE_MODE: z.enum(['test', 'live']).optional(),
+    STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    STRIPE_API_VERSION: z.string().default('2024-12-18.acacia'),
+    STRIPE_PRICE_PACK_S: z.string().optional(),
+    STRIPE_PRICE_PACK_M: z.string().optional(),
+    STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+    PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).default(3),
+    EMAIL_PROVIDER: z.enum(['resend', 'postmark', 'fake']).optional(),
+    EMAIL_PROVIDER_API_KEY: z.string().optional(),
+    EMAIL_FROM: z.string().optional(),
+    LLM_CACHE_STORE_RAW: z
+      .string()
+      .default('false')
+      .transform((v) => v.toLowerCase() === 'true'),
+    ALERT_WEBHOOK_URL: z.string().url().optional().or(z.literal('')),
+    USER_RATE_RECOMMEND_PER_MIN: z.coerce.number().int().min(1).default(12),
+    USER_RATE_ASK_PER_MIN: z.coerce.number().int().min(1).default(20),
+    PERF_FLAGS_DEFAULT_JSON: z.string().optional(),
+    REVALIDATE_SECRET: z.string().min(32).optional(),
   },
 
   /**
@@ -141,6 +199,10 @@ export const env = createEnv({
     NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional().or(z.literal('')),
     NEXT_PUBLIC_COMMIT_SHA: z.string().default('dev'),
     NEXT_PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
+
+    // --- plan25: metering, auth, billing ---
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
+    NEXT_PUBLIC_SUPPORT_EMAIL: z.string().email().default('support@recsy.com'),
   },
 
   /**
@@ -159,6 +221,9 @@ export const env = createEnv({
     LLM_PROVIDER: process.env.LLM_PROVIDER ?? 'gemini',
     EVAL_CONTROLLED_PROVIDER_URL: process.env.EVAL_CONTROLLED_PROVIDER_URL,
     EVAL_CONTROLLED_PROVIDER_TOKEN: process.env.EVAL_CONTROLLED_PROVIDER_TOKEN,
+    EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD: process.env.EVAL_CONTROLLED_ALLOW_PRODUCTION_BUILD,
+    EVAL_CONTROLLED_STREAM_DELAY_MS: process.env.EVAL_CONTROLLED_STREAM_DELAY_MS,
+    EVAL_CONTROLLED_TTFT_MS: process.env.EVAL_CONTROLLED_TTFT_MS,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2,
     GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3,
@@ -223,6 +288,57 @@ export const env = createEnv({
     // working even when the quality job intentionally skips full validation.
     NEXT_PUBLIC_COMMIT_SHA: process.env.NEXT_PUBLIC_COMMIT_SHA ?? 'dev',
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000',
+
+    // --- plan25: metering, auth, billing ---
+    QUOTA_MODE: process.env.QUOTA_MODE ?? 'enforce',
+    QUOTA_TEST_OVERRIDE: process.env.QUOTA_TEST_OVERRIDE,
+    FREE_DAILY_QUERIES: process.env.FREE_DAILY_QUERIES ? Number(process.env.FREE_DAILY_QUERIES) : 2,
+    ANON_DAILY_QUERIES: process.env.ANON_DAILY_QUERIES ? Number(process.env.ANON_DAILY_QUERIES) : 2,
+    ANON_IP_DAILY_CAP: process.env.ANON_IP_DAILY_CAP ? Number(process.env.ANON_IP_DAILY_CAP) : 30,
+    DEVICE_ACCOUNT_CAP: process.env.DEVICE_ACCOUNT_CAP ? Number(process.env.DEVICE_ACCOUNT_CAP) : 3,
+    BYOK_DAILY_CAP: process.env.BYOK_DAILY_CAP ? Number(process.env.BYOK_DAILY_CAP) : 100,
+    CLARIFY_FREE_CAP: process.env.CLARIFY_FREE_CAP ? Number(process.env.CLARIFY_FREE_CAP) : 10,
+    MAX_INFLIGHT_FREE: process.env.MAX_INFLIGHT_FREE ? Number(process.env.MAX_INFLIGHT_FREE) : 1,
+    MAX_INFLIGHT_PRO: process.env.MAX_INFLIGHT_PRO ? Number(process.env.MAX_INFLIGHT_PRO) : 2,
+    LEASE_TTL_SECONDS: process.env.LEASE_TTL_SECONDS ? Number(process.env.LEASE_TTL_SECONDS) : 75,
+    METERING_DB_TIMEOUT_MS: process.env.METERING_DB_TIMEOUT_MS
+      ? Number(process.env.METERING_DB_TIMEOUT_MS)
+      : 3000,
+    AUTH_VERIFY_TIMEOUT_MS: process.env.AUTH_VERIFY_TIMEOUT_MS
+      ? Number(process.env.AUTH_VERIFY_TIMEOUT_MS)
+      : 2000,
+    GLOBAL_DAILY_PLATFORM_CAP_DEFAULT: process.env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT
+      ? Number(process.env.GLOBAL_DAILY_PLATFORM_CAP_DEFAULT)
+      : 0,
+    DEVICE_ID_SECRET: process.env.DEVICE_ID_SECRET,
+    IP_HASH_SECRET: process.env.IP_HASH_SECRET,
+    TRUST_PROXY_HEADER: process.env.TRUST_PROXY_HEADER,
+    SIGNUPS_ENABLED: process.env.SIGNUPS_ENABLED ?? 'true',
+    AUTH_DRIVER: process.env.AUTH_DRIVER ?? 'supabase',
+    MAINTENANCE_MODE: process.env.MAINTENANCE_MODE ?? 'false',
+    TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
+    BILLING_ENABLED: process.env.BILLING_ENABLED ?? 'false',
+    BILLING_ALLOWLIST_EMAILS: process.env.BILLING_ALLOWLIST_EMAILS,
+    BILLING_PROVIDER: process.env.BILLING_PROVIDER ?? 'stripe',
+    STRIPE_MODE: process.env.STRIPE_MODE,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_API_VERSION: process.env.STRIPE_API_VERSION ?? '2024-12-18.acacia',
+    STRIPE_PRICE_PACK_S: process.env.STRIPE_PRICE_PACK_S,
+    STRIPE_PRICE_PACK_M: process.env.STRIPE_PRICE_PACK_M,
+    STRIPE_PRICE_PRO_MONTHLY: process.env.STRIPE_PRICE_PRO_MONTHLY,
+    PAST_DUE_GRACE_DAYS: process.env.PAST_DUE_GRACE_DAYS ?? '3',
+    EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+    EMAIL_PROVIDER_API_KEY: process.env.EMAIL_PROVIDER_API_KEY,
+    EMAIL_FROM: process.env.EMAIL_FROM,
+    LLM_CACHE_STORE_RAW: process.env.LLM_CACHE_STORE_RAW ?? 'false',
+    ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
+    USER_RATE_RECOMMEND_PER_MIN: process.env.USER_RATE_RECOMMEND_PER_MIN ?? '12',
+    USER_RATE_ASK_PER_MIN: process.env.USER_RATE_ASK_PER_MIN ?? '20',
+    PERF_FLAGS_DEFAULT_JSON: process.env.PERF_FLAGS_DEFAULT_JSON,
+    REVALIDATE_SECRET: process.env.REVALIDATE_SECRET,
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? 'support@recsy.com',
   },
 
   /**
@@ -239,3 +355,12 @@ export const env = createEnv({
    */
   emptyStringAsUndefined: true,
 });
+
+if (
+  typeof window === 'undefined' &&
+  process.env.SKIP_ENV_VALIDATION !== 'true' &&
+  env.NODE_ENV === 'production' &&
+  env.AUTH_DRIVER === 'fake'
+) {
+  throw new Error('AUTH_DRIVER=fake is forbidden when NODE_ENV=production');
+}

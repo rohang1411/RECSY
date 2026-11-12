@@ -1,0 +1,38 @@
+name: Abuse Detection
+
+on:
+  schedule:
+    # Run nightly at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: abuse-detect
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Run Abuse Detection Sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Execute Abuse Detection Sweep
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: pnpm tsx scripts/abuse-detect.ts

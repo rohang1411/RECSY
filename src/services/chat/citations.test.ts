@@ -58,4 +58,49 @@ describe('citations', () => {
     const resolved = resolveCitations(text, chunks);
     expect(resolved.map((c) => c.chunkId)).toEqual([b, sampleId]);
   });
+
+  it('neutralizes non-http(s) protocols in sourceUrl', () => {
+    const maliciousChunk: RetrievedChunk = {
+      chunkId: sampleId,
+      sourceId: 's1',
+      text: 'hello',
+      score: 1,
+      source: {
+        id: 's1',
+        url: 'javascript:alert(document.cookie)',
+        title: 'Exploit',
+        type: 'article',
+        author: null,
+        channel: null,
+        publishedAt: null,
+      },
+    };
+    const resolved = resolveCitations(`[c:${sampleId}]`, [maliciousChunk]);
+    expect(resolved[0]?.sourceUrl).toBe('#');
+  });
+
+  it('attaches excerpt, author, channel, and score to resolved citation', () => {
+    const chunk: RetrievedChunk = {
+      chunkId: sampleId,
+      sourceId: 's1',
+      text: 'The 5x periscope telephoto camera provides incredible clarity in dim lighting conditions.',
+      score: 0.94,
+      source: {
+        id: 's1',
+        url: 'https://youtube.com/watch?v=xyz',
+        title: 'Review Video',
+        type: 'youtube',
+        author: 'Marques Brownlee',
+        channel: 'MKBHD',
+        publishedAt: null,
+      },
+      startTs: 245,
+    };
+    const resolved = resolveCitations(`[c:${sampleId}]`, [chunk]);
+    expect(resolved[0]?.excerpt).toContain('5x periscope telephoto');
+    expect(resolved[0]?.author).toBe('Marques Brownlee');
+    expect(resolved[0]?.channel).toBe('MKBHD');
+    expect(resolved[0]?.score).toBe(0.94);
+    expect(resolved[0]?.startTs).toBe(245);
+  });
 });

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Activity,
+  CreditCard,
   Database,
   GitBranch,
   Layers,
@@ -13,6 +14,7 @@ import {
   Scale,
   RefreshCw,
   Gauge,
+  Sliders,
 } from 'lucide-react';
 
 const INTERNAL_LINKS = [
@@ -21,6 +23,18 @@ const INTERNAL_LINKS = [
     href: '/internal/command-center',
     icon: Activity,
     badge: 'Overview',
+  },
+  {
+    label: 'Usage & Quotas',
+    href: '/internal/usage',
+    icon: Sliders,
+    badge: 'Metering',
+  },
+  {
+    label: 'Billing & Accounts',
+    href: '/internal/billing',
+    icon: CreditCard,
+    badge: 'Finance',
   },
   {
     label: 'Evaluation & Benchmarks',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractByokFromHeaders } from './byok-parser';
+import { ByokError } from '@/lib/errors';
 
 describe('extractByokFromHeaders', () => {
   it('returns null when no key header is supplied', () => {
@@ -48,5 +49,35 @@ describe('extractByokFromHeaders', () => {
       provider: 'gemini',
       userMode: 'fast',
     });
+  });
+
+  it('supports openrouter and openai providers', () => {
+    const orHeaders = {
+      'x-recsy-user-key': 'sk-or-v1-123456789012345678',
+      'x-recsy-user-provider': 'openrouter',
+    };
+    expect(extractByokFromHeaders(orHeaders)?.provider).toBe('openrouter');
+
+    const oaiHeaders = {
+      'x-recsy-user-key': 'sk-proj-123456789012345678',
+      'x-recsy-user-provider': 'openai',
+    };
+    expect(extractByokFromHeaders(oaiHeaders)?.provider).toBe('openai');
+  });
+
+  it('throws ByokError 400 BYOK_UNSUPPORTED on unknown provider', () => {
+    const headers = {
+      'x-recsy-user-key': 'some_generic_api_key_12345678',
+      'x-recsy-user-provider': 'unsupported_provider_xyz',
+    };
+    expect(() => extractByokFromHeaders(headers)).toThrow(ByokError);
+    try {
+      extractByokFromHeaders(headers);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ByokError);
+      const byokErr = err as ByokError;
+      expect(byokErr.code).toBe('BYOK_UNSUPPORTED');
+      expect(byokErr.status).toBe(400);
+    }
   });
 });

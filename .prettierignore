@@ -12,3 +12,5 @@ legacy
 # Preserve original imported review payloads and generated evaluation evidence.
 docs/GPT Retrieval Reviews
 output
+
+scratch

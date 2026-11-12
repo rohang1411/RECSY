@@ -1,0 +1,34 @@
+name: Account Maintenance
+
+on:
+  schedule:
+    # Run daily at 02:00 UTC to execute deletions past the 30-day cooling period
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: account-maintenance
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Execute due account deletions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run account maintenance
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: pnpm account:maintain

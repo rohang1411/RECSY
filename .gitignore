@@ -208,3 +208,9 @@ legacy/ios/Runner/GeneratedPluginRegistrant.*
 /output/eval/
 /.playwright-cli/
 .rocketride/
+
+scratch/
+
+# --- Docs / Other Docs (local / untracked documentation) -----------------------
+docs/other_docs/
+

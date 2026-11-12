@@ -3,12 +3,14 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/env';
 import { isSupportedRegion } from '@/lib/regions';
+import { assertSameOrigin } from '@/lib/same-origin';
 
 const bodySchema = z.object({ countryCode: z.string().min(2).max(3) });
 
 export const runtime = 'edge';
 
 export async function POST(req: NextRequest): Promise<Response> {
+  assertSameOrigin(req);
   const json: unknown = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {

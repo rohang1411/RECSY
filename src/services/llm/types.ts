@@ -36,6 +36,8 @@ export interface ChatInput {
   readonly taskClass?: TaskClass;
   /** Override preferred execution tier. */
   readonly preferredTier?: ExecutionTier;
+  /** Optional thinking budget for grounded synthesis (Plan 26 WP-04 / WP-10). */
+  readonly thinking?: 'default' | 'low' | 'minimal';
   /** Opaque ids used by the cache key; callers can omit. */
   readonly cacheKeyExtras?: Readonly<Record<string, string | number | boolean>>;
   readonly usageContext?: LlmUsageContext;
@@ -48,8 +50,9 @@ export interface LlmUsageContext {
   readonly source?: string;
   readonly taskClass?: TaskClass;
   readonly userMode?: 'fast' | 'deep';
+  readonly isSubscriber?: boolean;
   readonly userByokKey?: string;
-  readonly userByokProvider?: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai';
+  readonly userByokProvider?: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai' | 'openrouter';
   readonly metadata?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
@@ -70,6 +73,7 @@ export interface ChatDelta {
   readonly type: 'text-delta' | 'finish';
   readonly textDelta?: string;
   readonly usage?: ChatUsage;
+  readonly model?: string;
 }
 
 /**
@@ -109,6 +113,10 @@ export interface LlmProvider {
   chat(input: ChatInput): Promise<ChatResult>;
   /** Streaming chat completion. Consumers iterate deltas. */
   chatStream(input: ChatInput): AsyncIterable<ChatDelta>;
+  /** Look up cached chat response without executing model (Plan 26 WP-06/WP-10). */
+  lookupChat?(input: ChatInput): Promise<ChatResult | null>;
+  /** Store completed chat response in cache (Plan 26 WP-06/WP-10). */
+  storeChat?(input: ChatInput, result: ChatResult): void;
   /** Zod-validated structured output with automatic one-shot retry on schema failures. */
   structured<T>(input: StructuredInput<T>): Promise<StructuredResult<T>>;
   /** Batched text embedding. */
@@ -119,3 +127,12 @@ export interface LlmProvider {
     options?: EmbedOptions,
   ): Promise<EmbedResult>;
 }
+
+/** Interface segregation: callers needing only chat, streaming, and structured extraction. */
+export type ChatCapable = Pick<LlmProvider, 'name' | 'chat' | 'chatStream' | 'structured'> & {
+  lookupChat?(input: ChatInput): Promise<ChatResult | null>;
+  storeChat?(input: ChatInput, result: ChatResult): void;
+};
+
+/** Interface segregation: callers needing only embedding generation. */
+export type EmbedCapable = Pick<LlmProvider, 'name' | 'embed'>;

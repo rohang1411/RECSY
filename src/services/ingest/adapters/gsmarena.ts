@@ -241,10 +241,10 @@ export function firstDevicePathFromSearch(html: string): string | null {
 
 /**
  * Extract review links from a GSMArena device page. Reviews live at
- * `/{model}-review-{id}.php` — distinct from the spec page's shorter path.
+ * `/{model}-review-{id}.php` or `/{model}_long_term-review-{id}.php` — distinct from the spec page's shorter path.
  */
 export function reviewLinksFromDevicePage(html: string): string[] {
-  const rx = /href="([a-z0-9_-]+-review-\d+\.php)"/gi;
+  const rx = /href="([a-z0-9_-]+(?:-review-|_long_term-review-|-long-term-review-)\d+\.php)"/gi;
   const out: string[] = [];
   const seen = new Set<string>();
   let m: RegExpExecArray | null;

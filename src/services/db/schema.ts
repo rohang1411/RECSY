@@ -16,12 +16,15 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
+  date,
   index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -104,6 +107,16 @@ export const sentimentSummaryEnum = pgEnum('sentiment_summary', [
   'negative',
   'neutral',
 ]);
+
+export const temporalCategoryEnum = pgEnum('temporal_category', [
+  'launch',
+  'long_term_6m',
+  'long_term_1y',
+  'comparison',
+  'reliability',
+  'general',
+]);
+export type TemporalCategory = (typeof temporalCategoryEnum.enumValues)[number];
 
 export const catalogPhoneMediaStatusEnum = pgEnum('catalog_phone_media_status', [
   'local_ok',
@@ -257,6 +270,11 @@ export const phones = pgTable(
     metadataConfidence: numeric('metadata_confidence', { precision: 3, scale: 2 }),
     specCompleteness: numeric('spec_completeness', { precision: 3, scale: 2 }),
     mediaStatus: catalogPhoneMediaStatusEnum('media_status'),
+    /** Life-cycle milestones searched for this phone, e.g. ['launch', '6m', '1y']. */
+    milestonesScouted: text('milestones_scouted')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /**
      * Outcome of the most recent ingest attempt:
      *   'success' | 'partial' | 'quota_exhausted' | 'failed' | null (never attempted).
@@ -316,6 +334,8 @@ export const sources = pgTable(
     engagementScore: numeric('engagement_score', { precision: 4, scale: 3 }),
     /** Whether `publishedAt` is accurate to the day, month, or year only. */
     publishedPrecision: publishedPrecisionEnum('published_precision'),
+    /** Temporal review category (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
+    temporalCategory: temporalCategoryEnum('temporal_category').notNull().default('general'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -323,6 +343,9 @@ export const sources = pgTable(
     unique('sources_phone_url_uniq').on(t.phoneId, t.url),
     index('sources_phone_id_idx').on(t.phoneId),
     index('sources_status_idx').on(t.status),
+    index('sources_temporal_category_idx').on(t.temporalCategory),
+    index('sources_phone_temporal_idx').on(t.phoneId, t.temporalCategory),
+    index('sources_url_content_hash_idx').on(t.url, t.contentHash),
   ],
 );
 
@@ -453,14 +476,23 @@ export const scorecardRuns = pgTable(
  * Anonymous or authenticated client device record.
  * Opaque ownership token; the current single-session API uses its random session cookie.
  */
-export const recommendationClients = pgTable('recommendation_clients', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  clientToken: text('client_token').notNull().unique(),
-  ipHash: text('ip_hash'),
-  userAgent: text('user_agent'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const recommendationClients = pgTable(
+  'recommendation_clients',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    clientToken: text('client_token').notNull().unique(),
+    ipHash: text('ip_hash'),
+    userAgent: text('user_agent'),
+    userId: uuid('user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('recommendation_clients_user_idx')
+      .on(t.userId)
+      .where(sql`${t.userId} is not null`),
+  ],
+);
 
 /**
  * Individual recommendation conversation thread.
@@ -473,10 +505,19 @@ export const recommendationSessions = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => recommendationClients.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id'),
+    deviceId: text('device_id'),
     title: text('title').notNull().default('New Recommendation'),
+    titleSource: text('title_source').notNull().default('default'),
+    firstMessage: text('first_message'),
     primaryIntent: text('primary_intent'),
     isPinned: boolean('is_pinned').notNull().default(false),
     status: sessionStatusEnum('status').notNull().default('active'),
+    turnCount: integer('turn_count').notNull().default(0),
+    nextTurnIndex: integer('next_turn_index').notNull().default(0),
+    lastTurnAt: timestamp('last_turn_at', { withTimezone: true }).notNull().defaultNow(),
+    lastPicksSummary:
+      jsonb('last_picks_summary').$type<Array<{ brand: string; model: string; slug: string }>>(),
     metadata: jsonb('metadata')
       .$type<{
         regionCode?: string;
@@ -488,13 +529,31 @@ export const recommendationSessions = pgTable(
     sessionCookie: text('session_cookie').notNull().unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   (t) => [
+    check(
+      'recommendation_sessions_title_source_chk',
+      sql`${t.titleSource} in ('default','heuristic','llm','user')`,
+    ),
     index('idx_recommendation_sessions_client_status_updated').on(
       t.clientId,
       t.status,
       t.updatedAt,
     ),
+    index('idx_recommendation_sessions_updated_at').on(t.updatedAt),
+    index('rs_user_recent_idx')
+      .on(t.userId, t.lastTurnAt.desc(), t.id.desc())
+      .where(sql`${t.userId} is not null and ${t.status} in ('active','archived')`),
+    index('rs_device_recent_idx')
+      .on(t.deviceId, t.lastTurnAt.desc(), t.id.desc())
+      .where(
+        sql`${t.userId} is null and ${t.deviceId} is not null and ${t.status} in ('active','archived')`,
+      ),
+    index('rs_deleted_purge_idx')
+      .on(t.deletedAt)
+      .where(sql`${t.status} = 'deleted'`),
   ],
 );
 
@@ -515,12 +574,26 @@ export const recommendationTurns = pgTable(
       .default(sql`'{}'`),
     picks: jsonb('picks').$type<unknown[]>(),
     clarifyingQuestion: text('clarifying_question'),
+    resultMeta: jsonb('result_meta').$type<{
+      v: 1;
+      relaxed?: string[];
+      refined?: boolean;
+      scoresTied?: boolean;
+      scorecardMissing?: boolean;
+      topAspects?: string[];
+      regionCode?: string;
+      currency?: string;
+    }>(),
     latencyMs: integer('latency_ms'),
+    leaseId: uuid('lease_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique('recommendation_turns_session_turn_uniq').on(t.sessionId, t.turnIndex),
     index('idx_recommendation_turns_session_idx').on(t.sessionId, t.turnIndex),
+    index('recommendation_turns_lease_idx')
+      .on(t.leaseId)
+      .where(sql`${t.leaseId} is not null`),
   ],
 );
 
@@ -576,9 +649,19 @@ export const chatQueries = pgTable(
     tokensIn: integer('tokens_in'),
     tokensOut: integer('tokens_out'),
     model: text('model').notNull(),
+    userId: uuid('user_id'),
+    leaseId: uuid('lease_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('chat_queries_phone_id_idx').on(t.phoneId)],
+  (t) => [
+    index('chat_queries_phone_id_idx').on(t.phoneId),
+    index('chat_queries_user_idx')
+      .on(t.userId)
+      .where(sql`${t.userId} is not null`),
+    index('chat_queries_lease_idx')
+      .on(t.leaseId)
+      .where(sql`${t.leaseId} is not null`),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -759,6 +842,8 @@ export const domainProfiles = pgTable(
     /** Last-parsed robots.txt, kept as parsed ruleset for O(1) matching. */
     robotsJson: jsonb('robots_json').$type<unknown>(),
     robotsFetchedAt: timestamp('robots_fetched_at', { withTimezone: true }),
+    /** Optional direct RSS feed endpoint for scout discovery. */
+    rssFeedUrl: text('rss_feed_url'),
     status: profileStatusEnum('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -813,12 +898,15 @@ export const crawlQueue = pgTable(
     status: crawlQueueStatusEnum('status').notNull().default('queued'),
     /** Optional direct URL (creator-watch populates this; scheduler discovery leaves null). */
     url: text('url'),
+    /** Temporal category for the review (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
+    temporalCategory: temporalCategoryEnum('temporal_category').notNull().default('general'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('crawl_queue_status_sched_idx').on(t.status, t.scheduledFor),
     index('crawl_queue_phone_idx').on(t.phoneId),
+    index('crawl_queue_temporal_category_idx').on(t.temporalCategory),
   ],
 );
 
@@ -1397,5 +1485,351 @@ export const benchmarkResultsRelations = relations(benchmarkResults, ({ one }) =
   run: one(benchmarkRuns, {
     fields: [benchmarkResults.runId],
     references: [benchmarkRuns.id],
+  }),
+}));
+
+// ---------------------------------------------------------------------------
+// --- plan25: WP-01 ---
+// Multi-user: accounts, metering, credits, subscriptions, billing inbox.
+// See docs/ImplementationPlans/25.*.md section 6. Names here MUST match the
+// SQL functions in drizzle/migrations/0013_*.sql.
+// ---------------------------------------------------------------------------
+
+export const leaseStatusEnum = pgEnum('lease_status', [
+  'reserved',
+  'committed',
+  'refunded',
+  'expired',
+  'no_charge',
+]);
+
+export const chargeSourceEnum = pgEnum('charge_source', [
+  'daily_free',
+  'anon_free',
+  'subscription',
+  'credit',
+  'byok',
+]);
+
+export const ledgerKindEnum = pgEnum('ledger_kind', [
+  'purchase',
+  'subscription_grant',
+  'consume',
+  'refund',
+  'promo',
+  'admin_adjustment',
+  'payment_reversal',
+]);
+
+export const billingEventStatusEnum = pgEnum('billing_event_status', [
+  'received',
+  'processing',
+  'processed',
+  'failed',
+  'ignored',
+]);
+
+export const orderStatusEnum = pgEnum('order_status', [
+  'pending',
+  'paid',
+  'failed',
+  'refunded',
+  'partially_refunded',
+  'disputed',
+]);
+
+export const userProfiles = pgTable(
+  'user_profiles',
+  {
+    id: uuid('id').primaryKey(), // equals auth.users.id; no FK on purpose
+    email: text('email').notNull(),
+    emailNormalized: text('email_normalized').notNull(),
+    displayName: text('display_name'),
+    avatarUrl: text('avatar_url'),
+    dateOfBirth: date('date_of_birth'),
+    country: text('country'),
+    locale: text('locale'),
+    termsVersion: text('terms_version'),
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
+    marketingOptIn: boolean('marketing_opt_in').notNull().default(false),
+    status: text('status')
+      .$type<'active' | 'suspended' | 'pending_deletion'>()
+      .notNull()
+      .default('active'),
+    billingHold: boolean('billing_hold').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('user_profiles_email_norm_uniq').on(t.emailNormalized),
+    check(
+      'user_profiles_status_chk',
+      sql`${t.status} in ('active','suspended','pending_deletion')`,
+    ),
+  ],
+);
+
+export const usageCounters = pgTable(
+  'usage_counters',
+  {
+    subjectKind: text('subject_kind').$type<'user' | 'device' | 'ip'>().notNull(),
+    subjectId: text('subject_id').notNull(),
+    usageDate: date('usage_date', { mode: 'string' }).notNull(),
+    freeUsed: integer('free_used').notNull().default(0),
+    anonUsed: integer('anon_used').notNull().default(0),
+    totalUsed: integer('total_used').notNull().default(0),
+    byokUsed: integer('byok_used').notNull().default(0),
+    clarifyUsed: integer('clarify_used').notNull().default(0),
+    usersSeen: integer('users_seen').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectKind, t.subjectId, t.usageDate] }),
+    check('usage_counters_kind_chk', sql`${t.subjectKind} in ('user','device','ip')`),
+    check(
+      'usage_counters_nonneg_chk',
+      sql`${t.freeUsed} >= 0 and ${t.anonUsed} >= 0 and ${t.totalUsed} >= 0 and ${t.byokUsed} >= 0 and ${t.clarifyUsed} >= 0 and ${t.usersSeen} >= 0`,
+    ),
+    index('usage_counters_date_idx').on(t.usageDate), // prune job
+  ],
+);
+
+export const creditWallets = pgTable('credit_wallets', {
+  userId: uuid('user_id').primaryKey(),
+  balance: integer('balance').notNull().default(0), // may go negative after a payment reversal
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const creditLedger = pgTable(
+  'credit_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    delta: integer('delta').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    kind: ledgerKindEnum('kind').notNull(),
+    refType: text('ref_type'),
+    refId: text('ref_id'),
+    idempotencyKey: text('idempotency_key').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('credit_ledger_idem_uniq').on(t.idempotencyKey),
+    index('credit_ledger_user_created_idx').on(t.userId, t.createdAt.desc()),
+    check('credit_ledger_delta_chk', sql`${t.delta} <> 0`),
+  ],
+);
+
+export const subscriptions = pgTable(
+  'subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    provider: text('provider').notNull(),
+    providerSubscriptionId: text('provider_subscription_id').notNull(),
+    planCode: text('plan_code').notNull(),
+    status: text('status').notNull(), // provider status string, mirrored
+    includedQueries: integer('included_queries').notNull(),
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+    entitledUntil: timestamp('entitled_until', { withTimezone: true }), // computed by sync, the ONLY column the reserve function reads for access
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    providerEventAt: timestamp('provider_event_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('subscriptions_provider_sub_uniq').on(t.provider, t.providerSubscriptionId),
+    index('subscriptions_user_entitled_idx').on(t.userId, t.entitledUntil),
+    check('subscriptions_included_chk', sql`${t.includedQueries} >= 0`),
+  ],
+);
+
+export const subscriptionUsage = pgTable(
+  'subscription_usage',
+  {
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: 'cascade' }),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    used: integer('used').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subscriptionId, t.periodStart] }),
+    check('subscription_usage_used_chk', sql`${t.used} >= 0`),
+  ],
+);
+
+export const queryLeases = pgTable(
+  'query_leases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: uuid('request_id').notNull(),
+    userId: uuid('user_id'),
+    deviceId: text('device_id').notNull(),
+    ipKey: text('ip_key'),
+    route: text('route').notNull(),
+    chargeSource: chargeSourceEnum('charge_source').notNull(),
+    status: leaseStatusEnum('status').notNull().default('reserved'),
+    usageDate: date('usage_date', { mode: 'string' }).notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }),
+    reservedAt: timestamp('reserved_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    settleReason: text('settle_reason'),
+    traceId: text('trace_id'),
+    model: text('model'),
+    tokensIn: integer('tokens_in'),
+    tokensOut: integer('tokens_out'),
+    latencyMs: integer('latency_ms'),
+    cacheHit: boolean('cache_hit'),
+    costMicros: integer('cost_micros'),
+  },
+  (t) => [
+    uniqueIndex('query_leases_device_request_uniq').on(t.deviceId, t.requestId),
+    index('query_leases_open_idx')
+      .on(t.expiresAt)
+      .where(sql`${t.status} = 'reserved'`),
+    index('query_leases_user_idx')
+      .on(t.userId, t.reservedAt.desc())
+      .where(sql`${t.userId} is not null`),
+    index('query_leases_reserved_at_idx').on(t.reservedAt),
+  ],
+);
+
+export const usageDailyRollup = pgTable(
+  'usage_daily_rollup',
+  {
+    usageDate: date('usage_date', { mode: 'string' }).notNull(),
+    route: text('route').notNull(),
+    chargeSource: chargeSourceEnum('charge_source').notNull(),
+    status: leaseStatusEnum('status').notNull(),
+    leases: integer('leases').notNull(),
+    tokensIn: integer('tokens_in').notNull().default(0),
+    tokensOut: integer('tokens_out').notNull().default(0),
+    costMicros: integer('cost_micros').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.usageDate, t.route, t.chargeSource, t.status] })],
+);
+
+export const billingCustomers = pgTable(
+  'billing_customers',
+  {
+    userId: uuid('user_id').notNull(),
+    provider: text('provider').notNull(),
+    providerCustomerId: text('provider_customer_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.provider] }),
+    uniqueIndex('billing_customers_provider_cust_uniq').on(t.provider, t.providerCustomerId),
+  ],
+);
+
+export const billingOrders = pgTable(
+  'billing_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    provider: text('provider').notNull(),
+    providerCheckoutId: text('provider_checkout_id').notNull(),
+    providerPaymentId: text('provider_payment_id'),
+    productCode: text('product_code').notNull(),
+    credits: integer('credits').notNull().default(0),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull(),
+    status: orderStatusEnum('status').notNull().default('pending'),
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('billing_orders_provider_checkout_uniq').on(t.provider, t.providerCheckoutId),
+    index('billing_orders_user_created_idx').on(t.userId, t.createdAt.desc()),
+    index('billing_orders_payment_idx').on(t.provider, t.providerPaymentId),
+  ],
+);
+
+export const billingEvents = pgTable(
+  'billing_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    provider: text('provider').notNull(),
+    eventId: text('event_id').notNull(),
+    eventType: text('event_type').notNull(),
+    status: billingEventStatusEnum('status').notNull().default('received'),
+    attempts: integer('attempts').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    livemode: boolean('livemode').notNull().default(false),
+    refs: jsonb('refs').$type<Record<string, unknown>>().notNull().default({}), // object ids only, never payloads
+    error: text('error'),
+    providerCreatedAt: timestamp('provider_created_at', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('billing_events_provider_event_uniq').on(t.provider, t.eventId),
+    index('billing_events_pending_idx')
+      .on(t.receivedAt)
+      .where(sql`${t.status} in ('received','processing','failed')`),
+  ],
+);
+
+export const abuseBlocks = pgTable(
+  'abuse_blocks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind')
+      .$type<'email_domain' | 'email_normalized' | 'ip_key' | 'device' | 'user'>()
+      .notNull(),
+    value: text('value').notNull(),
+    reason: text('reason'),
+    createdBy: text('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('abuse_blocks_kind_value_uniq').on(t.kind, t.value)],
+);
+
+export const platformFlags = pgTable('platform_flags', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').$type<Record<string, unknown>>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+});
+
+export const accountRequests = pgTable(
+  'account_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    kind: text('kind').$type<'export' | 'delete'>().notNull(),
+    status: text('status')
+      .$type<'pending' | 'completed' | 'canceled' | 'failed'>()
+      .notNull()
+      .default('pending'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    executeAfter: timestamp('execute_after', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('account_requests_due_idx')
+      .on(t.executeAfter)
+      .where(sql`${t.status} = 'pending'`),
+  ],
+);
+
+export const subscriptionsRelations = relations(subscriptions, ({ many }) => ({
+  usage: many(subscriptionUsage),
+}));
+
+export const subscriptionUsageRelations = relations(subscriptionUsage, ({ one }) => ({
+  subscription: one(subscriptions, {
+    fields: [subscriptionUsage.subscriptionId],
+    references: [subscriptions.id],
   }),
 }));

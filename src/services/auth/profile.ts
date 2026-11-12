@@ -1,0 +1,286 @@
+import { sql } from 'drizzle-orm';
+import type { NextRequest } from 'next/server';
+import { normalizeEmail } from './email';
+import { resolveRequestIdentity, type RequestIdentity } from './identity';
+import { AccountRestrictedError, UnauthorizedError } from '@/lib/errors';
+import { isValidUuid } from '@/lib/uuid';
+import type { AppQueryDb } from '@/services/db/client';
+import { logger } from '@/services/logger';
+
+const log = logger.child({ component: 'auth-profile' });
+
+export interface UserClaims {
+  readonly id?: string;
+  readonly sub?: string;
+  readonly email?: string | null;
+  readonly user_metadata?: Record<string, unknown> | null;
+}
+
+export interface UserProfileRow {
+  readonly id: string;
+  readonly email: string;
+  readonly email_normalized: string;
+  readonly display_name: string | null;
+  readonly avatar_url: string | null;
+  readonly date_of_birth?: Date | string | null;
+  readonly country: string | null;
+  readonly locale: string | null;
+  readonly terms_version: string | null;
+  readonly terms_accepted_at: Date | string | null;
+  readonly marketing_opt_in: boolean;
+  readonly status: 'active' | 'suspended' | 'pending_deletion';
+  readonly billing_hold: boolean;
+  readonly created_at: Date | string;
+  readonly updated_at: Date | string;
+  readonly last_seen_at: Date | string;
+  readonly deletion_requested_at: Date | string | null;
+}
+
+/**
+ * Upserts a user profile into `user_profiles`.
+ * Runs idempotently on first auth and updates `last_seen_at` at most once every 10 minutes.
+ */
+export async function ensureUserProfile(
+  db: AppQueryDb,
+  claims: UserClaims,
+): Promise<{ id: string; email: string; email_normalized: string }> {
+  const rawUserId = claims.sub || claims.id;
+  if (!rawUserId) {
+    throw new Error('ensureUserProfile: user ID (sub/id) missing from claims');
+  }
+  const userId = rawUserId.trim();
+  if (!isValidUuid(userId)) {
+    log.error({ userId }, 'ensureUserProfile: user ID is not a valid UUID');
+    throw new Error(`ensureUserProfile: invalid UUID format for user ID: ${userId}`);
+  }
+
+  const rawEmail = claims.email?.trim() || '';
+  const emailNorm = normalizeEmail(rawEmail);
+
+  const metadata = claims.user_metadata || {};
+  const displayName =
+    (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
+    (typeof metadata.name === 'string' && metadata.name.trim()) ||
+    null;
+  const avatarUrl =
+    (typeof metadata.avatar_url === 'string' && metadata.avatar_url.trim()) ||
+    (typeof metadata.picture === 'string' && metadata.picture.trim()) ||
+    null;
+  const rawDob =
+    (typeof metadata.date_of_birth === 'string' && metadata.date_of_birth.trim()) ||
+    (typeof metadata.birthday === 'string' && metadata.birthday.trim()) ||
+    (typeof metadata.birthdate === 'string' && metadata.birthdate.trim()) ||
+    null;
+  const dateOfBirth = rawDob && /^\d{4}-\d{2}-\d{2}$/.test(rawDob) ? rawDob : null;
+  const termsVersion =
+    (typeof metadata.terms_version === 'string' && metadata.terms_version.trim()) || '2026-10';
+  const parsedTermsDate = metadata.terms_accepted_at
+    ? new Date(String(metadata.terms_accepted_at))
+    : null;
+  const termsAcceptedAt =
+    parsedTermsDate && !Number.isNaN(parsedTermsDate.getTime())
+      ? parsedTermsDate.toISOString()
+      : new Date().toISOString();
+  const marketingOptIn = Boolean(metadata.marketing_opt_in);
+
+  try {
+    // 1. Look for existing profile matching either id or email_normalized
+    const existingRows = await db.execute<{
+      id: string;
+      email_normalized: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      date_of_birth: string | null;
+    }>(sql`
+      SELECT id, email_normalized, display_name, avatar_url, date_of_birth
+        FROM user_profiles
+       WHERE id = ${userId}::uuid
+          OR (${emailNorm !== ''} AND email_normalized = ${emailNorm})
+       LIMIT 1;
+    `);
+
+    const existing = existingRows[0];
+
+    if (existing) {
+      if (existing.id === userId) {
+        // Direct ID match: update profile
+        await db.execute(sql`
+          UPDATE user_profiles
+             SET email = CASE
+                   WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN ${rawEmail}
+                   ELSE user_profiles.email
+                 END,
+                 email_normalized = CASE
+                   WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN ${emailNorm}
+                   ELSE user_profiles.email_normalized
+                 END,
+                 display_name = COALESCE(${displayName}, user_profiles.display_name),
+                 avatar_url = COALESCE(${avatarUrl}, user_profiles.avatar_url),
+                 date_of_birth = COALESCE(${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`}, user_profiles.date_of_birth),
+                 last_seen_at = CASE
+                   WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
+                   ELSE user_profiles.last_seen_at
+                 END,
+                 updated_at = now()
+           WHERE id = ${userId}::uuid;
+        `);
+      } else {
+        // Email matched a profile previously registered under a different UUID (e.g. OAuth link)
+        log.info(
+          { oldUserId: existing.id, newUserId: userId, email: emailNorm },
+          'reconciling user profile auth ID to new provider sub',
+        );
+
+        await db.execute(sql`
+          UPDATE user_profiles
+             SET id = ${userId}::uuid,
+                 email = ${rawEmail},
+                 email_normalized = ${emailNorm},
+                 display_name = COALESCE(${displayName}, user_profiles.display_name),
+                 avatar_url = COALESCE(${avatarUrl}, user_profiles.avatar_url),
+                 date_of_birth = COALESCE(${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`}, user_profiles.date_of_birth),
+                 last_seen_at = now(),
+                 updated_at = now()
+           WHERE id = ${existing.id}::uuid;
+        `);
+
+        // Reconcile secondary references non-fatally
+        try {
+          await db.execute(sql`
+            UPDATE recommendation_clients SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE saved_recommendations SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE checkout_sessions SET user_id = ${userId}::uuid WHERE user_id = ${existing.id}::uuid;
+          `);
+          await db.execute(sql`
+            UPDATE usage_counters SET subject_id = ${userId} WHERE subject_kind = 'user' AND subject_id = ${existing.id};
+          `);
+        } catch (migErr) {
+          log.warn(
+            { migErr, oldUserId: existing.id, newUserId: userId },
+            'secondary table migration non-fatal warning',
+          );
+        }
+      }
+    } else {
+      await db.execute(sql`
+        INSERT INTO user_profiles (
+          id, email, email_normalized, display_name, avatar_url, date_of_birth,
+          terms_version, terms_accepted_at, marketing_opt_in,
+          status, billing_hold, created_at, updated_at, last_seen_at
+        ) VALUES (
+          ${userId}::uuid, ${rawEmail}, ${emailNorm}, ${displayName}, ${avatarUrl},
+          ${dateOfBirth ? sql`${dateOfBirth}::date` : sql`NULL`},
+          ${termsVersion}, ${termsAcceptedAt}::timestamptz, ${marketingOptIn},
+          'active', false, now(), now(), now()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
+          avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
+          date_of_birth = COALESCE(EXCLUDED.date_of_birth, user_profiles.date_of_birth),
+          email = CASE
+            WHEN user_profiles.email = '' OR user_profiles.email IS NULL THEN EXCLUDED.email
+            ELSE user_profiles.email
+          END,
+          email_normalized = CASE
+            WHEN user_profiles.email_normalized = '' OR user_profiles.email_normalized IS NULL THEN EXCLUDED.email_normalized
+            ELSE user_profiles.email_normalized
+          END,
+          last_seen_at = CASE
+            WHEN user_profiles.last_seen_at < now() - interval '10 minutes' THEN now()
+            ELSE user_profiles.last_seen_at
+          END,
+          updated_at = now();
+      `);
+    }
+
+    return { id: userId, email: rawEmail, email_normalized: emailNorm };
+  } catch (err) {
+    log.error({ err, userId }, 'failed to ensure user profile');
+    throw err;
+  }
+}
+
+/**
+ * Updates a user profile's editable fields (display_name, date_of_birth, avatar_url).
+ */
+export async function updateUserProfile(
+  db: AppQueryDb,
+  userId: string,
+  data: {
+    displayName?: string | null;
+    dateOfBirth?: string | null;
+    avatarUrl?: string | null;
+  },
+): Promise<UserProfileRow | null> {
+  if (!isValidUuid(userId)) {
+    log.warn({ userId }, 'updateUserProfile called with invalid UUID');
+    return null;
+  }
+
+  await db.execute(sql`
+    UPDATE user_profiles
+       SET display_name = COALESCE(${data.displayName !== undefined ? data.displayName : null}, display_name),
+           date_of_birth = CASE
+             WHEN ${data.dateOfBirth !== undefined} THEN ${data.dateOfBirth ? data.dateOfBirth : null}::date
+             ELSE date_of_birth
+           END,
+           avatar_url = COALESCE(${data.avatarUrl !== undefined ? data.avatarUrl : null}, avatar_url),
+           updated_at = now()
+     WHERE id = ${userId.trim()}::uuid;
+  `);
+
+  return getUserProfile(db, userId);
+}
+
+/**
+ * Loads a user's profile from `user_profiles`.
+ */
+export async function getUserProfile(
+  db: AppQueryDb,
+  userId: string,
+): Promise<UserProfileRow | null> {
+  if (!isValidUuid(userId)) {
+    log.warn({ userId }, 'getUserProfile called with invalid UUID; returning null');
+    return null;
+  }
+
+  try {
+    const rows = await db.execute<Record<string, unknown> & UserProfileRow>(sql`
+      SELECT *
+        FROM user_profiles
+       WHERE id = ${userId.trim()}::uuid
+       LIMIT 1;
+    `);
+    return rows[0] ?? null;
+  } catch (err) {
+    log.error({ err, userId }, 'failed to get user profile from database');
+    return null;
+  }
+}
+
+/**
+ * Requires an authenticated, active user.
+ * Throws UnauthorizedError if unauthenticated.
+ * Throws AccountRestrictedError if account is suspended or blocked.
+ */
+export async function requireUser(
+  request: NextRequest,
+  options?: { db?: AppQueryDb },
+): Promise<RequestIdentity> {
+  // Plan 26 WP-02: Account and billing callers omit localClaims to enforce authoritative getUser() server round trip.
+  const identity = await resolveRequestIdentity(request, options);
+
+  if (!identity.userId) {
+    throw new UnauthorizedError('Authentication required');
+  }
+
+  if (identity.isSuspended) {
+    throw new AccountRestrictedError('Your account has been restricted');
+  }
+
+  return identity;
+}

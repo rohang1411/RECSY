@@ -158,6 +158,7 @@ async function main(): Promise<void> {
   let created = 0;
   let updated = 0;
   let blocked = 0;
+  const promotedSlugs: string[] = [];
 
   try {
     for (const candidateId of candidateIds) {
@@ -165,9 +166,13 @@ async function main(): Promise<void> {
         dryRun: args.dryRun,
         updateExisting: args.updateExisting,
       });
-      if (result.action === 'created') created += 1;
-      else if (result.action === 'updated') updated += 1;
-      else if (result.action === 'blocked') blocked += 1;
+      if (result.action === 'created') {
+        created += 1;
+        if (result.slug) promotedSlugs.push(result.slug);
+      } else if (result.action === 'updated') {
+        updated += 1;
+        if (result.slug) promotedSlugs.push(result.slug);
+      } else if (result.action === 'blocked') blocked += 1;
       console.log(
         `[catalog:promote] candidate=${candidateId} action=${result.action} slug=${result.slug ?? 'n/a'} issues=${result.issues.map((i) => i.code).join(',') || 'none'}`,
       );
@@ -192,6 +197,11 @@ async function main(): Promise<void> {
     console.log(
       `[catalog:promote] done candidates=${candidateIds.length} created=${created} updated=${updated} blocked=${blocked} llm_calls=0`,
     );
+    if (!args.dryRun && promotedSlugs.length > 0) {
+      const { revalidatePublicTags } = await import('./lib/revalidate-client');
+      const tags = ['phones', ...promotedSlugs.map((s) => `phone:${s}`)];
+      await revalidatePublicTags(tags, 'catalog:promote');
+    }
   } catch (err) {
     if (run?.id) {
       const message = err instanceof Error ? err.message : String(err);

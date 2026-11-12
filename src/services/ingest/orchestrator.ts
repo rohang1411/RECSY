@@ -22,7 +22,13 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 
 import { NotFoundError } from '@/lib/errors';
-import { phones, sources } from '@/services/db/schema';
+import {
+  chunks,
+  phones,
+  sourcePhoneLinks,
+  sources,
+  type TemporalCategory,
+} from '@/services/db/schema';
 import { logger } from '@/services/logger';
 
 import type { LlmProvider } from '../llm/types';
@@ -243,24 +249,104 @@ export class IngestOrchestrator {
 
         // Source identity is URL-wide, including comparisons previously assigned to another phone.
         const known = await this.opts.db
-          .select({ id: sources.id })
+          .select({ id: sources.id, phoneId: sources.phoneId, contentHash: sources.contentHash })
           .from(sources)
-          .where(
-            sql`${sources.url} = ${candidate.url} and ${sources.contentHash} = ${raw.contentHash} and ${sources.status} = 'active'`,
-          )
+          .where(sql`${sources.url} = ${candidate.url} and ${sources.status} = 'active'`)
           .limit(1);
+
         if (known.length > 0) {
-          await this.writer.recordRejectedRun({
-            adapterName: adapter.type,
-            phoneId: phone.id,
-            sourceUrl: candidate.url,
-            candidateTitle: candidate.title,
-            stage: 'fetch',
-            rejectedReason: 'unchanged-content',
-            tier: options.tier ?? null,
-            discoveryStrategy: options.discoveryStrategy ?? null,
-          });
-          skippedDuplicate++;
+          const existingSource = known[0]!;
+
+          // Check if current phone is already linked to this source
+          const existingLink = await this.opts.db
+            .select({ id: sourcePhoneLinks.id })
+            .from(sourcePhoneLinks)
+            .where(
+              and(
+                eq(sourcePhoneLinks.sourceId, existingSource.id),
+                eq(sourcePhoneLinks.phoneId, phone.id),
+              ),
+            )
+            .limit(1);
+
+          if (existingLink.length > 0) {
+            await this.writer.recordRejectedRun({
+              adapterName: adapter.type,
+              phoneId: phone.id,
+              sourceUrl: candidate.url,
+              candidateTitle: candidate.title,
+              stage: 'fetch',
+              rejectedReason: 'unchanged-content',
+              tier: options.tier ?? null,
+              discoveryStrategy: options.discoveryStrategy ?? null,
+            });
+            skippedDuplicate++;
+            continue;
+          }
+
+          // ZERO-I/O FAST LINK: Current phone is not linked yet!
+          // Connect phone in source_phone_links and selectively index matching comparison chunks.
+          log.info(
+            { url: candidate.url, phone: phone.slug, existingSourceId: existingSource.id },
+            'URL exists; executing Zero-I/O fast secondary linking',
+          );
+
+          await this.opts.db
+            .insert(sourcePhoneLinks)
+            .values({
+              sourceId: existingSource.id,
+              phoneId: phone.id,
+              role: 'secondary',
+              relevance: '0.80',
+            })
+            .onConflictDoNothing();
+
+          const primaryChunks = await this.opts.db
+            .select()
+            .from(chunks)
+            .where(
+              and(
+                eq(chunks.sourceId, existingSource.id),
+                eq(chunks.phoneId, existingSource.phoneId),
+              ),
+            );
+
+          const aliases = await this.loadAliases();
+          const phoneAliases = aliases.filter((a) => a.phoneId === phone.id);
+
+          const secondaryChunksToInsert: Array<typeof chunks.$inferInsert> = [];
+          for (const pc of primaryChunks) {
+            if (phoneAliases.length > 0 && matchAliases(pc.text, phoneAliases).length > 0) {
+              secondaryChunksToInsert.push({
+                sourceId: existingSource.id,
+                phoneId: phone.id,
+                chunkIndex: pc.chunkIndex,
+                text: `[COMPARISON EXCERPT: Symmetrical Link for ${phone.slug}]\n${pc.text}`,
+                startTs: pc.startTs,
+                endTs: pc.endTs,
+                anchor: pc.anchor,
+                tokens: pc.tokens + 15,
+                embedding: pc.embedding,
+                embeddingModel: pc.embeddingModel,
+                metadata: {
+                  ...((pc.metadata as Record<string, unknown>) ?? {}),
+                  role: 'secondary',
+                },
+              });
+            }
+          }
+
+          if (secondaryChunksToInsert.length > 0) {
+            await this.opts.db.insert(chunks).values(secondaryChunksToInsert);
+            chunksWritten += secondaryChunksToInsert.length;
+          }
+
+          await this.opts.db
+            .update(phones)
+            .set({ nextScorecardAt: sql`now()`, updatedAt: sql`now()` })
+            .where(eq(phones.id, phone.id));
+
+          sourcesWritten += 1;
           continue;
         }
 
@@ -385,6 +471,11 @@ export class IngestOrchestrator {
             discoveryStrategy: options.discoveryStrategy ?? null,
             secondaryPhoneLinks: secondaryLinks,
             primaryRelevance,
+            temporalCategory: (candidate.raw as Record<string, unknown>)?.temporalCategory as
+              | TemporalCategory
+              | undefined,
+            primaryPhoneSlug: primaryPhone.slug,
+            aliases: await this.loadAliases(),
           });
           skippedDuplicate += 1;
           log.debug(
@@ -508,6 +599,11 @@ export class IngestOrchestrator {
           discoveryStrategy: options.discoveryStrategy ?? null,
           secondaryPhoneLinks: secondaryLinks,
           primaryRelevance,
+          temporalCategory: (candidate.raw as Record<string, unknown>)?.temporalCategory as
+            | TemporalCategory
+            | undefined,
+          primaryPhoneSlug: primaryPhone.slug,
+          aliases: await this.loadAliases(),
         });
 
         if (result.skipped) {

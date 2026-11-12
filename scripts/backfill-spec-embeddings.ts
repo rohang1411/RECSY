@@ -102,6 +102,11 @@ async function main(): Promise<void> {
     log.info({ batch: Math.floor(i / BATCH) + 1, model, count: batch.length }, 'batch embedded');
   }
 
+  if (ok > 0) {
+    const { revalidatePublicTags } = await import('./lib/revalidate-client');
+    await revalidatePublicTags(['phones'], 'spec-embed:backfill');
+  }
+
   console.log(
     `[spec-embed:backfill] OK — ${ok}/${work.length} phones (force=${force}, quotaExhausted=${quotaExhausted})`,
   );

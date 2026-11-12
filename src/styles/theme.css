@@ -55,4 +55,9 @@
   --outline-variant: #444748;
 
   --radius: 0px;
+
+  --hud-pip: 10px;
+  --sheet-w: 440px;
+  --z-sheet: 60;
+  --accent-soft: rgb(216 107 56 / 0.12);
 }
