@@ -23,7 +23,7 @@ import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { summarizeErrorChainForLogs } from '../src/lib/summarize-error';
 import { getDb } from '../src/services/db/client';
 import { describeMissingSchema, findMissingPublicSchema } from '../src/services/db/schema-guard';
-import { ingestRuns, phones, sources } from '../src/services/db/schema';
+import { ingestRuns, phones, sourcePhoneLinks, sources } from '../src/services/db/schema';
 import { logger } from '../src/services/logger';
 import { classifyTier, REFRESH_INTERVAL_DAYS } from '../src/services/ingest';
 
@@ -133,6 +133,31 @@ async function main(): Promise<void> {
     );
   } else {
     console.log('  no sources written this window');
+  }
+
+  hr('Sources by temporal_category');
+  const byTemporal = await db
+    .select({
+      temporalCategory: sources.temporalCategory,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(sources)
+    .groupBy(sources.temporalCategory)
+    .orderBy(desc(sql<number>`count(*)`));
+  for (const r of byTemporal) {
+    console.log(`  ${pad(r.temporalCategory, 16)} n=${r.n}`);
+  }
+
+  hr('Source-phone links (symmetrical & secondary)');
+  const linkStats = await db
+    .select({
+      role: sourcePhoneLinks.role,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(sourcePhoneLinks)
+    .groupBy(sourcePhoneLinks.role);
+  for (const r of linkStats) {
+    console.log(`  ${pad(r.role, 12)} links=${r.n}`);
   }
 
   hr('Phones overdue for ingestion');

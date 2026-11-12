@@ -1,0 +1,92 @@
+# =============================================================================
+# source-watch — unified multi-platform scout for YouTube & Editorial RSS feeds.
+#
+# Runs every 6 hours. Polling 36 verified YouTube channels + 10 tech publications.
+# Matches phone aliases, infers temporal categories (launch, 6m, 1y, comparison),
+# pre-deduplicates against sources and crawl_queue in a single SQL query, and enqueues
+# candidates for tiered ingestion.
+# =============================================================================
+name: source-watch (scout)
+
+on:
+  schedule:
+    # Runs every 6 hours, offset by 23 minutes
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (do not write to crawl_queue)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: source-watch
+  cancel-in-progress: false
+
+jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  watch:
+    name: Poll multi-platform feeds
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NODE_ENV: production
+      NODE_OPTIONS: --dns-result-order=ipv4first
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__SOURCE_WATCH_PLACEHOLDER__' }}
+      LOG_LEVEL: info
+      SKIP_ENV_VALIDATION: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Poll feeds and scout sources
+        shell: bash
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          DRY_FLAG=""
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+          pnpm exec tsx scripts/source-watch.ts $DRY_FLAG

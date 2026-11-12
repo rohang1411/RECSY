@@ -53,6 +53,8 @@ export interface RetrievedChunk {
   readonly startTs?: number | null;
   /** Anchor fragment appended to the source URL for deep-linking. */
   readonly anchor?: string | null;
+  /** Arbitrary chunk metadata (e.g. role: 'secondary', comparisonPrimarySubject). */
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 /** Flattened source fields needed to render a citation. */
@@ -64,6 +66,7 @@ export interface RetrievedSource {
   readonly author: string | null;
   readonly channel: string | null;
   readonly publishedAt: Date | null;
+  readonly temporalCategory?: string | null;
 }
 
 /** Input to a single retriever (vector, FTS, etc.). */

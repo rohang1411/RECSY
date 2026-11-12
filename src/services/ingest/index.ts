@@ -47,6 +47,11 @@ export { makeDbAliasLoader, makeDbPhoneLookup } from './agents/alias-loader';
 
 export { makePoliteHttp, type PoliteHttp } from './http';
 
+export {
+  getDueMilestones,
+  recordScoutedMilestones,
+  type TemporalMilestoneQuery,
+} from './scheduler/temporal-queries';
 export { pickPhones, shardIndex, type PickedPhone } from './scheduler/pick-phones';
 export {
   markCrawlQueueDone,

@@ -18,6 +18,7 @@ export interface DomainSeed {
   trustWeight: string;
   rateLimitMs: number;
   robotsRespected: boolean;
+  rssFeedUrl?: string;
   notes?: string;
 }
 
@@ -25,9 +26,10 @@ export const DOMAIN_SEEDS: readonly DomainSeed[] = [
   // Primary target — GSMArena has both news and review sections.
   {
     host: 'gsmarena.com',
-    trustWeight: '0.90',
+    trustWeight: '0.92',
     rateLimitMs: 4_000,
     robotsRespected: true,
+    rssFeedUrl: 'https://www.gsmarena.com/rss-news-reviews.php3',
     notes: 'Primary spec + review source. Cloudflare-sensitive; stay under 1 req/4s.',
   },
   {
@@ -45,15 +47,80 @@ export const DOMAIN_SEEDS: readonly DomainSeed[] = [
     notes: 'Innertube + RSS + timedtext. Transcript endpoint is datacenter-sensitive.',
   },
 
-  // Editorial sources — used by the Article adapter when URL is supplied.
-  { host: 'theverge.com', trustWeight: '0.90', rateLimitMs: 3_000, robotsRespected: true },
-  { host: 'techradar.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
-  { host: 'tomsguide.com', trustWeight: '0.80', rateLimitMs: 3_000, robotsRespected: true },
-  { host: '9to5google.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
-  { host: '9to5mac.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
-  { host: 'androidauthority.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
+  // Editorial sources with RSS endpoints for continuous discovery
+  {
+    host: 'androidauthority.com',
+    trustWeight: '0.90',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.androidauthority.com/reviews/feed/',
+    notes: 'Dedicated review feed with frequent 6-month & 1-year retrospective writeups.',
+  },
+  {
+    host: 'theverge.com',
+    trustWeight: '0.90',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.theverge.com/rss/reviews/index.xml',
+    notes: 'High cultural reach; rigorous review scores and hardware assessments.',
+  },
+  {
+    host: 'tomsguide.com',
+    trustWeight: '0.85',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.tomsguide.com/feeds/all',
+    notes: 'Standardized lab battery tests and nit brightness measurements.',
+  },
+  {
+    host: '9to5google.com',
+    trustWeight: '0.88',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://9to5google.com/feed/',
+    notes: 'Deep Android and Pixel long-term coverage, monthly feature drop reviews.',
+  },
+  {
+    host: '9to5mac.com',
+    trustWeight: '0.88',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://9to5mac.com/feed/',
+    notes: 'Dedicated iPhone long-term hardware testing, iOS battery drain logs.',
+  },
+  {
+    host: 'arstechnica.com',
+    trustWeight: '0.92',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://feeds.arstechnica.com/arstechnica/reviews',
+    notes: 'Deep silicon architecture analysis, Linux kernel changes, display tech.',
+  },
+  {
+    host: 'notebookcheck.net',
+    trustWeight: '0.92',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.notebookcheck.net/News.152.0.rss',
+    notes: 'PWM frequency, thermal camera imaging, sustained benchmark throttling.',
+  },
+  {
+    host: 'techradar.com',
+    trustWeight: '0.85',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.techradar.com/rss/reviews',
+    notes: 'Broad smartphone category coverage across global regions.',
+  },
+  {
+    host: 'digitaltrends.com',
+    trustWeight: '0.82',
+    rateLimitMs: 3_000,
+    robotsRespected: true,
+    rssFeedUrl: 'https://www.digitaltrends.com/feed/',
+    notes: 'Practical buying advice, long-term durability follow-ups.',
+  },
   { host: 'androidpolice.com', trustWeight: '0.80', rateLimitMs: 3_000, robotsRespected: true },
-  { host: 'arstechnica.com', trustWeight: '0.90', rateLimitMs: 3_000, robotsRespected: true },
   { host: 'engadget.com', trustWeight: '0.80', rateLimitMs: 3_000, robotsRespected: true },
   { host: 'dxomark.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
   { host: 'wired.com', trustWeight: '0.85', rateLimitMs: 3_000, robotsRespected: true },
@@ -69,6 +136,7 @@ export async function seedDomainProfiles(
     trustWeight: s.trustWeight,
     rateLimitMs: s.rateLimitMs,
     robotsRespected: s.robotsRespected,
+    rssFeedUrl: s.rssFeedUrl ?? null,
     status: 'active' as const,
   }));
   const result = await db
@@ -80,6 +148,7 @@ export async function seedDomainProfiles(
         trustWeight: sql`excluded.trust_weight`,
         rateLimitMs: sql`excluded.rate_limit_ms`,
         robotsRespected: sql`excluded.robots_respected`,
+        rssFeedUrl: sql`excluded.rss_feed_url`,
         status: sql`excluded.status`,
         updatedAt: sql`now()`,
       },

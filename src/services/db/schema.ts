@@ -108,6 +108,16 @@ export const sentimentSummaryEnum = pgEnum('sentiment_summary', [
   'neutral',
 ]);
 
+export const temporalCategoryEnum = pgEnum('temporal_category', [
+  'launch',
+  'long_term_6m',
+  'long_term_1y',
+  'comparison',
+  'reliability',
+  'general',
+]);
+export type TemporalCategory = (typeof temporalCategoryEnum.enumValues)[number];
+
 export const catalogPhoneMediaStatusEnum = pgEnum('catalog_phone_media_status', [
   'local_ok',
   'remote_only',
@@ -260,6 +270,11 @@ export const phones = pgTable(
     metadataConfidence: numeric('metadata_confidence', { precision: 3, scale: 2 }),
     specCompleteness: numeric('spec_completeness', { precision: 3, scale: 2 }),
     mediaStatus: catalogPhoneMediaStatusEnum('media_status'),
+    /** Life-cycle milestones searched for this phone, e.g. ['launch', '6m', '1y']. */
+    milestonesScouted: text('milestones_scouted')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /**
      * Outcome of the most recent ingest attempt:
      *   'success' | 'partial' | 'quota_exhausted' | 'failed' | null (never attempted).
@@ -319,6 +334,8 @@ export const sources = pgTable(
     engagementScore: numeric('engagement_score', { precision: 4, scale: 3 }),
     /** Whether `publishedAt` is accurate to the day, month, or year only. */
     publishedPrecision: publishedPrecisionEnum('published_precision'),
+    /** Temporal review category (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
+    temporalCategory: temporalCategoryEnum('temporal_category').notNull().default('general'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -326,6 +343,9 @@ export const sources = pgTable(
     unique('sources_phone_url_uniq').on(t.phoneId, t.url),
     index('sources_phone_id_idx').on(t.phoneId),
     index('sources_status_idx').on(t.status),
+    index('sources_temporal_category_idx').on(t.temporalCategory),
+    index('sources_phone_temporal_idx').on(t.phoneId, t.temporalCategory),
+    index('sources_url_content_hash_idx').on(t.url, t.contentHash),
   ],
 );
 
@@ -822,6 +842,8 @@ export const domainProfiles = pgTable(
     /** Last-parsed robots.txt, kept as parsed ruleset for O(1) matching. */
     robotsJson: jsonb('robots_json').$type<unknown>(),
     robotsFetchedAt: timestamp('robots_fetched_at', { withTimezone: true }),
+    /** Optional direct RSS feed endpoint for scout discovery. */
+    rssFeedUrl: text('rss_feed_url'),
     status: profileStatusEnum('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -876,12 +898,15 @@ export const crawlQueue = pgTable(
     status: crawlQueueStatusEnum('status').notNull().default('queued'),
     /** Optional direct URL (creator-watch populates this; scheduler discovery leaves null). */
     url: text('url'),
+    /** Temporal category for the review (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
+    temporalCategory: temporalCategoryEnum('temporal_category').notNull().default('general'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('crawl_queue_status_sched_idx').on(t.status, t.scheduledFor),
     index('crawl_queue_phone_idx').on(t.phoneId),
+    index('crawl_queue_temporal_category_idx').on(t.temporalCategory),
   ],
 );
 
