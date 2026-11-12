@@ -50,11 +50,25 @@ import { fetchExternalTranscript } from './youtube-external-transcripts';
 
 const TARGET_TOKENS_PER_CHUNK = 400;
 const OVERLAP_TOKENS = 60;
-const DEFAULT_DISCOVERY_QUERIES = (phone: PhoneRef): string[] => [
-  `${phone.brand} ${phone.model} review`,
-  `${phone.brand} ${phone.model} camera test`,
-  `${phone.brand} ${phone.model} long term review`,
-];
+const DEFAULT_DISCOVERY_QUERIES = (phone: PhoneRef): string[] => {
+  const queries = [
+    `${phone.brand} ${phone.model} review`,
+    `${phone.brand} ${phone.model} camera test`,
+    `${phone.brand} ${phone.model} long term review`,
+  ];
+  if (phone.launchDate) {
+    const ageDays = (Date.now() - new Date(phone.launchDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (ageDays >= 150) {
+      queries.push(`${phone.brand} ${phone.model} 6 months later`);
+      queries.push(`${phone.brand} ${phone.model} battery drain test`);
+    }
+    if (ageDays >= 330) {
+      queries.push(`${phone.brand} ${phone.model} 1 year later`);
+      queries.push(`${phone.brand} ${phone.model} still worth it`);
+    }
+  }
+  return queries;
+};
 
 interface CachedYt {
   client: Innertube | null;

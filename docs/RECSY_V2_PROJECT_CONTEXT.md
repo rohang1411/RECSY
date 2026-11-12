@@ -5,7 +5,7 @@
 > every phase update edits this file. If a decision isn't captured here, it
 > doesn't exist.
 
-**Status.** **Citation Tracing, Provenance Inspector & Decision Explainability Observatory (Plan 28, 2026-11-04)** shipped: Zero-latency in-band evidence delivery (<800 bytes gzipped) on NDJSON streaming and recommendation turn payloads, dual-action `CitationChip` (hover opens animated spring card with verbatim excerpt, author/channel, platform badge, video timestamp, and RRF match score; click navigates directly to source in new tab), Cybernetic Editorial Brutalism Studio Drawer (`ProvenanceInspectorSheet`) supporting both Phone Q&A and Recommender modes, interactive SVG Visual Pipeline DAG with live step latencies, Claim Synapse Matrix (`SynapseWireframe`) linking generated answer sentences to grounding review chunks, Evidence Vault (`EvidenceCard`), Multi-Aspect Equalizer (`AspectEqualizer`) matching user weights to reviewer consensus quotes (pros/cons), Funnel Elimination Waterfall (`FunnelWaterfall`), and Head-to-Head Runner-Up Delta (`RecommenderDecisionPipeline`). Passed all 205 test suites (1,346 tests) and clean TypeScript typecheck; see [Section 30](#30-citation-tracing-provenance-inspector--artful-decision-explainability-engine-plan-28). **Multi-User Platform Transformation & Monetization (Plan 25, 2026-10-21)** shipped: fair-use query metering (2 free queries/day), credit packs, RECSY Pro subscriptions via hosted Stripe Checkout, atomic SQL metering core with two-phase leases (`recsy_reserve_query` and `recsy_settle_lease`), server-side Supabase Auth (zero client bundle SDKs), `__Host-recsy_did` device identity with anonymous graduation, brutalist technical editorial UI (`rounded-none`), Quota HUD, web security hardening (staged CSP, Turnstile, least-privilege `recsy_app` DB role), cross-device session history sync, operations telemetry (`/internal/usage`, `/internal/billing`), automated SQL alert rules, and 12 operational runbooks; see [Section 27](#27-multi-user-platform). **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
+**Status.** **Continuous Source Expansion, Temporal Review Evolution & Bi-Directional Comparison System (Plan 29, 2026-11-12)** shipped: Unified multi-platform scout (`scripts/source-watch.ts`) concurrently harvesting 36 verified YouTube channels and 10 tech publication RSS feeds in ~24s with zero LLM calls and automated temporal categorization (`launch`, `long_term_6m`, `long_term_1y`, `comparison`); milestone-gated temporal query engine (`phones.milestones_scouted: text[]`) eliminating redundant searches and runner quota burn; Zero-I/O Fast Secondary Linking resolving the deduplication skip bug in ~5ms local SQL transactions; Entity-Constrained Chunk Association (`writer.ts`) preventing RAG cross-entity context poisoning by copying only chunks matching secondary phone aliases with `[COMPARISON EXCERPT]` tagging and reusing precomputed 768-D embeddings; Temporal-Stratified Scorecard Agent (`src/services/scorecard/agent.ts`) guaranteeing >= 2 retrospective/comparison passages in prompt context with Frontier AI Lab methodology rules (battery endurance superseding launch-day unboxings, value relative to current competition, software update stability over day-1 bugs); and automated 6-hourly `.github/workflows/source-watch.yml`. Passed all 19 ingest test suites (139 tests), 6 retrieval test suites (36 tests), 7 scorecard test suites (24 tests), and 0 TypeScript typecheck errors; see [Section 32](#32-continuous-source-expansion-temporal-review-evolution--bi-directional-comparison-system-plan-29). **Citation Tracing, Provenance Inspector & Decision Explainability Observatory (Plan 28, 2026-11-04)** shipped: Zero-latency in-band evidence delivery (<800 bytes gzipped) on NDJSON streaming and recommendation turn payloads, dual-action `CitationChip` (hover opens animated spring card with verbatim excerpt, author/channel, platform badge, video timestamp, and RRF match score; click navigates directly to source in new tab), Cybernetic Editorial Brutalism Studio Drawer (`ProvenanceInspectorSheet`) supporting both Phone Q&A and Recommender modes, interactive SVG Visual Pipeline DAG with live step latencies, Claim Synapse Matrix (`SynapseWireframe`) linking generated answer sentences to grounding review chunks, Evidence Vault (`EvidenceCard`), Multi-Aspect Equalizer (`AspectEqualizer`) matching user weights to reviewer consensus quotes (pros/cons), Funnel Elimination Waterfall (`FunnelWaterfall`), and Head-to-Head Runner-Up Delta (`RecommenderDecisionPipeline`). Passed all 205 test suites (1,346 tests) and clean TypeScript typecheck; see [Section 30](#30-citation-tracing-provenance-inspector--artful-decision-explainability-engine-plan-28). **Multi-User Platform Transformation & Monetization (Plan 25, 2026-10-21)** shipped: fair-use query metering (2 free queries/day), credit packs, RECSY Pro subscriptions via hosted Stripe Checkout, atomic SQL metering core with two-phase leases (`recsy_reserve_query` and `recsy_settle_lease`), server-side Supabase Auth (zero client bundle SDKs), `__Host-recsy_did` device identity with anonymous graduation, brutalist technical editorial UI (`rounded-none`), Quota HUD, web security hardening (staged CSP, Turnstile, least-privilege `recsy_app` DB role), cross-device session history sync, operations telemetry (`/internal/usage`, `/internal/billing`), automated SQL alert rules, and 12 operational runbooks; see [Section 27](#27-multi-user-platform). **Command Center Quota Resilience, Free-Tier Safeguards & Workspace UX (2026-10-19)** shipped: fault-isolated per-project Gemini quota monitoring with Unified Key Roster, GitHub conditional ETag rate limit protection, 5-10m server-side memory caching with SWR fallback, in-memory aggregate metrics deriving candidate counts without redundant SQL, interactive `<InternalRefreshButton>` with visual feedback across all 5 internal workspaces, clickable KPI drill-downs with smooth-scroll filtering, and a decluttered 3-tab Evaluation Hub; see [Section 26 (Phase D)](#phase-d-bounded-demand-driven-internal-observability). **Model Gateway & Multi-Provider Router Architecture (2026-10-14)** shipped: zero-overhead semantic router (< 0.03ms latency, 0.025ms microbenchmarked), virtual key pool (Groq LPUs, Cerebras, NVIDIA NIM, GitHub Models, Gemini), client-side RPM/TPM quota governor, per-provider circuit breakers, 2-tier speculative cascade executor, resilient JSON stripper, and zero-leak client BYOK with Fast/Deep mode toggle; guarantees 100% free-tier operation and eliminates reasoning quota waste; see [Section 14](#14-llm-infrastructure). **Supabase Free-Tier Optimization & Database Hardening (2026-10-14)** shipped across Phases A–I, resolving the Oct 7 egress quota breach: `workload-guard.ts` blocks hosted DBs for synthetic sweeps, HMAC-SHA256 operator cookie auth on `/internal/*`, RLS migration 0011, decoupled catalog queries with 10-minute in-flight coalescing cache, selective MMR vector fetching, bounded observability, zero scorecard skip writes, read-only LLM cache with 30-day TTL expiry, serverless connection pool (`max: 2`), and batch retention pruning (`pnpm db:prune`). Projected egress is <1.0 GB/month (>60% headroom under 5.0 GB limit); see [Section 26](#26-supabase-free-tier-egress-quota-breach-root-cause--comprehensive-optimization-architecture).
 Phase 6 (Browse + faceted filter) **shipped (MVP)** — URL-driven
 `GET` filters on `/browse` (brands, `min`/`max` MSRP, foldable from
 `spec_json`), server-side Drizzle `where`, **no** client fetch for the list; see
@@ -118,6 +118,19 @@ Brand priority and latest-released ordering are enforced through `src/services/c
     - [30.2 Phone Q&A Provenance Architecture (/p/[slug])](#302-phone-qa-provenance-architecture-pslug)
     - [30.3 Recommender Decision Observatory (/recommend)](#303-recommender-decision-observatory-recommend)
     - [30.4 Verified Quality Gates](#304-verified-quality-gates)
+31. [Quota Enforcement, Usage Telemetry & In-Window Meter Integration](#31-quota-enforcement-usage-telemetry--in-window-meter-integration)
+    - [31.1 Problem Statement & Root Cause](#311-problem-statement--root-cause)
+    - [31.2 Root Cause Fix: Default Enforce & Test Isolation](#312-root-cause-fix-default-enforce--test-isolation)
+    - [31.3 Quota State Synchronization](#313-quota-state-synchronization)
+    - [31.4 In-Window Meter Integration & RECSY Editorial Design System](#314-in-window-meter-integration--recsy-editorial-design-system)
+32. [Continuous Source Expansion, Temporal Review Evolution & Bi-Directional Comparison System (Plan 29)](#32-continuous-source-expansion-temporal-review-evolution--bi-directional-comparison-system-plan-29)
+    - [32.1 Root Cause: Unchanged Content Trap & Secondary Phone Orphan Bug](#321-root-cause-unchanged-content-trap--secondary-phone-orphan-bug)
+    - [32.2 Multi-Platform Scout Architecture (source-watch.ts)](#322-multi-platform-scout-architecture-source-watchts)
+    - [32.3 Milestone-Gated Temporal Ingestion Engine](#323-milestone-gated-temporal-ingestion-engine)
+    - [32.4 Entity-Constrained Chunk Association & Zero-I/O Fast Linking](#324-entity-constrained-chunk-association--zero-io-fast-linking)
+    - [32.5 Temporal-Stratified Scorecard Calibration & Methodology Prompt](#325-temporal-stratified-scorecard-calibration--methodology-prompt)
+    - [32.6 CI/CD Workflow Integration (.github/workflows/source-watch.yml)](#326-cicd-workflow-integration-githubworkflowssource-watchyml)
+    - [32.7 Telemetry & Quality Gates](#327-telemetry--quality-gates)
 
 ---
 
@@ -5446,3 +5459,82 @@ RECSY answers consumer smartphone purchasing questions where users make $1,000 t
   - Hard 0px corners (`rounded-none`).
   - Monospace typography (`font-mono`, `text-xs`, `text-[10px]`) for telemetry data.
   - 1px hairline borders matching the RECSY cybernetic technical-editorial style.
+
+---
+
+## 32. Continuous Source Expansion, Temporal Review Evolution & Bi-Directional Comparison System (Plan 29)
+
+> **Normative reference:** Full architecture, data flow diagrams, and test specifications are in [Master Plan 29 (`docs/ImplementationPlans/29. continuous-source-expansion-and-temporal-review-evolution-plan.md`)](./ImplementationPlans/29.%20continuous-source-expansion-and-temporal-review-evolution-plan.md).
+
+### 32.1 Root Cause: Unchanged Content Trap & Secondary Phone Orphan Bug
+
+Consumer smartphone recommendations ($700 to $1,800 investments) require living, up-to-date consensus. Smartphone performance, battery health, and value propositions evolve dramatically over time:
+
+1. **Launch Hype vs. Long-Term Reality**: Reviewers frequently reverse or temper opinions after living with a device for 3 to 12 months. Long-term reviews uncover critical realities: sustained battery drain after major OS updates, thermal throttling under continuous usage, display green-line issues, or camera shutter lag improvements.
+2. **Generational & Competitive Value Shifts**: When a successor phone launches, the value proposition of the predecessor shifts immediately.
+3. **The "Unchanged Content" Trap**: Prior ingestion runs repetitively queried `"brand model review"`, which search engines and YouTube resolved to top launch-day reviews. Because reviewers do not re-upload existing videos or edit existing articles, content hashes matched, triggering `unchanged-content` skips and freezing phones with only 3–5 launch sources.
+4. **The "Secondary Phone Orphan" Bug**: In `orchestrator.ts`, checking `SELECT id FROM sources WHERE url = candidate.url` caused the pipeline to skip immediately whenever Phone B encountered a comparison video previously ingested under Phone A. Phone B received 0 chunks, its corpus fingerprint remained unchanged, and its scorecard was never calibrated with comparison insights.
+5. **Context Poisoning**: Naively copying all chunks from comparison reviews into secondary phone corpuses poisoned older models with newer specs (e.g., attributing the iPhone 16 Pro's A18 chip and Camera Control button to the iPhone 15 Pro).
+
+### 32.2 Multi-Platform Scout Architecture (`source-watch.ts`)
+
+- **Concurrent Multi-Platform RSS Harvester**: Implemented `scripts/source-watch.ts` to poll 36 verified YouTube channel RSS feeds and 10 editorial publication RSS feeds concurrently.
+- **Zero Scraping Blocks & 0 LLM Calls**: Operates entirely over standard public RSS/Atom endpoints, taking ~24s for all 46 sources.
+- **Temporal Categorization**: Automatically categorizes candidate items based on title cues:
+  - `launch`: First-look reviews, camera tests, launch unboxings.
+  - `long_term_6m`: 3-month/6-month reviews, long-term daily driver follow-ups.
+  - `long_term_1y`: 1-year reviews, revisited analyses, "still worth it in [year]".
+  - `comparison`: Head-to-head showdowns, "vs", multi-phone battery drain tests.
+  - `reliability`: Post-update battery drain tests, known defect reports.
+- **Single-Query Batch Pre-Deduplication**: Resolves all candidates against `sources` and `crawl_queue` in a single SQL query (`inArray(crawlQueue.url, allUrls)`), inserting only genuinely novel candidates into `crawl_queue`.
+
+### 32.3 Milestone-Gated Temporal Ingestion Engine
+
+- **Database Gate**: Added `milestones_scouted: text[]` to `phones` table (migration 0019).
+- **Engine**: Implemented `getDueMilestones()` and `recordScoutedMilestones()` in `src/services/ingest/scheduler/temporal-queries.ts`.
+- **Milestone Thresholds**:
+  - `launch`: Bootstraps launch-day queries.
+  - `6m`: Triggers once when `ageDays >= 150` and `'6m'` is not in `milestones_scouted`.
+  - `1y`: Triggers once when `ageDays >= 330` and `'1y'` is not in `milestones_scouted`.
+  - `successor`: Triggers once when a newer model is cataloged.
+- **Zero Search Waste**: Search queries execute exactly once upon threshold crossing, then record into `phones.milestones_scouted` and permanently close the gate. Ongoing discovery is handled by the 6-hourly RSS scout.
+
+### 32.4 Entity-Constrained Chunk Association & Zero-I/O Fast Linking
+
+- **Zero-I/O Fast Secondary Linking**: In `src/services/ingest/orchestrator.ts`, when a candidate URL matches an existing source in `sources`, the system checks `source_phone_links`. If unlinked:
+  - Links the secondary phone in `source_phone_links` (`role='secondary'`).
+  - Selectively indexes matching comparison chunks.
+  - Invalidates the secondary phone's scorecard (`next_scorecard_at = now()`).
+  - Executes in ~5ms local SQL transaction with **0 network calls and 0 LLM calls**.
+- **Entity-Constrained Chunk Association**: In `src/services/ingest/writer.ts`, secondary comparison chunks are strictly filtered using `matchAliases(pc.text, secondaryAliases)`.
+  - Only chunks that explicitly mention the secondary phone are copied.
+  - Chunks are framed with `[COMPARISON EXCERPT: Comparing <primary> vs Secondary Reference]` and metadata `{ role: 'secondary', comparisonPrimarySubject: primarySlug }`.
+  - Reuses precomputed 768-D vectors (zero token spend).
+
+### 32.5 Temporal-Stratified Scorecard Calibration & Methodology Prompt
+
+- **Temporal-Stratified RAG**: In `src/services/scorecard/agent.ts`, `stratifyPassages()` guarantees at least 2 retrospective/comparison passages (up to 3) in the 8-passage prompt context when available, preventing launch chunks from starving out newer evidence.
+- **Passage Serialization**: Enriches `<passage>` tags with attributes: `published="YYYY-MM-DD"`, `stage="long_term_6m"`, `isComparison="true|false"`.
+- **Frontier AI Lab Methodology Rules**:
+  1. _Battery_: Long-term endurance tests and post-update drain reports strictly supersede launch-day unboxings.
+  2. _Value_: Value is relative to current competition; comparison passages with newer rivals supersede initial MSRP.
+  3. _Software_: Long-term update stability and bug fixes after 6+ months take precedence over launch firmware bugs.
+  4. _Durability & Build_: Factors in long-term wear, scratches, or hinge issues noted in retrospective passages.
+
+### 32.6 CI/CD Workflow Integration (`.github/workflows/source-watch.yml`)
+
+- Runs on cron schedule `23 */6 * * *` (every 6 hours).
+- Concurrency group `source-watch` with `cancel-in-progress: false`.
+- Feeds novel candidates directly into `crawl_queue`, consumed by the tiered ingestion runner (`scripts/ingest-auto.ts` / `.github/workflows/ingest-tiered.yml`).
+
+### 32.7 Telemetry & Quality Gates
+
+- **Telemetry Digest**: `scripts/ingest-report.ts` outputs distribution of sources by `temporal_category` and count of primary/secondary `source_phone_links`.
+- **Test Suites**:
+  - `src/services/ingest/scheduler/temporal-queries.test.ts` (7 tests, passed).
+  - `src/services/scorecard/stratify.test.ts` (3 tests, passed).
+  - `src/services/ingest/entity-constrained-chunks.test.ts` (2 tests, passed).
+  - Full ingest test suites: 19 test files, 139 tests passed.
+  - Full retrieval test suites: 6 test files, 36 tests passed.
+  - Full scorecard test suites: 7 test files, 24 tests passed.
+  - TypeScript typecheck (`pnpm typecheck`): 0 errors.

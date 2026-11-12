@@ -13,12 +13,13 @@
  * All DB work for a single source happens in one transaction so a partial
  * failure leaves no half-written state.
  */
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 
-import { chunks, ingestRuns, sourcePhoneLinks, sources } from '@/services/db/schema';
+import { chunks, ingestRuns, phones, sourcePhoneLinks, sources } from '@/services/db/schema';
 import { logger } from '@/services/logger';
 
 import type { getDb } from '../db/client';
+import { matchAliases, type AliasRow } from './agents/alias-match';
 import { classifyIngestError, computeRetryAfter } from './error-classify';
 import type { IngestErrorCode, IngestStage, RawChunk, RawSource, SourceType } from './types';
 
@@ -53,6 +54,18 @@ export interface WriteSourceInput {
   }[];
   /** Relevance for the primary phone in source_phone_links. */
   readonly primaryRelevance?: number | null;
+  /** Temporal category (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
+  readonly temporalCategory?:
+    | 'launch'
+    | 'long_term_6m'
+    | 'long_term_1y'
+    | 'comparison'
+    | 'reliability'
+    | 'general';
+  /** Primary phone slug (used for comparison chunk contextualization). */
+  readonly primaryPhoneSlug?: string;
+  /** Phone aliases used for entity-constrained secondary chunk filtering. */
+  readonly aliases?: readonly AliasRow[];
 }
 
 /** Curator-populated source-level metadata. All fields are optional. */
@@ -96,6 +109,9 @@ export class IngestionWriter {
       discoveryStrategy,
       secondaryPhoneLinks,
       primaryRelevance,
+      temporalCategory,
+      primaryPhoneSlug,
+      aliases,
     } = input;
     const startedAt = new Date();
     const url = raw.candidate.url;
@@ -109,6 +125,18 @@ export class IngestionWriter {
           .where(sql`${sources.phoneId} = ${phoneId} and ${sources.url} = ${url}`)
           .limit(1);
 
+        const temporalCat =
+          temporalCategory ??
+          ((raw.candidate.raw as Record<string, unknown>)?.temporalCategory as
+            | 'launch'
+            | 'long_term_6m'
+            | 'long_term_1y'
+            | 'comparison'
+            | 'reliability'
+            | 'general'
+            | undefined) ??
+          'general';
+
         const sourceRow = {
           phoneId,
           type,
@@ -121,6 +149,7 @@ export class IngestionWriter {
           lastFetchedAt: new Date(),
           contentHash: raw.contentHash,
           status: 'active' as const,
+          temporalCategory: temporalCat,
           rawJson: raw.raw as Record<string, unknown>,
           // Curator-populated enrichment (all optional / nullable columns).
           relevance: enrichment?.relevance !== undefined ? String(enrichment.relevance) : null,
@@ -191,6 +220,7 @@ export class IngestionWriter {
               viewCount: sql`excluded.view_count`,
               engagementScore: sql`excluded.engagement_score`,
               publishedPrecision: sql`excluded.published_precision`,
+              temporalCategory: sql`coalesce(excluded.temporal_category, sources.temporal_category)`,
               updatedAt: sql`now()`,
             },
           })
@@ -204,22 +234,61 @@ export class IngestionWriter {
         // 4. Replace chunks for this source atomically.
         await tx.delete(chunks).where(eq(chunks.sourceId, sourceId));
 
+        let totalChunksInserted = 0;
         if (preparedChunks.length > 0) {
-          await tx.insert(chunks).values(
-            preparedChunks.map((pc) => ({
-              sourceId,
-              phoneId,
-              chunkIndex: pc.raw.chunkIndex,
-              text: pc.raw.text,
-              startTs: pc.raw.startTs ?? null,
-              endTs: pc.raw.endTs ?? null,
-              anchor: pc.raw.anchor ?? null,
-              tokens: pc.raw.tokens,
-              embedding: [...pc.embedding],
-              embeddingModel,
-              metadata: (pc.raw.metadata ?? {}) as Record<string, unknown>,
-            })),
-          );
+          const chunksToInsert: Array<typeof chunks.$inferInsert> = preparedChunks.map((pc) => ({
+            sourceId,
+            phoneId,
+            chunkIndex: pc.raw.chunkIndex,
+            text: pc.raw.text,
+            startTs: pc.raw.startTs ?? null,
+            endTs: pc.raw.endTs ?? null,
+            anchor: pc.raw.anchor ?? null,
+            tokens: pc.raw.tokens,
+            embedding: [...pc.embedding],
+            embeddingModel,
+            metadata: (pc.raw.metadata ?? {}) as Record<string, unknown>,
+          }));
+
+          // Entity-Constrained Chunk Association for secondary phone links
+          if (
+            secondaryPhoneLinks &&
+            secondaryPhoneLinks.length > 0 &&
+            aliases &&
+            aliases.length > 0
+          ) {
+            const primarySlug = primaryPhoneSlug ?? 'primary';
+            for (const sec of secondaryPhoneLinks) {
+              if (sec.relevance != null && Number(sec.relevance) < 0.5) continue;
+              const secAliases = aliases.filter((a) => a.phoneId === sec.phoneId);
+              if (secAliases.length === 0) continue;
+
+              for (const pc of preparedChunks) {
+                if (matchAliases(pc.raw.text, secAliases).length > 0) {
+                  chunksToInsert.push({
+                    sourceId,
+                    phoneId: sec.phoneId,
+                    chunkIndex: pc.raw.chunkIndex,
+                    text: `[COMPARISON EXCERPT: Comparing ${primarySlug} vs Secondary Reference]\n${pc.raw.text}`,
+                    startTs: pc.raw.startTs ?? null,
+                    endTs: pc.raw.endTs ?? null,
+                    anchor: pc.raw.anchor ?? null,
+                    tokens: pc.raw.tokens + 15,
+                    embedding: [...pc.embedding], // Reuses precomputed 768-D vector; 0 extra LLM calls!
+                    embeddingModel,
+                    metadata: {
+                      ...((pc.raw.metadata ?? {}) as Record<string, unknown>),
+                      role: 'secondary',
+                      comparisonPrimarySubject: primarySlug,
+                    },
+                  });
+                }
+              }
+            }
+          }
+
+          await tx.insert(chunks).values(chunksToInsert);
+          totalChunksInserted = chunksToInsert.length;
         }
 
         // 5. Replace source_phone_links for this source atomically. One row
@@ -253,13 +322,22 @@ export class IngestionWriter {
           await tx.insert(sourcePhoneLinks).values(linkRows);
         }
 
+        // 6. Invalidate scorecard for primary and linked secondary phones
+        const phonesToNudge = [phoneId, ...(secondaryPhoneLinks ?? []).map((s) => s.phoneId)];
+        if (phonesToNudge.length > 0) {
+          await tx
+            .update(phones)
+            .set({ nextScorecardAt: sql`now()`, updatedAt: sql`now()` })
+            .where(inArray(phones.id, phonesToNudge));
+        }
+
         const finishedAt = new Date();
         await tx.insert(ingestRuns).values({
           adapter: adapterName,
           phoneId,
           sourceUrl: url,
           status: 'success',
-          chunksCreated: preparedChunks.length,
+          chunksCreated: totalChunksInserted,
           tier: tier ?? null,
           discoveryStrategy: discoveryStrategy ?? null,
           stage: 'write',
@@ -271,7 +349,7 @@ export class IngestionWriter {
           durationMs: finishedAt.getTime() - startedAt.getTime(),
         });
 
-        return { skipped: false, sourceId, chunkCount: preparedChunks.length };
+        return { skipped: false, sourceId, chunkCount: totalChunksInserted };
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

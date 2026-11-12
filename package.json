@@ -71,6 +71,7 @@
     "ingest": "tsx --env-file=.env.local scripts/ingest.ts",
     "ingest:auto": "tsx --env-file=.env.local scripts/ingest-auto.ts",
     "creator:watch": "tsx --env-file=.env.local scripts/creator-watch.ts",
+    "source:watch": "tsx --env-file=.env.local scripts/source-watch.ts",
     "ingest:report": "tsx --env-file=.env.local scripts/ingest-report.ts",
     "ingest:smoke": "tsx --env-file=.env.local scripts/ingest-smoke.ts",
     "catalog:backfill-identities": "tsx --env-file=.env.local scripts/backfill/canonical-keys.ts",

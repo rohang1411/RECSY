@@ -42,12 +42,14 @@ interface FtsSearchRow {
   readonly rank: number;
   readonly start_ts: number | null;
   readonly anchor: string | null;
+  readonly metadata?: Record<string, unknown> | null;
   readonly src_url: string;
   readonly src_title: string;
   readonly src_type: 'youtube' | 'reddit' | 'article';
   readonly src_author: string | null;
   readonly src_channel: string | null;
   readonly src_published_at: Date | string | null;
+  readonly src_temporal_category?: string | null;
 }
 
 export interface FtsSearchDeps {
@@ -83,12 +85,14 @@ export class FtsSearch implements Retriever {
              ts_rank_cd(c.text_tsv, q.query)                 AS rank,
              c.start_ts                                      AS start_ts,
              c.anchor                                        AS anchor,
+             c.metadata                                      AS metadata,
              s.url                                           AS src_url,
              s.title                                         AS src_title,
              s.type                                          AS src_type,
              s.author                                        AS src_author,
              s.channel                                       AS src_channel,
-             s.published_at                                  AS src_published_at
+             s.published_at                                  AS src_published_at,
+             s.temporal_category                             AS src_temporal_category
         FROM chunks c
         JOIN sources s ON s.id = c.source_id,
              q
@@ -122,12 +126,14 @@ export class FtsSearch implements Retriever {
              similarity(c.text, ${normalised}) AS rank,
              c.start_ts                        AS start_ts,
              c.anchor                          AS anchor,
+             c.metadata                        AS metadata,
              s.url                             AS src_url,
              s.title                           AS src_title,
              s.type                            AS src_type,
              s.author                          AS src_author,
              s.channel                         AS src_channel,
-             s.published_at                    AS src_published_at
+             s.published_at                    AS src_published_at,
+             s.temporal_category               AS src_temporal_category
         FROM chunks c
         JOIN sources s ON s.id = c.source_id
        WHERE c.phone_id = ${phoneId}
@@ -154,6 +160,7 @@ function rowToChunk(r: FtsSearchRow): RetrievedChunk {
     score: Number(r.rank),
     startTs: r.start_ts,
     anchor: r.anchor,
+    metadata: (r.metadata as Record<string, unknown>) ?? undefined,
     source: {
       id: r.source_id,
       url: r.src_url,
@@ -162,6 +169,7 @@ function rowToChunk(r: FtsSearchRow): RetrievedChunk {
       author: r.src_author,
       channel: r.src_channel,
       publishedAt: toRetrievedPublishedAt(r.src_published_at),
+      temporalCategory: r.src_temporal_category ?? null,
     },
   };
 }
