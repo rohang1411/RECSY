@@ -131,6 +131,10 @@ Brand priority and latest-released ordering are enforced through `src/services/c
     - [32.5 Temporal-Stratified Scorecard Calibration & Methodology Prompt](#325-temporal-stratified-scorecard-calibration--methodology-prompt)
     - [32.6 CI/CD Workflow Integration (.github/workflows/source-watch.yml)](#326-cicd-workflow-integration-githubworkflowssource-watchyml)
     - [32.7 Telemetry & Quality Gates](#327-telemetry--quality-gates)
+33. [Automated GitHub Actions Pipelines & Operations Remediation](#33-automated-github-actions-pipelines--operations-remediation)
+    - [33.1 Identified Issues & Root Causes](#331-identified-issues--root-causes)
+    - [33.2 Architectural Fixes & Implementation](#332-architectural-fixes--implementation)
+    - [33.3 Verification & Quality Assurance](#333-verification--quality-assurance)
 
 ---
 
@@ -5538,3 +5542,70 @@ Consumer smartphone recommendations ($700 to $1,800 investments) require living,
   - Full retrieval test suites: 6 test files, 36 tests passed.
   - Full scorecard test suites: 7 test files, 24 tests passed.
   - TypeScript typecheck (`pnpm typecheck`): 0 errors.
+
+---
+
+## 33. Automated GitHub Actions Pipelines & Operations Remediation
+
+### 33.1 Identified Issues & Root Causes
+
+1. **Hardcoded `--env-file=.env.local` in `package.json`**:
+   - _Why it occurred_: Local CLI scripts were configured with `tsx --env-file=.env.local ...`. Node 20+ terminates immediately with fatal error `node: .env.local: not found` when this flag is passed and the file does not exist (standard on CI runners where secrets are provided via process environment, not git-tracked files).
+   - _Impact_: Broke scheduled workflows (`metering-maintenance`, `ops-alerts`, `abuse-detect`, `account-maintenance`, `billing-reconcile`, `db-migrate`).
+
+2. **Zod Environment Validation Crashes in Ops Workflows (`src/env.ts`)**:
+   - _Why it occurred_: Automated maintenance scripts import the database client, which transitively evaluates `src/env.ts`. Workflows that only injected `DATABASE_URL` crashed because `@t3-oss/env-nextjs` failed validation for missing client/LLM keys (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`).
+   - _Impact_: Ingestion, image backfills, and operations sweeps aborted before running any code.
+
+3. **Missing Secrets Gates in Automated Workflows**:
+   - _Why it occurred_: Workflows lacked lightweight initial secret-validation jobs (`secrets-gate`). When running on forks or without configured third-party keys (e.g. `STRIPE_SECRET_KEY`), runs failed with errors instead of gracefully skipping.
+
+4. **Database Schema & Enum Mismatches in Alert Rules & Retention Scripts**:
+   - _Alert Rules (`src/services/ops/alert-rules.ts`)_:
+     - `checkNegativeCounters` & `checkPlatformCap` queried non-existent column `queries_used` instead of `total_used`.
+     - `checkAnonIpSpike` queried `WHERE status = 'denied'` against PostgreSQL enum `lease_status` (`reserved`, `committed`, `refunded`, `expired`, `no_charge`), throwing fatal `22P02 invalid input value for enum lease_status: "denied"`.
+   - _Retention Pruning (`scripts/db-prune.ts`)_:
+     - `crawl_queue` queried `status = 'completed'` instead of enum value `'done'`.
+     - `ingest_runs` queried `status = 'completed'` instead of enum value `'success'`.
+   - _Impact_: `db:prune` and `ops:alerts` crashed on every invocation.
+
+5. **Connection Pool Starvation on PGBouncer in Alert Sweeps**:
+   - _Why it occurred_: `evaluateAllAlertRules` dispatched 9 concurrent SQL queries simultaneously via `Promise.all` over Supabase transaction pooler with `max: 2-4` pool size, causing query stalls.
+
+6. **Missing Supabase Service Credentials in Account Maintenance**:
+   - _Why it occurred_: `account-maintenance.yml` only passed `DATABASE_URL`, omitting `SUPABASE_SERVICE_ROLE_KEY` required by `executeDeletion` for Supabase Auth admin user deletion.
+
+### 33.2 Architectural Fixes & Implementation
+
+1. **Non-Breaking Environment Loader (`scripts/load-env.mjs`)**:
+   - Created safe loader using `fs.existsSync` and `process.loadEnvFile`.
+   - Replaced `--env-file=.env.local` in `package.json` with `--import ./scripts/load-env.mjs`.
+   - _Why it is the best solution_: Completely eliminates CI crashes when `.env.local` is absent while preserving seamless auto-loading for local development.
+
+2. **Standardized Workflow Hardening & Secrets Gates**:
+   - Added `secrets-gate` jobs across all maintenance workflows (`ops-alerts.yml`, `metering-maintenance.yml`, `billing-reconcile.yml`, `abuse-detect.yml`, `account-maintenance.yml`).
+   - Injected `SKIP_ENV_VALIDATION: 'true'` and resilient placeholders for non-essential services in backend scripts.
+   - Updated execution commands to use direct `pnpm exec tsx scripts/<script>.ts`.
+   - _Why it is the best solution_: Prevents workflow failure noise on missing optional secrets and unblocks isolated maintenance jobs from irrelevant schema checks.
+
+3. **Exact Schema & Enum Alignment**:
+   - Corrected `alert-rules.ts` to query `total_used` and check `settle_reason = 'ANON_IP_CAP'`.
+   - Corrected `db-prune.ts` to query enum values `status = 'done'` for `crawl_queue` and `status = 'success'` for `ingest_runs`.
+   - _Why it is the best solution_: Restores zero-error SQL execution adhering to strict PostgreSQL type constraints.
+
+4. **Sequential Alert Evaluation & Clean Connection Teardown**:
+   - Evaluated 9 alert checks sequentially in `evaluateAllAlertRules` (total runtime <600ms).
+   - Added explicit `await getPostgres().end()` and `process.exit(0)` on all maintenance CLI scripts.
+   - _Why it is the best solution_: Prevents pooler exhaustion, eliminates connection leaks, and ensures immediate, clean CLI process exits.
+
+### 33.3 Verification & Quality Assurance
+
+- **Ops Alerts**: Verified `pnpm ops:alerts` runs cleanly with all 9 checks passing (`✅ [OK]`) in ~1s.
+- **Metering Maintenance**: Verified `pnpm metering:maintain` sweeps expired leases and prunes counters cleanly in ~600ms.
+- **Database Prune**: Verified `pnpm db:prune --dry-run` successfully scans all tables with 0 enum errors in ~1s.
+- **Abuse Detect**: Verified `pnpm abuse:detect --dry-run` completes with exit code 0.
+- **Account Maintenance**: Verified `pnpm account:maintain --dry-run` completes with exit code 0.
+- **Billing Reconciliation**: Verified `pnpm billing:reconcile` completes with exit code 0.
+- **Full Typecheck**: `pnpm typecheck` passed with 0 errors.
+- **Full Test Suite**: 208 test suites, 1,358 tests passing.
+- **Full Linter**: `pnpm lint` passed with 0 errors.

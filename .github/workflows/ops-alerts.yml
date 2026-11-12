@@ -11,9 +11,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DATABASE_URL not configured — skipping ops alerts sweep."
+          fi
+
   sweep:
     name: Evaluate Operations Alert Rules
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -34,4 +55,9 @@ jobs:
           QUOTA_MODE: enforce
           LAUNCH_ACTIVE: 'true'
           NODE_ENV: production
-        run: pnpm ops:alerts
+          SKIP_ENV_VALIDATION: 'true'
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '__OPS_ALERTS_PLACEHOLDER__' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || '__OPS_ALERTS_PLACEHOLDER__' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__OPS_ALERTS_PLACEHOLDER__' }}
+        run: pnpm exec tsx scripts/ops-alerts.ts
