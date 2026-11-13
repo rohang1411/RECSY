@@ -20,7 +20,11 @@ export default defineConfig({
     // DOM can opt in via `// @vitest-environment jsdom`.
     environment: 'node',
     setupFiles: ['./test/setup.ts'],
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'test/security/**/*.test.ts'],
+    include: [
+      'src/**/*.{test,spec}.{ts,tsx}',
+      'test/security/**/*.test.ts',
+      'test/infra/**/*.test.ts',
+    ],
     exclude: ['node_modules', '.next', 'tests/integration/**'],
     coverage: {
       provider: 'v8',
