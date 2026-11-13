@@ -86,8 +86,15 @@ export function matchCronField(field: string, value: number): boolean {
     return !isNaN(step) && step > 0 && value % step === 0;
   }
   if (field.includes('-')) {
-    const [start, end] = field.split('-').map((v) => parseInt(v.trim(), 10));
-    return value >= start && value <= end;
+    const segments = field.split('-');
+    const startStr = segments[0];
+    const endStr = segments[1];
+    if (startStr !== undefined && endStr !== undefined) {
+      const start = parseInt(startStr.trim(), 10);
+      const end = parseInt(endStr.trim(), 10);
+      return !isNaN(start) && !isNaN(end) && value >= start && value <= end;
+    }
+    return false;
   }
   const num = parseInt(field, 10);
   return !isNaN(num) && num === value;
@@ -96,7 +103,12 @@ export function matchCronField(field: string, value: number): boolean {
 export function matchesCron(cron: string, date: Date): boolean {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return false;
-  const [minField, hourField, domField, monthField, dowField] = parts;
+  const minField = parts[0];
+  const hourField = parts[1];
+  const domField = parts[2];
+  const monthField = parts[3];
+  const dowField = parts[4];
+  if (!minField || !hourField || !domField || !monthField || !dowField) return false;
 
   const minute = date.getUTCMinutes();
   const hour = date.getUTCHours();
@@ -155,7 +167,9 @@ export function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, Math.min(index, sorted.length - 1))];
+  const clampedIndex = Math.max(0, Math.min(index, sorted.length - 1));
+  const val = sorted[clampedIndex];
+  return val !== undefined ? val : 0;
 }
 
 export function calculateMedianGapHours(isoTimestamps: string[]): number | null {
@@ -163,8 +177,12 @@ export function calculateMedianGapHours(isoTimestamps: string[]): number | null 
   const sortedMs = [...isoTimestamps].map((ts) => new Date(ts).getTime()).sort((a, b) => a - b);
   const gapsHours: number[] = [];
   for (let i = 1; i < sortedMs.length; i++) {
-    const gapH = (sortedMs[i] - sortedMs[i - 1]) / (1000 * 3600);
-    gapsHours.push(gapH);
+    const curr = sortedMs[i];
+    const prev = sortedMs[i - 1];
+    if (curr !== undefined && prev !== undefined) {
+      const gapH = (curr - prev) / (1000 * 3600);
+      gapsHours.push(gapH);
+    }
   }
   return percentile(gapsHours, 50);
 }
@@ -213,7 +231,7 @@ export function getRepoSlug(): string {
       encoding: 'utf8',
     }).trim();
     const match = remoteUrl.match(/github\.com[/:]([^/]+\/[^/.]+)(?:\.git)?$/);
-    if (match) return match[1];
+    if (match && match[1]) return match[1];
   } catch {
     // fallback
   }
@@ -222,12 +240,12 @@ export function getRepoSlug(): string {
 
 export function extractCronFromWorkflow(fileContent: string): string | null {
   const match = fileContent.match(/cron:\s*['"]([^'"]+)['"]/);
-  return match ? match[1] : null;
+  return match && match[1] ? match[1] : null;
 }
 
 export function extractWorkflowName(fileContent: string, fallback: string): string {
   const match = fileContent.match(/^name:\s*(.+)$/m);
-  if (match) {
+  if (match && match[1]) {
     return match[1].trim().replace(/^['"]|['"]$/g, '');
   }
   return fallback;
