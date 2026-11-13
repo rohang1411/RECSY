@@ -1,0 +1,1025 @@
+[
+  {
+    "workflowFile": "abuse-detect.yml",
+    "workflowName": "Abuse Detection",
+    "cronExpr": "0 3 * * *",
+    "totalRuns": 14,
+    "runsByEvent": {
+      "schedule": 14
+    },
+    "runsByConclusion": {
+      "failure": 14
+    },
+    "scheduledRuns": {
+      "count": 14,
+      "medianGapHours": 24.005555555555556,
+      "medianDelayMinutes": 439,
+      "p90DelayMinutes": 465
+    },
+    "billedMinutes": {
+      "total": 14,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1,
+      "maxPerRun": 1,
+      "extrapolatedPerMonth": 30
+    },
+    "sampleRuns": [
+      {
+        "id": 43202035681,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T10:37:39Z",
+        "billedMinutes": 1,
+        "delayMinutes": 458
+      },
+      {
+        "id": 43002403691,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-11T10:17:44Z",
+        "billedMinutes": 1,
+        "delayMinutes": 438
+      },
+      {
+        "id": 42801803817,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-10T10:45:17Z",
+        "billedMinutes": 1,
+        "delayMinutes": 465
+      },
+      {
+        "id": 42604485673,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-09T10:52:55Z",
+        "billedMinutes": 1,
+        "delayMinutes": 473
+      },
+      {
+        "id": 42468935666,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-08T09:51:24Z",
+        "billedMinutes": 1,
+        "delayMinutes": 411
+      }
+    ]
+  },
+  {
+    "workflowFile": "account-maintenance.yml",
+    "workflowName": "Account Maintenance",
+    "cronExpr": "0 2 * * *",
+    "totalRuns": 14,
+    "runsByEvent": {
+      "schedule": 14
+    },
+    "runsByConclusion": {
+      "success": 1,
+      "failure": 13
+    },
+    "scheduledRuns": {
+      "count": 14,
+      "medianGapHours": 24.08138888888889,
+      "medianDelayMinutes": 419,
+      "p90DelayMinutes": 445
+    },
+    "billedMinutes": {
+      "total": 15,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1.0714285714285714,
+      "maxPerRun": 2,
+      "extrapolatedPerMonth": 32
+    },
+    "sampleRuns": [
+      {
+        "id": 43399420652,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T09:12:47Z",
+        "billedMinutes": 2,
+        "delayMinutes": 433
+      },
+      {
+        "id": 43191277694,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T09:25:06Z",
+        "billedMinutes": 1,
+        "delayMinutes": 445
+      },
+      {
+        "id": 42991191321,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-11T08:57:54Z",
+        "billedMinutes": 1,
+        "delayMinutes": 418
+      },
+      {
+        "id": 42790407571,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-10T09:24:12Z",
+        "billedMinutes": 1,
+        "delayMinutes": 444
+      },
+      {
+        "id": 42592509097,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-09T09:19:19Z",
+        "billedMinutes": 1,
+        "delayMinutes": 439
+      }
+    ]
+  },
+  {
+    "workflowFile": "billing-reconcile.yml",
+    "workflowName": "Billing Reconciliation",
+    "cronExpr": "*/30 * * * *",
+    "totalRuns": 53,
+    "runsByEvent": {
+      "schedule": 53
+    },
+    "runsByConclusion": {
+      "failure": 53
+    },
+    "scheduledRuns": {
+      "count": 53,
+      "medianGapHours": 6.178055555555556,
+      "medianDelayMinutes": 16,
+      "p90DelayMinutes": 26
+    },
+    "billedMinutes": {
+      "total": 53,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1,
+      "maxPerRun": 1,
+      "extrapolatedPerMonth": 114
+    },
+    "sampleRuns": [
+      {
+        "id": 43347184460,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-13T01:44:55Z",
+        "billedMinutes": 1,
+        "delayMinutes": 15
+      },
+      {
+        "id": 43303211581,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T20:43:59Z",
+        "billedMinutes": 1,
+        "delayMinutes": 14
+      },
+      {
+        "id": 43218515656,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T12:30:29Z",
+        "billedMinutes": 1,
+        "delayMinutes": 0
+      },
+      {
+        "id": 43150203763,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T03:44:31Z",
+        "billedMinutes": 1,
+        "delayMinutes": 15
+      },
+      {
+        "id": 43115900563,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-11T22:56:37Z",
+        "billedMinutes": 1,
+        "delayMinutes": 27
+      }
+    ]
+  },
+  {
+    "workflowFile": "catalog-images.yml",
+    "workflowName": "catalog images (backfill)",
+    "cronExpr": "17 6 * * *",
+    "totalRuns": 14,
+    "runsByEvent": {
+      "schedule": 14
+    },
+    "runsByConclusion": {
+      "failure": 14
+    },
+    "scheduledRuns": {
+      "count": 14,
+      "medianGapHours": 24.07111111111111,
+      "medianDelayMinutes": 490,
+      "p90DelayMinutes": 594
+    },
+    "billedMinutes": {
+      "total": 28,
+      "medianPerRun": 2,
+      "p90PerRun": 2,
+      "meanPerRun": 2,
+      "maxPerRun": 2,
+      "extrapolatedPerMonth": 60
+    },
+    "sampleRuns": [
+      {
+        "id": 43247361218,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T15:24:00Z",
+        "billedMinutes": 2,
+        "delayMinutes": 547
+      },
+      {
+        "id": 43039272537,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-11T14:31:24Z",
+        "billedMinutes": 2,
+        "delayMinutes": 494
+      },
+      {
+        "id": 42839728345,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-10T14:59:35Z",
+        "billedMinutes": 2,
+        "delayMinutes": 523
+      },
+      {
+        "id": 42656043345,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-09T16:33:52Z",
+        "billedMinutes": 2,
+        "delayMinutes": 617
+      },
+      {
+        "id": 42485751100,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-08T13:36:12Z",
+        "billedMinutes": 2,
+        "delayMinutes": 439
+      }
+    ]
+  },
+  {
+    "workflowFile": "catalog-refresh.yml",
+    "workflowName": "catalog auto (refresh + media backfill)",
+    "cronExpr": "17 1 * * 1",
+    "totalRuns": 3,
+    "runsByEvent": {
+      "schedule": 3
+    },
+    "runsByConclusion": {
+      "success": 3
+    },
+    "scheduledRuns": {
+      "count": 3,
+      "medianGapHours": 22.510555555555555,
+      "medianDelayMinutes": 403,
+      "p90DelayMinutes": 9115
+    },
+    "billedMinutes": {
+      "total": 22,
+      "medianPerRun": 7,
+      "p90PerRun": 9,
+      "meanPerRun": 7.333333333333333,
+      "maxPerRun": 9,
+      "extrapolatedPerMonth": 47
+    },
+    "sampleRuns": [
+      {
+        "id": 42582842733,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-09T08:00:03Z",
+        "billedMinutes": 7,
+        "delayMinutes": 403
+      },
+      {
+        "id": 41408015493,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-02T07:42:22Z",
+        "billedMinutes": 6,
+        "delayMinutes": 385
+      },
+      {
+        "id": 41287816053,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-01T09:11:44Z",
+        "billedMinutes": 9,
+        "delayMinutes": 9115
+      }
+    ]
+  },
+  {
+    "workflowFile": "ci.yml",
+    "workflowName": "CI",
+    "cronExpr": null,
+    "totalRuns": 9,
+    "runsByEvent": {
+      "push": 4,
+      "pull_request": 5
+    },
+    "runsByConclusion": {
+      "success": 8,
+      "failure": 1
+    },
+    "scheduledRuns": {
+      "count": 0,
+      "medianGapHours": null,
+      "medianDelayMinutes": null,
+      "p90DelayMinutes": null
+    },
+    "billedMinutes": {
+      "total": 79,
+      "medianPerRun": 9,
+      "p90PerRun": 10,
+      "meanPerRun": 8.777777777777779,
+      "maxPerRun": 10,
+      "extrapolatedPerMonth": 169
+    },
+    "sampleRuns": [
+      {
+        "id": 43356548060,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T03:05:09Z",
+        "billedMinutes": 9,
+        "delayMinutes": null
+      },
+      {
+        "id": 43355765778,
+        "event": "pull_request",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T02:58:20Z",
+        "billedMinutes": 9,
+        "delayMinutes": null
+      },
+      {
+        "id": 43295322359,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T19:56:49Z",
+        "billedMinutes": 10,
+        "delayMinutes": null
+      },
+      {
+        "id": 43290691029,
+        "event": "pull_request",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T19:29:31Z",
+        "billedMinutes": 9,
+        "delayMinutes": null
+      },
+      {
+        "id": 41826843600,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-04T12:09:30Z",
+        "billedMinutes": 9,
+        "delayMinutes": null
+      }
+    ]
+  },
+  {
+    "workflowFile": "creator-watch.yml",
+    "workflowName": "creator-watch",
+    "cronExpr": "23 */6 * * *",
+    "totalRuns": 33,
+    "runsByEvent": {
+      "schedule": 33
+    },
+    "runsByConclusion": {
+      "success": 33
+    },
+    "scheduledRuns": {
+      "count": 33,
+      "medianGapHours": 10.681111111111111,
+      "medianDelayMinutes": 77,
+      "p90DelayMinutes": 334
+    },
+    "billedMinutes": {
+      "total": 69,
+      "medianPerRun": 2,
+      "p90PerRun": 2,
+      "meanPerRun": 2.090909090909091,
+      "maxPerRun": 3,
+      "extrapolatedPerMonth": 148
+    },
+    "sampleRuns": [
+      {
+        "id": 43382265852,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T06:57:18Z",
+        "billedMinutes": 3,
+        "delayMinutes": 34
+      },
+      {
+        "id": 43297183334,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T20:07:51Z",
+        "billedMinutes": 3,
+        "delayMinutes": 105
+      },
+      {
+        "id": 43175174285,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T07:25:36Z",
+        "billedMinutes": 2,
+        "delayMinutes": 63
+      },
+      {
+        "id": 43089837729,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T19:43:23Z",
+        "billedMinutes": 2,
+        "delayMinutes": 80
+      },
+      {
+        "id": 42974847973,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T06:47:03Z",
+        "billedMinutes": 2,
+        "delayMinutes": 24
+      }
+    ]
+  },
+  {
+    "workflowFile": "db-migrate.yml",
+    "workflowName": "Database Migration (Production)",
+    "cronExpr": null,
+    "totalRuns": 0,
+    "runsByEvent": {},
+    "runsByConclusion": {},
+    "scheduledRuns": {
+      "count": 0,
+      "medianGapHours": null,
+      "medianDelayMinutes": null,
+      "p90DelayMinutes": null
+    },
+    "billedMinutes": {
+      "total": 0,
+      "medianPerRun": 0,
+      "p90PerRun": 0,
+      "meanPerRun": 0,
+      "maxPerRun": 0,
+      "extrapolatedPerMonth": 0
+    },
+    "sampleRuns": []
+  },
+  {
+    "workflowFile": "db-tests.yml",
+    "workflowName": "Database Tests",
+    "cronExpr": null,
+    "totalRuns": 9,
+    "runsByEvent": {
+      "push": 4,
+      "pull_request": 5
+    },
+    "runsByConclusion": {
+      "success": 9
+    },
+    "scheduledRuns": {
+      "count": 0,
+      "medianGapHours": null,
+      "medianDelayMinutes": null,
+      "p90DelayMinutes": null
+    },
+    "billedMinutes": {
+      "total": 9,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1,
+      "maxPerRun": 1,
+      "extrapolatedPerMonth": 19
+    },
+    "sampleRuns": [
+      {
+        "id": 43356548055,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T03:05:09Z",
+        "billedMinutes": 1,
+        "delayMinutes": null
+      },
+      {
+        "id": 43355765770,
+        "event": "pull_request",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T02:58:20Z",
+        "billedMinutes": 1,
+        "delayMinutes": null
+      },
+      {
+        "id": 43295322397,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T19:56:49Z",
+        "billedMinutes": 1,
+        "delayMinutes": null
+      },
+      {
+        "id": 43290691141,
+        "event": "pull_request",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T19:29:31Z",
+        "billedMinutes": 1,
+        "delayMinutes": null
+      },
+      {
+        "id": 41826843609,
+        "event": "push",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-04T12:09:30Z",
+        "billedMinutes": 1,
+        "delayMinutes": null
+      }
+    ]
+  },
+  {
+    "workflowFile": "ingest-on-new-phone.yml",
+    "workflowName": "ingest-on-new-phone",
+    "cronExpr": null,
+    "totalRuns": 0,
+    "runsByEvent": {},
+    "runsByConclusion": {},
+    "scheduledRuns": {
+      "count": 0,
+      "medianGapHours": null,
+      "medianDelayMinutes": null,
+      "p90DelayMinutes": null
+    },
+    "billedMinutes": {
+      "total": 0,
+      "medianPerRun": 0,
+      "p90PerRun": 0,
+      "meanPerRun": 0,
+      "maxPerRun": 0,
+      "extrapolatedPerMonth": 0
+    },
+    "sampleRuns": []
+  },
+  {
+    "workflowFile": "ingest-resume.yml",
+    "workflowName": "ingest (resume)",
+    "cronExpr": "20 3 * * *",
+    "totalRuns": 14,
+    "runsByEvent": {
+      "schedule": 14
+    },
+    "runsByConclusion": {
+      "success": 14
+    },
+    "scheduledRuns": {
+      "count": 14,
+      "medianGapHours": 24.004444444444445,
+      "medianDelayMinutes": 468,
+      "p90DelayMinutes": 489
+    },
+    "billedMinutes": {
+      "total": 220,
+      "medianPerRun": 14,
+      "p90PerRun": 16,
+      "meanPerRun": 15.714285714285714,
+      "maxPerRun": 44,
+      "extrapolatedPerMonth": 471
+    },
+    "sampleRuns": [
+      {
+        "id": 43209499117,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T11:28:49Z",
+        "billedMinutes": 44,
+        "delayMinutes": 489
+      },
+      {
+        "id": 43009889184,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T11:11:37Z",
+        "billedMinutes": 10,
+        "delayMinutes": 472
+      },
+      {
+        "id": 42807145282,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-10T11:24:00Z",
+        "billedMinutes": 12,
+        "delayMinutes": 484
+      },
+      {
+        "id": 42611881061,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-09T11:48:07Z",
+        "billedMinutes": 9,
+        "delayMinutes": 508
+      },
+      {
+        "id": 42471946853,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-08T10:33:43Z",
+        "billedMinutes": 15,
+        "delayMinutes": 434
+      }
+    ]
+  },
+  {
+    "workflowFile": "ingest-tiered.yml",
+    "workflowName": "ingest (tiered)",
+    "cronExpr": "17 2 * * *",
+    "totalRuns": 13,
+    "runsByEvent": {
+      "schedule": 13
+    },
+    "runsByConclusion": {
+      "success": 13
+    },
+    "scheduledRuns": {
+      "count": 13,
+      "medianGapHours": 24.06111111111111,
+      "medianDelayMinutes": 437,
+      "p90DelayMinutes": 459
+    },
+    "billedMinutes": {
+      "total": 138,
+      "medianPerRun": 10,
+      "p90PerRun": 16,
+      "meanPerRun": 10.615384615384615,
+      "maxPerRun": 23,
+      "extrapolatedPerMonth": 296
+    },
+    "sampleRuns": [
+      {
+        "id": 43195845931,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T09:56:08Z",
+        "billedMinutes": 7,
+        "delayMinutes": 459
+      },
+      {
+        "id": 42996207663,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T09:33:41Z",
+        "billedMinutes": 11,
+        "delayMinutes": 437
+      },
+      {
+        "id": 42795222766,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-10T09:58:54Z",
+        "billedMinutes": 6,
+        "delayMinutes": 462
+      },
+      {
+        "id": 42597038631,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-09T09:55:14Z",
+        "billedMinutes": 12,
+        "delayMinutes": 458
+      },
+      {
+        "id": 42465887390,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-08T09:08:19Z",
+        "billedMinutes": 23,
+        "delayMinutes": 411
+      }
+    ]
+  },
+  {
+    "workflowFile": "ingest.yml",
+    "workflowName": "ingest (manual)",
+    "cronExpr": null,
+    "totalRuns": 0,
+    "runsByEvent": {},
+    "runsByConclusion": {},
+    "scheduledRuns": {
+      "count": 0,
+      "medianGapHours": null,
+      "medianDelayMinutes": null,
+      "p90DelayMinutes": null
+    },
+    "billedMinutes": {
+      "total": 0,
+      "medianPerRun": 0,
+      "p90PerRun": 0,
+      "meanPerRun": 0,
+      "maxPerRun": 0,
+      "extrapolatedPerMonth": 0
+    },
+    "sampleRuns": []
+  },
+  {
+    "workflowFile": "keepalive.yml",
+    "workflowName": "repository keepalive",
+    "cronExpr": "0 0 * * 0",
+    "totalRuns": 2,
+    "runsByEvent": {
+      "schedule": 2
+    },
+    "runsByConclusion": {
+      "success": 2
+    },
+    "scheduledRuns": {
+      "count": 2,
+      "medianGapHours": 168.05083333333334,
+      "medianDelayMinutes": 275,
+      "p90DelayMinutes": 278
+    },
+    "billedMinutes": {
+      "total": 2,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1,
+      "maxPerRun": 1,
+      "extrapolatedPerMonth": 4
+    },
+    "sampleRuns": [
+      {
+        "id": 42447620570,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-08T04:38:20Z",
+        "billedMinutes": 1,
+        "delayMinutes": 278
+      },
+      {
+        "id": 41273673561,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-01T04:35:17Z",
+        "billedMinutes": 1,
+        "delayMinutes": 275
+      }
+    ]
+  },
+  {
+    "workflowFile": "metering-maintenance.yml",
+    "workflowName": "Metering Maintenance",
+    "cronExpr": "*/15 * * * *",
+    "totalRuns": 56,
+    "runsByEvent": {
+      "schedule": 56
+    },
+    "runsByConclusion": {
+      "success": 1,
+      "failure": 55
+    },
+    "scheduledRuns": {
+      "count": 56,
+      "medianGapHours": 5.945833333333334,
+      "medianDelayMinutes": 9,
+      "p90DelayMinutes": 14
+    },
+    "billedMinutes": {
+      "total": 57,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1.0178571428571428,
+      "maxPerRun": 2,
+      "extrapolatedPerMonth": 122
+    },
+    "sampleRuns": [
+      {
+        "id": 43357722971,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T03:15:22Z",
+        "billedMinutes": 2,
+        "delayMinutes": 0
+      },
+      {
+        "id": 43323993556,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T22:53:14Z",
+        "billedMinutes": 1,
+        "delayMinutes": 8
+      },
+      {
+        "id": 43272296420,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T17:42:41Z",
+        "billedMinutes": 1,
+        "delayMinutes": 13
+      },
+      {
+        "id": 43191714889,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T09:28:03Z",
+        "billedMinutes": 1,
+        "delayMinutes": 13
+      },
+      {
+        "id": 43137750134,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T01:54:59Z",
+        "billedMinutes": 1,
+        "delayMinutes": 10
+      }
+    ]
+  },
+  {
+    "workflowFile": "ops-alerts.yml",
+    "workflowName": "Ops Alerts Sweep",
+    "cronExpr": "*/5 * * * *",
+    "totalRuns": 57,
+    "runsByEvent": {
+      "schedule": 57
+    },
+    "runsByConclusion": {
+      "success": 1,
+      "failure": 56
+    },
+    "scheduledRuns": {
+      "count": 57,
+      "medianGapHours": 6.113611111111111,
+      "medianDelayMinutes": 3,
+      "p90DelayMinutes": 4
+    },
+    "billedMinutes": {
+      "total": 57,
+      "medianPerRun": 1,
+      "p90PerRun": 1,
+      "meanPerRun": 1,
+      "maxPerRun": 2,
+      "extrapolatedPerMonth": 122
+    },
+    "sampleRuns": [
+      {
+        "id": 43385569987,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T07:24:45Z",
+        "billedMinutes": 2,
+        "delayMinutes": 5
+      },
+      {
+        "id": 43339446796,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-13T00:44:23Z",
+        "billedMinutes": 1,
+        "delayMinutes": 4
+      },
+      {
+        "id": 43293788715,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T19:47:39Z",
+        "billedMinutes": 1,
+        "delayMinutes": 3
+      },
+      {
+        "id": 43213355572,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T11:55:49Z",
+        "billedMinutes": 1,
+        "delayMinutes": 1
+      },
+      {
+        "id": 43150586038,
+        "event": "schedule",
+        "conclusion": "failure",
+        "runStartedAt": "2026-11-12T03:48:00Z",
+        "billedMinutes": 1,
+        "delayMinutes": 3
+      }
+    ]
+  },
+  {
+    "workflowFile": "scorecard-auto.yml",
+    "workflowName": "scorecard (auto)",
+    "cronExpr": "17 4,10,16,22 * * *",
+    "totalRuns": 39,
+    "runsByEvent": {
+      "schedule": 39
+    },
+    "runsByConclusion": {
+      "success": 39
+    },
+    "scheduledRuns": {
+      "count": 39,
+      "medianGapHours": 9.596666666666666,
+      "medianDelayMinutes": 192,
+      "p90DelayMinutes": 330
+    },
+    "billedMinutes": {
+      "total": 430,
+      "medianPerRun": 12,
+      "p90PerRun": 23,
+      "meanPerRun": 11.025641025641026,
+      "maxPerRun": 40,
+      "extrapolatedPerMonth": 921
+    },
+    "sampleRuns": [
+      {
+        "id": 43353405405,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T02:36:58Z",
+        "billedMinutes": 2,
+        "delayMinutes": 260
+      },
+      {
+        "id": 43317921038,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T22:13:35Z",
+        "billedMinutes": 16,
+        "delayMinutes": 357
+      },
+      {
+        "id": 43219650731,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-12T12:37:47Z",
+        "billedMinutes": 40,
+        "delayMinutes": 141
+      },
+      {
+        "id": 43113644173,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T22:39:53Z",
+        "billedMinutes": 2,
+        "delayMinutes": 23
+      },
+      {
+        "id": 43015188144,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-11T11:50:00Z",
+        "billedMinutes": 13,
+        "delayMinutes": 93
+      }
+    ]
+  },
+  {
+    "workflowFile": "source-watch.yml",
+    "workflowName": "source-watch (scout)",
+    "cronExpr": "23 */6 * * *",
+    "totalRuns": 1,
+    "runsByEvent": {
+      "schedule": 1
+    },
+    "runsByConclusion": {
+      "success": 1
+    },
+    "scheduledRuns": {
+      "count": 1,
+      "medianGapHours": null,
+      "medianDelayMinutes": 35,
+      "p90DelayMinutes": 35
+    },
+    "billedMinutes": {
+      "total": 2,
+      "medianPerRun": 2,
+      "p90PerRun": 2,
+      "meanPerRun": 2,
+      "maxPerRun": 2,
+      "extrapolatedPerMonth": 4
+    },
+    "sampleRuns": [
+      {
+        "id": 43382297991,
+        "event": "schedule",
+        "conclusion": "success",
+        "runStartedAt": "2026-11-13T06:57:36Z",
+        "billedMinutes": 2,
+        "delayMinutes": 35
+      }
+    ]
+  }
+]
