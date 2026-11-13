@@ -11,8 +11,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DATABASE_URL not configured — skipping abuse detection."
+          fi
+
   sweep:
     name: Run Abuse Detection Sweep
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -35,4 +55,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NODE_ENV: production
-        run: pnpm tsx scripts/abuse-detect.ts
+          SKIP_ENV_VALIDATION: 'true'
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '__ABUSE_DETECT_PLACEHOLDER__' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || '__ABUSE_DETECT_PLACEHOLDER__' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__ABUSE_DETECT_PLACEHOLDER__' }}
+        run: pnpm exec tsx scripts/abuse-detect.ts

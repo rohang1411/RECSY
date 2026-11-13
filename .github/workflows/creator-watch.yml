@@ -70,7 +70,7 @@ jobs:
       LLM_PROVIDER: gemini
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__CREATOR_WATCH_GEMINI_PLACEHOLDER_NOT_USED__' }}
       LOG_LEVEL: info
-      SKIP_ENV_VALIDATION: 'false'
+      SKIP_ENV_VALIDATION: 'true'
 
     steps:
       - name: Checkout

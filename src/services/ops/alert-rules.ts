@@ -149,7 +149,10 @@ export async function checkNegativeCounters(db: AppQueryDb): Promise<AlertResult
     SELECT COUNT(*)::int AS count
     FROM usage_counters
     WHERE free_used < 0
-       OR queries_used < 0;
+       OR total_used < 0
+       OR anon_used < 0
+       OR byok_used < 0
+       OR clarify_used < 0;
   `);
   const count = rows[0]?.count ?? 0;
   return {
@@ -198,7 +201,7 @@ export async function checkPlatformCap(
   }>(sql`
     SELECT
       (SELECT (value->>'cap')::int FROM platform_flags WHERE key = 'global_daily_platform_cap') AS cap,
-      (SELECT SUM(queries_used)::int FROM usage_counters WHERE usage_date = (now() AT TIME ZONE 'UTC')::date) AS used;
+      (SELECT SUM(total_used)::int FROM usage_counters WHERE usage_date = (now() AT TIME ZONE 'UTC')::date) AS used;
   `);
   const cap = rows[0]?.cap ?? defaultCap;
   const used = rows[0]?.used ?? 0;
@@ -256,8 +259,7 @@ export async function checkAnonIpSpike(db: AppQueryDb): Promise<AlertResult> {
   const rows = await db.execute<{ count: number }>(sql`
     SELECT COUNT(*)::int AS count
     FROM query_leases
-    WHERE status = 'denied'
-      AND settle_reason = 'ANON_IP_CAP'
+    WHERE settle_reason = 'ANON_IP_CAP'
       AND reserved_at >= (now() - interval '10 minutes');
   `);
   const count = rows[0]?.count ?? 0;
@@ -285,17 +287,17 @@ export async function evaluateAllAlertRules(
     defaultCap?: number;
   },
 ): Promise<AlertResult[]> {
-  const results = await Promise.all([
-    checkLeaseLeak(db),
-    checkRefundRatio(db),
-    checkLateCommit(db),
-    checkWebhookBacklog(db),
-    checkDisputes(db),
-    checkNegativeCounters(db),
-    checkLedgerDrift(db),
-    checkPlatformCap(db, envOpts?.defaultCap),
-    checkAnonIpSpike(db),
-  ]);
+  const results: AlertResult[] = [
+    await checkLeaseLeak(db),
+    await checkRefundRatio(db),
+    await checkLateCommit(db),
+    await checkWebhookBacklog(db),
+    await checkDisputes(db),
+    await checkNegativeCounters(db),
+    await checkLedgerDrift(db),
+    await checkPlatformCap(db, envOpts?.defaultCap),
+    await checkAnonIpSpike(db),
+  ];
 
   if (envOpts?.quotaMode) {
     results.push(

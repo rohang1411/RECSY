@@ -11,7 +11,6 @@
  *   pnpm db:prune [--dry-run] [--batch-size=500]
  */
 import { parseArgs } from 'node:util';
-import type postgres from 'postgres';
 import { getPostgres } from '../src/services/db/client';
 
 export interface PruneOptions {
@@ -87,7 +86,7 @@ export async function pruneRetention(
   // 3. Completed crawl queue older than 7 days
   const [crawlQueueCount] = await sql`
     SELECT count(*)::int as n FROM crawl_queue
-    WHERE status = 'completed' AND scheduled_for < now() - interval '7 days'
+    WHERE status = 'done' AND scheduled_for < now() - interval '7 days'
   `;
   results.completedCrawlQueue = Number(crawlQueueCount?.n ?? 0);
   if (!dryRun && results.completedCrawlQueue > 0) {
@@ -95,7 +94,7 @@ export async function pruneRetention(
       DELETE FROM crawl_queue
       WHERE id IN (
         SELECT id FROM crawl_queue
-        WHERE status = 'completed' AND scheduled_for < now() - interval '7 days'
+        WHERE status = 'done' AND scheduled_for < now() - interval '7 days'
         LIMIT ${batchSize}
       )
     `;
@@ -138,7 +137,7 @@ export async function pruneRetention(
   // 6. Ingestion runs: completed older than 30 days, failed older than 90 days
   const [ingestOldCount] = await sql`
     SELECT count(*)::int as n FROM ingest_runs
-    WHERE (status = 'completed' AND started_at < now() - interval '30 days')
+    WHERE (status = 'success' AND started_at < now() - interval '30 days')
        OR (status = 'failed' AND started_at < now() - interval '90 days')
   `;
   results.oldIngestRuns = Number(ingestOldCount?.n ?? 0);
@@ -147,7 +146,7 @@ export async function pruneRetention(
       DELETE FROM ingest_runs
       WHERE id IN (
         SELECT id FROM ingest_runs
-        WHERE (status = 'completed' AND started_at < now() - interval '30 days')
+        WHERE (status = 'success' AND started_at < now() - interval '30 days')
            OR (status = 'failed' AND started_at < now() - interval '90 days')
         LIMIT ${batchSize}
       )
@@ -288,23 +287,32 @@ Options:
   console.log(`[db:prune] Starting retention pruning (dryRun=${dryRun}, batchSize=${batchSize})`);
   const sql = getPostgres();
 
-  const results = await pruneRetention(sql, { dryRun, batchSize });
+  try {
+    const results = await pruneRetention(sql, { dryRun, batchSize });
 
-  console.log('[db:prune] Summary of candidates:');
-  for (const [category, count] of Object.entries(results)) {
-    console.log(`  - ${category}: ${count} rows`);
-  }
+    console.log('[db:prune] Summary of candidates:');
+    for (const [category, count] of Object.entries(results)) {
+      console.log(`  - ${category}: ${count} rows`);
+    }
 
-  if (dryRun) {
-    console.log('[db:prune] Dry run complete. No rows were deleted.');
-  } else {
-    console.log('[db:prune] Pruning pass complete.');
+    if (dryRun) {
+      console.log('[db:prune] Dry run complete. No rows were deleted.');
+    } else {
+      console.log('[db:prune] Pruning pass complete.');
+    }
+  } finally {
+    await sql.end();
   }
 }
 
 if (process.argv[1]?.endsWith('db-prune.ts')) {
-  main().catch((err) => {
-    console.error('[db:prune] Failed:', err);
-    process.exit(1);
-  });
+  main()
+    .then(() => process.exit(0))
+    .catch(async (err) => {
+      console.error('[db:prune] Failed:', err);
+      try {
+        await getPostgres().end();
+      } catch {}
+      process.exit(1);
+    });
 }

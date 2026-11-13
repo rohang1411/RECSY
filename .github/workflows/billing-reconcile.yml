@@ -11,9 +11,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$STRIPE_SECRET_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "DATABASE_URL or STRIPE_SECRET_KEY not configured — skipping billing reconciliation."
+          fi
+
   reconcile:
     name: Reconcile provider checkouts, subscriptions, and ledger
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -34,4 +56,9 @@ jobs:
           STRIPE_MODE: ${{ secrets.STRIPE_MODE || 'test' }}
           BILLING_ENABLED: 'true'
           NODE_ENV: production
-        run: pnpm billing:reconcile
+          SKIP_ENV_VALIDATION: 'true'
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '__BILLING_RECONCILE_PLACEHOLDER__' }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || '__BILLING_RECONCILE_PLACEHOLDER__' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__BILLING_RECONCILE_PLACEHOLDER__' }}
+        run: pnpm exec tsx scripts/billing-reconcile.ts

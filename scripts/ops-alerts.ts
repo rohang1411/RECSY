@@ -6,7 +6,7 @@
  * Usage: pnpm ops:alerts
  * Normative reference: Plan 25 Section 13.4, WP-19.
  */
-import { getDb } from '@/services/db/client';
+import { getDb, getPostgres } from '@/services/db/client';
 import { env } from '@/env';
 import { evaluateAllAlertRules, type AlertResult } from '@/services/ops/alert-rules';
 
@@ -72,13 +72,19 @@ async function main() {
 
   if (hasPageAlert) {
     console.error('\n[FATAL] One or more critical (PAGE) alerts fired!');
+    await getPostgres().end();
     process.exit(1);
   }
 
   console.log('\n[PASS] Operations checks completed successfully.');
+  await getPostgres().end();
+  process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('[ops:alerts] Unhandled error during alert sweep:', err);
+  try {
+    await getPostgres().end();
+  } catch {}
   process.exit(1);
 });

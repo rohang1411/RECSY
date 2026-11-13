@@ -11,9 +11,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-gate:
+    name: Check pipeline secrets
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -n "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Database or Supabase admin secrets not configured — skipping account maintenance."
+          fi
+
   sweep:
     name: Execute due account deletions
+    needs: secrets-gate
+    if: needs.secrets-gate.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -30,5 +53,10 @@ jobs:
       - name: Run account maintenance
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || '__ACCOUNT_MAINTENANCE_PLACEHOLDER__' }}
           NODE_ENV: production
-        run: pnpm account:maintain
+          SKIP_ENV_VALIDATION: 'true'
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || '__ACCOUNT_MAINTENANCE_PLACEHOLDER__' }}
+        run: pnpm exec tsx scripts/account-maintenance.ts
