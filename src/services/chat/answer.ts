@@ -425,6 +425,15 @@ export async function persistChatQuery(input: {
   readonly userId?: string | null;
   readonly leaseId?: string | null;
   readonly sessionCookie?: string | null;
+  readonly maxRetrievalSimilarity?: number | null;
+  readonly minRetrievalSimilarity?: number | null;
+  readonly retrievalMode?: string | null;
+  readonly ftsHitCount?: number | null;
+  readonly isAbstention?: boolean | null;
+  readonly abstentionReason?: string | null;
+  readonly entailmentScore?: number | null;
+  readonly unsupportedClaimCount?: number | null;
+  readonly citationCount?: number | null;
 }): Promise<void> {
   const db = getDb();
   await db.insert(chatQueries).values({
@@ -440,5 +449,14 @@ export async function persistChatQuery(input: {
     userId: input.userId ?? undefined,
     leaseId: input.leaseId ?? undefined,
     sessionCookie: input.sessionCookie ?? undefined,
+    maxRetrievalSimilarity: input.maxRetrievalSimilarity ?? undefined,
+    minRetrievalSimilarity: input.minRetrievalSimilarity ?? undefined,
+    retrievalMode: input.retrievalMode ?? 'hybrid',
+    ftsHitCount: input.ftsHitCount ?? 0,
+    isAbstention: input.isAbstention ?? false,
+    abstentionReason: input.abstentionReason ?? undefined,
+    entailmentScore: input.entailmentScore ?? undefined,
+    unsupportedClaimCount: input.unsupportedClaimCount ?? 0,
+    citationCount: input.citationCount ?? (input.citations ? input.citations.length : 0),
   });
 }
