@@ -6,6 +6,38 @@ export interface SystemIntegrityRadarProps {
   readonly report: SystemIntegrityReport;
 }
 
+interface MetricItemProps {
+  readonly label: string;
+  readonly count: number;
+  readonly severity?: 'warn' | 'fail';
+}
+
+function MetricItem({ label, count, severity = 'warn' }: MetricItemProps) {
+  const isHealthy = count === 0;
+  return (
+    <li className="flex items-center gap-1.5">
+      {isHealthy ? (
+        <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+      ) : severity === 'fail' ? (
+        <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+      ) : (
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+      )}
+      <span
+        className={
+          isHealthy
+            ? ''
+            : severity === 'fail'
+              ? 'font-medium text-rose-600 dark:text-rose-400'
+              : 'font-medium text-amber-600 dark:text-amber-400'
+        }
+      >
+        {label}: {count}
+      </span>
+    </li>
+  );
+}
+
 export function SystemIntegrityRadar({ report }: SystemIntegrityRadarProps) {
   const isPass = report.status === 'pass';
   const isWarn = report.status === 'warn';
@@ -50,18 +82,17 @@ export function SystemIntegrityRadar({ report }: SystemIntegrityRadarProps) {
             Catalog Spec Health
           </h4>
           <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Missing aspect cards: {report.missingAspectsCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Empty corpuses: {report.emptyCorpusesCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Corrupted pricing: {report.corruptedPricingCount}</span>
-            </li>
+            <MetricItem
+              label="Missing aspect cards"
+              count={report.missingAspectsCount}
+              severity="warn"
+            />
+            <MetricItem label="Empty corpuses" count={report.emptyCorpusesCount} severity="warn" />
+            <MetricItem
+              label="Corrupted pricing"
+              count={report.corruptedPricingCount}
+              severity="fail"
+            />
           </ul>
         </div>
 
@@ -71,16 +102,18 @@ export function SystemIntegrityRadar({ report }: SystemIntegrityRadarProps) {
             Media & Link Integrity
           </h4>
           <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+            <MetricItem
+              label="Malformed channel IDs"
+              count={report.malformedYtChannelsCount}
+              severity="fail"
+            />
+            <MetricItem
+              label="Malformed source URLs"
+              count={report.malformedYtSourcesCount}
+              severity="warn"
+            />
             <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Malformed channel IDs: {report.malformedYtChannelsCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Malformed source URLs: {report.malformedYtSourcesCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+              <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
               <span>oEmbed verification: Active (24h TTL)</span>
             </li>
           </ul>
@@ -92,17 +125,37 @@ export function SystemIntegrityRadar({ report }: SystemIntegrityRadarProps) {
             Runtime Pipeline & Code
           </h4>
           <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+            <MetricItem
+              label="Orphan chunk rows"
+              count={report.orphanChunksCount}
+              severity="fail"
+            />
+            <MetricItem
+              label="Zombie pipeline runs"
+              count={report.zombieIngestRunsCount}
+              severity="warn"
+            />
             <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Orphan chunk rows: {report.orphanChunksCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Zombie pipeline runs: {report.zombieIngestRunsCount}</span>
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
-              <span>Codebase AST scan: Clean (0 dead)</span>
+              {report.codeHygieneStatus === 'clean' ? (
+                <>
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  <span>Codebase AST scan: Clean (0 dead)</span>
+                </>
+              ) : report.codeHygieneStatus === 'dead_code_detected' ? (
+                <>
+                  <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+                  <span className="font-medium text-rose-600 dark:text-rose-400">
+                    Codebase AST scan: Issues detected
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    Codebase AST scan: Unknown / Not run
+                  </span>
+                </>
+              )}
             </li>
           </ul>
         </div>

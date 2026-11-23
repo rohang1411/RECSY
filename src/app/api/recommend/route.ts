@@ -7,9 +7,8 @@
 import { randomBytes } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
-import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
+import { RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
 import { QuotaDeniedError } from '@/lib/errors';
 import { parseRequestId } from '@/lib/request-id';
 import { readRequestJson } from '@/lib/request-json';
@@ -18,7 +17,7 @@ import { shouldEmitServerTiming } from '@/lib/server-timing';
 import { getDb } from '@/services/db/client';
 import { getLlm } from '@/services/llm';
 import { requestLogger } from '@/services/logger';
-import { findSessionByCookie } from '@/services/recommender/session';
+import { findSessionByCookie, type RecommendationSessionRow } from '@/services/recommender/session';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
 import { findReplayTurn, type ReplayTurnResult } from '@/services/metering/replay';
@@ -30,7 +29,10 @@ import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { hashDeviceId, mintDeviceCookieValue } from '@/services/auth/device';
 import { ownerFromIdentity, type SessionOwner } from '@/services/recommender/sessions/owner';
 import { resolveOrCreateSession } from '@/services/recommender/sessions/service';
-import type { ResolveOrCreateSessionResult } from '@/services/recommender/sessions/types';
+import {
+  type ResolveOrCreateSessionResult,
+  RecommendRequestBodySchema,
+} from '@/services/recommender/sessions/types';
 import { RecommendTurnUseCase } from '@/services/recommender/recommend-use-case';
 
 export { parseRequestId };
@@ -39,17 +41,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const bodySchema = z.object({
-  message: z
-    .string()
-    .trim()
-    .min(1)
-    .refine(
-      (m) => new TextEncoder().encode(m).length <= MAX_RECOMMENDER_MESSAGE_BYTES,
-      'message too long',
-    ),
-  sessionId: z.string().uuid().optional(),
-});
+const bodySchema = RecommendRequestBodySchema;
 
 function createReplayResponse(
   replay: ReplayTurnResult,
@@ -123,9 +115,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     let owner: SessionOwner = ownerFromIdentity(admitted.identity);
     let mintedDeviceCookie: string | null = null;
 
-    let sessionLookupPromise:
-      | Promise<import('@/services/recommender/session').RecommendationSessionRow | null>
-      | undefined;
+    let sessionLookupPromise: Promise<RecommendationSessionRow | null> | undefined;
     let sessionResolutionPromise: Promise<ResolveOrCreateSessionResult | null> | undefined;
 
     if (isSessionMode) {

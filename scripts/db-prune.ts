@@ -11,7 +11,7 @@
  *   pnpm db:prune [--dry-run] [--batch-size=500]
  */
 import { parseArgs } from 'node:util';
-import { getPostgres } from '../src/services/db/client';
+import { closeDb, getPostgres } from '../src/services/db/client';
 
 export interface PruneOptions {
   readonly dryRun?: boolean;
@@ -301,7 +301,7 @@ Options:
       console.log('[db:prune] Pruning pass complete.');
     }
   } finally {
-    await sql.end();
+    await closeDb();
   }
 }
 
@@ -310,9 +310,7 @@ if (process.argv[1]?.endsWith('db-prune.ts')) {
     .then(() => process.exit(0))
     .catch(async (err) => {
       console.error('[db:prune] Failed:', err);
-      try {
-        await getPostgres().end();
-      } catch {}
+      await closeDb().catch(() => undefined);
       process.exit(1);
     });
 }

@@ -4,6 +4,7 @@
 import { createMeteredRequestInit } from '@/lib/metered-fetch';
 import type {
   ListSessionsResult,
+  RecommendRequestBody,
   SessionDetail,
   SessionDetailTurn,
   SessionResultMeta,
@@ -32,10 +33,7 @@ export interface ListSessionsParams {
   includePinned?: boolean;
 }
 
-export interface RecommendTurnRequest {
-  message: string;
-  sessionId?: string;
-}
+export type RecommendTurnRequest = RecommendRequestBody;
 
 export interface RecommendTurnResponse {
   kind: 'results' | 'clarify';

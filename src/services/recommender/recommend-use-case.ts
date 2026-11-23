@@ -33,7 +33,6 @@ import { settleTurn } from '@/services/recommender/sessions/service';
 import type {
   ResolveOrCreateSessionResult,
   SessionResultMeta,
-  SettleTurnResult,
 } from '@/services/recommender/sessions/types';
 import {
   getDeviceCookieName,

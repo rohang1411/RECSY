@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { getDb, getPostgres } from '../src/services/db/client';
+import { closeDb, getDb } from '../src/services/db/client';
 import { catalogCandidates, crawlQueue, phones, sources } from '../src/services/db/schema';
 import { isLikelyCatalogPhoneTitle } from '../src/services/catalog/candidate-policy';
 import { isArchivedCatalogCandidate } from '../src/services/catalog/eligibility';
@@ -88,7 +88,7 @@ async function main() {
     });
     console.log('Archive applied; original records and evidence retained.');
   } finally {
-    await getPostgres().end();
+    await closeDb();
   }
 }
 main().catch((error) => {

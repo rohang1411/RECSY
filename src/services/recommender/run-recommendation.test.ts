@@ -86,13 +86,15 @@ const mockCatalog = (await import('./catalog')).loadRecommendationCatalog as Ret
   typeof vi.fn
 >;
 const { getLatestRequirementsForSession, getLatestRecommendPickIds } = await import('./session');
-const { invalidateRecommendationCatalogCache } = await import('./catalog-cache');
+const { invalidateRecommendationCatalogCache, resetCacheStatsForTest } =
+  await import('./catalog-cache');
 
 const { runRecommendationPipeline } = await import('./run-recommendation');
 
 beforeEach(() => {
   vi.clearAllMocks();
   invalidateRecommendationCatalogCache();
+  resetCacheStatsForTest();
   mockCatalog.mockReset();
   mockCatalog.mockResolvedValue([]);
   vi.mocked(getLatestRequirementsForSession).mockResolvedValue(null);
@@ -315,6 +317,38 @@ describe('runRecommendationPipeline — results branch', () => {
     if (result.kind === 'results') {
       expect(result.picks).toHaveLength(0);
     }
+  });
+
+  it('gracefully handles embedding failure and logs warning without crashing pipeline', async () => {
+    const phones = [
+      {
+        ...makePhone('id-1', 'pixel-9'),
+        specEmbedding: [0.1, 0.2, 0.3],
+      },
+    ];
+    mockCatalog.mockResolvedValue(phones);
+    const llm = makeLlm();
+    vi.mocked(llm.embed).mockRejectedValueOnce(new Error('Embedding service network timeout'));
+    const db = {
+      select: vi.fn().mockReturnValue({ from: vi.fn().mockResolvedValue([]) }),
+    };
+
+    const result = await runRecommendationPipeline({
+      db: db as never,
+      llm,
+      sessionId: 'sess-1',
+      userMessage: 'best camera phone under $800',
+      log: mockLogger,
+    });
+
+    expect(result.kind).toBe('results');
+    if (result.kind === 'results') {
+      expect(result.picks.length).toBeGreaterThanOrEqual(1);
+    }
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      'recommender query embedding failed, continuing without embedding',
+    );
   });
 });
 

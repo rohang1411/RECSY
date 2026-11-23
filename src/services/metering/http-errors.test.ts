@@ -82,8 +82,44 @@ describe('meteredErrorResponse', () => {
     expect(res.status).toBe(400);
     expect(res.headers.get('X-Trace-Id')).toBe('trace-1234');
     expect(body.code).toBe('VALIDATION');
+    expect(typeof body.message).toBe('string');
+    expect(body.details).toBeDefined();
     expect(summaryModule.emitMeteredRequestSummary).toHaveBeenCalledWith(
       expect.objectContaining({
+        outcome: 'denied',
+        denial: 'VALIDATION',
+        httpStatus: 400,
+      }),
+    );
+  });
+
+  it('maps ZodError to 400 on recommend route with string message and details', async () => {
+    const schema = z.object({ message: z.string().min(1) });
+    let zodError!: ZodError;
+    try {
+      schema.parse({ message: '' });
+    } catch (e) {
+      zodError = e as ZodError;
+    }
+
+    const ctx = createTestContext({
+      route: 'POST /api/recommend',
+      request: new NextRequest('http://localhost:3000/api/recommend', {
+        headers: { host: 'localhost:3000' },
+      }),
+    });
+    const res = await meteredErrorResponse(zodError, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.code).toBe('VALIDATION');
+    expect(typeof body.message).toBe('string');
+    expect(body.message).toBe(zodError.issues[0]?.message);
+    expect(body.details).toBeDefined();
+    expect(body.details.fieldErrors).toBeDefined();
+    expect(summaryModule.emitMeteredRequestSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: 'POST /api/recommend',
         outcome: 'denied',
         denial: 'VALIDATION',
         httpStatus: 400,
@@ -155,6 +191,32 @@ describe('meteredErrorResponse', () => {
 
     expect(res.status).toBe(404);
     expect(body.code).toBe('NOT_FOUND');
+  });
+
+  it('maps DB_TIMEOUT and Postgres statement timeout errors to 503 with Retry-After 5', async () => {
+    const pgErr = new Error('canceling statement due to statement timeout');
+    pgErr.name = 'PostgresError';
+    const ctx = createTestContext();
+
+    const res = await meteredErrorResponse(pgErr, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(body.code).toBe('DB_TIMEOUT');
+    expect(body.message).toBe('Database service is temporarily unavailable');
+  });
+
+  it('maps database connection failure to 503 DB_UNAVAILABLE with Retry-After 5', async () => {
+    const connErr = new Error('connect ECONNREFUSED 127.0.0.1:5432');
+    const ctx = createTestContext();
+
+    const res = await meteredErrorResponse(connErr, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(body.code).toBe('DB_UNAVAILABLE');
   });
 
   it('maps unknown Error to 500 INTERNAL', async () => {

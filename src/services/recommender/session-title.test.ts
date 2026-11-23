@@ -3,6 +3,7 @@ import { buildSessionTitle, sanitizeSessionTitle } from './session-title';
 import { polishSessionTitleLlm } from './session-title-llm';
 import type { UserRequirements } from './requirements-schema';
 import type { LlmProvider } from '../llm/types';
+import type { AppDb } from '@/services/db/client';
 
 function createMockReqs(overrides: Partial<UserRequirements> = {}): UserRequirements {
   return {
@@ -388,18 +389,15 @@ describe('Session Titling (WP-06)', () => {
         }),
       } as unknown as LlmProvider;
 
-      const result = await polishSessionTitleLlm(
-        mockDb as unknown as import('@/services/db/client').AppDb,
-        {
-          sessionId: 'sess-1',
-          heuristicTitle: 'Google phone under $600',
-          requirements: createMockReqs({
-            brand_preference: { liked: ['Google'], disliked: [] },
-            budget_usd: { max: 600 },
-          }),
-          llm: mockLlm,
-        },
-      );
+      const result = await polishSessionTitleLlm(mockDb as unknown as AppDb, {
+        sessionId: 'sess-1',
+        heuristicTitle: 'Google phone under $600',
+        requirements: createMockReqs({
+          brand_preference: { liked: ['Google'], disliked: [] },
+          budget_usd: { max: 600 },
+        }),
+        llm: mockLlm,
+      });
 
       expect(result).toBe('Compact Pixel Under $600');
       expect(mockDb.execute).toHaveBeenCalled();
@@ -416,15 +414,12 @@ describe('Session Titling (WP-06)', () => {
         }),
       } as unknown as LlmProvider;
 
-      const result = await polishSessionTitleLlm(
-        mockDb as unknown as import('@/services/db/client').AppDb,
-        {
-          sessionId: 'sess-1',
-          heuristicTitle: 'Camera phone',
-          requirements: createMockReqs(),
-          llm: mockLlm,
-        },
-      );
+      const result = await polishSessionTitleLlm(mockDb as unknown as AppDb, {
+        sessionId: 'sess-1',
+        heuristicTitle: 'Camera phone',
+        requirements: createMockReqs(),
+        llm: mockLlm,
+      });
 
       expect(result).toBeNull();
       expect(mockDb.execute).not.toHaveBeenCalled();
@@ -441,15 +436,12 @@ describe('Session Titling (WP-06)', () => {
         }),
       } as unknown as LlmProvider;
 
-      const result = await polishSessionTitleLlm(
-        mockDb as unknown as import('@/services/db/client').AppDb,
-        {
-          sessionId: 'sess-1',
-          heuristicTitle: 'Camera phone',
-          requirements: createMockReqs(),
-          llm: mockLlm,
-        },
-      );
+      const result = await polishSessionTitleLlm(mockDb as unknown as AppDb, {
+        sessionId: 'sess-1',
+        heuristicTitle: 'Camera phone',
+        requirements: createMockReqs(),
+        llm: mockLlm,
+      });
 
       expect(result).toBeNull();
       expect(mockDb.execute).not.toHaveBeenCalled();
@@ -461,15 +453,12 @@ describe('Session Titling (WP-06)', () => {
         chat: vi.fn().mockRejectedValue(new Error('Gateway timeout')),
       } as unknown as LlmProvider;
 
-      const result = await polishSessionTitleLlm(
-        mockDb as unknown as import('@/services/db/client').AppDb,
-        {
-          sessionId: 'sess-1',
-          heuristicTitle: 'Camera phone',
-          requirements: createMockReqs(),
-          llm: mockLlm,
-        },
-      );
+      const result = await polishSessionTitleLlm(mockDb as unknown as AppDb, {
+        sessionId: 'sess-1',
+        heuristicTitle: 'Camera phone',
+        requirements: createMockReqs(),
+        llm: mockLlm,
+      });
 
       expect(result).toBeNull();
       expect(mockDb.execute).not.toHaveBeenCalled();
@@ -489,15 +478,12 @@ describe('Session Titling (WP-06)', () => {
         }),
       } as unknown as LlmProvider;
 
-      const result = await polishSessionTitleLlm(
-        mockDb as unknown as import('@/services/db/client').AppDb,
-        {
-          sessionId: 'sess-1',
-          heuristicTitle: 'Camera phone',
-          requirements: createMockReqs(),
-          llm: mockLlm,
-        },
-      );
+      const result = await polishSessionTitleLlm(mockDb as unknown as AppDb, {
+        sessionId: 'sess-1',
+        heuristicTitle: 'Camera phone',
+        requirements: createMockReqs(),
+        llm: mockLlm,
+      });
 
       expect(result).toBeNull();
     });
