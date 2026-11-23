@@ -10,6 +10,7 @@ import type { AspectName } from '@/lib/constants';
 
 import type { UserRequirements } from './requirements-schema';
 import { unsupportedHardFeatures } from './hard-features';
+import { detectContradictoryConstraints } from './domain-gate';
 
 type PlatformPreference = 'android' | 'ios';
 type PlatformFact = PlatformPreference | 'any';
@@ -455,9 +456,10 @@ export function mergeUserRequirements(input: {
   const extractedPlatform = detectPlatformPreferenceFromRequirements(input.extracted);
   const previousPlatform = previous ? detectPlatformPreferenceFromRequirements(previous) : null;
   const platform = facts.platform ?? extractedPlatform ?? previousPlatform;
-  const unsupported = new Set(
-    unsupportedHardFeatures(previous ?? input.extracted).map((t) => t.toLowerCase()),
-  );
+  const unsupported = new Set([
+    ...unsupportedHardFeatures(previous ?? input.extracted).map((t) => t.toLowerCase()),
+    ...((previous ?? input.extracted).deal_breakers ?? []).map((t) => t.toLowerCase()),
+  ]);
   const relaxedAll =
     /\brelax\s+(?:those|these|the)\s+(?:requirements|conditions|constraints)\b/i.test(
       input.userMessage,
@@ -502,6 +504,22 @@ export function mergeUserRequirements(input: {
     form_factor: facts.formFactor ?? input.extracted.form_factor ?? previous?.form_factor,
     confidence: Math.max(input.extracted.confidence, previous?.confidence ?? 0),
   };
+
+  const contradiction = detectContradictoryConstraints({
+    userMessage: input.userMessage,
+    mustHaves: merged.must_haves,
+    budgetUsd: merged.budget_usd,
+    budgetLocal: merged.budget_local,
+    formFactor: merged.form_factor,
+  });
+
+  if (contradiction.hasContradiction && contradiction.clarification) {
+    return {
+      ...merged,
+      confidence: Math.min(merged.confidence, 0.4),
+      clarifying_question: contradiction.clarification,
+    };
+  }
 
   return {
     ...merged,
