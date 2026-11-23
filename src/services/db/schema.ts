@@ -18,6 +18,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -336,6 +337,9 @@ export const sources = pgTable(
     publishedPrecision: publishedPrecisionEnum('published_precision'),
     /** Temporal review category (launch, long_term_6m, long_term_1y, comparison, reliability, general). */
     temporalCategory: temporalCategoryEnum('temporal_category').notNull().default('general'),
+    verificationStatus: text('verification_status').notNull().default('unverified'),
+    lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),
+    httpStatus: integer('http_status'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -343,6 +347,7 @@ export const sources = pgTable(
     unique('sources_phone_url_uniq').on(t.phoneId, t.url),
     index('sources_phone_id_idx').on(t.phoneId),
     index('sources_status_idx').on(t.status),
+    index('sources_verification_status_idx').on(t.verificationStatus),
     index('sources_temporal_category_idx').on(t.temporalCategory),
     index('sources_phone_temporal_idx').on(t.phoneId, t.temporalCategory),
     index('sources_url_content_hash_idx').on(t.url, t.contentHash),
@@ -375,6 +380,8 @@ export const chunks = pgTable(
     tokens: integer('tokens').notNull(),
     embedding: vector('embedding', { dimensions: 768 }).notNull(),
     embeddingModel: text('embedding_model').notNull().default('text-embedding-004'),
+    rawExcerpt: text('raw_excerpt'),
+    contextualPreamble: text('contextual_preamble'),
     metadata: jsonb('metadata').notNull().$type<Record<string, unknown>>().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -651,6 +658,15 @@ export const chatQueries = pgTable(
     model: text('model').notNull(),
     userId: uuid('user_id'),
     leaseId: uuid('lease_id'),
+    maxRetrievalSimilarity: doublePrecision('max_retrieval_similarity'),
+    minRetrievalSimilarity: doublePrecision('min_retrieval_similarity'),
+    retrievalMode: text('retrieval_mode').notNull().default('hybrid'),
+    ftsHitCount: integer('fts_hit_count').notNull().default(0),
+    isAbstention: boolean('is_abstention').notNull().default(false),
+    abstentionReason: text('abstention_reason'),
+    entailmentScore: doublePrecision('entailment_score'),
+    unsupportedClaimCount: integer('unsupported_claim_count').notNull().default(0),
+    citationCount: integer('citation_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -661,6 +677,10 @@ export const chatQueries = pgTable(
     index('chat_queries_lease_idx')
       .on(t.leaseId)
       .where(sql`${t.leaseId} is not null`),
+    index('chat_queries_abstention_idx')
+      .on(t.isAbstention)
+      .where(sql`${t.isAbstention} = true`),
+    index('chat_queries_created_at_idx').on(t.createdAt),
   ],
 );
 
@@ -1833,3 +1853,20 @@ export const subscriptionUsageRelations = relations(subscriptionUsage, ({ one })
     references: [subscriptions.id],
   }),
 }));
+
+// ---------------------------------------------------------------------------
+// System Health Ledger — low-overhead operational integrity cache (Plan 31 WP-09).
+// ---------------------------------------------------------------------------
+
+export const systemHealthLedger = pgTable(
+  'system_health_ledger',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    auditKey: text('audit_key').notNull().unique(),
+    status: text('status').notNull(), // 'pass', 'warn', 'fail'
+    metricValue: jsonb('metric_value').notNull().$type<Record<string, unknown>>(),
+    executedAt: timestamp('executed_at', { withTimezone: true }).notNull().defaultNow(),
+    executionMs: integer('execution_ms').notNull(),
+  },
+  (t) => [index('system_health_ledger_key_idx').on(t.auditKey)],
+);

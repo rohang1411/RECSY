@@ -5,6 +5,7 @@ import { ArrowRight, Database, GitBranch, Layers } from 'lucide-react';
 
 import { LlmUsageMonitor } from '@/app/internal/pipeline/_components/llm-usage-monitor';
 import { SectionHint } from '@/app/internal/pipeline/_components/section-hint';
+import { SystemIntegrityRadar } from './_components/system-integrity-radar';
 import {
   loadCommandCenterDatabaseSummary,
   type CommandCenterDatabaseSummary,
@@ -16,6 +17,10 @@ import {
   type PhoneIngestionSummary,
 } from '@/services/internal/phone-ingestion-dashboard';
 import { loadAllUnifiedPipelineRuns } from '@/services/internal/pipeline-run-monitor';
+import {
+  runSystemIntegrityAudit,
+  FALLBACK_INTEGRITY_REPORT,
+} from '@/services/internal/integrity-audit';
 
 import type { LlmUsageMonitorData } from '@/services/internal/llm-usage-monitor';
 
@@ -111,11 +116,13 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
   const [dbDataResult] = await Promise.allSettled([
     loadCommandCenterDatabaseSummary({ forceRefresh }),
   ]);
-  const [llmUsageResult, allRunsResult, ingestionSummaryResult] = await Promise.allSettled([
-    loadLlmUsageMonitorData({ forceRefresh }),
-    loadAllUnifiedPipelineRuns({ forceRefresh }),
-    loadCommandCenterIngestionSummary({ forceRefresh }),
-  ]);
+  const [llmUsageResult, allRunsResult, ingestionSummaryResult, integrityAuditResult] =
+    await Promise.allSettled([
+      loadLlmUsageMonitorData({ forceRefresh }),
+      loadAllUnifiedPipelineRuns({ forceRefresh }),
+      loadCommandCenterIngestionSummary({ forceRefresh }),
+      runSystemIntegrityAudit(),
+    ]);
 
   const dbData = dbDataResult.status === 'fulfilled' ? dbDataResult.value : FALLBACK_DB_DATA;
   const llmUsage =
@@ -125,6 +132,10 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
     ingestionSummaryResult.status === 'fulfilled'
       ? ingestionSummaryResult.value
       : FALLBACK_INGESTION_SUMMARY;
+  const integrityReport =
+    integrityAuditResult.status === 'fulfilled'
+      ? integrityAuditResult.value
+      : FALLBACK_INTEGRITY_REPORT;
 
   const { summary, topBlockedReason } = dbData;
   const inventoryAvailable = dbDataResult.status === 'fulfilled';
@@ -349,6 +360,11 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
             style={{ width: `${ingestionSummary.completionPercentage}%` }}
           />
         </div>
+      </section>
+
+      {/* System Integrity & Consistency Radar (WP-07) */}
+      <section className="mt-8" aria-label="System Integrity Radar">
+        <SystemIntegrityRadar report={integrityReport} />
       </section>
 
       {/* Workspace Hub Cards */}
