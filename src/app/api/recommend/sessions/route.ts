@@ -23,6 +23,10 @@ import {
   resolveOrCreateSession,
   type SessionOwner,
 } from '@/services/recommender/sessions';
+import {
+  CreateSessionSchema,
+  ListSessionsQuerySchema,
+} from '@/services/recommender/sessions/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,22 +35,9 @@ function generateTraceId(): string {
   return randomBytes(16).toString('hex');
 }
 
-const listQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  q: z.string().max(80).optional(),
-  status: z.enum(['active', 'archived']).default('active'),
-  includePinned: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((val) => (val !== undefined ? val === 'true' : undefined)),
-});
+const listQuerySchema = ListSessionsQuerySchema;
 
-const createSessionSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-  })
-  .optional();
+const createSessionSchema = CreateSessionSchema;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const traceId = request.headers.get('x-trace-id')?.trim() || generateTraceId();

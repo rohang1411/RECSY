@@ -193,6 +193,32 @@ describe('meteredErrorResponse', () => {
     expect(body.code).toBe('NOT_FOUND');
   });
 
+  it('maps DB_TIMEOUT and Postgres statement timeout errors to 503 with Retry-After 5', async () => {
+    const pgErr = new Error('canceling statement due to statement timeout');
+    pgErr.name = 'PostgresError';
+    const ctx = createTestContext();
+
+    const res = await meteredErrorResponse(pgErr, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(body.code).toBe('DB_TIMEOUT');
+    expect(body.message).toBe('Database service is temporarily unavailable');
+  });
+
+  it('maps database connection failure to 503 DB_UNAVAILABLE with Retry-After 5', async () => {
+    const connErr = new Error('connect ECONNREFUSED 127.0.0.1:5432');
+    const ctx = createTestContext();
+
+    const res = await meteredErrorResponse(connErr, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(body.code).toBe('DB_UNAVAILABLE');
+  });
+
   it('maps unknown Error to 500 INTERNAL', async () => {
     const err = new Error('Database disk corrupted');
     const ctx = createTestContext();

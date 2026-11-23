@@ -30,7 +30,10 @@ import { hashSessionIp } from '@/services/rate-limit/ip-hash';
 import { hashDeviceId, mintDeviceCookieValue } from '@/services/auth/device';
 import { ownerFromIdentity, type SessionOwner } from '@/services/recommender/sessions/owner';
 import { resolveOrCreateSession } from '@/services/recommender/sessions/service';
-import type { ResolveOrCreateSessionResult } from '@/services/recommender/sessions/types';
+import {
+  type ResolveOrCreateSessionResult,
+  RecommendRequestBodySchema,
+} from '@/services/recommender/sessions/types';
 import { RecommendTurnUseCase } from '@/services/recommender/recommend-use-case';
 
 export { parseRequestId };
@@ -39,17 +42,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const bodySchema = z.object({
-  message: z
-    .string()
-    .trim()
-    .min(1)
-    .refine(
-      (m) => new TextEncoder().encode(m).length <= MAX_RECOMMENDER_MESSAGE_BYTES,
-      'message too long',
-    ),
-  sessionId: z.string().uuid().optional(),
-});
+const bodySchema = RecommendRequestBodySchema;
 
 function createReplayResponse(
   replay: ReplayTurnResult,
