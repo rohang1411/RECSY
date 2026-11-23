@@ -26,6 +26,7 @@ import {
 } from './answer';
 import { CitationStreamGuard } from './citation-stream-guard';
 import { buildCitationUrl, resolveCitations, type ResolvedCitation } from './citations';
+import { evaluateRetrievalConfidence } from './crag-gate';
 
 export type QnaStreamEvent =
   | { type: 'status'; stage: 'retrieving' | 'generating' }
@@ -99,15 +100,26 @@ export async function* runPhoneQnaStream(
     }
   }
 
-  if (retrieval.chunks.length === 0) {
-    if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
+  const cragDecision = evaluateRetrievalConfidence(retrieval);
+  if (cragDecision.action === 'abstain') {
+    if (
+      retrieval.chunks.length === 0 &&
+      (retrieval.debug.vector.error || retrieval.debug.fts.error)
+    ) {
       throw new IntegrationError('Retrieval failed without usable evidence', {
         phoneId,
         vectorError: retrieval.debug.vector.error,
         ftsError: retrieval.debug.fts.error,
       });
     }
-    log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
+    log.info(
+      {
+        phoneId,
+        reason: cragDecision.reason,
+        maxSimilarity: cragDecision.maxSimilarity,
+      },
+      'crag-abstention streaming short-circuit',
+    );
 
     yield { type: 'meta', phoneId, retrievedChunkIds: [] };
 

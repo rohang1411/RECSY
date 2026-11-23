@@ -150,7 +150,12 @@ export interface RetrievalDebug {
   readonly phoneId: string;
   readonly query: string;
   readonly embedding?: { readonly ms: number };
-  readonly vector: { readonly count: number; readonly ms: number; readonly error?: string };
+  readonly vector: {
+    readonly count: number;
+    readonly ms: number;
+    readonly maxSimilarity?: number;
+    readonly error?: string;
+  };
   readonly fts: { readonly count: number; readonly ms: number; readonly error?: string };
   readonly rrf: { readonly count: number; readonly ms: number };
   readonly mmr: { readonly count: number; readonly ms: number };

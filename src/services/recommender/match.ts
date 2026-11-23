@@ -17,6 +17,11 @@
  * Used by: `src/services/recommender/run-recommendation.ts`.
  */
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';
+import {
+  DEFAULT_EXCHANGE_RATES,
+  normalizeToUsd,
+  type ExchangeRates,
+} from '@/services/catalog/currency';
 
 import {
   RECOMMEND_BUDGET_RELAX_FACTOR,
@@ -224,12 +229,43 @@ export function passesHardFilters(
   return true;
 }
 
+export const BAYESIAN_PRIOR_MEAN = 5.0;
+export const BAYESIAN_PSEUDO_OBSERVATIONS = 5.0;
+
+/**
+ * Calculates empirical Bayes shrinkage for review aspect scores.
+ * Replaces heuristic partial retention with formal James-Stein shrinkage:
+ * calibratedScore = c * rawScore + (1 - c) * priorMean
+ */
+export function calculateBayesianCalibratedScore(
+  rawScore: number,
+  citationCountOrConfidence: number,
+  isCitationCount = false,
+  priorMean: number = BAYESIAN_PRIOR_MEAN,
+  pseudoObs: number = BAYESIAN_PSEUDO_OBSERVATIONS,
+): { calibratedScore: number; confidence: number } {
+  let confidence: number;
+  if (isCitationCount) {
+    const n = Math.max(0, citationCountOrConfidence);
+    confidence = n / (n + pseudoObs);
+  } else {
+    confidence = Math.max(0, Math.min(1, citationCountOrConfidence));
+  }
+  const calibratedScore = confidence * rawScore + (1 - confidence) * priorMean;
+  return { calibratedScore, confidence };
+}
+
 export function resolveAspectWeights(
   requirements: UserRequirements,
   defaultWeights: ReadonlyMap<AspectName, number>,
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES,
 ): Map<AspectName, number> {
-  const maxBudget = requirements.budget_usd?.max ?? requirements.budget_local?.max ?? 0;
-  const isFlagshipBudget = maxBudget >= 800;
+  const maxBudgetUsd =
+    requirements.budget_usd?.max ??
+    (requirements.budget_local
+      ? normalizeToUsd(requirements.budget_local.max, requirements.budget_local.currency, rates)
+      : 0);
+  const isFlagshipBudget = maxBudgetUsd >= 800;
   const userRequestedValue =
     requirements.priorities.some((p) => p.aspect === 'value') ||
     requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
@@ -258,20 +294,20 @@ export function weightedAspectScore(
   scores: ReadonlyMap<AspectName, number>,
   weights: ReadonlyMap<AspectName, number>,
   confidences?: ReadonlyMap<AspectName, number>,
+  citationCounts?: ReadonlyMap<AspectName, number>,
 ): number {
   let acc = 0;
   for (const name of ASPECT_NAMES) {
     const w = weights.get(name) ?? 0;
-    const s = scores.get(name) ?? NEUTRAL_ASPECT_SCORE;
-    const conf = confidences?.get(name) ?? 1.0;
-    // Confidence-weighted sentiment aggregation:
-    // Calibrates review aspect scores by source sample size and consensus confidence,
-    // shrinking low-confidence scores towards neutral baseline (5.0).
-    const calibratedScore =
-      conf < 1.0
-        ? NEUTRAL_ASPECT_SCORE +
-          (s - NEUTRAL_ASPECT_SCORE) * (0.6 + 0.4 * Math.max(0, Math.min(1, conf)))
-        : s;
+    const s = scores.get(name) ?? BAYESIAN_PRIOR_MEAN;
+    let calibratedScore = s;
+    if (citationCounts?.has(name)) {
+      const count = citationCounts.get(name)!;
+      calibratedScore = calculateBayesianCalibratedScore(s, count, true).calibratedScore;
+    } else if (confidences?.has(name)) {
+      const conf = confidences.get(name)!;
+      calibratedScore = calculateBayesianCalibratedScore(s, conf, false).calibratedScore;
+    }
     acc += w * calibratedScore;
   }
   return acc;
@@ -499,6 +535,7 @@ interface ScoringContext {
   readonly weights: ReadonlyMap<AspectName, number>;
   readonly queryEmbedding: readonly number[] | undefined;
   readonly now?: Date;
+  readonly exchangeRates?: ExchangeRates;
   readonly summary: SummaryContext;
 }
 
@@ -541,16 +578,24 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
   // and the user did not ask for a budget/value phone, apply an alignment adjustment
   // for phones priced under 50% of the flagship budget ceiling so that mid-range/budget
   // phones don't crowd out flagship devices.
-  const maxBudget = ctx.requirements.budget_usd?.max ?? ctx.requirements.budget_local?.max ?? 0;
+  const maxBudgetUsd =
+    ctx.requirements.budget_usd?.max ??
+    (ctx.requirements.budget_local
+      ? normalizeToUsd(
+          ctx.requirements.budget_local.max,
+          ctx.requirements.budget_local.currency,
+          ctx.exchangeRates ?? DEFAULT_EXCHANGE_RATES,
+        )
+      : 0);
   const userRequestedValue =
     ctx.requirements.priorities.some((p) => p.aspect === 'value') ||
     ctx.requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
 
-  if (maxBudget >= 800 && !userRequestedValue) {
-    const price = Number.parseFloat(entry.msrpUsd ?? '0');
-    const threshold = 0.5 * maxBudget;
-    if (price > 0 && price < threshold) {
-      const discountRatio = 1 - price / threshold;
+  if (maxBudgetUsd >= 800 && !userRequestedValue) {
+    const priceUsd = Number.parseFloat(entry.msrpUsd ?? '0');
+    const thresholdUsd = 0.5 * maxBudgetUsd;
+    if (priceUsd > 0 && priceUsd < thresholdUsd) {
+      const discountRatio = 1 - priceUsd / thresholdUsd;
       score -= 0.35 * discountRatio;
     }
   }
@@ -623,12 +668,15 @@ export function rankCandidates(
     readonly queryEmbedding?: readonly number[];
     readonly refined?: boolean;
     readonly now?: Date;
+    readonly exchangeRates?: ExchangeRates;
+    readonly allowRelaxation?: boolean;
   },
 ): RankResult {
   const queryEmbedding = options?.queryEmbedding;
   const refined = options?.refined === true;
   const now = options?.now;
-  const weights = resolveAspectWeights(requirements, defaultWeights);
+  const exchangeRates = options?.exchangeRates ?? DEFAULT_EXCHANGE_RATES;
+  const weights = resolveAspectWeights(requirements, defaultWeights, exchangeRates);
   const relaxed: string[] = [];
 
   const corpusScorecardMissing = catalog.every((c) => !hasRealAspectData(c));
@@ -638,6 +686,7 @@ export function rankCandidates(
     weights,
     queryEmbedding,
     now,
+    exchangeRates,
     summary: {
       weights,
       refined,
@@ -645,10 +694,41 @@ export function rankCandidates(
     },
   };
 
-  const ranked = collectScored(catalog, ctx, {
+  let ranked = collectScored(catalog, ctx, {
     relaxBudgetMax: false,
     ignoreFoldable: false,
   });
+
+  // Automated constraint relaxation (WP-02) when zero phones survive hard filters:
+  if (ranked.length === 0 && options?.allowRelaxation) {
+    // 1. Try relaxing budget ceiling
+    const budgetRelaxed = collectScored(catalog, ctx, {
+      relaxBudgetMax: true,
+      ignoreFoldable: false,
+    });
+    if (budgetRelaxed.length > 0) {
+      ranked = budgetRelaxed;
+      relaxed.push('budget_ceiling');
+    } else if (requirements.must_haves.length > 0) {
+      // 2. Try relaxing individual must-haves
+      for (const mustHave of requirements.must_haves) {
+        const subsetMustHaves = requirements.must_haves.filter((m) => m !== mustHave);
+        const relaxedCtx = {
+          ...ctx,
+          requirements: { ...requirements, must_haves: subsetMustHaves },
+        };
+        const subsetRanked = collectScored(catalog, relaxedCtx, {
+          relaxBudgetMax: false,
+          ignoreFoldable: false,
+        });
+        if (subsetRanked.length > 0) {
+          ranked = subsetRanked;
+          relaxed.push(`must_have:${mustHave}`);
+          break;
+        }
+      }
+    }
+  }
 
   // An empty result is preferable to silently violating budget, platform or form factor.
 
