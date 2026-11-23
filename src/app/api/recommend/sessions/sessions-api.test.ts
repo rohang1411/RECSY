@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { AppError, RateLimitError } from '@/lib/errors';
+import { RateLimitError } from '@/lib/errors';
 import * as identityModule from '@/services/auth/identity';
 import * as perfFlagsModule from '@/services/perf/flags';
 import * as rateLimitModule from '@/services/rate-limit';

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type postgres from 'postgres';
 import { getPostgres } from '@/services/db/client';
+import { logger } from '@/services/logger';
 
 export interface SystemIntegrityReport {
   readonly missingAspectsCount: number;
@@ -43,7 +44,7 @@ export const FALLBACK_INTEGRITY_REPORT: SystemIntegrityReport = {
   malformedYtSourcesCount: 0,
   zombieIngestRunsCount: 0,
   executionMs: 0,
-  status: 'pass',
+  status: 'fail',
   checkedAt: new Date().toISOString(),
 };
 
@@ -56,13 +57,23 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
   if (!dbSql) {
     try {
       dbSql = getPostgres();
-    } catch {
-      return FALLBACK_INTEGRITY_REPORT;
+    } catch (err) {
+      logger.error({ err }, 'failed to get database client for integrity audit');
+      return {
+        ...FALLBACK_INTEGRITY_REPORT,
+        checkedAt: new Date().toISOString(),
+        executionMs: Math.round((performance.now() - t0) * 10) / 10,
+      };
     }
   }
 
   if (!dbSql) {
-    return FALLBACK_INTEGRITY_REPORT;
+    logger.warn('no database client available for integrity audit');
+    return {
+      ...FALLBACK_INTEGRITY_REPORT,
+      checkedAt: new Date().toISOString(),
+      executionMs: Math.round((performance.now() - t0) * 10) / 10,
+    };
   }
 
   try {
@@ -84,7 +95,7 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
           SELECT count(*)::int as count 
           FROM phones p
           WHERE p.status = 'active' 
-            AND (p.msrp_usd IS NULL OR p.msrp_usd ~ '^[0\.]+$' OR p.msrp_usd !~ '^[0-9]+(\.[0-9]{1,2})?$')
+            AND (p.msrp_usd IS NULL OR p.msrp_usd::text ~ '^[0\.]+$' OR p.msrp_usd::text !~ '^[0-9]+(\.[0-9]{1,2})?$')
         ),
         orphan_chunks AS (
           SELECT count(*)::int as count 
@@ -106,7 +117,7 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
         zombie_ingest_runs AS (
           SELECT count(*)::int as count 
           FROM ingest_runs r
-          WHERE r.status = 'running' AND r.started_at < NOW() - INTERVAL '2 hours'
+          WHERE r.status::text IN ('started', 'running') AND r.started_at < NOW() - INTERVAL '2 hours'
         )
       SELECT
         (SELECT count FROM missing_aspects) as missing_aspects_count,
@@ -122,7 +133,11 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
     const executionMs = Math.round((performance.now() - t0) * 10) / 10;
 
     if (!r) {
-      return { ...FALLBACK_INTEGRITY_REPORT, executionMs };
+      return {
+        ...FALLBACK_INTEGRITY_REPORT,
+        checkedAt: new Date().toISOString(),
+        executionMs,
+      };
     }
 
     const missingAspects = Number(r.missing_aspects_count) || 0;
@@ -156,7 +171,9 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
       if (fs.existsSync(hygienePath)) {
         const raw = JSON.parse(fs.readFileSync(hygienePath, 'utf8'));
         codeHygieneStatus =
-          raw.checks?.evalRunners?.status === 'clean' ? 'clean' : 'dead_code_detected';
+          raw.status === 'pass' && raw.checks?.evalRunners?.status === 'clean'
+            ? 'clean'
+            : 'dead_code_detected';
       }
     } catch {
       // Ignore filesystem read failure
@@ -175,9 +192,11 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
       checkedAt: new Date().toISOString(),
       codeHygieneStatus,
     };
-  } catch {
+  } catch (err) {
+    logger.error({ err }, 'system integrity audit query failed');
     return {
       ...FALLBACK_INTEGRITY_REPORT,
+      checkedAt: new Date().toISOString(),
       executionMs: Math.round((performance.now() - t0) * 10) / 10,
     };
   }

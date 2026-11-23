@@ -60,10 +60,11 @@ export async function meteredErrorResponse(
   }
 
   if (err instanceof ZodError) {
-    const body =
-      route === 'POST /api/ask'
-        ? { code: 'VALIDATION', message: err.issues[0]?.message ?? 'Invalid request body' }
-        : { code: 'VALIDATION', message: err.flatten() };
+    const body = {
+      code: 'VALIDATION',
+      message: err.issues[0]?.message ?? 'Invalid request body',
+      details: err.flatten(),
+    };
 
     emitMeteredRequestSummary({
       traceId,

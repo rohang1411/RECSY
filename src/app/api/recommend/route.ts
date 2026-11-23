@@ -18,7 +18,7 @@ import { shouldEmitServerTiming } from '@/lib/server-timing';
 import { getDb } from '@/services/db/client';
 import { getLlm } from '@/services/llm';
 import { requestLogger } from '@/services/logger';
-import { findSessionByCookie } from '@/services/recommender/session';
+import { findSessionByCookie, type RecommendationSessionRow } from '@/services/recommender/session';
 import { getMeteringConfig } from '@/services/metering/config';
 import { reserveQuery } from '@/services/metering/reserve';
 import { findReplayTurn, type ReplayTurnResult } from '@/services/metering/replay';
@@ -123,9 +123,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     let owner: SessionOwner = ownerFromIdentity(admitted.identity);
     let mintedDeviceCookie: string | null = null;
 
-    let sessionLookupPromise:
-      | Promise<import('@/services/recommender/session').RecommendationSessionRow | null>
-      | undefined;
+    let sessionLookupPromise: Promise<RecommendationSessionRow | null> | undefined;
     let sessionResolutionPromise: Promise<ResolveOrCreateSessionResult | null> | undefined;
 
     if (isSessionMode) {

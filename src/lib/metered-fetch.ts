@@ -8,11 +8,16 @@ import { getClientByokHeaders } from '@/lib/byok-client';
 import type { QuotaSnapshotLite } from '@/services/metering/types';
 
 export interface MeteredErrorResponse {
-  readonly error?: {
-    readonly code?: string;
-    readonly message?: string;
-    readonly context?: Record<string, unknown>;
-  };
+  readonly code?: string;
+  readonly message?: string;
+  readonly context?: Record<string, unknown>;
+  readonly error?:
+    | string
+    | {
+        readonly code?: string;
+        readonly message?: string;
+        readonly context?: Record<string, unknown>;
+      };
   readonly quota?: QuotaSnapshotLite;
 }
 
@@ -39,9 +44,25 @@ export function handleMeteredError(
   payload?: MeteredErrorResponse | null,
   retryAfterHeader?: string | null,
 ): MeteredUiAction {
-  const code = payload?.error?.code ?? '';
-  const message = payload?.error?.message;
-  const context = payload?.error?.context;
+  const rawError = payload?.error;
+  let code = typeof payload?.code === 'string' ? payload.code : '';
+  let message = typeof payload?.message === 'string' ? payload.message : undefined;
+  let context =
+    payload?.context && typeof payload.context === 'object' ? payload.context : undefined;
+
+  if (typeof rawError === 'string') {
+    message = rawError;
+  } else if (rawError && typeof rawError === 'object') {
+    if (typeof rawError.code === 'string') {
+      code = rawError.code;
+    }
+    if (typeof rawError.message === 'string') {
+      message = rawError.message;
+    }
+    if (rawError.context && typeof rawError.context === 'object') {
+      context = rawError.context;
+    }
+  }
 
   // 1. Auth required / anonymous limits
   if (
@@ -93,11 +114,12 @@ export function handleMeteredError(
   }
 
   if (status === 429 || code === 'RATE_LIMITED') {
-    const retrySec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 10;
+    const parsed = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 10;
+    const retrySec = Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
     return {
       kind: 'inline',
-      retryAfterSec: isNaN(retrySec) ? 10 : retrySec,
-      message: `Rate limited. Please wait ${isNaN(retrySec) ? 10 : retrySec}s.`,
+      retryAfterSec: retrySec,
+      message: `Rate limited. Please wait ${retrySec}s.`,
     };
   }
 
