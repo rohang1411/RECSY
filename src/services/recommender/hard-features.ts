@@ -25,29 +25,68 @@ export type RecognizedHardFeature =
 
 export function classifyHardFeature(term: string): RecognizedHardFeature {
   const t = term.trim().toLowerCase();
-  if (['android', 'iphone', 'ios', 'apple'].includes(t)) return 'platform';
-  if (['nfc', 'contactless'].includes(t)) return 'nfc';
-  if (['wireless charging', 'qi charging', 'wireless charge', 'wireless'].includes(t)) {
+  if (
+    ['android', 'iphone', 'ios', 'apple'].includes(t) ||
+    /\b(?:android|iphone|ios|apple)\b/i.test(t)
+  ) {
+    return 'platform';
+  }
+  if (
+    ['nfc', 'contactless'].includes(t) ||
+    /\b(?:nfc|contactless|google\s*pay|apple\s*pay)\b/i.test(t)
+  ) {
+    return 'nfc';
+  }
+  if (
+    ['wireless charging', 'qi charging', 'wireless charge', 'wireless'].includes(t) ||
+    /\b(?:wireless(?:[\s-]+charging)?|qi(?:\s*charging)?|magsafe|qi2)\b/i.test(t)
+  ) {
     return 'wireless_charging';
   }
-  if (['headphone jack', '3.5mm', 'audio jack', '3.5mm jack'].includes(t)) {
+  if (
+    ['headphone jack', '3.5mm', 'audio jack', '3.5mm jack'].includes(t) ||
+    /\b(?:(?:3\.5\s*mm|headphone|audio)\s*(?:jack|port)?|3\.5mm)\b/i.test(t)
+  ) {
     return 'headphone_jack';
   }
-  if (['microsd', 'sd card', 'expandable storage', 'card slot'].includes(t)) {
+  if (
+    ['microsd', 'sd card', 'expandable storage', 'card slot'].includes(t) ||
+    /\b(?:micro[\s-]?sd(?:[\s-]*card)?|sd[\s-]*card|expandable[\s-]*storage|card[\s-]*slot)\b/i.test(
+      t,
+    )
+  ) {
     return 'microsd_slot';
   }
-  if (['5g', '5g support', 'sub-6'].includes(t)) return 'network_5g';
-  if (['waterproof', 'water resistance', 'water resistant', 'ip68', 'ip67'].includes(t)) {
+  if (['5g', '5g support', 'sub-6'].includes(t) || /\b(?:5g|sub[\s-]*6)\b/i.test(t)) {
+    return 'network_5g';
+  }
+  if (
+    ['waterproof', 'water resistance', 'water resistant', 'ip68', 'ip67'].includes(t) ||
+    /\b(?:water(?:proof|[\s-]*resist(?:ant|ance)?)|ip(?:6[789]|x[78]))\b/i.test(t)
+  ) {
     return 'water_resistance';
   }
-  if (['esim', 'dual sim with esim'].includes(t)) return 'esim';
-  if (['telephoto', 'optical zoom', 'zoom lens', 'periscope'].includes(t)) {
+  if (['esim', 'dual sim with esim'].includes(t) || /\b(?:e[\s-]?sim|embedded\s+sim)\b/i.test(t)) {
+    return 'esim';
+  }
+  if (
+    ['telephoto', 'optical zoom', 'zoom lens', 'periscope'].includes(t) ||
+    /\b(?:telephoto(?:[\s-]*camera)?|optical[\s-]*zoom|zoom[\s-]*lens|periscope)\b/i.test(t)
+  ) {
     return 'telephoto_camera';
   }
-  if (['120hz', 'high refresh rate', '90hz', '144hz', 'smooth display'].includes(t)) {
+  if (
+    ['120hz', 'high refresh rate', '90hz', '144hz', 'smooth display'].includes(t) ||
+    /\b(?:(?:90|120|144|165)[\s-]*hz|(?:high|smooth|fast)[\s-]*(?:refresh(?:[\s-]*rate)?|display))\b/i.test(
+      t,
+    )
+  ) {
     return 'high_refresh_rate';
   }
-  if (['compact', 'small phone', 'one-handed', 'compact size'].includes(t)) {
+  if (
+    ['compact', 'small phone', 'one-handed', 'compact size'].includes(t) ||
+    /\b(?:compact(?:[\s-]*size)?|small[\s-]*(?:phone|screen|display)|one[\s-]*handed)\b/i.test(t)
+  ) {
     return 'compact_size';
   }
   return 'unknown';
@@ -95,19 +134,31 @@ export function evaluatePhoneHardwareFeature(
         /\b5g\b/i.test(entry.model) ||
         /\b5g\b/i.test(spec.chipset ?? '') ||
         /\b5g\b/i.test(entry.tagline ?? '') ||
-        Boolean(spec.highlights?.some((h) => /\b5g\b/i.test(h)))
+        Boolean(spec.highlights?.some((h) => /\b5g\b/i.test(h))) ||
+        /(?:tensor|snapdragon\s*[678]|a1[4-9]|a2\d|dimensity|exynos\s*(?:1[3-9]|2\d))/i.test(
+          spec.chipset ?? '',
+        ) ||
+        (entry.launchDate != null && entry.launchDate.getFullYear() >= 2022)
       );
     case 'water_resistance':
       return (
-        Boolean(spec.ip_rating && /\b(?:ip6[78]|ipx[78])\b/i.test(spec.ip_rating)) ||
+        Boolean(spec.ip_rating && /\b(?:ip6[789]|ipx[78])\b/i.test(spec.ip_rating)) ||
         Boolean(
-          spec.highlights?.some((h) => /\b(?:water resistant|waterproof|ip68|ip67)\b/i.test(h)),
+          spec.highlights?.some((h) =>
+            /\b(?:water resistant|waterproof|ip6[789]|ipx[78])\b/i.test(h),
+          ),
         )
       );
     case 'esim':
       return (
         Boolean(spec.connectivity?.sim && /esim/i.test(spec.connectivity.sim)) ||
-        Boolean(spec.highlights?.some((h) => /\besim\b/i.test(h)))
+        Boolean(spec.highlights?.some((h) => /\besim\b/i.test(h))) ||
+        (entry.brand.toLowerCase() === 'apple' &&
+          entry.launchDate != null &&
+          entry.launchDate.getFullYear() >= 2022) ||
+        (entry.brand.toLowerCase() === 'google' &&
+          entry.launchDate != null &&
+          entry.launchDate.getFullYear() >= 2021)
       );
     case 'telephoto_camera':
       return Boolean(

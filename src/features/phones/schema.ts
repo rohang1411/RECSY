@@ -60,6 +60,9 @@ export const ConnectivitySchema = z.object({
   ir_blaster: z.boolean().optional(),
   usb: z.string().optional(),
   sim: z.string().optional(),
+  network_5g: z.boolean().optional(),
+  jack_3_5mm: z.boolean().optional(),
+  card_slot: z.boolean().optional(),
 });
 
 export const PhoneSpecSchema = z.object({

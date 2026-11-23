@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type postgres from 'postgres';
-import { getDb } from '@/services/db/client';
+import { getPostgres } from '@/services/db/client';
 
 export interface SystemIntegrityReport {
   readonly missingAspectsCount: number;
@@ -52,7 +52,14 @@ export const FALLBACK_INTEGRITY_REPORT: SystemIntegrityReport = {
  */
 export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<SystemIntegrityReport> {
   const t0 = performance.now();
-  const dbSql = sql ?? (getDb() as unknown as { _: { sql: postgres.Sql } })._?.sql;
+  let dbSql: postgres.Sql | undefined = sql;
+  if (!dbSql) {
+    try {
+      dbSql = getPostgres();
+    } catch {
+      return FALLBACK_INTEGRITY_REPORT;
+    }
+  }
 
   if (!dbSql) {
     return FALLBACK_INTEGRITY_REPORT;

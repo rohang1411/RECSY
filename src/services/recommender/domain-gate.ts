@@ -9,6 +9,8 @@
  *    deterministic clarifications before any catalog ranking or candidate scoring.
  */
 
+import { normalizeToUsd, DEFAULT_EXCHANGE_RATES } from '@/services/catalog/currency';
+
 export interface DomainGateResult {
   readonly isSmartphoneDomain: boolean;
   readonly isAdversarialJailbreak: boolean;
@@ -133,16 +135,28 @@ export function detectContradictoryConstraints(
   const mustHaves = (input.mustHaves ?? []).map((s) => s.toLowerCase());
 
   // 1. Platform contradiction: iPhone/Apple with Android
-  const mentionsIphone =
-    /\b(?:iphone|ios|apple phone)\b/i.test(text) ||
-    mustHaves.some((h) => h.includes('ios') || h.includes('iphone'));
-  const mentionsAndroid = /\bandroid\b/i.test(text) || mustHaves.some((h) => h.includes('android'));
+  const hasIphoneMustHave = mustHaves.some((h) => h.includes('ios') || h.includes('iphone'));
+  const hasAndroidMustHave = mustHaves.some((h) => h.includes('android'));
+  const hasBothMustHaves = hasIphoneMustHave && hasAndroidMustHave;
 
-  // If user specifically requested an iPhone running Android or vice versa
-  if (
-    (mentionsIphone && mentionsAndroid) ||
+  const isSwitchingPlatforms =
+    /\b(?:switch(?:ing)?|mov(?:e|ing)|migrat(?:e|ing)|com(?:e|ing))\s+from\s+(?:android|ios|iphone)\s+to\s+(?:android|ios|iphone)\b/i.test(
+      text,
+    );
+
+  const isExplicitHybridPlatformRequest =
     /\biphone\s+(?:running|with|on)\s+android\b/i.test(text) ||
-    /\bandroid\s+(?:iphone|apple\s+phone)\b/i.test(text)
+    /\bandroid\s+(?:iphone|apple\s+phone)\b/i.test(text) ||
+    /\b(?:apple\s+phone|ios)\s+(?:running|with|on)\s+android\b/i.test(text) ||
+    /\bandroid\s+(?:on|in|running\s+on)\s+(?:an?\s+)?iphone\b/i.test(text);
+
+  const mentionsIphone = /\b(?:iphone|ios|apple phone)\b/i.test(text);
+  const mentionsAndroid = /\bandroid\b/i.test(text);
+
+  if (
+    hasBothMustHaves ||
+    isExplicitHybridPlatformRequest ||
+    (!isSwitchingPlatforms && mentionsIphone && mentionsAndroid)
   ) {
     return {
       hasContradiction: true,
@@ -158,8 +172,22 @@ export function detectContradictoryConstraints(
     /\b(?:foldable|flip phone|z fold|z flip|galaxy fold|pixel fold|fold)\b/i.test(text) ||
     mustHaves.some((h) => h.includes('foldable') || h.includes('flip'));
 
-  const maxBudget = input.budgetUsd?.max ?? input.budgetLocal?.max;
-  if (isFoldableRequested && maxBudget != null && maxBudget > 0 && maxBudget < 250) {
+  let maxBudgetUsd: number | undefined;
+  if (input.budgetUsd?.max != null) {
+    maxBudgetUsd = input.budgetUsd.max;
+  } else if (input.budgetLocal?.max != null && input.budgetLocal.currency) {
+    try {
+      maxBudgetUsd = normalizeToUsd(
+        input.budgetLocal.max,
+        input.budgetLocal.currency,
+        DEFAULT_EXCHANGE_RATES,
+      );
+    } catch {
+      maxBudgetUsd = input.budgetLocal.max;
+    }
+  }
+
+  if (isFoldableRequested && maxBudgetUsd != null && maxBudgetUsd > 0 && maxBudgetUsd < 250) {
     return {
       hasContradiction: true,
       contradictionType: 'foldable_budget_conflict',

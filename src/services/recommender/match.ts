@@ -88,6 +88,7 @@ export interface FilterPassOptions {
   readonly now?: Date;
   /** When true, skips the 3.5 year maximum age filter. */
   readonly ignoreMaxAge?: boolean;
+  readonly exchangeRates?: ExchangeRates;
 }
 
 export function buildSearchHaystack(entry: PhoneCatalogEntry): string {
@@ -196,33 +197,60 @@ export function passesHardFilters(
     return false;
   }
 
-  // Budget filtering: use currency-aware local budget if available, otherwise USD.
+  // Budget filtering: use canonical multi-currency normalization engine (Plan 31 WP-01).
+  const rates = opts.exchangeRates ?? DEFAULT_EXCHANGE_RATES;
   const localBudget = requirements.budget_local;
-  if (localBudget && localBudget.max != null) {
-    const max =
-      opts.budgetMaxOverride ??
-      (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
-    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
-    if (!Number.isFinite(price) || price > max) return false;
-  } else {
-    const budget = requirements.budget_usd;
-    if (budget?.max != null) {
+  const usdBudget = requirements.budget_usd;
+
+  if (
+    (localBudget && (localBudget.max != null || localBudget.min != null)) ||
+    (usdBudget && (usdBudget.max != null || usdBudget.min != null))
+  ) {
+    const rawLocalPrice = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
+    const rawMsrpUsd = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
+
+    // If an explicit price is provided as an invalid non-number string, reject immediately
+    if (entry.localPrice != null && !Number.isFinite(rawLocalPrice)) return false;
+    if (entry.msrpUsd != null && !Number.isFinite(rawMsrpUsd)) return false;
+
+    let phonePriceUsd: number | null = null;
+    if (Number.isFinite(rawLocalPrice) && entry.localCurrency) {
+      phonePriceUsd = normalizeToUsd(rawLocalPrice, entry.localCurrency, rates);
+    } else if (Number.isFinite(rawMsrpUsd)) {
+      phonePriceUsd = rawMsrpUsd;
+    }
+
+    if (phonePriceUsd == null || !Number.isFinite(phonePriceUsd)) {
+      return false;
+    }
+
+    if (localBudget && localBudget.max != null) {
       const max =
         opts.budgetMaxOverride ??
-        (opts.relaxBudgetMax ? budget.max * RECOMMEND_BUDGET_RELAX_FACTOR : budget.max);
-      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
-      if (!Number.isFinite(price) || price > max) return false;
-    }
-  }
+        (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
 
-  if (localBudget && localBudget.min != null) {
-    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
-    if (!Number.isFinite(price) || price < localBudget.min) return false;
-  } else {
-    const budget = requirements.budget_usd;
-    if (budget?.min != null) {
-      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
-      if (!Number.isFinite(price) || price < budget.min) return false;
+      if (Number.isFinite(rawLocalPrice) && entry.localCurrency === localBudget.currency) {
+        if (rawLocalPrice > max) return false;
+      } else {
+        const maxUsd = normalizeToUsd(max, localBudget.currency, rates);
+        if (phonePriceUsd > maxUsd) return false;
+      }
+    } else if (usdBudget && usdBudget.max != null) {
+      const max =
+        opts.budgetMaxOverride ??
+        (opts.relaxBudgetMax ? usdBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : usdBudget.max);
+      if (phonePriceUsd > max) return false;
+    }
+
+    if (localBudget && localBudget.min != null) {
+      if (Number.isFinite(rawLocalPrice) && entry.localCurrency === localBudget.currency) {
+        if (rawLocalPrice < localBudget.min) return false;
+      } else {
+        const minUsd = normalizeToUsd(localBudget.min, localBudget.currency, rates);
+        if (phonePriceUsd < minUsd) return false;
+      }
+    } else if (usdBudget && usdBudget.min != null) {
+      if (phonePriceUsd < usdBudget.min) return false;
     }
   }
 
@@ -625,7 +653,11 @@ function collectScored(
   opts: FilterPassOptions,
 ): ScoredCandidate[] {
   const out: ScoredCandidate[] = [];
-  const filterOpts = opts.now ? opts : { ...opts, now: ctx.now };
+  const filterOpts: FilterPassOptions = {
+    ...opts,
+    now: opts.now ?? ctx.now,
+    exchangeRates: opts.exchangeRates ?? ctx.exchangeRates,
+  };
   for (const entry of catalog) {
     if (!passesHardFilters(entry, ctx.requirements, filterOpts)) continue;
     const haystack = buildSearchHaystack(entry);
