@@ -39,6 +39,12 @@ interface ConsistencyReport {
       readonly status: 'clean' | 'dead_code_detected';
       readonly runners: readonly string[];
     };
+    readonly drizzleMigrations: {
+      readonly totalSqlFiles: number;
+      readonly journalEntries: number;
+      readonly status: 'synced' | 'unjournaled_migrations_detected';
+      readonly unjournaled?: readonly string[];
+    };
   };
 }
 
@@ -141,6 +147,39 @@ async function runCodebaseConsistencyCheck(): Promise<boolean> {
     console.log(`  PASS: ${runnerFiles.length} eval runners active, zero orphaned stubs detected.`);
   }
 
+  // 4. Audit Drizzle Migrations Journal Completeness
+  const migrationsDir = path.join(process.cwd(), 'drizzle', 'migrations');
+  const journalPath = path.join(migrationsDir, 'meta', '_journal.json');
+  let totalMigrationFiles = 0;
+  let journalEntriesCount = 0;
+  let unjournaled: string[] = [];
+
+  if (fs.existsSync(journalPath)) {
+    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    journalEntriesCount = journal.entries.length;
+    const journalTags = new Set(journal.entries.map((e) => e.tag));
+    const sqlFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => f.replace(/\.sql$/, ''));
+    totalMigrationFiles = sqlFiles.length;
+    unjournaled = sqlFiles.filter((tag) => !journalTags.has(tag));
+
+    if (unjournaled.length > 0) {
+      hasFailure = true;
+      console.error(
+        `  FAIL: Found ${unjournaled.length} unjournaled migration(s) in drizzle/migrations:`,
+        unjournaled,
+      );
+    } else {
+      console.log(
+        `  PASS: All ${totalMigrationFiles} migration SQL files tracked in _journal.json.`,
+      );
+    }
+  }
+
   const executionMs = Math.round(performance.now() - t0);
 
   const report: ConsistencyReport = {
@@ -165,6 +204,12 @@ async function runCodebaseConsistencyCheck(): Promise<boolean> {
         orphaned: orphanedFound.length,
         status: orphanedFound.length > 0 ? 'dead_code_detected' : 'clean',
         runners: runnerFiles,
+      },
+      drizzleMigrations: {
+        totalSqlFiles: totalMigrationFiles,
+        journalEntries: journalEntriesCount,
+        status: unjournaled.length > 0 ? 'unjournaled_migrations_detected' : 'synced',
+        unjournaled: unjournaled.length > 0 ? unjournaled : undefined,
       },
     },
   };
