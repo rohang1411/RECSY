@@ -67,6 +67,10 @@ describe('POST /api/internal/integrity/remediate (Plan 32 WP-10)', () => {
     expect(res.headers.get('X-Trace-Id')).toBe('trace-run-1');
     expect(data.success).toBe(true);
     expect(data.remediated.zombieRunsPruned).toBe(3);
-    expect(remediationModule.runIntegrityRemediation).toHaveBeenCalledWith('prune_zombie_runs');
+    expect(remediationModule.runIntegrityRemediation).toHaveBeenCalledWith(
+      'prune_zombie_runs',
+      undefined,
+      { traceId: 'trace-run-1', route: 'POST /api/internal/integrity/remediate' },
+    );
   });
 });

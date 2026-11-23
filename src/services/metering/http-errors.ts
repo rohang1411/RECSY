@@ -17,6 +17,7 @@ import {
   RateLimitError,
   publicErrorMessage,
 } from '@/lib/errors';
+import { isDbTimeoutError, isDbUnavailableError } from '@/lib/error-taxonomy';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
 import type { StageTimer } from '@/lib/stage-timer';
 import type { RequestIdentity } from '@/services/auth/identity';
@@ -50,19 +51,10 @@ export async function meteredErrorResponse(
   let refunded = false;
   if (lease && !lease.settled) {
     let refundCode = 'internal_error';
-    if (
-      (err instanceof AppError && (err.code === 'DB_TIMEOUT' || err.code === 'DB_UNAVAILABLE')) ||
-      (err instanceof Error &&
-        (err.name === 'PostgresError' ||
-          /statement_timeout|canceling statement due to statement timeout|timeout.*database|ECONNREFUSED/i.test(
-            err.message,
-          )))
-    ) {
-      refundCode =
-        (err instanceof AppError && err.code === 'DB_TIMEOUT') ||
-        (err instanceof Error && /timeout/i.test(err.message))
-          ? 'db_timeout'
-          : 'db_unavailable';
+    if (isDbTimeoutError(err)) {
+      refundCode = 'db_timeout';
+    } else if (isDbUnavailableError(err)) {
+      refundCode = 'db_unavailable';
     } else if (err instanceof AppError) {
       refundCode = err.code;
     }
@@ -221,17 +213,8 @@ export async function meteredErrorResponse(
     );
   }
 
-  if (
-    (err instanceof AppError && (err.code === 'DB_TIMEOUT' || err.code === 'DB_UNAVAILABLE')) ||
-    (err instanceof Error &&
-      (err.name === 'PostgresError' ||
-        /statement_timeout|canceling statement due to statement timeout|timeout.*database|ECONNREFUSED/i.test(
-          err.message,
-        )))
-  ) {
-    const isTimeout =
-      (err instanceof AppError && err.code === 'DB_TIMEOUT') ||
-      (err instanceof Error && /timeout/i.test(err.message));
+  if (isDbTimeoutError(err) || isDbUnavailableError(err)) {
+    const isTimeout = isDbTimeoutError(err);
     const code = isTimeout ? 'DB_TIMEOUT' : 'DB_UNAVAILABLE';
     headers['Retry-After'] = '5';
 

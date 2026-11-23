@@ -142,10 +142,20 @@ export function handleMeteredError(
   }
 
   // 6. Infrastructure errors
-  if (code === 'METERING_UNAVAILABLE' || code === 'AUTH_UNAVAILABLE') {
+  if (
+    code === 'METERING_UNAVAILABLE' ||
+    code === 'AUTH_UNAVAILABLE' ||
+    code === 'DB_UNAVAILABLE' ||
+    code === 'DB_TIMEOUT' ||
+    status === 503
+  ) {
     return {
       kind: 'toast',
-      message: COPY.deny.metering,
+      message:
+        message ??
+        (code === 'DB_TIMEOUT' || code === 'DB_UNAVAILABLE' || status === 503
+          ? 'Database service is temporarily unavailable. Please retry shortly.'
+          : COPY.deny.metering),
     };
   }
 
