@@ -7,7 +7,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { chunkText, countTokens, splitSentences } from './chunking';
+import {
+  buildContextualizedChunk,
+  chunkText,
+  countTokens,
+  formatContextualPreamble,
+  splitSentences,
+} from './chunking';
 
 describe('splitSentences', () => {
   it('returns [] for empty input', () => {
@@ -101,5 +107,34 @@ describe('countTokens', () => {
     const short = countTokens('one two three');
     const long = countTokens('one two three four five six seven eight nine ten');
     expect(long).toBeGreaterThan(short);
+  });
+});
+
+describe('Contextual Chunk Preamble (WP-04)', () => {
+  const header = {
+    phoneBrand: 'Google',
+    phoneModel: 'Pixel 9 Pro',
+    sourceCreator: 'MKBHD',
+    sourceType: 'youtube',
+    primarySubject: 'Camera and low-light performance',
+    temporalOffset: '04:32',
+  };
+
+  it('formats structured contextual preamble with target entity anchor', () => {
+    const preamble = formatContextualPreamble(header);
+    expect(preamble).toContain('[TARGET PHONE: Google Pixel 9 Pro]');
+    expect(preamble).toContain('[SOURCE: MKBHD (youtube)]');
+    expect(preamble).toContain('[PRIMARY SUBJECT: Camera and low-light performance]');
+    expect(preamble).toContain('[VIDEO TIMESTAMP: 04:32]');
+    expect(preamble).toContain('---');
+  });
+
+  it('builds contextualized chunk preserving clean raw excerpt', () => {
+    const raw = 'Compared to the S24, the low light HDR preserves noticeably more detail.';
+    const result = buildContextualizedChunk(raw, header);
+
+    expect(result.rawExcerpt).toBe(raw);
+    expect(result.contextualChunkText).toContain('[TARGET PHONE: Google Pixel 9 Pro]');
+    expect(result.contextualChunkText).toContain(raw);
   });
 });
