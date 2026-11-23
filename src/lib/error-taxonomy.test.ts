@@ -22,6 +22,7 @@ describe('8-Dimension Typed Error Taxonomy (Plan 32 WP-07)', () => {
     expect(ErrorCategorySchema.parse('LLM_GATEWAY_ERROR')).toBe('LLM_GATEWAY_ERROR');
     expect(ErrorCategorySchema.parse('DB_TIMEOUT')).toBe('DB_TIMEOUT');
     expect(ErrorCategorySchema.parse('DB_UNAVAILABLE')).toBe('DB_UNAVAILABLE');
+    expect(ErrorCategorySchema.parse('INTEGRITY_AUDIT_FAIL')).toBe('INTEGRITY_AUDIT_FAIL');
     expect(ErrorCategorySchema.parse('INTERNAL')).toBe('INTERNAL');
     expect(() => ErrorCategorySchema.parse('UNKNOWN_CODE')).toThrow();
   });
@@ -114,6 +115,24 @@ describe('8-Dimension Typed Error Taxonomy (Plan 32 WP-07)', () => {
     expect(classified3.category).toBe('DB_UNAVAILABLE');
     expect(classified3.status).toBe(503);
     expect(classified3.retryAfterSec).toBe(5);
+
+    // Postgres syntax error or constraint error is NOT DB_UNAVAILABLE; it must map to 500 INTERNAL
+    const syntaxErr = new Error('syntax error at or near "FROM"');
+    syntaxErr.name = 'PostgresError';
+    (syntaxErr as { code?: string }).code = '42601';
+    const classified4 = classifyError(syntaxErr);
+    expect(classified4.category).toBe('INTERNAL');
+    expect(classified4.status).toBe(500);
+  });
+
+  it('classifies integrity audit failures into INTEGRITY_AUDIT_FAIL', () => {
+    const auditErr = new AppError('INTEGRITY_AUDIT_FAIL', 'System integrity audit inconsistency', {
+      status: 500,
+    });
+    const classified = classifyError(auditErr);
+    expect(classified.category).toBe('INTEGRITY_AUDIT_FAIL');
+    expect(classified.status).toBe(500);
+    expect(classified.message).toBe('System integrity audit inconsistency');
   });
 
   it('classifies unknown errors into 500 INTERNAL', () => {

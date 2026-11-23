@@ -181,6 +181,25 @@ describe('WP-15: metered-fetch and error mapping', () => {
       }
     });
 
+    it('maps DB_TIMEOUT and DB_UNAVAILABLE to infrastructure toast', () => {
+      const dbTimeoutAction = handleMeteredError(503, {
+        code: 'DB_TIMEOUT',
+        message: 'Database service is temporarily unavailable',
+      });
+      expect(dbTimeoutAction).toEqual({
+        kind: 'toast',
+        message: 'Database service is temporarily unavailable',
+      });
+
+      const dbUnavailableAction = handleMeteredError(503, {
+        code: 'DB_UNAVAILABLE',
+      });
+      expect(dbUnavailableAction).toEqual({
+        kind: 'toast',
+        message: 'Database service is temporarily unavailable. Please retry shortly.',
+      });
+    });
+
     it('clamps negative or malformed retry-after headers to safe positive integer', () => {
       const negativeAction = handleMeteredError(429, { code: 'RATE_LIMITED' }, '-5');
       expect(negativeAction).toEqual({

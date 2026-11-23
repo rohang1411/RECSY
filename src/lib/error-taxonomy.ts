@@ -28,6 +28,7 @@ export const ErrorCategorySchema = z.enum([
   'LLM_GATEWAY_ERROR',
   'DB_TIMEOUT',
   'DB_UNAVAILABLE',
+  'INTEGRITY_AUDIT_FAIL',
   'INTERNAL',
 ]);
 
@@ -46,6 +47,63 @@ export interface ClassifiedError {
   readonly message: string;
   readonly retryAfterSec?: number;
   readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Checks if an error represents a database statement timeout.
+ */
+export function isDbTimeoutError(err: unknown): boolean {
+  if (err instanceof AppError && err.code === 'DB_TIMEOUT') return true;
+  if (err instanceof Error) {
+    const code = (err as { code?: string }).code;
+    if (code === '57014') return true;
+    if (
+      /statement_timeout|canceling statement due to statement timeout|timeout.*database/i.test(
+        err.message,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks if an error represents database unavailability, connection refusal, or pool exhaustion.
+ */
+export function isDbUnavailableError(err: unknown): boolean {
+  if (
+    err instanceof AppError &&
+    (err.code === 'DB_UNAVAILABLE' || err.code === 'METERING_UNAVAILABLE')
+  ) {
+    return true;
+  }
+  if (err instanceof Error) {
+    const code = (err as { code?: string }).code;
+    if (
+      code === '53300' ||
+      code === '57P01' ||
+      code === '57P02' ||
+      code === '57P03' ||
+      code === '08000' ||
+      code === '08003' ||
+      code === '08006' ||
+      code === 'ECONNREFUSED' ||
+      code === 'ECONNRESET' ||
+      code === 'ETIMEDOUT' ||
+      code === 'CONNECTION_CLOSED'
+    ) {
+      return true;
+    }
+    if (
+      /ECONNREFUSED|ECONNRESET|pool.*drained|Connection closed|connection.*terminated|max.*connections.*reached/i.test(
+        err.message,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -137,25 +195,25 @@ export function classifyError(err: unknown): ClassifiedError {
   }
 
   // Database timeout or pool exhaustion
-  if (
-    (err instanceof AppError &&
-      (err.code === 'DB_TIMEOUT' ||
-        err.code === 'DB_UNAVAILABLE' ||
-        err.code === 'METERING_UNAVAILABLE')) ||
-    (err instanceof Error &&
-      (err.name === 'PostgresError' ||
-        /statement_timeout|canceling statement due to statement timeout|timeout.*database|ECONNREFUSED|pool.*drained/i.test(
-          err.message,
-        )))
-  ) {
-    const isTimeout =
-      (err instanceof AppError && err.code === 'DB_TIMEOUT') ||
-      (err instanceof Error && /timeout/i.test(err.message));
+  if (isDbTimeoutError(err) || isDbUnavailableError(err)) {
+    const isTimeout = isDbTimeoutError(err);
     return {
       category: isTimeout ? 'DB_TIMEOUT' : 'DB_UNAVAILABLE',
       status: 503,
       message: 'Database service is temporarily unavailable',
       retryAfterSec: 5,
+    };
+  }
+
+  // Dimension 7: Integrity Audit / Inconsistency
+  if (
+    (err instanceof AppError && err.code === 'INTEGRITY_AUDIT_FAIL') ||
+    (err instanceof Error && /integrity.*audit.*fail/i.test(err.message))
+  ) {
+    return {
+      category: 'INTEGRITY_AUDIT_FAIL',
+      status: 500,
+      message: err instanceof AppError ? publicErrorMessage(err) : 'System integrity audit failed',
     };
   }
 

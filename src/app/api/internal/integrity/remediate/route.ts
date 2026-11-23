@@ -43,7 +43,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const result = await runIntegrityRemediation(parsed.data.action);
+    const result = await runIntegrityRemediation(parsed.data.action, undefined, {
+      traceId,
+      route: 'POST /api/internal/integrity/remediate',
+    });
     log.info({ action: parsed.data.action, result }, 'integrity_remediation_completed');
 
     return NextResponse.json(result, {

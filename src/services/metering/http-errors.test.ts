@@ -219,6 +219,20 @@ describe('meteredErrorResponse', () => {
     expect(body.code).toBe('DB_UNAVAILABLE');
   });
 
+  it('maps non-timeout PostgresError (e.g. syntax error) to 500 INTERNAL instead of 503', async () => {
+    const sqlSyntaxErr = new Error('syntax error at or near "SELECT"');
+    sqlSyntaxErr.name = 'PostgresError';
+    (sqlSyntaxErr as { code?: string }).code = '42601';
+    const ctx = createTestContext();
+
+    const res = await meteredErrorResponse(sqlSyntaxErr, ctx);
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body.code).toBe('INTERNAL');
+    expect(body.message).toBe('Internal server error');
+  });
+
   it('maps unknown Error to 500 INTERNAL', async () => {
     const err = new Error('Database disk corrupted');
     const ctx = createTestContext();
