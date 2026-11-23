@@ -27,6 +27,7 @@ import {
 import { CitationStreamGuard } from './citation-stream-guard';
 import { buildCitationUrl, resolveCitations, type ResolvedCitation } from './citations';
 import { evaluateRetrievalConfidence } from './crag-gate';
+import { verifyGeneratedAnswerEntailment } from './nli-gate';
 
 export type QnaStreamEvent =
   | { type: 'status'; stage: 'retrieving' | 'generating' }
@@ -339,8 +340,24 @@ export async function* runPhoneQnaStream(
   const model = finishModel ?? env.LLM_CHAT_MODEL;
   const citationRepairs = guard.stats.strippedTags;
 
-  if (citationRepairs > 0) {
-    log.warn({ count: citationRepairs, phoneId }, 'citation_stream_repair');
+  // Post-stream sentence NLI evaluation (Plan 32 WP-08)
+  const nliResult = verifyGeneratedAnswerEntailment(
+    guard.emitted,
+    retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+  );
+
+  const totalUnsupportedClaims = citationRepairs + nliResult.unsupportedClaims;
+
+  if (citationRepairs > 0 || nliResult.unsupportedClaims > 0) {
+    log.warn(
+      {
+        citationRepairs,
+        unsupportedClaims: nliResult.unsupportedClaims,
+        entailmentScore: nliResult.entailmentScore,
+        phoneId,
+      },
+      'stream_hallucination_or_citation_repair',
+    );
   } else if (llm.storeChat) {
     llm.storeChat(chatInput, {
       text: guard.emitted,
@@ -368,8 +385,8 @@ export async function* runPhoneQnaStream(
       maxRetrievalSimilarity: cragDecision.maxSimilarity,
       ftsHitCount: retrieval.debug?.fts?.count ?? 0,
       isAbstention: false,
-      entailmentScore: 1.0,
-      unsupportedClaimCount: citationRepairs,
+      entailmentScore: nliResult.entailmentScore,
+      unsupportedClaimCount: totalUnsupportedClaims,
       streamed: true,
       citationRepairs,
     },
