@@ -39,6 +39,7 @@ import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/typ
 
 import { resolveCitations, validateCitationTags } from './citations';
 import type { ResolvedCitation } from './citations';
+import { evaluateRetrievalConfidence } from './crag-gate';
 
 export interface PhoneQnaInput {
   readonly phoneId: string;
@@ -294,15 +295,26 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
     }
   }
 
-  if (retrieval.chunks.length === 0) {
-    if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
+  const cragDecision = evaluateRetrievalConfidence(retrieval);
+  if (cragDecision.action === 'abstain') {
+    if (
+      retrieval.chunks.length === 0 &&
+      (retrieval.debug.vector.error || retrieval.debug.fts.error)
+    ) {
       throw new IntegrationError('Retrieval failed without usable evidence', {
         phoneId,
         vectorError: retrieval.debug.vector.error,
         ftsError: retrieval.debug.fts.error,
       });
     }
-    log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
+    log.info(
+      {
+        phoneId,
+        reason: cragDecision.reason,
+        maxSimilarity: cragDecision.maxSimilarity,
+      },
+      'crag-abstention short-circuit',
+    );
     return {
       text: buildNoContextMessage(input.phoneMeta),
       citations: [],
