@@ -70,4 +70,52 @@ export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   },
 });
 
+/**
+ * Gracefully closes the database client connection pool.
+ * Drains all active queries with a configurable timeout (defaults to 5s).
+ * Resets cached client and db singletons for safe test isolation and clean script termination.
+ */
+export async function closeDb(options?: { timeout?: number }): Promise<void> {
+  _db = null;
+  if (_client !== null) {
+    const clientToClose = _client;
+    _client = null;
+    await clientToClose.end({ timeout: options?.timeout ?? 5 }).catch(() => undefined);
+  }
+}
+
+/**
+ * Lightweight TCP & database connectivity ping.
+ * Executes `SELECT 1 as ping` to verify database reachability and measure query latency.
+ * Safe to call during health audits; never throws.
+ */
+export async function pingDatabase(
+  timeoutMs = 2000,
+): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const t0 = performance.now();
+  try {
+    const client = getPostgres();
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      client`SELECT 1 as ping`,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Database ping timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        if (typeof timer.unref === 'function') {
+          timer.unref();
+        }
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    return { ok: true, latencyMs: Math.round((performance.now() - t0) * 10) / 10 };
+  } catch (err) {
+    return {
+      ok: false,
+      latencyMs: Math.round((performance.now() - t0) * 10) / 10,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export { schema };
