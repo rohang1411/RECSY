@@ -82,6 +82,23 @@ describe('domain-gate', () => {
       expect(res.clarification).toContain(
         'Foldable smartphones start at significantly higher price points',
       );
+
+      // Multi-currency: 15,000 INR = ~$173 USD, should also trigger foldable budget conflict
+      const resInr = detectContradictoryConstraints({
+        userMessage: 'Need a foldable phone',
+        budgetLocal: { max: 15000, currency: 'INR' },
+        formFactor: { foldable: true },
+      });
+      expect(resInr.hasContradiction).toBe(true);
+      expect(resInr.contradictionType).toBe('foldable_budget_conflict');
+    });
+
+    it('does not flag contradiction when user describes switching platforms', () => {
+      const res = detectContradictoryConstraints({
+        userMessage: 'I am switching from Android to iPhone and need a phone under $1000',
+        budgetUsd: { max: 1000 },
+      });
+      expect(res.hasContradiction).toBe(false);
     });
 
     it('detects compact size vs massive battery contradiction', () => {

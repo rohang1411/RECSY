@@ -319,3 +319,32 @@ export function getQuotaGovernor(): MultiProviderQuotaGovernor {
   }
   return _governorInstance;
 }
+
+export function initQuotaGovernorFromKeyPool(
+  governor: MultiProviderQuotaGovernor,
+  keyPool: {
+    getKeysForProvider: (provider: string) => readonly {
+      readonly keyIndex: number;
+      readonly rpmLimit: number;
+      readonly rpdLimit: number;
+    }[];
+  },
+): void {
+  for (const provider of [
+    'gemini',
+    'groq',
+    'nvidia',
+    'cerebras',
+    'github',
+    'openrouter',
+  ] as const) {
+    const keys = keyPool.getKeysForProvider(provider);
+    for (const k of keys) {
+      governor.registerKey(provider, k.keyIndex, {
+        rpm: k.rpmLimit,
+        tpm: k.rpmLimit * 2000,
+        rpd: k.rpdLimit,
+      });
+    }
+  }
+}

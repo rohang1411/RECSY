@@ -62,4 +62,11 @@ describe('System Integrity Radar (WP-07)', () => {
     expect(report.missingAspectsCount).toBe(3);
     expect(report.zombieIngestRunsCount).toBe(1);
   });
+
+  it('falls back safely to default metrics when database is unreachable or unset', async () => {
+    const report = await runSystemIntegrityAudit();
+    expect(report).toBeDefined();
+    expect(report.status).toBe('pass');
+    expect(report.checkedAt).toBeDefined();
+  });
 });

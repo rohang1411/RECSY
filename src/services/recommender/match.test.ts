@@ -365,10 +365,44 @@ describe('match helpers', () => {
     expect(ranked.relaxed).toEqual([]);
   });
 
-  it('does not compare USD fallback prices against a local-currency budget', () => {
-    const phone = entry({ slug: 'usd-only', localPrice: null, msrpUsd: '999.00' });
+  it('converts USD fallback prices against a local-currency budget correctly (WP-01)', () => {
+    // $999 USD at 86.5 INR/USD is ~86,413 INR -> exceeds 50,000 INR -> rejected
+    const expensivePhone = entry({ slug: 'expensive-usd', localPrice: null, msrpUsd: '999.00' });
     expect(
-      passesHardFilters(phone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+      passesHardFilters(expensivePhone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(false);
+
+    // $400 USD at 86.5 INR/USD is ~34,600 INR -> under 50,000 INR -> admitted!
+    const affordablePhone = entry({ slug: 'affordable-usd', localPrice: null, msrpUsd: '400.00' });
+    expect(
+      passesHardFilters(affordablePhone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('normalizes cross-currency prices between EUR catalog entry and INR budget', () => {
+    // 500 EUR / 0.92 = $543.48 USD * 86.5 = ~47,011 INR <= 60,000 INR -> admitted!
+    const eurPhone = entry({ slug: 'eur-phone', localPrice: '500.00', localCurrency: 'EUR' });
+    expect(
+      passesHardFilters(eurPhone, req({ budget_local: { max: 60000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(true);
+
+    // 800 EUR / 0.92 = $869.56 USD * 86.5 = ~75,217 INR > 60,000 INR -> rejected!
+    const expensiveEurPhone = entry({
+      slug: 'exp-eur',
+      localPrice: '800.00',
+      localCurrency: 'EUR',
+    });
+    expect(
+      passesHardFilters(expensiveEurPhone, req({ budget_local: { max: 60000, currency: 'INR' } }), {
         relaxBudgetMax: false,
         ignoreFoldable: false,
       }),

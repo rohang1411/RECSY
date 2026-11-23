@@ -40,6 +40,7 @@ import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/typ
 import { resolveCitations, validateCitationTags } from './citations';
 import type { ResolvedCitation } from './citations';
 import { evaluateRetrievalConfidence } from './crag-gate';
+import { verifyGeneratedAnswerEntailment } from './nli-gate';
 
 export interface PhoneQnaInput {
   readonly phoneId: string;
@@ -89,6 +90,12 @@ export interface PhoneQnaResult {
     readonly tokensIn: number;
     readonly tokensOut: number;
   };
+  readonly maxRetrievalSimilarity?: number;
+  readonly ftsHitCount?: number;
+  readonly isAbstention?: boolean;
+  readonly abstentionReason?: string;
+  readonly entailmentScore?: number;
+  readonly unsupportedClaimCount?: number;
 }
 
 export function sanitizeExcerpt(text: string): string {
@@ -328,6 +335,12 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
         tokensIn: 0,
         tokensOut: 0,
       },
+      maxRetrievalSimilarity: cragDecision.maxSimilarity,
+      ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+      isAbstention: true,
+      abstentionReason: cragDecision.reason ?? 'insufficient_evidence',
+      entailmentScore: 1.0,
+      unsupportedClaimCount: 0,
     };
   }
 
@@ -382,6 +395,13 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
     });
   }
 
+  // Post-generation NLI Entailment Gate (Plan 31 WP-06)
+  const nliResult = verifyGeneratedAnswerEntailment(
+    text,
+    retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+  );
+  text = nliResult.verifiedText;
+
   const citations = resolveCitations(text, retrieval.chunks);
   const uncachedCalls = generationCalls.filter((call) => !call.cached);
   return {
@@ -399,6 +419,11 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       tokensIn: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensIn, 0),
       tokensOut: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensOut, 0),
     },
+    maxRetrievalSimilarity: cragDecision.maxSimilarity,
+    ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+    isAbstention: false,
+    entailmentScore: nliResult.entailmentScore,
+    unsupportedClaimCount: nliResult.unsupportedClaims,
   };
 }
 

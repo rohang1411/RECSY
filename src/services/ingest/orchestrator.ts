@@ -36,6 +36,7 @@ import type { AliasMatch, AliasRow } from './agents/alias-match';
 import { matchAliases } from './agents/alias-match';
 import { CuratorAgent, type CuratorDecisionOptions } from './agents/curator';
 import { DisambiguatorAgent } from './agents/disambiguator';
+import { buildContextualizedChunk, type ContextualChunkHeader } from './chunking';
 import { classifyIngestError, computeRetryAfter } from './error-classify';
 import { ChunkEmbedder, type EmbedderOptions } from './embedder';
 import type {
@@ -561,10 +562,34 @@ export class IngestOrchestrator {
           }
         }
 
+        const contextualizedChunks = rawChunks.map((rc) => {
+          const header: ContextualChunkHeader = {
+            phoneBrand: primaryPhone.brand,
+            phoneModel: primaryPhone.model,
+            sourceCreator: candidate.author ?? candidate.channel ?? 'Reviewer',
+            sourceType: adapter.type,
+            primarySubject: candidate.title,
+            temporalOffset:
+              rc.startTs != null
+                ? `${Math.floor(rc.startTs / 60)}:${String(rc.startTs % 60).padStart(2, '0')}`
+                : undefined,
+          };
+          const { contextualChunkText, rawExcerpt, preamble } = buildContextualizedChunk(
+            rc.text,
+            header,
+          );
+          return {
+            ...rc,
+            text: contextualChunkText,
+            rawExcerpt,
+            contextualPreamble: preamble,
+          };
+        });
+
         let embeddingModel: string;
         let embeddings: number[][];
         try {
-          const embedResult = await this.embedder.embedAll(rawChunks.map((c) => c.text));
+          const embedResult = await this.embedder.embedAll(contextualizedChunks.map((c) => c.text));
           embeddings = embedResult.embeddings;
           embeddingModel = embedResult.model;
         } catch (embedErr) {
@@ -586,7 +611,10 @@ export class IngestOrchestrator {
           continue;
         }
 
-        const prepared = rawChunks.map((rc, i) => ({ raw: rc, embedding: embeddings[i]! }));
+        const prepared = contextualizedChunks.map((rc, i) => ({
+          raw: rc,
+          embedding: embeddings[i]!,
+        }));
         const result = await this.writer.writeSource({
           phoneId: primaryPhone.id,
           type: adapter.type,

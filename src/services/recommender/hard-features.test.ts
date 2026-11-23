@@ -77,6 +77,15 @@ describe('Spec-Driven Hardware Verification Matrix (WP-02)', () => {
     expect(classifyHardFeature('120Hz')).toBe('high_refresh_rate');
     expect(classifyHardFeature('compact')).toBe('compact_size');
     expect(classifyHardFeature('titanium frame')).toBe('unknown');
+
+    // Natural language variations that previously caused clarification loops:
+    expect(classifyHardFeature('micro sd card')).toBe('microsd_slot');
+    expect(classifyHardFeature('3.5 mm jack')).toBe('headphone_jack');
+    expect(classifyHardFeature('3.5mm audio jack')).toBe('headphone_jack');
+    expect(classifyHardFeature('water resistant')).toBe('water_resistance');
+    expect(classifyHardFeature('wireless charger')).toBe('wireless_charging');
+    expect(classifyHardFeature('120 hz display')).toBe('high_refresh_rate');
+    expect(classifyHardFeature('compact size')).toBe('compact_size');
   });
 
   it('identifies unsupported hard features without treating deal breakers as unsupported', () => {

@@ -13,7 +13,7 @@ import type {
 } from '../types';
 import { CircuitBreakerRegistry } from './circuit-breaker';
 import { getKeyPool } from '../keys/key-pool';
-import { getQuotaGovernor } from './quota-governor';
+import { getQuotaGovernor, initQuotaGovernorFromKeyPool } from './quota-governor';
 import { ModelRouter } from './router';
 import { CascadeExecutor } from './cascade-executor';
 
@@ -27,6 +27,7 @@ export class ModelGatewayProvider implements LlmProvider {
   private readonly executor: CascadeExecutor;
 
   constructor() {
+    initQuotaGovernorFromKeyPool(this.quotaGovernor, this.keyPool);
     this.geminiProvider = new GeminiProvider({ recordUsage: false });
     this.router = new ModelRouter(this.keyPool, this.circuitBreakers, this.quotaGovernor);
     this.executor = new CascadeExecutor(

@@ -157,6 +157,24 @@ export class AskQuestionUseCase {
             const leaseIdForDb = lease.isNoop || lease.id === 'off' ? null : lease.id;
 
             const persistenceStart = performance.now();
+            const maxRetrievalSimilarity =
+              finalResult.maxRetrievalSimilarity ??
+              finalResult.retrieval.debug?.vector?.maxSimilarity ??
+              (finalResult.retrieval.chunks.length > 0
+                ? Math.max(
+                    ...finalResult.retrieval.chunks.map(
+                      (c) => (c as { vectorSimilarity?: number }).vectorSimilarity ?? c.score,
+                    ),
+                    0,
+                  )
+                : 0);
+            const ftsHitCount =
+              finalResult.ftsHitCount ?? finalResult.retrieval.debug?.fts?.count ?? 0;
+            const isAbstention = finalResult.isAbstention ?? finalResult.model === NO_CONTEXT_MODEL;
+            const abstentionReason =
+              finalResult.abstentionReason ??
+              (isAbstention ? 'insufficient_evidence_or_crag_abstention' : null);
+
             await timer.time('persist', () =>
               persistChatQuery({
                 phoneId: phone.id,
@@ -170,6 +188,15 @@ export class AskQuestionUseCase {
                 model: finalResult!.model,
                 userId: identity.userId,
                 leaseId: leaseIdForDb,
+                maxRetrievalSimilarity,
+                minRetrievalSimilarity: null,
+                retrievalMode: 'hybrid',
+                ftsHitCount,
+                isAbstention,
+                abstentionReason,
+                entailmentScore: finalResult.entailmentScore ?? 1.0,
+                unsupportedClaimCount: finalResult.unsupportedClaimCount ?? 0,
+                citationCount: finalResult.citations.length,
               }),
             );
             const persistenceMs = performance.now() - persistenceStart;
@@ -281,6 +308,23 @@ export class AskQuestionUseCase {
             const leaseIdForDb = lease.isNoop || lease.id === 'off' ? null : lease.id;
 
             const persistenceStart = performance.now();
+            const maxRetrievalSimilarity =
+              result.maxRetrievalSimilarity ??
+              result.retrieval.debug?.vector?.maxSimilarity ??
+              (result.retrieval.chunks.length > 0
+                ? Math.max(
+                    ...result.retrieval.chunks.map(
+                      (c) => (c as { vectorSimilarity?: number }).vectorSimilarity ?? c.score,
+                    ),
+                    0,
+                  )
+                : 0);
+            const ftsHitCount = result.ftsHitCount ?? result.retrieval.debug?.fts?.count ?? 0;
+            const isAbstention = result.isAbstention ?? result.model === NO_CONTEXT_MODEL;
+            const abstentionReason =
+              result.abstentionReason ??
+              (isAbstention ? 'insufficient_evidence_or_crag_abstention' : null);
+
             await timer.time('persist', () =>
               persistChatQuery({
                 phoneId: phone.id,
@@ -294,6 +338,15 @@ export class AskQuestionUseCase {
                 model: result.model,
                 userId: identity.userId,
                 leaseId: leaseIdForDb,
+                maxRetrievalSimilarity,
+                minRetrievalSimilarity: null,
+                retrievalMode: 'hybrid',
+                ftsHitCount,
+                isAbstention,
+                abstentionReason,
+                entailmentScore: result.entailmentScore ?? 1.0,
+                unsupportedClaimCount: result.unsupportedClaimCount ?? 0,
+                citationCount: result.citations.length,
               }),
             );
             const persistenceMs = performance.now() - persistenceStart;

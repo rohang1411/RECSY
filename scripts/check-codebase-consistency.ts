@@ -96,9 +96,43 @@ async function runCodebaseConsistencyCheck(): Promise<boolean> {
     ? fs.readdirSync(runnersDir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
     : [];
 
-  // Dead stubs known to have been purged (e.g. ablation-runner.ts)
-  const deadStubNames = ['ablation-runner.ts'];
-  const orphanedFound = runnerFiles.filter((f) => deadStubNames.includes(f));
+  const knownPurged = ['ablation-runner.ts'];
+  const orphanedFound: string[] = [];
+
+  function getAllSourceFiles(dir: string): string[] {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const files: string[] = [];
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory() && e.name !== 'node_modules' && e.name !== '.next' && e.name !== '.git') {
+        files.push(...getAllSourceFiles(full));
+      } else if (e.isFile() && (e.name.endsWith('.ts') || e.name.endsWith('.tsx'))) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  const allSourceFiles = [
+    ...getAllSourceFiles(path.join(process.cwd(), 'src')),
+    ...getAllSourceFiles(path.join(process.cwd(), 'scripts')),
+  ];
+
+  for (const runner of runnerFiles) {
+    if (knownPurged.includes(runner)) {
+      orphanedFound.push(runner);
+      continue;
+    }
+    const baseName = runner.replace(/\.ts$/, '');
+    const isReferenced = allSourceFiles.some((sf) => {
+      if (path.basename(sf) === runner) return false;
+      const content = fs.readFileSync(sf, 'utf8');
+      return content.includes(baseName);
+    });
+    if (!isReferenced) {
+      orphanedFound.push(runner);
+    }
+  }
 
   if (orphanedFound.length > 0) {
     hasFailure = true;

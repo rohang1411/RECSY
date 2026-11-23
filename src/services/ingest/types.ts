@@ -72,6 +72,8 @@ export interface RawChunk {
   readonly endTs?: number;
   /** Anchor appended to the source URL to deep-link into the chunk. */
   readonly anchor?: string;
+  readonly rawExcerpt?: string;
+  readonly contextualPreamble?: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
