@@ -5,6 +5,8 @@
  * and background pipelines with minimal overhead (< 10ms execution).
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import type postgres from 'postgres';
 import { getDb } from '@/services/db/client';
 
@@ -19,6 +21,7 @@ export interface SystemIntegrityReport {
   readonly executionMs: number;
   readonly status: 'pass' | 'warn' | 'fail';
   readonly checkedAt: string;
+  readonly codeHygieneStatus?: 'clean' | 'dead_code_detected' | 'unknown';
 }
 
 interface RawIntegrityRow {
@@ -135,6 +138,23 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
       status = 'warn';
     }
 
+    let codeHygieneStatus: 'clean' | 'dead_code_detected' | 'unknown' = 'unknown';
+    try {
+      const hygienePath = path.join(
+        process.cwd(),
+        '.system',
+        'diagnostics',
+        'code_hygiene_status.json',
+      );
+      if (fs.existsSync(hygienePath)) {
+        const raw = JSON.parse(fs.readFileSync(hygienePath, 'utf8'));
+        codeHygieneStatus =
+          raw.checks?.evalRunners?.status === 'clean' ? 'clean' : 'dead_code_detected';
+      }
+    } catch {
+      // Ignore filesystem read failure
+    }
+
     return {
       missingAspectsCount: missingAspects,
       emptyCorpusesCount: emptyCorpuses,
@@ -146,6 +166,7 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
       executionMs,
       status,
       checkedAt: new Date().toISOString(),
+      codeHygieneStatus,
     };
   } catch {
     return {

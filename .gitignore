@@ -59,6 +59,7 @@ test-results/
 .turbo/
 .swc/
 .cache/
+.system/
 
 
 # --- Python / Airflow local runtime ------------------------------------------

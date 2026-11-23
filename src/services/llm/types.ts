@@ -51,6 +51,7 @@ export interface LlmUsageContext {
   readonly taskClass?: TaskClass;
   readonly userMode?: 'fast' | 'deep';
   readonly isSubscriber?: boolean;
+  readonly priorityTier?: 1 | 2 | 3 | 'interactive' | 'on_demand' | 'batch';
   readonly userByokKey?: string;
   readonly userByokProvider?: 'gemini' | 'groq' | 'nvidia' | 'cerebras' | 'openai' | 'openrouter';
   readonly metadata?: Readonly<Record<string, string | number | boolean | null>>;

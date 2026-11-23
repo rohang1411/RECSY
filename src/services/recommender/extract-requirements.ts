@@ -23,6 +23,7 @@ import {
   type UserRequirements,
 } from './requirements-schema';
 import { mergeUserRequirements, shouldResetRequirementState } from './requirements-merge';
+import { evaluateRequestDomain } from './domain-gate';
 
 function buildMessages(input: {
   readonly userMessage: string;
@@ -74,6 +75,23 @@ export async function extractUserRequirements(input: {
   readonly serverMode?: 'fast' | 'deep';
   readonly isSubscriber?: boolean;
 }): Promise<UserRequirements> {
+  const domainGate = evaluateRequestDomain(input.userMessage);
+  if (!domainGate.isSmartphoneDomain) {
+    return {
+      confidence: 0,
+      clarifying_question:
+        domainGate.message ??
+        'RECSY is an independent recommendation engine dedicated exclusively to smartphones.',
+      priorities: [],
+      must_haves: [],
+      deal_breakers: [],
+      use_cases: [],
+      brand_preference: { liked: [], disliked: [] },
+      budget_usd: null,
+      budget_local: null,
+    };
+  }
+
   const previous = shouldResetRequirementState(input.userMessage) ? null : input.previous;
   const config = getRegionConfig(input.regionCode ?? 'US');
   const out = await input.llm.structured({

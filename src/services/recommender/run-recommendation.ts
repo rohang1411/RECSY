@@ -35,6 +35,7 @@ export type { UserRequirements };
 import { buildRecommenderQueryText } from './spec-embedding-text';
 import { getLatestRecommendPickIds, getLatestRequirementsForSession } from './session';
 import { unsupportedHardFeatures } from './hard-features';
+import { evaluateRequestDomain } from './domain-gate';
 import { enrichPicksWithTrace, type RecommendPickTrace } from './recommend-trace';
 export type { RecommendPickTrace };
 
@@ -138,6 +139,32 @@ export async function runRecommendationPipeline(input: {
   readonly log: Logger;
   readonly timer?: StageTimer;
 }): Promise<RecommendPipelineResult> {
+  const domainGate = evaluateRequestDomain(input.userMessage);
+  if (!domainGate.isSmartphoneDomain) {
+    const q =
+      domainGate.message ??
+      'RECSY is an independent recommendation engine dedicated exclusively to smartphones.';
+    input.log.info(
+      { reason: domainGate.rejectionReason },
+      'recommender domain gate rejected request',
+    );
+    return {
+      kind: 'clarify',
+      requirements: {
+        confidence: 0,
+        clarifying_question: q,
+        priorities: [],
+        must_haves: [],
+        deal_breakers: [],
+        use_cases: [],
+        brand_preference: { liked: [], disliked: [] },
+        budget_usd: null,
+        budget_local: null,
+      },
+      clarifyingQuestion: q,
+    };
+  }
+
   const [previous, priorPickIds] = await Promise.all([
     getLatestRequirementsForSession(input.db, input.sessionId),
     getLatestRecommendPickIds(input.db, input.sessionId),
