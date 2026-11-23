@@ -34,7 +34,7 @@ export function evaluateHallucinationGuard(
   cases: readonly HallucinationEvaluationCase[],
 ): HallucinationBenchmarkResult {
   let baselineUngrounded = 0;
-  const guardedUngrounded = 0;
+  let guardedUngrounded = 0;
   let zeroEvidenceBlocked = 0;
   let retriesTriggered = 0;
   let retriesSuccessful = 0;
@@ -70,11 +70,12 @@ export function evaluateHallucinationGuard(
     const validation = validateCitationTags(c.rawModelResponse, allowed);
     if (!validation.ok) {
       retriesTriggered++;
-      // Constrained retry re-prompts model with allowed IDs
-      // In RECSY, constrained retry resolves invalid tags or strips orphaned citations
-      retriesSuccessful++;
-    } else {
-      // Clean generation
+      // If validation fails and citations cannot be repaired, it counts as guarded ungrounded
+      if (validation.invalid.length > 0 && !c.hasValidEvidence) {
+        guardedUngrounded++;
+      } else {
+        retriesSuccessful++;
+      }
     }
 
     // After Stage 2 enforcement and stripping, no phantom citations can survive

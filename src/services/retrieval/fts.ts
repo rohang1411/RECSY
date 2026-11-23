@@ -29,6 +29,7 @@ import type postgres from 'postgres';
 import { ValidationError } from '@/lib/errors';
 
 import { toRetrievedPublishedAt } from './dates';
+import { expandSearchQuery } from './synonyms';
 import type { RetrievalRequest, RetrievedChunk, Retriever } from './types';
 
 const MAX_QUERY_BYTES = 2048;
@@ -65,7 +66,8 @@ export class FtsSearch implements Retriever {
   async search(request: RetrievalRequest): Promise<readonly RetrievedChunk[]> {
     const { phoneId, query, k } = request;
 
-    const normalised = sanitiseQuery(query);
+    const expanded = expandSearchQuery(query);
+    const normalised = sanitiseQuery(expanded);
     if (!normalised) {
       throw new ValidationError('FtsSearch received an empty query after sanitisation', {
         phoneId,

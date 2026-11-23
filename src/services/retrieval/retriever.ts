@@ -189,7 +189,10 @@ export class HybridRetriever {
         { retriever: 'vector', chunks: vectorChunks },
         { retriever: 'fts', chunks: ftsChunks },
       ],
-      { k: opts.rrfK },
+      {
+        k: opts.rrfK,
+        retrieverWeights: { vector: 0.7, fts: 0.3 },
+      },
     );
     const rrfMs = performance.now() - rrfStart;
 
