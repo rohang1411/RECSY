@@ -30,7 +30,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new AppError('UNAUTHORIZED', 'Operator authorization required', { status: 401 });
     }
 
-    const json = await readRequestJson(request);
+    const json = await readRequestJson(request, 16_384);
     const parsed = remediationRequestSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(

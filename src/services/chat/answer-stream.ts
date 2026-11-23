@@ -342,7 +342,7 @@ export async function* runPhoneQnaStream(
 
   // Post-stream sentence NLI evaluation (Plan 32 WP-08)
   const nliResult = timer
-    ? timer.time('nliVerify', () =>
+    ? await timer.time('nliVerify', async () =>
         verifyGeneratedAnswerEntailment(
           guard.emitted,
           retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),

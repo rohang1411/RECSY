@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
 import { AppError, isAppError, publicErrorMessage } from '@/lib/errors';
 import { getRequestClientIp } from '@/lib/request-ip';

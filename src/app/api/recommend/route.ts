@@ -7,9 +7,8 @@
 import { randomBytes } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
-import { MAX_RECOMMENDER_MESSAGE_BYTES, RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
+import { RECOMMEND_SESSION_COOKIE } from '@/lib/constants';
 import { QuotaDeniedError } from '@/lib/errors';
 import { parseRequestId } from '@/lib/request-id';
 import { readRequestJson } from '@/lib/request-json';
