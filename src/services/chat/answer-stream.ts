@@ -341,10 +341,17 @@ export async function* runPhoneQnaStream(
   const citationRepairs = guard.stats.strippedTags;
 
   // Post-stream sentence NLI evaluation (Plan 32 WP-08)
-  const nliResult = verifyGeneratedAnswerEntailment(
-    guard.emitted,
-    retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
-  );
+  const nliResult = timer
+    ? timer.time('nliVerify', () =>
+        verifyGeneratedAnswerEntailment(
+          guard.emitted,
+          retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+        ),
+      )
+    : verifyGeneratedAnswerEntailment(
+        guard.emitted,
+        retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+      );
 
   const totalUnsupportedClaims = citationRepairs + nliResult.unsupportedClaims;
 

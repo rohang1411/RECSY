@@ -51,7 +51,10 @@ export const FALLBACK_INTEGRITY_REPORT: SystemIntegrityReport = {
 /**
  * Runs the single-pass CTE consistency audit across active database tables.
  */
-export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<SystemIntegrityReport> {
+export async function runSystemIntegrityAudit(
+  sql?: postgres.Sql,
+  options?: { traceId?: string; route?: string },
+): Promise<SystemIntegrityReport> {
   const t0 = performance.now();
   let dbSql: postgres.Sql | undefined = sql;
   if (!dbSql) {
@@ -77,7 +80,17 @@ export async function runSystemIntegrityAudit(sql?: postgres.Sql): Promise<Syste
   }
 
   try {
+    const safeTraceId = (options?.traceId ?? 'sys-audit').replace(/[^a-zA-Z0-9_-]/g, '');
+    const safeRoute = (options?.route ?? 'internal:integrity-audit').replace(
+      /[^a-zA-Z0-9_\- /:]/g,
+      '',
+    );
+    const provenanceComment = dbSql.unsafe
+      ? dbSql.unsafe(`/* traceId: ${safeTraceId}, route: ${safeRoute} */\n`)
+      : '';
+
     const rows = await dbSql<RawIntegrityRow[]>`
+      ${provenanceComment}
       WITH
         missing_aspects AS (
           SELECT count(DISTINCT p.id)::int as count 

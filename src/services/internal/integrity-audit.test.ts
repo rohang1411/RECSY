@@ -69,4 +69,32 @@ describe('System Integrity Radar (WP-07)', () => {
     expect(report.status).toBe('fail');
     expect(report.checkedAt).toBeDefined();
   });
+
+  it('tags SQL CTE with distributed tracing provenance comment (Plan 32 WP-09)', async () => {
+    const mockUnsafe = vi
+      .fn()
+      .mockReturnValue('/* traceId: custom-trace-123, route: test:route */\n');
+    const mockSql = Object.assign(
+      vi.fn().mockResolvedValue([
+        {
+          missing_aspects_count: 0,
+          empty_corpuses_count: 0,
+          corrupted_pricing_count: 0,
+          orphan_chunks_count: 0,
+          malformed_yt_channels_count: 0,
+          malformed_yt_sources_count: 0,
+          zombie_ingest_runs_count: 0,
+        },
+      ]),
+      { unsafe: mockUnsafe },
+    );
+
+    const report = await runSystemIntegrityAudit(mockSql as unknown as postgres.Sql, {
+      traceId: 'custom-trace-123',
+      route: 'test:route',
+    });
+
+    expect(report.status).toBe('pass');
+    expect(mockUnsafe).toHaveBeenCalledWith('/* traceId: custom-trace-123, route: test:route */\n');
+  });
 });

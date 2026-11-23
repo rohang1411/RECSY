@@ -20,7 +20,33 @@ export const REGION_COOKIE = 'recsy_region';
  * 3. Device identity cookie (`__Host-recsy_did` / `recsy_did`) minting when missing.
  */
 export async function proxy(request: NextRequest): Promise<NextResponse> {
-  const response = NextResponse.next();
+  // Edge trace id propagation (Plan 32 WP-09)
+  const incomingTraceId = request.headers.get('x-trace-id')?.trim();
+  const traceId =
+    incomingTraceId && incomingTraceId.length > 0
+      ? incomingTraceId
+      : crypto.randomUUID().replace(/-/g, '');
+
+  const requestHeaders = new Headers();
+  if (
+    typeof (
+      request.headers as unknown as { forEach?: (cb: (v: string, k: string) => void) => void }
+    ).forEach === 'function'
+  ) {
+    (
+      request.headers as unknown as { forEach: (cb: (v: string, k: string) => void) => void }
+    ).forEach((v, k) => {
+      requestHeaders.set(k, v);
+    });
+  }
+  requestHeaders.set('x-trace-id', traceId);
+
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+  response.headers.set('x-trace-id', traceId);
 
   // 1. Region cookie logic (preserves existing behavior)
   const existingRegion = request.cookies.get(REGION_COOKIE)?.value;
