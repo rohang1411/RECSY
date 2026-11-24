@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import type { BenchmarkRunRecord, BenchmarkResultItem } from '@/services/eval/types';
 import { BenchmarkReportSchema } from '@/services/eval/export/report-schema';
 import { CampaignEvidence } from './campaign-evidence';
+import { SimulationStudio } from './simulation-studio';
 
 function formatBenchmarkDate(value: string | Date): string {
   const d = new Date(value);
@@ -86,9 +87,17 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
   const [compareBaselineId, setCompareBaselineId] = useState<string | null>(null);
 
   // Active Hub Tab
-  const [activeTab, setActiveTab] = useState<'benchmarks' | 'diagnostics' | 'campaign'>(
-    'benchmarks',
-  );
+  const [activeTab, setActiveTab] = useState<
+    'benchmarks' | 'diagnostics' | 'campaign' | 'simulation'
+  >(() => {
+    if (typeof window !== 'undefined') {
+      const tab = new URLSearchParams(window.location.search).get('tab');
+      if (tab === 'simulation' || tab === 'diagnostics' || tab === 'campaign') {
+        return tab;
+      }
+    }
+    return 'benchmarks';
+  });
 
   const scrollToTestCases = (category?: string, status?: string) => {
     if (category) setCategoryFilter(category);
@@ -682,6 +691,19 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
                 Loaded
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab('simulation')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-bold transition-colors ${
+              activeTab === 'simulation'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'text-muted-foreground hover:text-foreground border-transparent'
+            }`}
+          >
+            <span>4. Simulation Studio & Ablations</span>
+            <span className="py-0.2 rounded bg-orange-500/10 px-1.5 text-[10px] font-bold text-orange-400">
+              Live
+            </span>
           </button>
         </div>
       </div>
@@ -1979,6 +2001,11 @@ export function EvalClientView({ initialRuns, initialError }: EvalClientViewProp
           </section>
         </div>
       )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Tab 4: Interactive Golden Simulation Studio & Ablations           */}
+      {/* ------------------------------------------------------------------ */}
+      {activeTab === 'simulation' && <SimulationStudio accessToken={accessToken} />}
 
       {/* ------------------------------------------------------------------ */}
       {/* Slide-Over Trace Inspector Drawer                                  */}

@@ -102,7 +102,7 @@ async function runCodebaseConsistencyCheck(): Promise<boolean> {
     ? fs.readdirSync(runnersDir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
     : [];
 
-  const knownPurged = ['ablation-runner.ts'];
+  const knownPurged: string[] = [];
   const orphanedFound: string[] = [];
 
   function getAllSourceFiles(dir: string): string[] {

@@ -1,7 +1,7 @@
 import { InternalRefreshButton } from '@/app/internal/_components/internal-refresh-button';
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, Database, GitBranch, Layers } from 'lucide-react';
+import { ArrowRight, Database, GitBranch, Layers, Sparkles } from 'lucide-react';
 
 import { LlmUsageMonitor } from '@/app/internal/pipeline/_components/llm-usage-monitor';
 import { SectionHint } from '@/app/internal/pipeline/_components/section-hint';
@@ -372,7 +372,7 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
         <SectionHint label="Command Center Workspaces">
           Dedicated workspaces for catalog inventory, per-device inspection, and pipeline telemetry.
         </SectionHint>
-        <div className="mt-4 grid gap-6 md:grid-cols-3">
+        <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: Database Dashboard */}
           <Link
             href="/internal/database"
@@ -480,6 +480,41 @@ export default async function CommandCenterPage({ searchParams }: PageProps = {}
 
             <div className="border-outline-variant group-hover:text-primary mt-6 flex items-center justify-between border-t pt-4 font-mono text-xs tracking-[0.14em] text-[#39ff88] uppercase">
               <span>View Execution Logs</span>
+              <ArrowRight
+                className="size-4 transition-transform group-hover:translate-x-1"
+                aria-hidden
+              />
+            </div>
+          </Link>
+
+          {/* Card 4: Simulation Studio & Ablation Lab */}
+          <Link
+            href="/internal/eval?tab=simulation"
+            className="group border-outline-variant bg-background hover:border-accent flex flex-col justify-between border p-6 transition-all"
+          >
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="flex size-10 items-center justify-center border border-orange-500/40 bg-orange-500/10 text-orange-400">
+                  <Sparkles className="size-5" aria-hidden />
+                </span>
+                <span className="text-muted-foreground font-mono text-[11px] uppercase">
+                  Simulation Studio
+                </span>
+              </div>
+              <h2 className="text-primary font-display group-hover:text-accent mt-5 text-2xl font-bold uppercase transition-colors">
+                Simulation & Ablations
+              </h2>
+              <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+                Side-by-side golden query simulator, component bottleneck profiler (1.59ms p95),
+                two-stage hallucination checks, and 5 live ablation comparative benchmarks.
+              </p>
+              <div className="border-outline-variant bg-surface-container/40 text-muted-foreground mt-4 border p-2.5 font-mono text-xs">
+                45 Personas · 30 QA · 20 Traps · Egress &lt;15 KB
+              </div>
+            </div>
+
+            <div className="border-outline-variant group-hover:text-primary mt-6 flex items-center justify-between border-t pt-4 font-mono text-xs tracking-[0.14em] text-orange-400 uppercase">
+              <span>Launch Simulator</span>
               <ArrowRight
                 className="size-4 transition-transform group-hover:translate-x-1"
                 aria-hidden
