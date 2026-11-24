@@ -15,7 +15,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { getDb, getPostgres } from '@/services/db/client';
+import { closeDb, getDb, getPostgres } from '@/services/db/client';
 import { chunks, phones } from '@/services/db/schema';
 import { McpServer } from '@/services/mcp';
 import { createHybridRetriever } from '@/services/retrieval/factory';
@@ -261,10 +261,12 @@ async function main(): Promise<void> {
   console.log('FINAL AUDIT CONCLUSION: ALL SUBSYSTEMS CONFIRMED & VERIFIED');
   console.log('================================================================');
 
+  await closeDb();
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('[verify-system-architecture-live] Error:', err);
+  await closeDb().catch(() => undefined);
   process.exit(1);
 });

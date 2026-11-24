@@ -3021,6 +3021,93 @@ dissenting_quotes)`.
 >   velocity and observability.
 > - **LOW** â€” cosmetic, dev-only annoyance, or one-time papercut.
 
+### Architecture, Observability & Metering — Client-Server Wire Invariance, Promise Rejection Resilience, Database Error Taxonomy & Integrity Radar Hardening (2026-11-23)
+
+#### CRITICAL
+
+- **Recommender query semantic embedding floating rejection crashing recommendation turns with HTTP 500 (`src/services/recommender/run-recommendation.ts`).**
+  - **Symptom:** When upstream Gemini embedding API experienced rate limiting (HTTP 429), transient gateway drops (503), or timeout latency spikes, `POST /api/recommend` crashed with an unhandled promise rejection and an HTTP 500 error, terminating the user's phone recommendation turn.
+  - **Affected Components:** `src/services/recommender/run-recommendation.ts`, `src/app/api/recommend/route.ts`.
+  - **Severity:** CRITICAL (Breaks user-facing phone recommendation turns during upstream API degradation).
+  - **Root Cause (Why It Occurred):**
+    1. **Detached Promise Catch:** In JavaScript, `Promise.prototype.catch()` returns a _new_ promise rather than mutating the existing one. In `run-recommendation.ts`, `embedPromise.catch(() => undefined)` was invoked as a detached expression without reassigning `embedPromise`. Consequently, `await embedPromise` at line 248 was still awaiting the raw, unhandled promise. When `runEmbed()` rejected, the rejection was unhandled and threw a fatal exception.
+    2. **Testing Mock Blindspot:** Test mocks in `run-recommendation.test.ts` set `specEmbedding: null`, which made `hasSpecEmb` evaluate to false during unit tests, bypassing `await embedPromise` and allowing this bug to evade CI.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Chained `.catch()` directly onto the assigned promise reference (`const embedPromise = (...).catch((err) => { input.log.warn({ err }, 'recommender query embedding failed...'); return undefined; })`). Semantic query embeddings provide only an optional semantic bonus; phone candidate filtering, hard constraints, and aspect scoring are fully deterministic. Chaining `.catch()` logs a structured warning and allows the recommendation pipeline to complete gracefully with catalog heuristics rather than aborting. Added unit test verifying graceful fallback.
+
+- **Client-server wire schema mismatch in error handling misrouting anonymous users to subscriber upgrade modals instead of login (`src/lib/metered-fetch.ts`).**
+  - **Symptom:** Anonymous users exhausting their trial quota received HTTP 402 from the server, but the UI displayed the paid subscriber upgrade modal instead of redirecting them to `/login` or displaying the sign-in sheet.
+  - **Affected Components:** `src/lib/metered-fetch.ts`, `src/services/metering/http-errors.ts`, `src/app/p/[slug]/phone-chat.tsx`, `src/app/recommend/recommend-client.tsx`.
+  - **Severity:** CRITICAL (Breaks user acquisition conversion funnel by presenting paid paywalls to logged-out users).
+  - **Root Cause (Why It Occurred):**
+    1. **Wire Contract Divergence:** The server's `meteredErrorResponse` emits flat JSON payloads (`{ code, message, quota, actions }`). However, client-side `handleMeteredError` only inspected `payload?.error?.code`. Because `payload.error` was undefined, `code` defaulted to `''`. Under HTTP 402 with empty code (`status === 402 && !code`), the client assumed `free_exhausted` (signed-in free tier) rather than `ANON_QUOTA_EXHAUSTED`.
+    2. **Synthetic Test Isolation:** Unit tests in `metered-fetch.test.ts` mocked `{ error: { code: '...' } }`, testing an erroneous mental model rather than the real server response shape.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Normalized payload extraction in `handleMeteredError` to support flat payloads (`payload.code`), nested payloads (`payload.error.code`), and raw string errors (`payload.error`), with runtime type guards guaranteeing `typeof message === 'string'`. Clamped `Retry-After` headers to positive integers. Updated `metered-fetch.test.ts` to test all response shapes (flat, nested, and string).
+
+- **PostgreSQL enum type invalidation (`22P02`) and static timestamp masquerading in Automated System Integrity Audit (`src/services/internal/integrity-audit.ts`).**
+  - **Symptom:** The Automated System Integrity Audit (`runSystemIntegrityAudit`) crashed on live PostgreSQL instances. When errors occurred, the audit silently caught them and returned `status: 'pass'`, showing all green on internal health radars during complete database partitions or query failures.
+  - **Affected Components:** `src/services/internal/integrity-audit.ts`, `src/app/internal/command-center/_components/system-integrity-radar.tsx`.
+  - **Severity:** CRITICAL (Blinds operators and automated monitors during severe database outages).
+  - **Root Cause (Why It Occurred):**
+    1. **PostgreSQL Enum Mismatch:** The CTE subquery `zombie_ingest_runs` queried `WHERE r.status = 'running'`. However, in Drizzle schema and PostgreSQL (`src/services/db/schema.ts`), `ingest_status` is an enum strictly consisting of `('started', 'success', 'failed', 'skipped')`. Comparing an enum column to an unknown literal causes PostgreSQL to abort the transaction with `ERROR: invalid input value for enum ingest_status: "running"`.
+    2. **Numeric Regex Operator Invalidation:** The CTE queried `p.msrp_usd ~ '^[0\.]+$'`, but `msrp_usd` is `numeric(10, 2)`. In PostgreSQL, `~` is undefined for numeric columns without `::text` casting.
+    3. **Dishonest Fallback Invariant:** The fallback report object was a global singleton with static module-load `checkedAt` and hardcoded `status: 'pass'`.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Cast `p.msrp_usd::text`, queried `WHERE r.status::text IN ('started', 'running') AND r.started_at < NOW() - INTERVAL '2 hours'`, generated dynamic fresh `checkedAt` timestamps, calculated accurate `executionMs` across all fallback paths, and set fallback status to `'fail'`. Updated `system-integrity-radar.tsx` to dynamically display warning/alert badges on nonzero metric counts rather than hardcoding green checkmarks.
+
+#### HIGH
+
+- **Flawed database error classification causing false 503 service outages and infinite retry storms (`src/services/metering/http-errors.ts`, `src/lib/error-taxonomy.ts`).**
+  - **Symptom:** Non-timeout database errors (e.g. SQL syntax errors, schema constraint violations) in metered routes returned HTTP 503 `DB_UNAVAILABLE` with `Retry-After: 5`, causing clients to repeatedly retry broken queries.
+  - **Affected Components:** `src/services/metering/http-errors.ts`, `src/lib/error-taxonomy.ts`, `src/lib/metered-fetch.ts`.
+  - **Severity:** HIGH (Creates client retry storms and misdiagnoses application query bugs as infrastructure outages).
+  - **Root Cause (Why It Occurred):** In `http-errors.ts` and `error-taxonomy.ts`, a broad catch-all `(err.name === 'PostgresError' || ...)` classified every PostgreSQL error as an infrastructure outage (`DB_UNAVAILABLE`), conflating code/query bugs with connection dropouts.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Implemented strict, deterministic predicates: `isDbTimeoutError(err)` (SQLSTATE `57014`) and `isDbUnavailableError(err)` (SQLSTATE `53300`, `57P01-03`, `08000-06`, `ECONNREFUSED`). General query bugs now correctly produce HTTP 500 `INTERNAL` with `internal_error` lease refunds. Extended client `metered-fetch.ts` to surface actionable retry toasts for genuine 503 outages.
+
+- **Streaming NLI entailment telemetry blindspot and semantic cache poisoning (`src/services/chat/answer-stream.ts`).**
+  - **Symptom:** Streaming chat queries (/api/ask) recorded a synthetic `entailmentScore: 1.0` in the `chat_queries` table, completely masking streaming hallucination rates from production observability. Additionally, unverified or repaired streaming answers were committed to the LLM semantic cache.
+  - **Affected Components:** `src/services/chat/answer-stream.ts`, `src/services/chat/nli-gate.ts`.
+  - **Severity:** HIGH (Hides streaming model hallucinations from telemetry and risks caching unentailed answers).
+  - **Root Cause (Why It Occurred):** In non-streaming chat, sentence-level NLI verification (`verifyGeneratedAnswerEntailment`) evaluated generated text before returning. In streaming, tokens stream progressively to the client, so token-level emission cannot wait for the full response. The developer previously hardcoded `entailmentScore: 1.0` in the final stream event rather than evaluating the accumulated text post-stream.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Once streaming completes and `guard.flush()` executes, `verifyGeneratedAnswerEntailment` is executed synchronously in-memory (< 2ms) across `guard.emitted` against the retrieved chunks. The real `entailmentScore` and `unsupportedClaimCount` are emitted in the `final` stream event and persisted to `chat_queries`. If any unsupported claims or citation repairs occurred, `llm.storeChat()` caching is suppressed to prevent cache poisoning.
+
+- **Zod validation error wire mismatch and React child crash on recommend validation failures (`src/services/metering/http-errors.ts`).**
+  - **Symptom:** `POST /api/recommend` validation failures returned `{ code: 'VALIDATION', message: { formErrors: [], fieldErrors: {} } }`. When passed into React state or toast notifications, React crashed with `Uncaught Error: Objects are not valid as a React child`.
+  - **Affected Components:** `src/services/metering/http-errors.ts`, `src/app/recommend/recommend-client.tsx`, `src/lib/metered-fetch.ts`.
+  - **Severity:** HIGH (Crashes client React UI on invalid input rather than displaying inline error labels).
+  - **Root Cause (Why It Occurred):** In `http-errors.ts`, `/api/ask` returned `message: err.issues[0]?.message` (string), while `/api/recommend` returned `message: err.flatten()` (an object), violating REST API conventions and React rendering requirements.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Standardized all metered routes to emit string `message: err.issues[0]?.message ?? 'Invalid request body'`, while providing structured form details under `details: err.flatten()`. Added client runtime type guards in `metered-fetch.ts` ensuring `action.message` is always a string.
+
+#### MEDIUM
+
+- **Canary and SLA test suites silently excluded from CI test discovery (`vitest.config.ts`).**
+  - **Symptom:** Critical canary test suites (`scripts/seed/creator-profiles.test.ts` guarding 36 YouTube channel IDs, and `scripts/ci-retrieval-gate.test.ts` guarding 0.88+ Recall@8 and <50ms p99 latency) were never executed during `pnpm test` or CI runs.
+  - **Affected Components:** `vitest.config.ts`.
+  - **Severity:** MEDIUM (Allows silent SLA and channel ID regressions to pass CI).
+  - **Root Cause (Why It Occurred):** In `vitest.config.ts`, `include` was restricted to `['src/**/*.{test,spec}.{ts,tsx}', 'test/security/**/*.test.ts']`. Test files residing in `scripts/` were excluded from discovery.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Added `'scripts/**/*.test.ts'` to `vitest.config.ts`'s `include` pattern. Expanded test suite from 216 to 222 files (1,454 tests passing).
+
+- **Dangling connection sockets and missing connection ping in CLI maintenance scripts (`src/services/db/client.ts`).**
+  - **Symptom:** Maintenance scripts terminated abruptly via `process.exit(0)` or called `await getPostgres().end()`, leaving `_client` and `_db` pointing to closed driver handles, leaking idle TCP sockets under Supavisor. Additionally, no lightweight TCP reachability check existed.
+  - **Affected Components:** `src/services/db/client.ts`, `src/services/db/connection.test.ts`, `scripts/*.ts`.
+  - **Severity:** MEDIUM (Exhausts Supavisor connection pools under automated cron jobs).
+  - **Root Cause (Why It Occurred):** `src/services/db/client.ts` lacked a centralized `closeDb()` lifecycle teardown hook and health ping utility.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Implemented and exported `closeDb({ timeout })` and `pingDatabase(timeoutMs = 2000)` with `timer.unref()`. Replaced raw `process.exit(0)` with `await closeDb()` across maintenance scripts (`check-pipeline-health.ts`, `verify-system-architecture-live.ts`, `ops-alerts.ts`, `catalog-archive.ts`, `db-prune.ts`).
+
+- **Untracked SQL queries in autonomous remediation and duplicate cron workflow race conditions (`src/services/internal/integrity-remediation.ts`, `.github/workflows/creator-watch.yml`).**
+  - **Symptom:** Autonomous remediation runbooks executed raw untagged SQL queries, dropped `traceId` and `route` headers, and left `finished_at` and `error_code` NULL on zombie runs. Concurrently, duplicate workflow `creator-watch.yml` ran on the exact same minute (`23 */6 * * *`) as `source-watch.yml`, causing crawl queue insert contention.
+  - **Affected Components:** `src/services/internal/integrity-remediation.ts`, `.github/workflows/creator-watch.yml`.
+  - **Severity:** MEDIUM (Hinders database query observability in `pg_stat_statements` and wastes GitHub Actions runner minutes).
+  - **Root Cause (Why It Occurred):** Missing options interface in remediation services; historical workflow left running when `source-watch.ts` took over creator monitoring.
+  - **Senior Software Architect & Staff Engineer Solution (Why We Fixed It This Way):**
+    Tagged all remediation queries with `/* traceId: ${safeTraceId}, route: ${safeRoute} */`, set `finished_at = NOW()` and `error_code = 'zombie_timeout'`, used `NOT EXISTS` anti-join for orphan chunks, and retired `creator-watch.yml`.
+
 ### CI/CD & Automated Pipelines — GitHub Actions Runner Failure Invariants, Zod Env Validation Collisions & Database Enum Constraints (2026-11-12)
 
 #### CRITICAL

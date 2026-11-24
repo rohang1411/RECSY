@@ -26,6 +26,8 @@ import {
 } from './answer';
 import { CitationStreamGuard } from './citation-stream-guard';
 import { buildCitationUrl, resolveCitations, type ResolvedCitation } from './citations';
+import { evaluateRetrievalConfidence } from './crag-gate';
+import { verifyGeneratedAnswerEntailment } from './nli-gate';
 
 export type QnaStreamEvent =
   | { type: 'status'; stage: 'retrieving' | 'generating' }
@@ -99,15 +101,26 @@ export async function* runPhoneQnaStream(
     }
   }
 
-  if (retrieval.chunks.length === 0) {
-    if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
+  const cragDecision = evaluateRetrievalConfidence(retrieval);
+  if (cragDecision.action === 'abstain') {
+    if (
+      retrieval.chunks.length === 0 &&
+      (retrieval.debug.vector.error || retrieval.debug.fts.error)
+    ) {
       throw new IntegrationError('Retrieval failed without usable evidence', {
         phoneId,
         vectorError: retrieval.debug.vector.error,
         ftsError: retrieval.debug.fts.error,
       });
     }
-    log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
+    log.info(
+      {
+        phoneId,
+        reason: cragDecision.reason,
+        maxSimilarity: cragDecision.maxSimilarity,
+      },
+      'crag-abstention streaming short-circuit',
+    );
 
     yield { type: 'meta', phoneId, retrievedChunkIds: [] };
 
@@ -131,6 +144,12 @@ export async function* runPhoneQnaStream(
           tokensIn: 0,
           tokensOut: 0,
         },
+        maxRetrievalSimilarity: cragDecision.maxSimilarity,
+        ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+        isAbstention: true,
+        abstentionReason: cragDecision.reason ?? 'insufficient_evidence',
+        entailmentScore: 1.0,
+        unsupportedClaimCount: 0,
         streamed: true,
         citationRepairs: 0,
       },
@@ -321,8 +340,31 @@ export async function* runPhoneQnaStream(
   const model = finishModel ?? env.LLM_CHAT_MODEL;
   const citationRepairs = guard.stats.strippedTags;
 
-  if (citationRepairs > 0) {
-    log.warn({ count: citationRepairs, phoneId }, 'citation_stream_repair');
+  // Post-stream sentence NLI evaluation (Plan 32 WP-08)
+  const nliResult = timer
+    ? await timer.time('nliVerify', async () =>
+        verifyGeneratedAnswerEntailment(
+          guard.emitted,
+          retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+        ),
+      )
+    : verifyGeneratedAnswerEntailment(
+        guard.emitted,
+        retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+      );
+
+  const totalUnsupportedClaims = citationRepairs + nliResult.unsupportedClaims;
+
+  if (citationRepairs > 0 || nliResult.unsupportedClaims > 0) {
+    log.warn(
+      {
+        citationRepairs,
+        unsupportedClaims: nliResult.unsupportedClaims,
+        entailmentScore: nliResult.entailmentScore,
+        phoneId,
+      },
+      'stream_hallucination_or_citation_repair',
+    );
   } else if (llm.storeChat) {
     llm.storeChat(chatInput, {
       text: guard.emitted,
@@ -347,6 +389,11 @@ export async function* runPhoneQnaStream(
         tokensIn: usage.tokensIn,
         tokensOut: usage.tokensOut,
       },
+      maxRetrievalSimilarity: cragDecision.maxSimilarity,
+      ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+      isAbstention: false,
+      entailmentScore: nliResult.entailmentScore,
+      unsupportedClaimCount: totalUnsupportedClaims,
       streamed: true,
       citationRepairs,
     },

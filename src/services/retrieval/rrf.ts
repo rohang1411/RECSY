@@ -29,6 +29,12 @@ export interface RrfOptions {
    * matter less.
    */
   readonly k?: number;
+  /**
+   * Optional per-retriever weight multiplier (Plan 31 WP-05).
+   * Defaults to 1.0 for each retriever when unstated.
+   * e.g. { vector: 0.70, fts: 0.30 }
+   */
+  readonly retrieverWeights?: Readonly<Record<string, number>>;
 }
 
 /** Output of {@link reciprocalRankFusion}. */
@@ -82,10 +88,11 @@ export function reciprocalRankFusion(
   >();
 
   for (const { retriever, chunks } of lists) {
+    const weight = opts.retrieverWeights?.[retriever] ?? 1.0;
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!;
       const rank = i + 1; // 1-indexed per RRF convention
-      const contribution = 1 / (k + rank);
+      const contribution = weight / (k + rank);
 
       const existing = accum.get(chunk.chunkId);
       if (existing) {

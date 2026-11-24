@@ -189,7 +189,10 @@ export class HybridRetriever {
         { retriever: 'vector', chunks: vectorChunks },
         { retriever: 'fts', chunks: ftsChunks },
       ],
-      { k: opts.rrfK },
+      {
+        k: opts.rrfK,
+        retrieverWeights: { vector: 0.7, fts: 0.3 },
+      },
     );
     const rrfMs = performance.now() - rrfStart;
 
@@ -274,6 +277,9 @@ export class HybridRetriever {
       minDistinctSources: opts.minDistinctSources,
     });
 
+    const maxVectorSimilarity =
+      vectorChunks.length > 0 ? Math.max(...vectorChunks.map((c) => c.score)) : 0;
+
     const result = buildResult({
       sourceQuality,
       rrfCount: fused.length,
@@ -289,6 +295,7 @@ export class HybridRetriever {
       mmrMs,
       vectorCount: vectorChunks.length,
       ftsCount: ftsChunks.length,
+      maxVectorSimilarity,
       final: coverage.chunks,
       relaxed: coverage.relaxed,
       sourceCount: coverage.sourceCount,
@@ -386,6 +393,7 @@ interface BuildResultArgs {
   readonly mmrMs?: number;
   readonly vectorCount: number;
   readonly ftsCount: number;
+  readonly maxVectorSimilarity?: number;
   readonly final: readonly RetrievedChunk[];
   readonly relaxed: boolean;
   readonly sourceCount: number;
@@ -404,6 +412,9 @@ function buildResult(args: BuildResultArgs): RetrievalResult {
       vector: {
         count: args.vectorCount,
         ms: args.vectorMs,
+        ...(args.maxVectorSimilarity !== undefined
+          ? { maxSimilarity: args.maxVectorSimilarity }
+          : {}),
         ...(args.vectorError ? { error: args.vectorError } : {}),
       },
       fts: {

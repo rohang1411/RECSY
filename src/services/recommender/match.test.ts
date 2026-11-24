@@ -12,7 +12,9 @@ import type { AspectName } from '@/lib/constants';
 
 import type { PhoneCatalogEntry } from './catalog';
 import {
+  BAYESIAN_PRIOR_MEAN,
   buildSearchHaystack,
+  calculateBayesianCalibratedScore,
   dealBreakerHit,
   mustHaveMatchRatio,
   passesHardFilters,
@@ -242,6 +244,61 @@ describe('match helpers', () => {
     expect(weightedAspectScore(scores, weights)).toBe(7.5);
   });
 
+  it('calculateBayesianCalibratedScore implements James-Stein shrinkage (WP-01)', () => {
+    // Zero confidence or citations shrinks completely to neutral prior (5.0)
+    const zeroConf = calculateBayesianCalibratedScore(10.0, 0.0);
+    expect(zeroConf.calibratedScore).toBe(BAYESIAN_PRIOR_MEAN);
+
+    const zeroCitations = calculateBayesianCalibratedScore(10.0, 0, true);
+    expect(zeroCitations.calibratedScore).toBe(BAYESIAN_PRIOR_MEAN);
+
+    // 5 pseudo-observations with 5 citations gives confidence 0.5 -> score 7.5
+    const halfCitations = calculateBayesianCalibratedScore(10.0, 5, true);
+    expect(halfCitations.confidence).toBe(0.5);
+    expect(halfCitations.calibratedScore).toBe(7.5);
+
+    // Full confidence preserves raw score
+    const fullConf = calculateBayesianCalibratedScore(9.2, 1.0);
+    expect(fullConf.calibratedScore).toBeCloseTo(9.2, 5);
+  });
+
+  it('normalizes local-currency budgets in resolveAspectWeights (V-02 fix)', () => {
+    // ₹60,000 INR at 86.5 is ~$693 USD, which is NOT a flagship budget (< $800)
+    const nonFlagship = req({
+      budget_local: { min: 40000, max: 60000, currency: 'INR' },
+    });
+    const nonFlagshipWeights = resolveAspectWeights(nonFlagship, equalWeights);
+    // Value aspect weight should NOT be zeroed out
+    expect(nonFlagshipWeights.get('value')).toBeGreaterThan(0);
+
+    // ₹100,000 INR at 86.5 is ~$1,156 USD, which IS a flagship budget (>= $800)
+    const flagship = req({
+      budget_local: { min: 80000, max: 100000, currency: 'INR' },
+    });
+    const flagshipWeights = resolveAspectWeights(flagship, equalWeights);
+    // Value aspect weight should be zeroed out for flagship without explicit value priority
+    expect(flagshipWeights.get('value')).toBe(0);
+  });
+
+  it('supports automated constraint relaxation when enabled (WP-02)', () => {
+    const overBudget = entry({ slug: 'phone-over', msrpUsd: '800.00' });
+    const requirement = req({ budget_usd: { max: 700 } });
+
+    // Without allowRelaxation: returns empty picks and empty relaxed list
+    const strictRanked = rankCandidates([overBudget], requirement, equalWeights, {
+      allowRelaxation: false,
+    });
+    expect(strictRanked.picks).toEqual([]);
+    expect(strictRanked.relaxed).toEqual([]);
+
+    // With allowRelaxation: relaxes budget ceiling and returns near-miss candidate
+    const relaxedRanked = rankCandidates([overBudget], requirement, equalWeights, {
+      allowRelaxation: true,
+    });
+    expect(relaxedRanked.picks).toHaveLength(1);
+    expect(relaxedRanked.relaxed).toContain('budget_ceiling');
+  });
+
   it('specSemanticBonus is zero without embeddings and positive when similar', () => {
     const e = entry({ slug: 's', specEmbedding: [1, 0, 0] });
     expect(specSemanticBonus(e, undefined)).toBe(0);
@@ -308,10 +365,44 @@ describe('match helpers', () => {
     expect(ranked.relaxed).toEqual([]);
   });
 
-  it('does not compare USD fallback prices against a local-currency budget', () => {
-    const phone = entry({ slug: 'usd-only', localPrice: null, msrpUsd: '999.00' });
+  it('converts USD fallback prices against a local-currency budget correctly (WP-01)', () => {
+    // $999 USD at 86.5 INR/USD is ~86,413 INR -> exceeds 50,000 INR -> rejected
+    const expensivePhone = entry({ slug: 'expensive-usd', localPrice: null, msrpUsd: '999.00' });
     expect(
-      passesHardFilters(phone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+      passesHardFilters(expensivePhone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(false);
+
+    // $400 USD at 86.5 INR/USD is ~34,600 INR -> under 50,000 INR -> admitted!
+    const affordablePhone = entry({ slug: 'affordable-usd', localPrice: null, msrpUsd: '400.00' });
+    expect(
+      passesHardFilters(affordablePhone, req({ budget_local: { max: 50000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('normalizes cross-currency prices between EUR catalog entry and INR budget', () => {
+    // 500 EUR / 0.92 = $543.48 USD * 86.5 = ~47,011 INR <= 60,000 INR -> admitted!
+    const eurPhone = entry({ slug: 'eur-phone', localPrice: '500.00', localCurrency: 'EUR' });
+    expect(
+      passesHardFilters(eurPhone, req({ budget_local: { max: 60000, currency: 'INR' } }), {
+        relaxBudgetMax: false,
+        ignoreFoldable: false,
+      }),
+    ).toBe(true);
+
+    // 800 EUR / 0.92 = $869.56 USD * 86.5 = ~75,217 INR > 60,000 INR -> rejected!
+    const expensiveEurPhone = entry({
+      slug: 'exp-eur',
+      localPrice: '800.00',
+      localCurrency: 'EUR',
+    });
+    expect(
+      passesHardFilters(expensiveEurPhone, req({ budget_local: { max: 60000, currency: 'INR' } }), {
         relaxBudgetMax: false,
         ignoreFoldable: false,
       }),

@@ -136,4 +136,25 @@ describe('reciprocalRankFusion', () => {
     // k=10 at rank 1 -> 1/11; k=60 at rank 1 -> 1/61. The k=10 score is larger.
     expect(fusedK10[0]!.score).toBeGreaterThan(fusedK60[0]!.score);
   });
+
+  it('supports per-retriever weight multipliers (WP-05)', () => {
+    const a = chunk('a'); // rank 1 in vector (weight 0.7)
+    const b = chunk('b'); // rank 1 in fts (weight 0.3)
+
+    const fused = reciprocalRankFusion(
+      [
+        { retriever: 'vector', chunks: [a] },
+        { retriever: 'fts', chunks: [b] },
+      ],
+      {
+        k: 60,
+        retrieverWeights: { vector: 0.7, fts: 0.3 },
+      },
+    );
+
+    expect(fused[0]!.chunkId).toBe('a');
+    expect(fused[0]!.score).toBeCloseTo(0.7 / 61, 10);
+    expect(fused[1]!.chunkId).toBe('b');
+    expect(fused[1]!.score).toBeCloseTo(0.3 / 61, 10);
+  });
 });

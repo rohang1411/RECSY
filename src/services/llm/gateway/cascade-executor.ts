@@ -11,7 +11,7 @@ import type {
   StructuredResult,
 } from '../types';
 import type { CircuitBreakerRegistry } from './circuit-breaker';
-import type { MultiProviderQuotaGovernor } from './quota-governor';
+import { resolvePriorityTierFromContext, type MultiProviderQuotaGovernor } from './quota-governor';
 import type { KeyPoolRegistry } from '../keys/key-pool';
 import type { ModelCandidate } from './task-profiles';
 import type { ModelAdapter } from '../adapters/base-adapter';
@@ -151,6 +151,7 @@ export class CascadeExecutor {
     byokKey?: string,
     byokProvider?: string,
   ): Promise<ChatResult> {
+    const priorityTier = resolvePriorityTierFromContext(input.usageContext);
     // 1. If user supplied BYOK, execute exclusively on their key (never falls through to platform keys)
     if (byokKey) {
       return this.runChatOnByok(input, byokKey, byokProvider ?? 'gemini');
@@ -163,17 +164,49 @@ export class CascadeExecutor {
       const breaker = this.circuitBreakers.getBreaker(candidate.providerId);
       if (!breaker.canAttempt()) continue;
 
-      // Handle Gemini natively via existing GeminiProvider
+      // Handle Gemini natively via existing GeminiProvider with Quota Governor enforcement
       if (candidate.providerId === 'gemini') {
+        const geminiKeys = this.keyPool.getKeysForProvider('gemini');
+        let canProceed = true;
+        let selectedKeyIndex = 0;
+        if (geminiKeys.length > 0) {
+          canProceed = false;
+          for (const keyEntry of geminiKeys) {
+            if (this.quotaGovernor.isKeyDepleted('gemini', keyEntry.keyIndex)) continue;
+            const acquired = await this.quotaGovernor.acquire(
+              'gemini',
+              keyEntry.keyIndex,
+              1000,
+              priorityTier,
+            );
+            if (acquired) {
+              canProceed = true;
+              selectedKeyIndex = keyEntry.keyIndex;
+              break;
+            }
+          }
+        }
+        if (!canProceed) {
+          log.warn(
+            { priorityTier, model: candidate.model },
+            'Gemini quota governor throttled request due to daily quota reserve',
+          );
+          continue;
+        }
+
         try {
           const res = await this.geminiProvider.chat({
             ...input,
             model: candidate.model,
           });
+          this.quotaGovernor.recordMeasured('gemini', selectedKeyIndex, res.usage.tokensIn);
           breaker.recordSuccess();
           return res;
         } catch (err) {
           lastError = err;
+          if (err instanceof LlmError && err.status === 429) {
+            this.quotaGovernor.markKeyDepleted('gemini', selectedKeyIndex);
+          }
           breaker.recordFailure();
           log.warn(
             { err, candidate: candidate.model },
@@ -193,11 +226,15 @@ export class CascadeExecutor {
           continue;
         }
 
-        const acquired = await this.quotaGovernor.acquire(
-          candidate.providerId,
-          keyEntry.keyIndex,
-          1000,
-        );
+        const acquired =
+          priorityTier === 1
+            ? await this.quotaGovernor.acquire(candidate.providerId, keyEntry.keyIndex, 1000)
+            : await this.quotaGovernor.acquire(
+                candidate.providerId,
+                keyEntry.keyIndex,
+                1000,
+                priorityTier,
+              );
         if (!acquired) continue;
 
         try {
@@ -245,6 +282,7 @@ export class CascadeExecutor {
     byokKey?: string,
     byokProvider?: string,
   ): Promise<StructuredResult<T>> {
+    const priorityTier = resolvePriorityTierFromContext(input.usageContext);
     // 1. If user supplied BYOK, execute directly on their key (never falls through to platform keys)
     if (byokKey) {
       return this.runStructuredOnByok(input, byokKey, byokProvider ?? 'gemini');
@@ -257,17 +295,49 @@ export class CascadeExecutor {
       const breaker = this.circuitBreakers.getBreaker(candidate.providerId);
       if (!breaker.canAttempt()) continue;
 
-      // Handle Gemini natively via existing GeminiProvider
+      // Handle Gemini natively via existing GeminiProvider with Quota Governor enforcement
       if (candidate.providerId === 'gemini') {
+        const geminiKeys = this.keyPool.getKeysForProvider('gemini');
+        let canProceed = true;
+        let selectedKeyIndex = 0;
+        if (geminiKeys.length > 0) {
+          canProceed = false;
+          for (const keyEntry of geminiKeys) {
+            if (this.quotaGovernor.isKeyDepleted('gemini', keyEntry.keyIndex)) continue;
+            const acquired = await this.quotaGovernor.acquire(
+              'gemini',
+              keyEntry.keyIndex,
+              1000,
+              priorityTier,
+            );
+            if (acquired) {
+              canProceed = true;
+              selectedKeyIndex = keyEntry.keyIndex;
+              break;
+            }
+          }
+        }
+        if (!canProceed) {
+          log.warn(
+            { priorityTier, model: candidate.model },
+            'Gemini structured throttled due to quota reserve',
+          );
+          continue;
+        }
+
         try {
           const res = await this.geminiProvider.structured({
             ...input,
             model: candidate.model,
           });
+          this.quotaGovernor.recordMeasured('gemini', selectedKeyIndex, res.usage.tokensIn);
           breaker.recordSuccess();
           return res;
         } catch (err) {
           lastError = err;
+          if (err instanceof LlmError && err.status === 429) {
+            this.quotaGovernor.markKeyDepleted('gemini', selectedKeyIndex);
+          }
           breaker.recordFailure();
           log.warn(
             { err, candidate: candidate.model },
@@ -287,11 +357,15 @@ export class CascadeExecutor {
           continue;
         }
 
-        const acquired = await this.quotaGovernor.acquire(
-          candidate.providerId,
-          keyEntry.keyIndex,
-          1000,
-        );
+        const acquired =
+          priorityTier === 1
+            ? await this.quotaGovernor.acquire(candidate.providerId, keyEntry.keyIndex, 1000)
+            : await this.quotaGovernor.acquire(
+                candidate.providerId,
+                keyEntry.keyIndex,
+                1000,
+                priorityTier,
+              );
         if (!acquired) continue;
 
         try {
@@ -356,6 +430,7 @@ export class CascadeExecutor {
     byokKey?: string,
     byokProvider?: string,
   ): AsyncIterable<ChatDelta> {
+    const priorityTier = resolvePriorityTierFromContext(input.usageContext);
     if (byokKey) {
       yield* this.runStreamOnByok(input, byokKey, byokProvider ?? 'gemini');
       return;
@@ -372,6 +447,34 @@ export class CascadeExecutor {
       }
 
       if (candidate.providerId === 'gemini') {
+        const geminiKeys = this.keyPool.getKeysForProvider('gemini');
+        let canProceed = true;
+        let selectedKeyIndex = 0;
+        if (geminiKeys.length > 0) {
+          canProceed = false;
+          for (const keyEntry of geminiKeys) {
+            if (this.quotaGovernor.isKeyDepleted('gemini', keyEntry.keyIndex)) continue;
+            const acquired = await this.quotaGovernor.acquire(
+              'gemini',
+              keyEntry.keyIndex,
+              1000,
+              priorityTier,
+            );
+            if (acquired) {
+              canProceed = true;
+              selectedKeyIndex = keyEntry.keyIndex;
+              break;
+            }
+          }
+        }
+        if (!canProceed) {
+          log.warn(
+            { priorityTier, model: candidate.model },
+            'Gemini stream throttled due to quota reserve',
+          );
+          continue;
+        }
+
         try {
           for await (const delta of this.geminiProvider.chatStream({
             ...input,
@@ -384,6 +487,9 @@ export class CascadeExecutor {
           return;
         } catch (err) {
           lastError = err;
+          if (err instanceof LlmError && err.status === 429) {
+            this.quotaGovernor.markKeyDepleted('gemini', selectedKeyIndex);
+          }
           breaker.recordFailure();
           if (yieldedAny) {
             throw err;
@@ -404,11 +510,15 @@ export class CascadeExecutor {
             continue;
           }
 
-          const acquired = await this.quotaGovernor.acquire(
-            candidate.providerId,
-            keyEntry.keyIndex,
-            1000,
-          );
+          const acquired =
+            priorityTier === 1
+              ? await this.quotaGovernor.acquire(candidate.providerId, keyEntry.keyIndex, 1000)
+              : await this.quotaGovernor.acquire(
+                  candidate.providerId,
+                  keyEntry.keyIndex,
+                  1000,
+                  priorityTier,
+                );
           if (!acquired) continue;
 
           let streamTokensIn = 0;

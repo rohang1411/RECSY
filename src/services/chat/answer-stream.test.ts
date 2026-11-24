@@ -12,11 +12,13 @@ import type { ResolvedCitation } from './citations';
 
 const dummyLogger = pino({ level: 'silent' });
 
-function createMockChunk(id: string): RetrievedChunk {
+function createMockChunk(id: string, text?: string): RetrievedChunk {
   return {
     chunkId: id,
     sourceId: `src-${id}`,
-    text: `Excerpt for chunk ${id}`,
+    text:
+      text ??
+      `Excerpt for chunk ${id}. Fast charging is supported. Camera is sharp. Good screen and battery life.`,
     source: {
       id: `src-${id}`,
       type: 'article',
@@ -363,5 +365,53 @@ describe('runPhoneQnaStream', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('computes truthful NLI entailment score and prevents cache poisoning on hallucination (Plan 32 WP-08)', async () => {
+    const chunkId = '00000000-0000-0000-0000-000000000001';
+    // Premise says 5000 mAh
+    const chunk = createMockChunk(chunkId, 'The phone has a 5000 mAh battery with 45W charging.');
+    const retriever = createMockRetriever([chunk]);
+
+    // LLM hallucinates 7000 mAh numerical contradiction
+    async function* hallucinatingStream(): AsyncIterable<ChatDelta> {
+      yield {
+        type: 'text-delta',
+        textDelta: `The phone features a 7000 mAh battery [c:${chunkId}].`,
+      };
+      yield {
+        type: 'finish',
+        usage: { tokensIn: 30, tokensOut: 20 },
+        model: 'gemini-test',
+      };
+    }
+
+    const storeChat = vi.fn();
+    const llm = {
+      name: 'test-llm',
+      chat: vi.fn(),
+      chatStream: vi.fn().mockImplementation(() => hallucinatingStream()),
+      lookupChat: vi.fn().mockResolvedValue(null),
+      storeChat,
+      structured: vi.fn(),
+    };
+
+    let finalResult: (PhoneQnaResult & { streamed: true; citationRepairs: number }) | null = null;
+    for await (const ev of runPhoneQnaStream({
+      phoneId: 'p-1',
+      query: 'battery capacity?',
+      retriever,
+      llm,
+      log: dummyLogger,
+    })) {
+      if (ev.type === 'final') finalResult = ev.result;
+    }
+
+    expect(finalResult).toBeDefined();
+    // Truthful NLI telemetry: contradiction flags unsupported claim and reduces score
+    expect(finalResult?.unsupportedClaimCount).toBeGreaterThan(0);
+    expect(finalResult?.entailmentScore).toBeLessThan(0.5);
+    // Crucial invariant: never poison cache with hallucinated answer
+    expect(storeChat).not.toHaveBeenCalled();
   });
 });

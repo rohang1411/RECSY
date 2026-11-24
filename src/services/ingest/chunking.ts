@@ -161,3 +161,38 @@ export function chunkText(text: string, options: ChunkingOptions = {}): TextChun
 
   return chunks.map((c, i) => ({ ...c, index: i }));
 }
+
+/**
+ * Metadata for constructing an Anthropic-style contextual chunk preamble (WP-04).
+ * Eliminates cross-entity contamination in tech reviews that compare multiple devices.
+ */
+export interface ContextualChunkHeader {
+  readonly phoneBrand: string;
+  readonly phoneModel: string;
+  readonly sourceCreator: string;
+  readonly sourceType: string;
+  readonly primarySubject: string;
+  readonly temporalOffset?: string;
+}
+
+export function formatContextualPreamble(header: ContextualChunkHeader): string {
+  return [
+    `[TARGET PHONE: ${header.phoneBrand} ${header.phoneModel}]`,
+    `[SOURCE: ${header.sourceCreator} (${header.sourceType})]`,
+    `[PRIMARY SUBJECT: ${header.primarySubject}]`,
+    header.temporalOffset ? `[VIDEO TIMESTAMP: ${header.temporalOffset}]` : '',
+    '---',
+    '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function buildContextualizedChunk(
+  rawExcerpt: string,
+  header: ContextualChunkHeader,
+): { contextualChunkText: string; rawExcerpt: string; preamble: string } {
+  const preamble = formatContextualPreamble(header);
+  const contextualChunkText = `${preamble}\n${rawExcerpt}`.trim();
+  return { contextualChunkText, rawExcerpt, preamble };
+}

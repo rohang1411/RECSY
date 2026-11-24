@@ -1,25 +1,15 @@
 # =============================================================================
-# Creator-watch — metadata-only RSS poll for trusted YouTube channels.
-#
-# Runs every 6 hours. Doesn't pay for transcripts or embeddings — just
-# discovers new videos from MKBHD / Mrwhosetheboss / TheTechChap / SuperSaf /
-# TheUnlockr / MrMobile, matches them to phones via phone_aliases, and
-# enqueues hot-tier crawl_queue rows. The tiered cron picks them up.
-#
-# Why separate from ingest-tiered.yml?
-#   - Different cadence (6h vs daily).
-#   - Much cheaper — no embedding / LLM work (script never calls Gemini).
-#   - Keeps tiered runtime predictable.
-#
-# GEMINI_API_KEY: env.ts requires a non-empty key even though this job does not
-# call the LLM; we use a harmless placeholder when the secret is unset.
+# RETIRED / DISABLED: Redundant with source-watch.yml (Plan 32 WP-10 / Workflow de-duplication)
+# source-watch.yml already polls all 36 verified YouTube creator channels + 10 tech publications on a 6h schedule.
+# Scheduled execution is disabled to prevent duplicate crawl_queue inserts and redundant GitHub Actions runner consumption.
+# Manual trigger (workflow_dispatch) is preserved for ad-hoc recovery or Airflow backward compatibility.
 # =============================================================================
-name: creator-watch
+name: creator-watch (retired - use source-watch)
 
 on:
-  schedule:
-    # Every 6h, offset from the hour to avoid GH Actions peak.
-    - cron: '23 */6 * * *'
+  # Schedule disabled in favor of source-watch.yml:
+  # schedule:
+  #   - cron: '23 */6 * * *'
   workflow_dispatch:
     inputs:
       max_candidates:

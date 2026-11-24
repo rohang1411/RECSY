@@ -19,6 +19,7 @@ export const STAGE_NAMES = [
   'llmCacheRead',
   'generate',
   'firstDelta',
+  'nliVerify',
   'persist',
   'settle',
   'session',

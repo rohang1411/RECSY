@@ -39,6 +39,8 @@ import type { RetrievalOptions, RetrievalResult } from '@/services/retrieval/typ
 
 import { resolveCitations, validateCitationTags } from './citations';
 import type { ResolvedCitation } from './citations';
+import { evaluateRetrievalConfidence } from './crag-gate';
+import { verifyGeneratedAnswerEntailment } from './nli-gate';
 
 export interface PhoneQnaInput {
   readonly phoneId: string;
@@ -88,6 +90,12 @@ export interface PhoneQnaResult {
     readonly tokensIn: number;
     readonly tokensOut: number;
   };
+  readonly maxRetrievalSimilarity?: number;
+  readonly ftsHitCount?: number;
+  readonly isAbstention?: boolean;
+  readonly abstentionReason?: string;
+  readonly entailmentScore?: number;
+  readonly unsupportedClaimCount?: number;
 }
 
 export function sanitizeExcerpt(text: string): string {
@@ -294,15 +302,26 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
     }
   }
 
-  if (retrieval.chunks.length === 0) {
-    if (retrieval.debug.vector.error || retrieval.debug.fts.error) {
+  const cragDecision = evaluateRetrievalConfidence(retrieval);
+  if (cragDecision.action === 'abstain') {
+    if (
+      retrieval.chunks.length === 0 &&
+      (retrieval.debug.vector.error || retrieval.debug.fts.error)
+    ) {
       throw new IntegrationError('Retrieval failed without usable evidence', {
         phoneId,
         vectorError: retrieval.debug.vector.error,
         ftsError: retrieval.debug.fts.error,
       });
     }
-    log.info({ phoneId }, 'no-context short-circuit (0 chunks after hybrid retrieval)');
+    log.info(
+      {
+        phoneId,
+        reason: cragDecision.reason,
+        maxSimilarity: cragDecision.maxSimilarity,
+      },
+      'crag-abstention short-circuit',
+    );
     return {
       text: buildNoContextMessage(input.phoneMeta),
       citations: [],
@@ -316,6 +335,12 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
         tokensIn: 0,
         tokensOut: 0,
       },
+      maxRetrievalSimilarity: cragDecision.maxSimilarity,
+      ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+      isAbstention: true,
+      abstentionReason: cragDecision.reason ?? 'insufficient_evidence',
+      entailmentScore: 1.0,
+      unsupportedClaimCount: 0,
     };
   }
 
@@ -370,6 +395,13 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
     });
   }
 
+  // Post-generation NLI Entailment Gate (Plan 31 WP-06)
+  const nliResult = verifyGeneratedAnswerEntailment(
+    text,
+    retrieval.chunks.map((c) => ({ chunkId: c.chunkId, text: c.text })),
+  );
+  text = nliResult.verifiedText;
+
   const citations = resolveCitations(text, retrieval.chunks);
   const uncachedCalls = generationCalls.filter((call) => !call.cached);
   return {
@@ -387,6 +419,11 @@ export async function runPhoneQna(input: PhoneQnaInput): Promise<PhoneQnaResult>
       tokensIn: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensIn, 0),
       tokensOut: uncachedCalls.reduce((sum, call) => sum + call.usage.tokensOut, 0),
     },
+    maxRetrievalSimilarity: cragDecision.maxSimilarity,
+    ftsHitCount: retrieval.debug?.fts?.count ?? 0,
+    isAbstention: false,
+    entailmentScore: nliResult.entailmentScore,
+    unsupportedClaimCount: nliResult.unsupportedClaims,
   };
 }
 
@@ -413,6 +450,15 @@ export async function persistChatQuery(input: {
   readonly userId?: string | null;
   readonly leaseId?: string | null;
   readonly sessionCookie?: string | null;
+  readonly maxRetrievalSimilarity?: number | null;
+  readonly minRetrievalSimilarity?: number | null;
+  readonly retrievalMode?: string | null;
+  readonly ftsHitCount?: number | null;
+  readonly isAbstention?: boolean | null;
+  readonly abstentionReason?: string | null;
+  readonly entailmentScore?: number | null;
+  readonly unsupportedClaimCount?: number | null;
+  readonly citationCount?: number | null;
 }): Promise<void> {
   const db = getDb();
   await db.insert(chatQueries).values({
@@ -428,5 +474,14 @@ export async function persistChatQuery(input: {
     userId: input.userId ?? undefined,
     leaseId: input.leaseId ?? undefined,
     sessionCookie: input.sessionCookie ?? undefined,
+    maxRetrievalSimilarity: input.maxRetrievalSimilarity ?? undefined,
+    minRetrievalSimilarity: input.minRetrievalSimilarity ?? undefined,
+    retrievalMode: input.retrievalMode ?? 'hybrid',
+    ftsHitCount: input.ftsHitCount ?? 0,
+    isAbstention: input.isAbstention ?? false,
+    abstentionReason: input.abstentionReason ?? undefined,
+    entailmentScore: input.entailmentScore ?? undefined,
+    unsupportedClaimCount: input.unsupportedClaimCount ?? 0,
+    citationCount: input.citationCount ?? (input.citations ? input.citations.length : 0),
   });
 }

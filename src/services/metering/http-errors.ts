@@ -17,6 +17,7 @@ import {
   RateLimitError,
   publicErrorMessage,
 } from '@/lib/errors';
+import { isDbTimeoutError, isDbUnavailableError } from '@/lib/error-taxonomy';
 import { shouldEmitServerTiming } from '@/lib/server-timing';
 import type { StageTimer } from '@/lib/stage-timer';
 import type { RequestIdentity } from '@/services/auth/identity';
@@ -49,7 +50,14 @@ export async function meteredErrorResponse(
   // Refund unsettled lease on any error
   let refunded = false;
   if (lease && !lease.settled) {
-    const refundCode = err instanceof AppError ? err.code : 'internal_error';
+    let refundCode = 'internal_error';
+    if (isDbTimeoutError(err)) {
+      refundCode = 'db_timeout';
+    } else if (isDbUnavailableError(err)) {
+      refundCode = 'db_unavailable';
+    } else if (err instanceof AppError) {
+      refundCode = err.code;
+    }
     await lease.refund(refundCode).catch(() => undefined);
     refunded = true;
   }
@@ -60,10 +68,11 @@ export async function meteredErrorResponse(
   }
 
   if (err instanceof ZodError) {
-    const body =
-      route === 'POST /api/ask'
-        ? { code: 'VALIDATION', message: err.issues[0]?.message ?? 'Invalid request body' }
-        : { code: 'VALIDATION', message: err.flatten() };
+    const body = {
+      code: 'VALIDATION',
+      message: err.issues[0]?.message ?? 'Invalid request body',
+      details: err.flatten(),
+    };
 
     emitMeteredRequestSummary({
       traceId,
@@ -201,6 +210,35 @@ export async function meteredErrorResponse(
     return NextResponse.json(
       { code: err.code, message: err.message },
       { status: err.status, headers },
+    );
+  }
+
+  if (isDbTimeoutError(err) || isDbUnavailableError(err)) {
+    const isTimeout = isDbTimeoutError(err);
+    const code = isTimeout ? 'DB_TIMEOUT' : 'DB_UNAVAILABLE';
+    headers['Retry-After'] = '5';
+
+    emitMeteredRequestSummary({
+      traceId,
+      route,
+      quotaMode: config.mode,
+      byok: isByok,
+      userId: identity?.userId,
+      deviceId: identity?.deviceId,
+      chargeSource: lease?.chargeSource,
+      outcome: refunded ? 'refunded' : 'denied',
+      denial: code,
+      reserveMs,
+      settleMs: 0,
+      totalMs,
+      httpStatus: 503,
+      stages: timer.snapshot(),
+      ttfbMs: totalMs,
+    });
+
+    return NextResponse.json(
+      { code, message: 'Database service is temporarily unavailable' },
+      { status: 503, headers },
     );
   }
 

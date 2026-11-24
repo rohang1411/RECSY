@@ -17,6 +17,11 @@
  * Used by: `src/services/recommender/run-recommendation.ts`.
  */
 import { ASPECT_NAMES, type AspectName } from '@/lib/constants';
+import {
+  DEFAULT_EXCHANGE_RATES,
+  normalizeToUsd,
+  type ExchangeRates,
+} from '@/services/catalog/currency';
 
 import {
   RECOMMEND_BUDGET_RELAX_FACTOR,
@@ -83,6 +88,7 @@ export interface FilterPassOptions {
   readonly now?: Date;
   /** When true, skips the 3.5 year maximum age filter. */
   readonly ignoreMaxAge?: boolean;
+  readonly exchangeRates?: ExchangeRates;
 }
 
 export function buildSearchHaystack(entry: PhoneCatalogEntry): string {
@@ -191,45 +197,103 @@ export function passesHardFilters(
     return false;
   }
 
-  // Budget filtering: use currency-aware local budget if available, otherwise USD.
+  // Budget filtering: use canonical multi-currency normalization engine (Plan 31 WP-01).
+  const rates = opts.exchangeRates ?? DEFAULT_EXCHANGE_RATES;
   const localBudget = requirements.budget_local;
-  if (localBudget && localBudget.max != null) {
-    const max =
-      opts.budgetMaxOverride ??
-      (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
-    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
-    if (!Number.isFinite(price) || price > max) return false;
-  } else {
-    const budget = requirements.budget_usd;
-    if (budget?.max != null) {
+  const usdBudget = requirements.budget_usd;
+
+  if (
+    (localBudget && (localBudget.max != null || localBudget.min != null)) ||
+    (usdBudget && (usdBudget.max != null || usdBudget.min != null))
+  ) {
+    const rawLocalPrice = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
+    const rawMsrpUsd = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
+
+    // If an explicit price is provided as an invalid non-number string, reject immediately
+    if (entry.localPrice != null && !Number.isFinite(rawLocalPrice)) return false;
+    if (entry.msrpUsd != null && !Number.isFinite(rawMsrpUsd)) return false;
+
+    let phonePriceUsd: number | null = null;
+    if (Number.isFinite(rawLocalPrice) && entry.localCurrency) {
+      phonePriceUsd = normalizeToUsd(rawLocalPrice, entry.localCurrency, rates);
+    } else if (Number.isFinite(rawMsrpUsd)) {
+      phonePriceUsd = rawMsrpUsd;
+    }
+
+    if (phonePriceUsd == null || !Number.isFinite(phonePriceUsd)) {
+      return false;
+    }
+
+    if (localBudget && localBudget.max != null) {
       const max =
         opts.budgetMaxOverride ??
-        (opts.relaxBudgetMax ? budget.max * RECOMMEND_BUDGET_RELAX_FACTOR : budget.max);
-      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
-      if (!Number.isFinite(price) || price > max) return false;
-    }
-  }
+        (opts.relaxBudgetMax ? localBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : localBudget.max);
 
-  if (localBudget && localBudget.min != null) {
-    const price = entry.localPrice == null ? NaN : Number.parseFloat(entry.localPrice);
-    if (!Number.isFinite(price) || price < localBudget.min) return false;
-  } else {
-    const budget = requirements.budget_usd;
-    if (budget?.min != null) {
-      const price = entry.msrpUsd == null ? NaN : Number.parseFloat(entry.msrpUsd);
-      if (!Number.isFinite(price) || price < budget.min) return false;
+      if (Number.isFinite(rawLocalPrice) && entry.localCurrency === localBudget.currency) {
+        if (rawLocalPrice > max) return false;
+      } else {
+        const maxUsd = normalizeToUsd(max, localBudget.currency, rates);
+        if (phonePriceUsd > maxUsd) return false;
+      }
+    } else if (usdBudget && usdBudget.max != null) {
+      const max =
+        opts.budgetMaxOverride ??
+        (opts.relaxBudgetMax ? usdBudget.max * RECOMMEND_BUDGET_RELAX_FACTOR : usdBudget.max);
+      if (phonePriceUsd > max) return false;
+    }
+
+    if (localBudget && localBudget.min != null) {
+      if (Number.isFinite(rawLocalPrice) && entry.localCurrency === localBudget.currency) {
+        if (rawLocalPrice < localBudget.min) return false;
+      } else {
+        const minUsd = normalizeToUsd(localBudget.min, localBudget.currency, rates);
+        if (phonePriceUsd < minUsd) return false;
+      }
+    } else if (usdBudget && usdBudget.min != null) {
+      if (phonePriceUsd < usdBudget.min) return false;
     }
   }
 
   return true;
 }
 
+export const BAYESIAN_PRIOR_MEAN = 5.0;
+export const BAYESIAN_PSEUDO_OBSERVATIONS = 5.0;
+
+/**
+ * Calculates empirical Bayes shrinkage for review aspect scores.
+ * Replaces heuristic partial retention with formal James-Stein shrinkage:
+ * calibratedScore = c * rawScore + (1 - c) * priorMean
+ */
+export function calculateBayesianCalibratedScore(
+  rawScore: number,
+  citationCountOrConfidence: number,
+  isCitationCount = false,
+  priorMean: number = BAYESIAN_PRIOR_MEAN,
+  pseudoObs: number = BAYESIAN_PSEUDO_OBSERVATIONS,
+): { calibratedScore: number; confidence: number } {
+  let confidence: number;
+  if (isCitationCount) {
+    const n = Math.max(0, citationCountOrConfidence);
+    confidence = n / (n + pseudoObs);
+  } else {
+    confidence = Math.max(0, Math.min(1, citationCountOrConfidence));
+  }
+  const calibratedScore = confidence * rawScore + (1 - confidence) * priorMean;
+  return { calibratedScore, confidence };
+}
+
 export function resolveAspectWeights(
   requirements: UserRequirements,
   defaultWeights: ReadonlyMap<AspectName, number>,
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES,
 ): Map<AspectName, number> {
-  const maxBudget = requirements.budget_usd?.max ?? requirements.budget_local?.max ?? 0;
-  const isFlagshipBudget = maxBudget >= 800;
+  const maxBudgetUsd =
+    requirements.budget_usd?.max ??
+    (requirements.budget_local
+      ? normalizeToUsd(requirements.budget_local.max, requirements.budget_local.currency, rates)
+      : 0);
+  const isFlagshipBudget = maxBudgetUsd >= 800;
   const userRequestedValue =
     requirements.priorities.some((p) => p.aspect === 'value') ||
     requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
@@ -258,20 +322,20 @@ export function weightedAspectScore(
   scores: ReadonlyMap<AspectName, number>,
   weights: ReadonlyMap<AspectName, number>,
   confidences?: ReadonlyMap<AspectName, number>,
+  citationCounts?: ReadonlyMap<AspectName, number>,
 ): number {
   let acc = 0;
   for (const name of ASPECT_NAMES) {
     const w = weights.get(name) ?? 0;
-    const s = scores.get(name) ?? NEUTRAL_ASPECT_SCORE;
-    const conf = confidences?.get(name) ?? 1.0;
-    // Confidence-weighted sentiment aggregation:
-    // Calibrates review aspect scores by source sample size and consensus confidence,
-    // shrinking low-confidence scores towards neutral baseline (5.0).
-    const calibratedScore =
-      conf < 1.0
-        ? NEUTRAL_ASPECT_SCORE +
-          (s - NEUTRAL_ASPECT_SCORE) * (0.6 + 0.4 * Math.max(0, Math.min(1, conf)))
-        : s;
+    const s = scores.get(name) ?? BAYESIAN_PRIOR_MEAN;
+    let calibratedScore = s;
+    if (citationCounts?.has(name)) {
+      const count = citationCounts.get(name)!;
+      calibratedScore = calculateBayesianCalibratedScore(s, count, true).calibratedScore;
+    } else if (confidences?.has(name)) {
+      const conf = confidences.get(name)!;
+      calibratedScore = calculateBayesianCalibratedScore(s, conf, false).calibratedScore;
+    }
     acc += w * calibratedScore;
   }
   return acc;
@@ -499,6 +563,7 @@ interface ScoringContext {
   readonly weights: ReadonlyMap<AspectName, number>;
   readonly queryEmbedding: readonly number[] | undefined;
   readonly now?: Date;
+  readonly exchangeRates?: ExchangeRates;
   readonly summary: SummaryContext;
 }
 
@@ -541,16 +606,24 @@ function scoreEntry(entry: PhoneCatalogEntry, ctx: ScoringContext): ScoredCandid
   // and the user did not ask for a budget/value phone, apply an alignment adjustment
   // for phones priced under 50% of the flagship budget ceiling so that mid-range/budget
   // phones don't crowd out flagship devices.
-  const maxBudget = ctx.requirements.budget_usd?.max ?? ctx.requirements.budget_local?.max ?? 0;
+  const maxBudgetUsd =
+    ctx.requirements.budget_usd?.max ??
+    (ctx.requirements.budget_local
+      ? normalizeToUsd(
+          ctx.requirements.budget_local.max,
+          ctx.requirements.budget_local.currency,
+          ctx.exchangeRates ?? DEFAULT_EXCHANGE_RATES,
+        )
+      : 0);
   const userRequestedValue =
     ctx.requirements.priorities.some((p) => p.aspect === 'value') ||
     ctx.requirements.use_cases.some((u) => /\b(?:value|budget|cheap|affordable|deal)\b/i.test(u));
 
-  if (maxBudget >= 800 && !userRequestedValue) {
-    const price = Number.parseFloat(entry.msrpUsd ?? '0');
-    const threshold = 0.5 * maxBudget;
-    if (price > 0 && price < threshold) {
-      const discountRatio = 1 - price / threshold;
+  if (maxBudgetUsd >= 800 && !userRequestedValue) {
+    const priceUsd = Number.parseFloat(entry.msrpUsd ?? '0');
+    const thresholdUsd = 0.5 * maxBudgetUsd;
+    if (priceUsd > 0 && priceUsd < thresholdUsd) {
+      const discountRatio = 1 - priceUsd / thresholdUsd;
       score -= 0.35 * discountRatio;
     }
   }
@@ -580,7 +653,11 @@ function collectScored(
   opts: FilterPassOptions,
 ): ScoredCandidate[] {
   const out: ScoredCandidate[] = [];
-  const filterOpts = opts.now ? opts : { ...opts, now: ctx.now };
+  const filterOpts: FilterPassOptions = {
+    ...opts,
+    now: opts.now ?? ctx.now,
+    exchangeRates: opts.exchangeRates ?? ctx.exchangeRates,
+  };
   for (const entry of catalog) {
     if (!passesHardFilters(entry, ctx.requirements, filterOpts)) continue;
     const haystack = buildSearchHaystack(entry);
@@ -623,12 +700,15 @@ export function rankCandidates(
     readonly queryEmbedding?: readonly number[];
     readonly refined?: boolean;
     readonly now?: Date;
+    readonly exchangeRates?: ExchangeRates;
+    readonly allowRelaxation?: boolean;
   },
 ): RankResult {
   const queryEmbedding = options?.queryEmbedding;
   const refined = options?.refined === true;
   const now = options?.now;
-  const weights = resolveAspectWeights(requirements, defaultWeights);
+  const exchangeRates = options?.exchangeRates ?? DEFAULT_EXCHANGE_RATES;
+  const weights = resolveAspectWeights(requirements, defaultWeights, exchangeRates);
   const relaxed: string[] = [];
 
   const corpusScorecardMissing = catalog.every((c) => !hasRealAspectData(c));
@@ -638,6 +718,7 @@ export function rankCandidates(
     weights,
     queryEmbedding,
     now,
+    exchangeRates,
     summary: {
       weights,
       refined,
@@ -645,10 +726,41 @@ export function rankCandidates(
     },
   };
 
-  const ranked = collectScored(catalog, ctx, {
+  let ranked = collectScored(catalog, ctx, {
     relaxBudgetMax: false,
     ignoreFoldable: false,
   });
+
+  // Automated constraint relaxation (WP-02) when zero phones survive hard filters:
+  if (ranked.length === 0 && options?.allowRelaxation) {
+    // 1. Try relaxing budget ceiling
+    const budgetRelaxed = collectScored(catalog, ctx, {
+      relaxBudgetMax: true,
+      ignoreFoldable: false,
+    });
+    if (budgetRelaxed.length > 0) {
+      ranked = budgetRelaxed;
+      relaxed.push('budget_ceiling');
+    } else if (requirements.must_haves.length > 0) {
+      // 2. Try relaxing individual must-haves
+      for (const mustHave of requirements.must_haves) {
+        const subsetMustHaves = requirements.must_haves.filter((m) => m !== mustHave);
+        const relaxedCtx = {
+          ...ctx,
+          requirements: { ...requirements, must_haves: subsetMustHaves },
+        };
+        const subsetRanked = collectScored(catalog, relaxedCtx, {
+          relaxBudgetMax: false,
+          ignoreFoldable: false,
+        });
+        if (subsetRanked.length > 0) {
+          ranked = subsetRanked;
+          relaxed.push(`must_have:${mustHave}`);
+          break;
+        }
+      }
+    }
+  }
 
   // An empty result is preferable to silently violating budget, platform or form factor.
 

@@ -17,6 +17,7 @@ import {
   softDeleteSession,
   updateSession,
 } from '@/services/recommender/sessions';
+import { UpdateSessionPatchSchema } from '@/services/recommender/sessions/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,18 +37,7 @@ const getDetailQuerySchema = z.object({
   before: z.coerce.number().int().min(0).optional(),
 });
 
-const patchBodySchema = z
-  .object({
-    title: z.string().optional(),
-    isPinned: z.boolean().optional(),
-    status: z.enum(['active', 'archived']).optional(),
-  })
-  .refine(
-    (data) => data.title !== undefined || data.isPinned !== undefined || data.status !== undefined,
-    {
-      message: 'At least one field must be provided',
-    },
-  );
+const patchBodySchema = UpdateSessionPatchSchema;
 
 export async function GET(request: NextRequest, context: RouteContext): Promise<NextResponse> {
   const traceId = request.headers.get('x-trace-id')?.trim() || generateTraceId();

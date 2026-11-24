@@ -13,7 +13,7 @@
  */
 import { desc, eq } from 'drizzle-orm';
 
-import { getDb } from '../src/services/db/client';
+import { closeDb, getDb } from '../src/services/db/client';
 import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import {
   catalogCandidates,
@@ -21,6 +21,7 @@ import {
   phoneIdentities,
   phones,
 } from '../src/services/db/schema';
+import { isValidYouTubeChannelId } from '../src/services/internal/media-validator';
 
 async function main(): Promise<void> {
   console.log('=== RECSY Pipeline & Catalog Health Audit ===\n');
@@ -76,9 +77,17 @@ async function main(): Promise<void> {
   let healthyFeeds = 0;
   for (const c of creators) {
     if (c.platform === 'youtube') {
+      if (!isValidYouTubeChannelId(c.externalId)) {
+        console.log(`    ✗ ${c.handle} (${c.externalId}): MALFORMED CHANNEL ID`);
+        continue;
+      }
       const url = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(c.externalId)}`;
       try {
-        const res = await fetch(url, { headers: { 'user-agent': 'RECSYBot/0.1 (health-check)' } });
+        const res = await fetch(url, {
+          method: 'HEAD',
+          headers: { 'user-agent': 'RECSYBot/0.1 (health-check)' },
+          signal: AbortSignal.timeout(3000),
+        });
         if (res.status === 200) {
           healthyFeeds++;
           console.log(`    ✓ ${c.handle} (${c.externalId}): HTTP 200 OK`);
@@ -118,10 +127,12 @@ async function main(): Promise<void> {
   }
 
   console.log('\n=== Health Audit Complete: All Subsystems Verified Healthy ===');
+  await closeDb();
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('Audit failed:', err);
+  await closeDb().catch(() => undefined);
   process.exit(1);
 });

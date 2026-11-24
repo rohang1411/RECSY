@@ -1,4 +1,51 @@
+import { z } from 'zod';
+import { MAX_RECOMMENDER_MESSAGE_BYTES } from '@/lib/constants';
 import type { SessionOwner } from './owner';
+
+export const RecommendRequestBodySchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .min(1)
+    .refine(
+      (m) => new TextEncoder().encode(m).length <= MAX_RECOMMENDER_MESSAGE_BYTES,
+      'message too long',
+    ),
+  sessionId: z.string().uuid().optional(),
+});
+export type RecommendRequestBody = z.infer<typeof RecommendRequestBodySchema>;
+
+export const ListSessionsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  q: z.string().max(80).optional(),
+  status: z.enum(['active', 'archived']).default('active'),
+  includePinned: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((val) => (val !== undefined ? val === 'true' : undefined)),
+});
+export type ListSessionsQueryParams = z.infer<typeof ListSessionsQuerySchema>;
+
+export const CreateSessionSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+  })
+  .optional();
+export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
+
+export const UpdateSessionPatchSchema = z
+  .object({
+    title: z.string().optional(),
+    isPinned: z.boolean().optional(),
+    status: z.enum(['active', 'archived']).optional(),
+  })
+  .refine(
+    (data) => data.title !== undefined || data.isPinned !== undefined || data.status !== undefined,
+    {
+      message: 'At least one field must be provided',
+    },
+  );
 
 export type SessionTitleSource = 'default' | 'heuristic' | 'llm' | 'user';
 export type SessionStatus = 'active' | 'archived' | 'deleted' | 'closed';

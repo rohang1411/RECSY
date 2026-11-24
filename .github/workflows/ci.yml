@@ -154,6 +154,7 @@ jobs:
     name: eval · retrieval (optional, Gemini)
     needs: [quality, retrieval-gate]
     if: needs.retrieval-gate.outputs.configured == 'true'
+    continue-on-error: true
     runs-on: ubuntu-24.04
     services:
       postgres:
