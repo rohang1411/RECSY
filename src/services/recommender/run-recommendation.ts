@@ -225,12 +225,16 @@ export async function runRecommendationPipeline(input: {
       { taskType: 'RETRIEVAL_QUERY' },
     );
 
-  const embedPromise = shouldEmbed
-    ? (input.timer ? input.timer.time('embed', runEmbed) : runEmbed()).then(
-        (emb) => emb.embeddings[0],
-      )
-    : Promise.resolve(undefined);
-  embedPromise.catch(() => undefined);
+  const embedPromise = (
+    shouldEmbed
+      ? (input.timer ? input.timer.time('embed', runEmbed) : runEmbed()).then(
+          (emb) => emb.embeddings[0],
+        )
+      : Promise.resolve(undefined)
+  ).catch((err: unknown) => {
+    input.log.warn({ err }, 'recommender query embedding failed, continuing without embedding');
+    return undefined;
+  });
 
   const runAspectDefs = () => getCachedAspectDefinitions(input.db);
   const runCatalog = () => getCachedRecommendationCatalog(input.db, input.regionCode ?? 'US');

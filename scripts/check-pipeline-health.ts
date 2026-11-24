@@ -13,7 +13,7 @@
  */
 import { desc, eq } from 'drizzle-orm';
 
-import { getDb } from '../src/services/db/client';
+import { closeDb, getDb } from '../src/services/db/client';
 import { activeCatalogCandidateSql } from '../src/services/catalog/eligibility';
 import {
   catalogCandidates,
@@ -127,10 +127,12 @@ async function main(): Promise<void> {
   }
 
   console.log('\n=== Health Audit Complete: All Subsystems Verified Healthy ===');
+  await closeDb();
   process.exit(0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('Audit failed:', err);
+  await closeDb().catch(() => undefined);
   process.exit(1);
 });

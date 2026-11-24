@@ -125,5 +125,99 @@ describe('WP-15: metered-fetch and error mapping', () => {
         message: 'Account suspended',
       });
     });
+
+    it('maps flat payload shapes { code, message } correctly', () => {
+      const authAction = handleMeteredError(402, {
+        code: 'ANON_QUOTA_EXHAUSTED',
+      });
+      expect(authAction).toEqual({ kind: 'auth', reason: 'anon_exhausted' });
+
+      const quotaAction = handleMeteredError(402, {
+        code: 'SUBSCRIPTION_EXHAUSTED',
+      });
+      expect(quotaAction).toEqual({ kind: 'quota', reason: 'sub_exhausted' });
+
+      const rateAction = handleMeteredError(
+        429,
+        { code: 'RATE_LIMITED', message: 'Too fast' },
+        '20',
+      );
+      expect(rateAction).toEqual({
+        kind: 'inline',
+        retryAfterSec: 20,
+        message: 'Rate limited. Please wait 20s.',
+      });
+    });
+
+    it('maps string error payload shapes { error: string } correctly', () => {
+      const toastAction = handleMeteredError(500, {
+        error: 'Custom database failure details',
+      });
+      expect(toastAction).toEqual({
+        kind: 'toast',
+        message: 'Custom database failure details',
+      });
+
+      const restrictedAction = handleMeteredError(403, {
+        error: 'Suspended by moderator',
+      });
+      expect(restrictedAction).toEqual({
+        kind: 'restricted',
+        message: 'Suspended by moderator',
+      });
+    });
+
+    it('safely normalizes non-string message payloads to fallback string', () => {
+      // Prevents React crash: Objects are not valid as a React child
+      const action = handleMeteredError(500, {
+        message: { formErrors: ['something wrong'] } as unknown as string,
+      });
+      expect(action).toEqual({
+        kind: 'toast',
+        message: 'Something went wrong on our side. You were not charged.',
+      });
+      if (action.kind === 'toast') {
+        expect(typeof action.message).toBe('string');
+      }
+    });
+
+    it('maps DB_TIMEOUT and DB_UNAVAILABLE to infrastructure toast', () => {
+      const dbTimeoutAction = handleMeteredError(503, {
+        code: 'DB_TIMEOUT',
+        message: 'Database service is temporarily unavailable',
+      });
+      expect(dbTimeoutAction).toEqual({
+        kind: 'toast',
+        message: 'Database service is temporarily unavailable',
+      });
+
+      const dbUnavailableAction = handleMeteredError(503, {
+        code: 'DB_UNAVAILABLE',
+      });
+      expect(dbUnavailableAction).toEqual({
+        kind: 'toast',
+        message: 'Database service is temporarily unavailable. Please retry shortly.',
+      });
+    });
+
+    it('clamps negative or malformed retry-after headers to safe positive integer', () => {
+      const negativeAction = handleMeteredError(429, { code: 'RATE_LIMITED' }, '-5');
+      expect(negativeAction).toEqual({
+        kind: 'inline',
+        retryAfterSec: 10,
+        message: 'Rate limited. Please wait 10s.',
+      });
+
+      const invalidAction = handleMeteredError(
+        429,
+        { code: 'RATE_LIMITED' },
+        'invalid-non-numeric',
+      );
+      expect(invalidAction).toEqual({
+        kind: 'inline',
+        retryAfterSec: 10,
+        message: 'Rate limited. Please wait 10s.',
+      });
+    });
   });
 });

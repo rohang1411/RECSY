@@ -112,4 +112,18 @@ describe('proxy / middleware', () => {
     await proxy(reqRec);
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it('preserves incoming x-trace-id or generates fresh trace id (Plan 32 WP-09)', async () => {
+    const reqWithTrace = createMockRequest({
+      headers: { 'x-trace-id': 'custom-edge-trace-123' },
+    });
+    const resWithTrace = await proxy(reqWithTrace);
+    expect(resWithTrace.headers.get('x-trace-id')).toBe('custom-edge-trace-123');
+
+    const reqWithoutTrace = createMockRequest({});
+    const resWithoutTrace = await proxy(reqWithoutTrace);
+    const generatedTrace = resWithoutTrace.headers.get('x-trace-id');
+    expect(generatedTrace).toBeTruthy();
+    expect(generatedTrace?.length).toBeGreaterThan(10);
+  });
 });
