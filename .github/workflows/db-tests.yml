@@ -13,6 +13,7 @@ jobs:
   db-tests:
     name: Database integration tests (PostgreSQL)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     services:
       postgres:
         image: pgvector/pgvector:pg16

@@ -16,6 +16,7 @@ jobs:
   migrate:
     name: Run db:setup against production
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - name: Validate confirmation

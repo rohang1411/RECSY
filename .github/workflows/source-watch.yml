@@ -28,6 +28,7 @@ jobs:
   secrets-gate:
     name: Check pipeline secrets
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       configured: ${{ steps.check.outputs.configured }}
     steps:
